@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EnergyPlus in the browser</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /*
+        A drawing sheet, not a dashboard.
+        Surfaces: board -> sheet -> inset. One hue, three whisper-quiet steps.
+        Depth: hairline rules only. No shadows — paper does not float.
+        Colour: graphite builds structure; the redline pen is the only accent,
+        spent on the live run and on the measured curve. The cold/warm pair is
+        not decoration — it encodes degrees Celsius.
+      */
+      :root {
+        color-scheme: light;
+
+        --board: #e6e2da; /* the desk the sheet lies on */
+        --sheet: #f6f3ec; /* bond paper */
+        --inset: #efebe2; /* an inset field: drop target, field notes */
+
+        --ink: #22252a; /* 2H graphite */
+        --ink-2: #4e535a; /* supporting text */
+        --ink-3: #7c828a; /* metadata, labels */
+        --ink-ghost: #a9aeb4; /* underlay, disabled, empty */
+
+        --rule: rgba(34, 37, 42, 0.14); /* standard separation */
+        --rule-soft: rgba(34, 37, 42, 0.07); /* within a group */
+        --rule-firm: rgba(34, 37, 42, 0.32); /* emphasis, sheet edge */
+        --rule-focus: rgba(166, 57, 43, 0.5);
+
+        --redline: #a6392b; /* the markup pen */
+        --redline-wash: rgba(166, 57, 43, 0.1);
+
+        --cold: #3d6478; /* −15.5 °C, the winter design condition */
+        --warm: #b4552a; /* 32 °C, the summer design condition */
+
+        --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+        --cond: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", system-ui, sans-serif;
+        --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+        --r: 2px; /* drafting is sharp; nothing is rounded but the corners of a sheet */
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          /* A photostat negative of the same sheet: chalk on graphite. */
+          color-scheme: dark;
+          --board: #131518;
+          --sheet: #1b1e22;
+          --inset: #17191d;
+          --ink: #e6e2da;
+          --ink-2: #a9adb3;
+          --ink-3: #797f86;
+          --ink-ghost: #565b62;
+          --rule: rgba(230, 226, 218, 0.15);
+          --rule-soft: rgba(230, 226, 218, 0.08);
+          --rule-firm: rgba(230, 226, 218, 0.34);
+          --rule-focus: rgba(217, 106, 84, 0.55);
+          --redline: #d96a54;
+          --redline-wash: rgba(217, 106, 84, 0.14);
+          --cold: #6d9bb2;
+          --warm: #d08355;
+        }
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 40px 24px 72px;
+        background: var(--board);
+        color: var(--ink);
+        font: 400 15px/1.6 var(--sans);
+        -webkit-font-smoothing: antialiased;
+        display: flex;
+        justify-content: center;
+      }
+
+      .sheet {
+        width: 100%;
+        max-width: 1080px;
+        background: var(--sheet);
+        border: 1px solid var(--rule-firm);
+        border-radius: var(--r);
+      }
+
+      /* ── lettering ──────────────────────────────────────────────── */
+
+      .eyebrow {
+        font: 500 10.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+        color: var(--ink-3);
+        margin: 0;
+      }
+
+      h1 {
+        font: 600 clamp(24px, 3.4vw, 34px)/1.05 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.045em;
+        margin: 10px 0 0;
+      }
+
+      .lede {
+        margin: 12px 0 0;
+        max-width: 54ch;
+        font-size: 14px;
+        line-height: 1.65;
+        color: var(--ink-2);
+      }
+      .lede b { font-weight: 500; color: var(--ink); }
+
+      .num {
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum" 1;
+      }
+
+      /* ── sheet header ───────────────────────────────────────────── */
+
+      .head {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 32px;
+        align-items: start;
+        padding: 32px 32px 28px;
+        border-bottom: 1px solid var(--rule);
+      }
+
+      .stamp {
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        min-width: 210px;
+      }
+      .stamp div {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        align-items: baseline;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--rule-soft);
+      }
+      .stamp div:last-child { border-bottom: 0; }
+      .stamp span {
+        font: 500 10px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+        color: var(--ink-3);
+      }
+      .stamp b {
+        font: 400 11.5px/1 var(--mono);
+        color: var(--ink);
+      }
+
+      /* ── body: binding margin + field ───────────────────────────── */
+
+      .body {
+        display: grid;
+        grid-template-columns: 172px minmax(0, 1fr);
+      }
+
+      .ledger {
+        padding: 26px 20px 26px 32px;
+        border-right: 1px solid var(--rule);
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .ledger ol {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .ledger li {
+        position: relative;
+        padding: 0 0 14px 20px;
+        font: 400 11.5px/1 var(--mono);
+        letter-spacing: 0.01em;
+        color: var(--ink-ghost);
+        transition: color 0.18s ease;
+      }
+      .ledger li:last-child { padding-bottom: 0; }
+      /* the tick column, drawn as one continuous hairline */
+      .ledger li::before {
+        content: "";
+        position: absolute;
+        left: 3.5px;
+        top: 11px;
+        bottom: 0;
+        width: 1px;
+        background: var(--rule);
+      }
+      .ledger li:last-child::before { display: none; }
+      .ledger li::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 2px;
+        width: 8px;
+        height: 8px;
+        border: 1px solid var(--ink-ghost);
+        border-radius: 1px;
+        background: transparent;
+        transition: all 0.18s ease;
+      }
+      .ledger li.done { color: var(--ink); }
+      .ledger li.done::after { background: var(--ink); border-color: var(--ink); }
+      .ledger li.active { color: var(--redline); }
+      .ledger li.active::after {
+        border-color: var(--redline);
+        background: var(--redline);
+        animation: breathe 1.1s ease-in-out infinite;
+      }
+      @keyframes breathe { 50% { opacity: 0.25; } }
+
+      /* Auto-solve reduces the phase list to scenery: five steps that flick past
+         in 600 ms are noise, so the ledger stands down and the live signal moves
+         to the plate. It comes back for the annual run, which is slow enough to
+         be worth watching. */
+      .ledger.quiet ol { opacity: 0.34; transition: opacity 0.2s ease; }
+      .ledger.quiet li.active::after { animation: none; }
+
+      .ledger-foot {
+        margin-top: auto;
+        padding-top: 16px;
+        border-top: 1px solid var(--rule-soft);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .ledger-foot > div { display: flex; flex-direction: column; gap: 5px; }
+      .ledger-foot b { font: 400 15px/1 var(--mono); color: var(--ink); }
+      .ledger-foot .sub { font: 400 10.5px/1 var(--mono); color: var(--ink-ghost); }
+
+      .field { padding: 26px 32px 30px; min-width: 0; }
+
+      /* ── controls ───────────────────────────────────────────────── */
+
+      .controls {
+        display: flex;
+        align-items: stretch;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      button {
+        font: 600 12px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--sheet);
+        background: var(--ink);
+        border: 1px solid var(--ink);
+        border-radius: var(--r);
+        padding: 0 22px;
+        min-height: 46px;
+        min-width: 168px;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+      }
+      button:hover:not(:disabled) { background: var(--redline); border-color: var(--redline); }
+      button:active:not(:disabled) { opacity: 0.88; }
+      button:disabled {
+        background: transparent;
+        color: var(--ink-3);
+        border-color: var(--rule);
+        cursor: default;
+      }
+      button:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+
+      /* Auto-solve: the same square marker the run ledger uses, because it means
+         the same thing here — a step that is armed. */
+      .toggle {
+        flex: 0 0 auto;
+        min-height: 46px;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 3px;
+        padding: 6px 16px 6px 35px;
+        background: var(--inset);
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        cursor: pointer;
+        transition: border-color 0.15s ease, opacity 0.15s ease;
+      }
+      .toggle:hover { border-color: var(--rule-firm); }
+      .toggle input { position: absolute; width: 0; height: 0; opacity: 0; }
+      .toggle::before {
+        content: "";
+        position: absolute;
+        left: 15px;
+        top: 50%;
+        margin-top: -5px;
+        width: 9px;
+        height: 9px;
+        border: 1px solid var(--ink-ghost);
+        border-radius: 1px;
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }
+      .toggle:has(input:checked)::before { background: var(--redline); border-color: var(--redline); }
+      .toggle:focus-within { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+      .toggle-main {
+        font: 500 10.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+        color: var(--ink-2);
+      }
+      .toggle-sub { font-size: 11.5px; line-height: 1.35; color: var(--ink-3); }
+
+      /* inputs are inset: darker than the sheet, because they receive content */
+      .dropzone {
+        flex: 1 1 280px;
+        min-height: 46px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 3px;
+        padding: 6px 14px;
+        background: var(--inset);
+        border: 1px dashed var(--rule);
+        border-radius: var(--r);
+        cursor: pointer;
+        transition: border-color 0.15s ease, background 0.15s ease;
+      }
+      .dropzone:hover, .dropzone.over { border-color: var(--rule-firm); }
+      .dropzone.over { background: var(--redline-wash); }
+      .dropzone.loaded { border-style: solid; border-color: var(--rule-firm); }
+      .dz-main {
+        font: 500 10.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+        color: var(--ink-2);
+      }
+      .dropzone.loaded .dz-main { font-family: var(--mono); font-size: 11.5px; text-transform: none; letter-spacing: 0; color: var(--ink); }
+      .dz-sub { font-size: 11.5px; line-height: 1.35; color: var(--ink-3); }
+      .dropzone input { display: none; }
+      .dropzone:focus-within { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+
+      .status {
+        margin: 12px 0 0;
+        min-height: 1.3em;
+        font: 400 11.5px/1.3 var(--mono);
+        color: var(--ink-3);
+      }
+      .status.bad { color: var(--redline); }
+
+      /* ── the plate ──────────────────────────────────────────────── */
+
+      .plate {
+        margin: 22px 0 0;
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+      }
+      /* The only thing that moves while a solve is in flight. At 0.6 s a spinner
+         would be a strobe; a pen travelling the top edge of the sheet says the
+         same thing and says it quietly. */
+      .plate::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 28%;
+        height: 1px;
+        background: var(--redline);
+        opacity: 0;
+        transition: opacity 0.14s ease;
+      }
+      .plate.solving::after { opacity: 0.9; animation: sweep 0.85s ease-in-out infinite; }
+      @keyframes sweep {
+        from { transform: translateX(-100%); }
+        to { transform: translateX(357%); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .plate.solving::after { animation: none; width: 100%; opacity: 0.3; }
+      }
+      .plate-body {
+        display: grid;
+        grid-template-columns: 268px minmax(0, 1fr);
+      }
+      .model {
+        border-right: 1px solid var(--rule-soft);
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .axon {
+        padding: 10px 14px 12px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 6px;
+        flex: 1;
+      }
+      .axon svg { width: 100%; height: auto; display: block; }
+      /* ── dimensions ─────────────────────────────────────────────── */
+
+      .dims { padding: 12px 14px 14px; border-top: 1px solid var(--rule-soft); }
+      .dims-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+      .link {
+        all: unset;
+        font: 500 10px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+        color: var(--ink-3);
+        cursor: pointer;
+        border-bottom: 1px solid var(--rule);
+        padding-bottom: 1px;
+      }
+      .link:hover { color: var(--redline); border-bottom-color: var(--redline); }
+      .link:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 3px; }
+
+      .dim {
+        display: grid;
+        grid-template-columns: 54px minmax(0, 1fr) 68px;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 7px;
+      }
+      .dim:last-child { margin-bottom: 0; }
+      /* a ratio, not a length: ruled off from the three lengths above it */
+      .dim.group { margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--rule-soft); }
+      .dim.group output { color: var(--ink); }
+      .dim label {
+        font: 500 9.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+      .dim output {
+        font: 400 11.5px/1 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+        text-align: right;
+      }
+
+      /* A slider drawn as a dimension line: a hairline track, a graphite tick
+         for the thumb. Same square marker the run ledger uses. */
+      .dim input[type="range"] {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 14px;
+        margin: 0;
+        background: transparent;
+        cursor: ew-resize;
+      }
+      .dim input[type="range"]::-webkit-slider-runnable-track {
+        height: 1px;
+        background: var(--rule-firm);
+      }
+      .dim input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 9px;
+        height: 9px;
+        margin-top: -4px;
+        border: 0;
+        border-radius: 1px;
+        background: var(--ink);
+        transition: background 0.15s ease;
+      }
+      .dim input[type="range"]:hover::-webkit-slider-thumb,
+      .dim input[type="range"]:active::-webkit-slider-thumb { background: var(--redline); }
+      .dim input[type="range"]::-moz-range-track { height: 1px; background: var(--rule-firm); }
+      .dim input[type="range"]::-moz-range-thumb {
+        width: 9px; height: 9px; border: 0; border-radius: 1px; background: var(--ink);
+      }
+      .dim input[type="range"]:hover::-moz-range-thumb { background: var(--redline); }
+      .dim input[type="range"]:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+
+      /* ── quantities that need no simulation ─────────────────────── */
+
+      .quantities {
+        margin: 0;
+        padding: 12px 14px 14px;
+        border-top: 1px solid var(--rule-soft);
+      }
+      .quantities div {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 3px 0;
+      }
+      .quantities dt {
+        font: 500 9.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+      .quantities dd {
+        margin: 0;
+        font: 400 11.5px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+        white-space: nowrap;
+      }
+      /* the one row here that needs a simulation, and the swatch that decodes
+         the tint on the drawing above */
+      .quantities .solved {
+        margin-top: 6px;
+        padding-top: 9px;
+        border-top: 1px solid var(--rule-soft);
+      }
+      .quantities .solved dt { display: flex; align-items: center; gap: 7px; }
+      .chip {
+        width: 9px; height: 9px;
+        border: 1px solid var(--rule-firm);
+        border-radius: 1px;
+        flex: none;
+      }
+
+      /* Results that describe a shape the model no longer has. */
+      .stale { opacity: 0.42; transition: opacity 0.2s ease; }
+      .stale-note { color: var(--redline); }
+      .trace { padding: 14px 16px 8px; min-width: 0; }
+      .trace svg { display: block; width: 100%; }
+
+      figcaption {
+        display: flex;
+        gap: 12px;
+        align-items: baseline;
+        padding: 9px 14px;
+        border-top: 1px solid var(--rule-soft);
+        font: 400 11.5px/1.4 var(--sans);
+        color: var(--ink-3);
+      }
+      figcaption .fig {
+        font: 500 10.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+        color: var(--ink-2);
+        white-space: nowrap;
+      }
+
+      /* ── the finding ────────────────────────────────────────────── */
+
+      .finding {
+        margin: 22px 0 0;
+        font: 500 clamp(15px, 1.8vw, 19px)/1.5 var(--cond);
+        letter-spacing: 0.005em;
+        color: var(--ink-2);
+        max-width: 62ch;
+      }
+      .finding em { font-style: normal; color: var(--ink); }
+      .finding .q {
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+        font-weight: 500;
+        color: var(--ink);
+      }
+      .finding .q.hot { color: var(--redline); }
+      .finding:empty { display: none; }
+
+      /* ── the schedule ───────────────────────────────────────────── */
+
+      .schedule { margin-top: 26px; }
+      .schedule table {
+        width: 100%;
+        margin-top: 10px;
+        border-collapse: collapse;
+      }
+      .schedule th {
+        font: 500 10px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+        color: var(--ink-3);
+        text-align: right;
+        padding: 0 0 8px;
+        border-bottom: 1px solid var(--rule);
+      }
+      .schedule th:first-child { text-align: left; }
+      .schedule td {
+        padding: 9px 0;
+        border-bottom: 1px solid var(--rule-soft);
+        font: 400 12.5px/1.2 var(--mono);
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+        color: var(--ink);
+        white-space: nowrap;
+      }
+      .schedule td:first-child {
+        text-align: left;
+        font: 400 13px/1.3 var(--sans);
+        color: var(--ink-2);
+        white-space: normal;
+        width: 42%;
+      }
+      .schedule td.unit { color: var(--ink-3); width: 46px; }
+      .schedule td.void { color: var(--ink-ghost); }
+      /* Change against the shape you took hold of. Set in the margin of its own
+         value, at metadata weight — the number is the reading, this is a note on
+         it, and it is deliberately not coloured for good or bad. */
+      .schedule td.delta {
+        width: 62px;
+        padding-left: 12px;
+        font-size: 11.5px;
+        color: var(--ink-3);
+      }
+      .schedule .base {
+        text-transform: none;
+        letter-spacing: 0;
+        font: 400 10.5px/1 var(--mono);
+        color: var(--ink-ghost);
+        margin-left: 10px;
+      }
+      .schedule .base:empty { display: none; }
+      /* the schedule changes subject: a firmer rule and a breath of space */
+      .schedule tr.group td { border-top: 1px solid var(--rule); padding-top: 17px; }
+      .schedule tr:last-child td { border-bottom: 0; }
+      /* the marker that ties a row to its curve on the plate */
+      .schedule td:first-child .key {
+        display: inline-block;
+        width: 16px;
+        height: 0;
+        border-top-width: 2px;
+        vertical-align: middle;
+        margin-right: 9px;
+        transform: translateY(-1px);
+      }
+      .key.zone { border-top: 2px solid var(--redline); }
+      .key.out { border-top: 2px dashed var(--ink-ghost); }
+
+      /* ── title block ────────────────────────────────────────────── */
+
+      /* Eight cells, four across: a title block reads as a filled grid,
+         never as a ragged last row. */
+      .titleblock {
+        border-top: 1px solid var(--rule-firm);
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+      }
+      .titleblock div {
+        padding: 12px 16px 13px;
+        border-right: 1px solid var(--rule-soft);
+        border-bottom: 1px solid var(--rule-soft);
+        min-width: 0;
+      }
+      .titleblock div:nth-child(4n) { border-right: 0; }
+      .titleblock div:nth-child(n + 5) { border-bottom: 0; }
+      .titleblock span {
+        display: block;
+        font: 500 9.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+        color: var(--ink-3);
+        margin-bottom: 6px;
+      }
+      .titleblock b {
+        display: block;
+        font: 400 12.5px/1.35 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+        overflow-wrap: anywhere;
+      }
+      .titleblock i {
+        display: block;
+        margin-top: 3px;
+        font: 400 11px/1.35 var(--sans);
+        font-style: normal;
+        color: var(--ink-3);
+      }
+      .titleblock b.flag { color: var(--redline); }
+
+      /* ── field notes ────────────────────────────────────────────── */
+
+      .notes { border-top: 1px solid var(--rule); }
+      .notes summary {
+        padding: 13px 32px;
+        cursor: pointer;
+        font: 500 10.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+        color: var(--ink-3);
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+      }
+      .notes summary::-webkit-details-marker { display: none; }
+      .notes summary::before {
+        content: "";
+        width: 6px; height: 6px;
+        border-right: 1px solid currentColor;
+        border-bottom: 1px solid currentColor;
+        transform: rotate(-45deg) translate(-1px, 1px);
+        transition: transform 0.18s ease;
+      }
+      .notes[open] summary::before { transform: rotate(45deg); }
+      .notes summary:hover { color: var(--ink); }
+      .notes summary:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: -4px; }
+      #log {
+        margin: 0;
+        padding: 0 32px 24px;
+        max-height: 240px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        font: 400 11px/1.55 var(--mono);
+        color: var(--ink-3);
+      }
+      #log:empty::before { content: "No engine output yet."; color: var(--ink-ghost); }
+
+      @media (max-width: 780px) {
+        body { padding: 20px 12px 48px; }
+        .head { grid-template-columns: 1fr; padding: 24px; }
+        .body { grid-template-columns: 1fr; }
+        .ledger {
+          border-right: 0;
+          border-bottom: 1px solid var(--rule);
+          padding: 20px 24px;
+        }
+        .ledger ol { flex-direction: row; flex-wrap: wrap; gap: 6px 18px; }
+        .ledger li { padding: 0 0 0 16px; }
+        .ledger li::before { display: none; }
+        .ledger-foot { margin-top: 14px; flex-direction: row; align-items: baseline; gap: 10px; }
+        .field { padding: 22px 24px 26px; }
+        .plate-body { grid-template-columns: 1fr; }
+        .model { border-right: 0; border-bottom: 1px solid var(--rule-soft); }
+        .titleblock { grid-template-columns: repeat(2, 1fr); }
+        .titleblock div:nth-child(4n) { border-right: 1px solid var(--rule-soft); }
+        .titleblock div:nth-child(2n) { border-right: 0; }
+        .titleblock div:nth-child(n + 5) { border-bottom: 1px solid var(--rule-soft); }
+        .titleblock div:nth-child(n + 7) { border-bottom: 0; }
+        .notes summary, #log { padding-left: 24px; padding-right: 24px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="sheet">
+      <header class="head">
+        <div>
+          <p class="eyebrow">Client-side building simulation</p>
+          <h1>EnergyPlus in the browser</h1>
+          <p class="lede">
+            The US Department of Energy whole-building engine, compiled to WebAssembly and running
+            inside this tab. It solves a single free-running zone against Denver design conditions.
+            <b>The model, the solver and the results never leave your machine</b> — there is no
+            server behind this page.
+          </p>
+        </div>
+        <div class="stamp">
+          <div><span>Engine</span><b id="t-engine-version">EnergyPlus 26.1.0</b></div>
+          <div><span>Runtime</span><b>WebAssembly</b></div>
+          <div><span>Upload</span><b>None</b></div>
+        </div>
+      </header>
+
+      <div class="body">
+        <aside class="ledger">
+          <p class="eyebrow">Run log</p>
+          <ol id="phases"></ol>
+          <div class="ledger-foot">
+            <div>
+              <span class="eyebrow">Wall clock</span>
+              <b id="elapsed" class="num">—</b>
+            </div>
+            <div>
+              <span class="eyebrow">Solves</span>
+              <b id="runs" class="num">0</b>
+              <span class="sub" id="runs-sub">this session</span>
+            </div>
+          </div>
+        </aside>
+
+        <div class="field">
+          <div class="controls">
+            <button id="run" disabled>Compiling engine</button>
+            <label class="toggle" id="auto-wrap">
+              <input id="auto" type="checkbox" checked />
+              <span class="toggle-main">Auto-solve</span>
+              <span class="toggle-sub" id="auto-sub">Re-runs as you drag</span>
+            </label>
+            <label class="dropzone" id="dropzone">
+              <input id="epw" type="file" accept=".epw" />
+              <span class="dz-main" id="dz-main">Attach an EPW file</span>
+              <span class="dz-sub" id="dz-sub">Drop a weather file to run a full 8,760-hour year for your own site</span>
+            </label>
+          </div>
+          <p class="status" id="status"></p>
+
+          <figure class="plate" id="plate">
+            <div class="plate-body">
+              <aside class="model">
+                <div class="axon" id="axon"></div>
+                <div class="dims">
+                  <div class="dims-head">
+                    <p class="eyebrow">Dimensions</p>
+                    <button type="button" class="link" id="reset">Reset</button>
+                  </div>
+                  <div id="sliders"></div>
+                </div>
+                <dl class="quantities">
+                  <div><dt>Floor area</dt><dd id="q-floor">—</dd></div>
+                  <div><dt>Exposed envelope</dt><dd id="q-exposed">—</dd></div>
+                  <div><dt>Volume</dt><dd id="q-volume">—</dd></div>
+                  <div><dt>Envelope ÷ volume</dt><dd id="q-compact">—</dd></div>
+                  <div><dt>Glazing, south</dt><dd id="q-glazing">—</dd></div>
+                  <div class="solved">
+                    <dt><i class="chip" id="q-chip"></i>Zone mean</dt>
+                    <dd id="q-mean">—</dd>
+                  </div>
+                </dl>
+              </aside>
+              <div class="trace" id="trace"></div>
+            </div>
+            <figcaption>
+              <span class="fig">Fig. 1</span>
+              <span id="fig-cap">
+                Zone mean air temperature against outdoor drybulb. The model geometry at left is
+                drawn from the surface vertices in the IDF and tinted by the zone's mean result.
+              </span>
+            </figcaption>
+          </figure>
+
+          <p class="finding" id="finding"></p>
+
+          <section class="schedule">
+            <p class="eyebrow">Results schedule<span class="base" id="baseline-note"></span></p>
+            <table id="schedule"></table>
+          </section>
+        </div>
+      </div>
+
+      <div class="titleblock">
+        <div><span>Project</span><b id="t-project">—</b><i>1ZoneUncontrolled · free-running · south glazing added</i></div>
+        <div><span>Location</span><b>Denver Centennial, CO</b><i id="t-site">—</i></div>
+        <div><span>Run type</span><b id="t-run">Design day</b><i id="t-run-sub">Two ASHRAE sizing conditions</i></div>
+        <div><span>Timestep</span><b id="t-timestep">—</b><i>Reported hourly</i></div>
+        <div><span>Output variables</span><b id="t-vars">—</b><i>Recorded to the ESO</i></div>
+        <div><span>Severe / warnings</span><b id="t-err">—</b><i>From eplusout.err</i></div>
+        <div><span>Exit code</span><b id="t-exit">—</b><i>0 is a clean run</i></div>
+        <div><span>Sheet</span><b>E-01 · Rev A</b><i id="t-date">—</i></div>
+      </div>
+
+      <details class="notes" id="notes">
+        <summary>Engine console</summary>
+        <pre id="log"></pre>
+      </details>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
