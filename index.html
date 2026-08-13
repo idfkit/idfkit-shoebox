@@ -719,6 +719,54 @@
       }
       #log:empty::before { content: "No engine output yet."; color: var(--ink-ghost); }
 
+      /* ── colophon ───────────────────────────────────────────────── */
+
+      /* The sheet's last band: who this is not, and the terms the engine
+         and its WebAssembly binaries arrive under. */
+      .disclosure-body { padding: 2px 32px 26px; display: grid; gap: 20px; }
+
+      /* Two columns so the fine print fills the band rather than trailing off
+         mid-sheet, and so the measure stays readable at 12px. */
+      .disclaimers {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0 28px;
+      }
+      .disclaimer {
+        margin: 0;
+        font: 400 12px/1.6 var(--sans);
+        color: var(--ink-3);
+      }
+      .disclaimer b { font-weight: 500; color: var(--ink-2); }
+      .disclosure-body code {
+        font: 400 11px/1 var(--mono);
+        color: var(--ink-2);
+      }
+      .disclosure-body h2 {
+        margin: 0;
+        font: 500 10.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+        color: var(--ink-3);
+      }
+      .disclosure-body h2 em {
+        font-style: normal;
+        color: var(--ink-ghost);
+        letter-spacing: 0.08em;
+      }
+      .disclosure-body pre {
+        margin: 8px 0 0;
+        padding: 13px 15px;
+        background: var(--inset);
+        border: 1px solid var(--rule-soft);
+        border-radius: var(--r);
+        max-height: 260px;
+        overflow: auto;
+        white-space: pre-wrap;
+        font: 400 10.5px/1.6 var(--mono);
+        color: var(--ink-3);
+      }
+
       @media (max-width: 780px) {
         body { padding: 20px 12px 48px; }
         .head { grid-template-columns: 1fr; padding: 24px; }
@@ -741,6 +789,8 @@
         .titleblock div:nth-child(n + 5) { border-bottom: 1px solid var(--rule-soft); }
         .titleblock div:nth-child(n + 7) { border-bottom: 0; }
         .notes summary, #log { padding-left: 24px; padding-right: 24px; }
+        .disclosure-body { padding-left: 24px; padding-right: 24px; }
+        .disclaimers { grid-template-columns: 1fr; gap: 12px; }
       }
     </style>
   </head>
@@ -854,6 +904,79 @@
       <details class="notes" id="notes">
         <summary>Engine console</summary>
         <pre id="log"></pre>
+      </details>
+
+      <details class="notes" id="disclosure">
+        <summary>Disclosure</summary>
+        <div class="disclosure-body">
+          <div class="disclaimers">
+            <p class="disclaimer">
+              <b>This demo is an independent project.</b> It is not affiliated with, endorsed by,
+              or sponsored by the National Renewable Energy Laboratory, the U.S. Department of
+              Energy, or any other EnergyPlus copyright holder. The name "EnergyPlus" is used here
+              solely to identify the software this page runs — EnergyPlus version 26.1.0 software,
+              compiled to WebAssembly and redistributed through the
+              <code>@idfkit/engine-assets</code> npm package.
+            </p>
+            <p class="disclaimer">
+              The page loads <code>@idfkit/engine</code>, which is MIT licensed; the WebAssembly
+              binaries, the input dictionary and the reference datasets it runs are derived from
+              EnergyPlus and are licensed separately. Both licenses are reproduced below, as
+              distributed on npm.
+            </p>
+          </div>
+
+          <article>
+              <h2>@idfkit/engine <em>· MIT</em></h2>
+              <pre>MIT License
+
+Copyright (c) 2026 idfkit contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+NOTE: The MIT License above covers only the loader, worker, ExpandObjects
+bindings and output parsers authored in this repository. The WebAssembly
+binaries and data files under assets/ are derived from EnergyPlus and are
+licensed separately; see LICENSE.txt and NOTICE.</pre>
+          </article>
+
+          <article>
+              <h2>EnergyPlus version 26.1.0 software <em>· bundled by @idfkit/engine-assets</em></h2>
+              <pre>EnergyPlus, Copyright (c) 1996-present, The Board of Trustees of the University of Illinois, The Regents of the University of California, through Lawrence Berkeley National Laboratory (subject to receipt of any required approvals from the U.S. Dept. of Energy), Oak Ridge National Laboratory, managed by UT-Battelle, Alliance for Energy Innovation, LLC, and other contributors. All rights reserved.
+
+NOTICE: This Software was developed under funding from the U.S. Department of Energy and the U.S. Government consequently retains certain rights. As such, the U.S. Government has been granted for itself and others acting on its behalf a paid-up, nonexclusive, irrevocable, worldwide license in the Software to reproduce, distribute copies to the public, prepare derivative works, and perform publicly and display publicly, and to permit others to do so.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+(1) Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+(2) Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+(3) Neither the name of the University of California, Lawrence Berkeley National Laboratory, the University of Illinois, U.S. Dept. of Energy nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+(4) Use of EnergyPlus(TM) Name. If Licensee (i) distributes the software in stand-alone form without changes from the version obtained under this License, or (ii) Licensee makes a reference solely to the software portion of its product, Licensee must refer to the software as "EnergyPlus version X" software, where "X" is the version number Licensee obtained under this License and may not use a different name for the software. Except as specifically required in this Section (4), Licensee shall not use in a company name, a product name, in advertising, publicity, or other promotional activities any name, trade name, trademark, logo, or other designation of "EnergyPlus", "E+", "e+" or confusingly similar designation, without the U.S. Department of Energy's prior written consent.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.</pre>
+          </article>
+        </div>
       </details>
     </main>
     <script type="module" src="/src/main.js"></script>
