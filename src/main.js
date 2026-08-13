@@ -12,6 +12,17 @@ import {
   surfaceGeometry,
   windowGeometry,
 } from './model.js';
+import {
+  climateDescription,
+  climateZone,
+  degreeDays,
+  epwFor,
+  here,
+  nearestSites,
+  searchSites,
+  siteName,
+  siteRegion,
+} from './weather.js';
 
 const ENERGYPLUS_VERSION = '26.1.0';
 
@@ -838,7 +849,7 @@ const endGesture = () => {
 
 let epwText;
 let engineReady = false;
-const dropzone = $('dropzone');
+const site = $('site');
 const autoBox = $('auto');
 
 /**
@@ -870,37 +881,286 @@ function syncAuto() {
   $('phases').parentElement.classList.toggle('quiet', continuous());
 }
 
-async function attach(file) {
-  if (!file) return;
-  epwText = await file.text();
-  dropzone.classList.add('loaded');
-  $('dz-main').textContent = file.name;
-  $('dz-sub').textContent = `${(file.size / 1024).toFixed(0)} KB attached — the next run covers all 8,760 hours`;
-  set('t-run', 'Annual');
-  $('t-run-sub').textContent = 'Weather file, 8,760 hours';
-  syncAuto();
-  markStale();
-}
-
 autoBox.addEventListener('change', () => {
   syncAuto();
   if (autoOn()) pump();
   else markStale();
 });
 
-$('epw').addEventListener('change', (e) => attach(e.target.files[0]));
-for (const type of ['dragenter', 'dragover']) {
-  dropzone.addEventListener(type, (e) => {
-    e.preventDefault();
-    dropzone.classList.add('over');
-  });
+/* ── picking a weather location ──────────────────────────────────────────
+ *
+ * The sheet ships with Denver's two design days. Choosing a station swaps the
+ * run for a real year at a real place — which means the drawing has to change
+ * with it: the titleblock names the site, and the datum lines are redrawn from
+ * that station's own 99% heating and 1% cooling drybulb, because a Denver datum
+ * across a Singapore year would be a lie told in ink.
+ */
+
+const panel = $('site-panel');
+const search = $('site-search');
+const list = $('site-list');
+const note = $('site-note');
+const foot = $('site-foot');
+const near = $('site-near');
+const source = $('site-source');
+
+// The foot carries the two things that depend on where you are in the list: on
+// the way in, how to find a place; once you have one, how to get back out.
+const back = document.createElement('button');
+back.type = 'button';
+back.className = 'link';
+back.textContent = '← All locations';
+back.addEventListener('click', () => query(search.value));
+const resetFoot = () => foot.replaceChildren(near, source);
+
+let rows = []; // what the list is showing
+let cursor = -1; // which row Enter would take
+let take; // what taking it does — a place, or a file of that place
+let queryToken = 0; // latest-wins, exactly like the solver
+let inflight; // the download in progress, if any
+
+const say = (text, bad = false) => {
+  note.hidden = !text;
+  note.textContent = text ?? '';
+  note.className = bad ? 'site-note bad' : 'site-note';
+};
+
+function openPanel() {
+  site.classList.add('open');
+  panel.hidden = false;
+  $('site-field').setAttribute('aria-expanded', 'true');
+  search.focus();
+  search.select();
+  // Always reopen on the places, never on the flavours of a place chosen a
+  // minute ago — the question the panel asks first is "where".
+  if (search.value) query(search.value);
+  else {
+    resetFoot();
+    render([], { onPick: showFlavors });
+    say('Type a city, or take the nearest station to you.');
+  }
 }
-for (const type of ['dragleave', 'drop']) {
-  dropzone.addEventListener(type, (e) => {
-    e.preventDefault();
-    dropzone.classList.remove('over');
-    if (type === 'drop') attach(e.dataTransfer?.files?.[0]);
+
+function closePanel() {
+  site.classList.remove('open');
+  panel.hidden = true;
+  $('site-field').setAttribute('aria-expanded', 'false');
+}
+
+/**
+ * One list, two states.
+ *
+ * Searching gives you places; choosing a place gives you that place's flavours.
+ * Keeping both in the same list means the arrow keys never change meaning, and
+ * the second step costs nothing to skip past — Enter twice takes the most recent
+ * window at the top hit.
+ */
+function render(found, { distances = false, onPick } = {}) {
+  rows = found;
+  cursor = found.length ? 0 : -1;
+  // Enter and a click must do the same thing, so they share one handler.
+  take = onPick;
+  list.replaceChildren(
+    ...found.map((row, i) => {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'none'); // the option is the button inside it
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.id = `site-opt-${i}`;
+      button.className = 'site-opt' + (i === cursor ? ' here' : '');
+      button.setAttribute('role', 'option');
+      button.setAttribute('aria-selected', String(i === cursor));
+
+      const name = document.createElement('b');
+      const far = document.createElement('span');
+      far.className = 'far';
+
+      if (row.flavors) {
+        name.textContent = siteName(row.station);
+        const where = document.createElement('i');
+        where.textContent = ` · ${siteRegion(row.station)}`;
+        name.append(where);
+
+        const zone = document.createElement('span');
+        zone.className = 'cz';
+        zone.textContent = climateZone(row.station);
+
+        far.textContent =
+          distances && row.distanceKm != null
+            ? `${row.distanceKm < 10 ? row.distanceKm.toFixed(1) : Math.round(row.distanceKm)} km`
+            : `${row.flavors.length} ${row.flavors.length === 1 ? 'file' : 'files'}`;
+        button.append(name, zone, far);
+      } else {
+        // A flavour: the years it samples, and the degree days that result.
+        name.textContent = row.label;
+        far.textContent = degreeDays(row.station);
+        button.append(name, far);
+      }
+
+      button.addEventListener('mouseenter', () => setCursor(i, { scroll: false }));
+      button.addEventListener('click', () => take(row));
+      li.append(button);
+      return li;
+    })
+  );
+  search.setAttribute('aria-activedescendant', cursor >= 0 ? `site-opt-${cursor}` : '');
+}
+
+/** Step two: the chosen place's flavours, most recent window first. */
+function showFlavors(row) {
+  render(row.flavors, { onPick: (pick) => choose(row, pick) });
+  say(null);
+  const label = `${siteName(row.station)}, ${siteRegion(row.station)}`;
+  foot.replaceChildren(back, document.createTextNode(label));
+}
+
+function setCursor(next, { scroll = true } = {}) {
+  if (!rows.length) return;
+  cursor = next;
+  const options = [...list.querySelectorAll('.site-opt')];
+  options.forEach((el, i) => {
+    el.classList.toggle('here', i === cursor);
+    el.setAttribute('aria-selected', String(i === cursor));
   });
+  if (scroll) options[cursor]?.scrollIntoView({ block: 'nearest' });
+  // The focus stays in the search box, so the highlighted row has to be named.
+  search.setAttribute('aria-activedescendant', options[cursor]?.id ?? '');
+}
+
+const move = (delta) => setCursor((cursor + delta + rows.length) % rows.length);
+
+/**
+ * The index is 1.7 MB and arrives once. Every query after that is synchronous
+ * inside the package, so the only thing worth narrating is the first one — and
+ * only if it is slow enough to notice.
+ */
+async function query(text) {
+  const token = ++queryToken;
+  resetFoot();
+  if (!text.trim()) {
+    render([]);
+    say('Type a city, or take the nearest station to you.');
+    return;
+  }
+  const slow = setTimeout(() => token === queryToken && say('Loading the station index…'), 120);
+  try {
+    const found = await searchSites(text, 8);
+    if (token !== queryToken) return;
+    render(found, { onPick: showFlavors });
+    say(found.length ? null : `Nothing matches “${text}”.`);
+  } catch (error) {
+    if (token === queryToken) say(`The station index could not be read: ${error.message}`, true);
+  } finally {
+    clearTimeout(slow);
+  }
+}
+
+let typing;
+search.addEventListener('input', () => {
+  clearTimeout(typing);
+  typing = setTimeout(() => query(search.value), 110);
+});
+
+search.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    move(e.key === 'ArrowDown' ? 1 : -1);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (rows[cursor]) take(rows[cursor]);
+  } else if (e.key === 'Escape') {
+    // Escape backs out one step at a time: flavours, then the panel.
+    if (foot.contains(back)) query(search.value);
+    else {
+      closePanel();
+      $('site-field').focus();
+    }
+  }
+});
+
+$('site-field').addEventListener('click', () => (panel.hidden ? openPanel() : closePanel()));
+
+document.addEventListener('pointerdown', (e) => {
+  if (!panel.hidden && !site.contains(e.target)) closePanel();
+});
+
+$('site-near').addEventListener('click', async () => {
+  say('Asking the browser where you are…');
+  try {
+    const [latitude, longitude] = await here();
+    const token = ++queryToken;
+    const found = await nearestSites(latitude, longitude, 8);
+    if (token !== queryToken) return;
+    render(found, { distances: true, onPick: showFlavors });
+    say(null);
+  } catch (error) {
+    say(error.message, true);
+  }
+});
+
+/**
+ * Take a station: download its archive, unpack the EPW, and re-letter the
+ * sheet. The download is the one slow step on this page that is not the engine
+ * — a few hundred kilobytes through a proxy — so it narrates itself in the
+ * status line and can be superseded by a second choice mid-flight.
+ */
+async function choose(row, pick) {
+  const picked = pick.station;
+  inflight?.abort();
+  inflight = new AbortController();
+  const { signal } = inflight;
+
+  closePanel();
+  site.classList.add('picked');
+  $('site-main').textContent = `${siteName(picked)}, ${siteRegion(picked)}`;
+  $('site-sub').replaceChildren(document.createTextNode('Fetching the weather file…'));
+  statusEl.className = 'status';
+  statusEl.textContent = `Downloading TMYx ${pick.label} for ${siteName(picked)}…`;
+
+  try {
+    epwText = await epwFor(picked, signal);
+  } catch (error) {
+    if (signal.aborted) return;
+    site.classList.remove('picked');
+    $('site-main').textContent = 'Choose a weather location';
+    $('site-sub').textContent = 'Any of 17,292 TMYx stations, for a full 8,760-hour year';
+    statusEl.className = 'status bad';
+    statusEl.textContent = `${siteName(picked)} could not be fetched: ${error.message}`;
+    return;
+  }
+  if (signal.aborted) return;
+
+  const zone = document.createElement('span');
+  zone.className = 'cz';
+  zone.textContent = climateZone(picked);
+  $('site-sub').replaceChildren(
+    zone,
+    document.createTextNode(
+      [climateDescription(picked), `TMYx ${pick.label}`, `${picked.elevation} m`]
+        .filter(Boolean)
+        .join(' · ')
+    )
+  );
+
+  // The drawing follows the weather: name the place, and redraw the datums from
+  // this station's design conditions rather than the model's Denver ones.
+  $('t-location').textContent = `${siteName(picked)}, ${siteRegion(picked)}`;
+  $('t-site').textContent =
+    `${Math.abs(picked.latitude).toFixed(2)}° ${picked.latitude >= 0 ? 'N' : 'S'} ` +
+    `${Math.abs(picked.longitude).toFixed(2)}° ${picked.longitude >= 0 ? 'E' : 'W'} · ` +
+    `${picked.elevation.toLocaleString('en-US')} m`;
+  if (Number.isFinite(picked.heatingDesignDbC) && Number.isFinite(picked.coolingDesignDbC)) {
+    DATUMS = [
+      { value: picked.heatingDesignDbC, label: '99% htg db' },
+      { value: picked.coolingDesignDbC, label: '1% clg db' },
+    ];
+  }
+
+  set('t-run', 'Annual');
+  $('t-run-sub').textContent = 'Weather file, 8,760 hours';
+  statusEl.textContent = `${siteName(picked)} attached — the next run covers all 8,760 hours.`;
+  syncAuto();
+  markStale();
 }
 
 /* ══ the run ═════════════════════════════════════════════════════════════ */

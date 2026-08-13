@@ -4,7 +4,7 @@ The smallest possible showcase of EnergyPlus running in the browser via
 `@idfkit/engine` and `@idfkit/engine-assets`. One page, no button needed: it
 runs the stock `1ZoneUncontrolled.idf` example (EnergyPlus 26.1.0) as a
 design-day simulation entirely client-side, re-solving as you drag the sliders,
-in about 50 ms a time. Attach an EPW to switch to an annual run.
+in about 50 ms a time. Pick a weather location to switch to an annual run.
 
 The page is laid out as a drawing sheet rather than a dashboard, because the
 audience is architects. It plots zone mean air temperature against outdoor
@@ -23,6 +23,15 @@ npm run dev
 
 The `predev` script copies ~50 MB of engine assets (WASM binary, IDD, datasets)
 from `@idfkit/engine-assets` into `public/energyplus/`, which is gitignored.
+
+> **Temporary.** `@idfkit/weather@0.0.0` was published without its `dist/`
+> directory — the tarball holds only `data/` and `LICENSE` — so the package has
+> no code to import. Until a fixed version ships, build the package from source
+> and point the staging script at it:
+>
+> ```bash
+> IDFKIT_WEATHER_DIST=/path/to/idfkit-js/packages/weather/dist npm run dev
+> ```
 First load downloads and compiles the ~28 MB binary; after that it is cached.
 
 ## Files
@@ -30,8 +39,52 @@ First load downloads and compiles the ~28 MB binary; after that it is cached.
 - `src/model.js`: authors the model with `@idfkit/core` and reads it back
 - `src/main.js`: loads the engine and schema, runs the model, reads the ESO, and
   draws the axonometric, the trace and the results schedule
+- `src/weather.js`: the site picker's data layer over `@idfkit/weather`
 - `index.html`: the sheet — tokens, run ledger, plate, schedule, title block
 - `scripts/copy-schemas.mjs`: stages the schema bundle into `public/schemas/`
+- `scripts/stage-weather.mjs`: stages the station index into `public/weather/`
+
+## Picking a weather location
+
+The picker replaces the old drop-an-EPW target. It searches the
+climate.onebuilding.org TMYx index through
+[`@idfkit/weather`](https://www.npmjs.com/package/@idfkit/weather), downloads the
+station's archive, unpacks the EPW in the browser, and hands the text straight to
+`ep.run({ idf, epw })` — the same path a dropped file took, with no server in it.
+
+Three things about that index are worth knowing:
+
+- It is 1.7 MB gzipped and inflates to 69,638 records, so it is fetched lazily,
+  on the first keystroke in the picker, and kept for the session.
+- Those records cover 17,292 distinct sites, because onebuilding publishes each
+  one as a bare `_TMYx` plus up to four explicit 15-year windows. These are not
+  duplicates and they disagree — Boston-Logan's five run from 2,840 to 3,083
+  HDD18, a 9% spread — so the picker groups them under the site and asks which
+  one you want, listing the degree days that separate them. Searching gives you
+  places; choosing a place gives you its files.
+- Each record carries its ASHRAE climate zone and design conditions, which is
+  what lets the sheet redraw its datum lines for the site you chose instead of
+  leaving Denver's on the plate.
+
+### The proxy
+
+climate.onebuilding.org serves no `Access-Control-Allow-Origin` header, so a page
+cannot fetch the archives directly. `@idfkit/weather` takes a `rewriteUrl` hook
+for this; `vite.config.js` supplies the other end as a dev-server proxy at
+`/onebuilding`, which covers `npm run dev` and `npm run preview`.
+
+A static deployment has no dev server and needs the same rewrite from its host —
+one Netlify `_redirects` line, one Vercel rewrite, or a small Cloudflare Worker.
+To point at a proxy origin instead, set `VITE_WEATHER_PROXY`: a path prefix
+(`/onebuilding`) replaces the upstream origin, and a value ending in `=`
+(`https://corsproxy.io/?url=`) receives the whole URL percent-encoded.
+
+Be warned that the free public CORS proxies are not a working option here. Of the
+seven tried in August 2026, allorigins and codetabs both timed out against
+climate.onebuilding.org (HTTP 522 after ~19 s) while proxying other hosts fine,
+corsproxy.io and corsfix now return 403 without a paid plan, `test.cors.workers.dev`
+rate-limited, and `cors.eu.org`, `thingproxy` and `whateverorigin` are dead. Plan
+on a proxy you control.
 
 ## Authoring the model
 

@@ -2,3 +2,4 @@ node_modules/
 dist/
 public/energyplus/
 public/schemas/
+public/weather/

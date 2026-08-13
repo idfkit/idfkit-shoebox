@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "idfkit-engine-assets public/energyplus && node scripts/copy-schemas.mjs",
+    "predev": "idfkit-engine-assets public/energyplus && node scripts/copy-schemas.mjs && node scripts/stage-weather.mjs",
     "dev": "vite",
-    "prebuild": "idfkit-engine-assets public/energyplus && node scripts/copy-schemas.mjs",
+    "prebuild": "idfkit-engine-assets public/energyplus && node scripts/copy-schemas.mjs && node scripts/stage-weather.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -13,7 +13,8 @@
     "@idfkit/core": "^0.0.1",
     "@idfkit/engine": "^0.1.0",
     "@idfkit/engine-assets": "26.1.0",
-    "@idfkit/schemas": "^0.0.1"
+    "@idfkit/schemas": "^0.0.1",
+    "@idfkit/weather": "^0.0.0"
   },
   "devDependencies": {
     "vite": "^7.0.0"
