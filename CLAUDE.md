@@ -300,7 +300,9 @@ Opening a pull request publishes a preview at `shoebox.idfkit.com/<number>/`
   `APP_PRIVATE_KEY` as repository secrets (the same pair `idfkit` uses in
   `notify-downstream.yml`) and Pull requests: write on the installation. One
   comment is kept per pull request, found again by an HTML marker; see
-  `.github/scripts/preview-comment.js`.
+  `.github/scripts/preview-comment.cjs`, which is `.cjs` because this
+  `package.json` declares `"type": "module"` and github-script's `require`
+  needs CommonJS.
 - **The `/onebuilding` rewrite is infrastructure, not code.** A second origin on
   the distribution points at climate.onebuilding.org and a viewer-request
   function strips the prefix, because CloudFront can prepend an origin path but
