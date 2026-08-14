@@ -13,10 +13,23 @@ export interface ShoeboxStackProps extends cdk.StackProps {
   readonly domainName: string;
   /** The Route 53 zone that name sits in. Looked up, not created. */
   readonly zoneName: string;
-  /** `owner/repo`, used to scope which workflow may assume the deploy role. */
+  /** `owner/repo`, for the role description. */
   readonly githubRepo: string;
   /** Only this branch may deploy. */
   readonly githubBranch: string;
+  /**
+   * GitHub's numeric organisation and repository ids, which appear in the OIDC
+   * subject claim and are what actually scopes the role.
+   *
+   * GitHub issues an *immutable* subject, `repo:owner@ownerId/repo@repoId:ref:...`,
+   * rather than the `repo:owner/repo:ref:...` form its documentation shows. That
+   * is the point of the feature: a name can be released and claimed by someone
+   * else, an id cannot, so trusting the ids means a deleted or renamed
+   * repository cannot hand this role to whoever takes the name next. Read them
+   * from `gh api /repos/OWNER/REPO --jq .id` and `.owner.id`.
+   */
+  readonly githubOwnerId: string;
+  readonly githubRepoId: string;
   /**
    * Whether to create the GitHub OIDC provider. IAM allows exactly one per
    * issuer URL per account, so this is a property of the target account rather
@@ -45,6 +58,26 @@ const PREFIX = '/onebuilding';
 
 /** GitHub's OIDC issuer. See `createOidcProvider` for why it is not always created. */
 const GITHUB_OIDC_ISSUER = 'token.actions.githubusercontent.com';
+
+/**
+ * The exact `sub` claim GitHub sends, which is the whole security boundary:
+ * without it any Actions workflow anywhere could assume this role.
+ *
+ * Verified against a real token rather than taken from the documentation, which
+ * still describes the older `repo:owner/repo:ref:...` shape. The observed claim
+ * is `repo:idfkit@262897602/idfkit-shoebox@1334309807:ref:refs/heads/main`, and
+ * a policy written to the documented form is refused with "Not authorized to
+ * perform sts:AssumeRoleWithWebIdentity".
+ */
+const subject = (p: {
+  githubRepo: string;
+  githubBranch: string;
+  githubOwnerId: string;
+  githubRepoId: string;
+}) => {
+  const [owner, repo] = p.githubRepo.split('/');
+  return `repo:${owner}@${p.githubOwnerId}/${repo}@${p.githubRepoId}:ref:refs/heads/${p.githubBranch}`;
+};
 
 export class ShoeboxStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ShoeboxStackProps) {
@@ -144,10 +177,14 @@ function handler(event) {
       // GitHub Actions workflow in the world could assume this role. It is
       // pinned to one repository and one branch, so a pull request from a fork
       // cannot reach the bucket.
+      // Only the immutable form is accepted. Allowing the documented
+      // `repo:owner/repo:...` form alongside it would quietly restore exactly
+      // the weakness the immutable claim removes, so if GitHub ever changes
+      // what it sends this fails loudly instead of widening the trust.
       assumedBy: new iam.OpenIdConnectPrincipal(provider, {
-        StringEquals: { [`${GITHUB_OIDC_ISSUER}:aud`]: 'sts.amazonaws.com' },
-        StringLike: {
-          [`${GITHUB_OIDC_ISSUER}:sub`]: `repo:${props.githubRepo}:ref:refs/heads/${props.githubBranch}`,
+        StringEquals: {
+          [`${GITHUB_OIDC_ISSUER}:aud`]: 'sts.amazonaws.com',
+          [`${GITHUB_OIDC_ISSUER}:sub`]: subject(props),
         },
       }),
       description: `Publishes ${props.domainName} from ${props.githubRepo}`,

@@ -37,6 +37,12 @@ new ShoeboxStack(app, 'ShoeboxStack', {
   zoneName: app.node.tryGetContext('zoneName') ?? 'idfkit.com',
   githubRepo: app.node.tryGetContext('githubRepo') ?? 'idfkit/idfkit-shoebox',
   githubBranch: app.node.tryGetContext('githubBranch') ?? 'main',
+  // Not secrets: any GitHub user can read these off the public API. They are
+  // here because the OIDC subject claim carries ids rather than names, and
+  // trusting an id is what stops a released repository name from carrying the
+  // trust with it. `gh api /repos/OWNER/REPO --jq '.id, .owner.id'`
+  githubOwnerId: app.node.tryGetContext('githubOwnerId') ?? '262897602',
+  githubRepoId: app.node.tryGetContext('githubRepoId') ?? '1334309807',
   // Context arrives from the CLI as a string, so `-c createOidcProvider=false`
   // has to be compared as one.
   createOidcProvider: String(app.node.tryGetContext('createOidcProvider') ?? 'true') !== 'false',

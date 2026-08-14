@@ -39,20 +39,6 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      # Temporary: prints the two claims the IAM trust policy matches on, and
-      # nothing else. The token is masked the instant it is read, and only the
-      # decoded `sub` and `aud` are echoed, because the token itself is a
-      # credential that would grant this role to anyone who copied it out of a
-      # public log.
-      - name: Inspect OIDC claims
-        run: |
-          token=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
-          echo "::add-mask::$token"
-          payload=$(echo "$token" | cut -d. -f2 | tr '_-' '/+')
-          while [ $((${#payload} % 4)) -ne 0 ]; do payload="${payload}="; done
-          echo "$payload" | base64 -d | jq '{sub, aud}'
-
       # The role ARN is a secret rather than a variable purely so the log masks
       # it: the runner echoes every `with:` input verbatim, and this repository
       # is public, so a variable would publish the AWS account id. The ARN is
