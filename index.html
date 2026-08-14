@@ -552,6 +552,12 @@
       }
       .link:hover { color: var(--redline); border-bottom-color: var(--redline); }
       .link:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 3px; }
+      /* A download with no run behind it is not a choice the reader has yet, so
+         the link reads as absent — no underline to invite a click — rather than
+         as a live control that happens to do nothing. */
+      .link:disabled { color: var(--ink-ghost); border-bottom-color: transparent; cursor: default; }
+      .link:disabled:hover { color: var(--ink-ghost); border-bottom-color: transparent; }
+      .ledger-download { align-self: start; }
 
       .dim {
         display: grid;
@@ -1669,6 +1675,9 @@
               <span class="sub" id="runs-sub">this session</span>
             </div>
           </div>
+          <button type="button" class="link ledger-download" id="download" disabled>
+            Download run bundle
+          </button>
         </aside>
 
         <div class="field">
