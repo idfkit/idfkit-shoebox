@@ -9,8 +9,13 @@
  * rendered comment and survives an edit of the text around it.
  *
  * Loaded by `.github/workflows/preview.yml` through github-script, which is why
- * this is CommonJS and takes `github` and `context` as arguments rather than
- * importing them.
+ * this takes `github` and `context` as arguments rather than importing them,
+ * and why it is CommonJS: github-script offers `require` and nothing else.
+ *
+ * Hence `.cjs` rather than `.js`. The page's own `package.json` declares
+ * `"type": "module"`, which reaches every `.js` file in the repository
+ * including this one, and `module.exports` in an ES module is a
+ * `ReferenceError` at load time.
  *
  * @param {object} options
  * @param {object} options.github  the authenticated Octokit github-script provides

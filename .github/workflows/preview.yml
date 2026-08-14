@@ -95,7 +95,7 @@ jobs:
             ].join('\n');
             // Resolved against the workspace: `require` inside github-script
             // otherwise looks in the action's own directory, not the checkout.
-            const comment = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/preview-comment.js`);
+            const comment = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/preview-comment.cjs`);
             await comment({ github, context, body });
 
   cleanup:
@@ -153,5 +153,5 @@ jobs:
               'It was published while the pull request was open; the current page is',
               'at https://shoebox.idfkit.com/.',
             ].join('\n');
-            const comment = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/preview-comment.js`);
+            const comment = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/preview-comment.cjs`);
             await comment({ github, context, body, edit: true });
