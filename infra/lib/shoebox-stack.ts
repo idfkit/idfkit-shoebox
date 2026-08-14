@@ -60,6 +60,21 @@ const PREFIX = '/onebuilding';
 const GITHUB_OIDC_ISSUER = 'token.actions.githubusercontent.com';
 
 /**
+ * Pull request previews are published into the same bucket under the pull
+ * request's number, so PR 42 is served at `${domainName}/42/`. One namespace
+ * rather than a second distribution, because the point of a preview is to
+ * exercise the real arrangement: the same TLS, the same cache policy, and above
+ * all the same `/onebuilding` origin, which is the piece that cannot be tested
+ * on localhost and is exactly where a deployment breaks.
+ *
+ * The top-level numeric directory is therefore reserved. `scripts/deploy.mjs`
+ * knows this from both ends: publishing the site leaves keys matching this
+ * shape alone rather than pruning them as leftovers, and publishing a preview
+ * touches nothing outside its own.
+ */
+const PREVIEW = /^\/(\d+)(\/.*)?$/;
+
+/**
  * The exact `sub` claim GitHub sends, which is the whole security boundary:
  * without it any Actions workflow anywhere could assume this role.
  *
@@ -69,15 +84,41 @@ const GITHUB_OIDC_ISSUER = 'token.actions.githubusercontent.com';
  * a policy written to the documented form is refused with "Not authorized to
  * perform sts:AssumeRoleWithWebIdentity".
  */
+const repository = (p: { githubRepo: string; githubOwnerId: string; githubRepoId: string }) => {
+  const [owner, repo] = p.githubRepo.split('/');
+  return `repo:${owner}@${p.githubOwnerId}/${repo}@${p.githubRepoId}`;
+};
+
 const subject = (p: {
   githubRepo: string;
   githubBranch: string;
   githubOwnerId: string;
   githubRepoId: string;
-}) => {
-  const [owner, repo] = p.githubRepo.split('/');
-  return `repo:${owner}@${p.githubOwnerId}/${repo}@${p.githubRepoId}:ref:refs/heads/${p.githubBranch}`;
-};
+}) => `${repository(p)}:ref:refs/heads/${p.githubBranch}`;
+
+/**
+ * The subject a workflow running on the `pull_request` event is issued, which
+ * is what lets the preview job reach the bucket. GitHub does not put the head
+ * ref in it — every pull request in the repository shares this one claim — so
+ * it cannot be narrowed further here and the narrowing lives upstream instead:
+ *
+ *   - a pull request from a fork is issued a read-only token whatever the
+ *     workflow's `permissions` say, so `id-token: write` is never granted and
+ *     no token is minted at all;
+ *   - `.github/workflows/preview.yml` additionally refuses to run unless the
+ *     head branch is in this repository, which takes a person with write access
+ *     to reach — someone who could push to `main` regardless.
+ *
+ * So this widens the role to the repository's collaborators, and no further.
+ * The alternative, `pull_request_target`, would run the base branch's workflow
+ * with a writable token against a fork's code, and is exactly the arrangement
+ * this avoids.
+ */
+const previewSubject = (p: {
+  githubRepo: string;
+  githubOwnerId: string;
+  githubRepoId: string;
+}) => `${repository(p)}:pull_request`;
 
 export class ShoeboxStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ShoeboxStackProps) {
@@ -122,6 +163,44 @@ function handler(event) {
 `),
     });
 
+    /**
+     * What makes `/42/` and `/42` reach a preview's `index.html`.
+     *
+     * `defaultRootObject` covers exactly one path, `/`, so it does nothing for a
+     * subdirectory: S3 has no key named `42/` and answers the request with an
+     * error. This appends the index where the browser asked for a directory,
+     * and redirects the bare `/42` to `/42/` so that the preview's own base is
+     * unambiguous rather than resolving one level up.
+     *
+     * The pattern is interpolated from `PREVIEW` rather than written out again,
+     * because a preview served at a path the deploy script does not consider
+     * reserved would be pruned by the next publish of the site — a failure that
+     * appears hours later and nowhere near this file.
+     */
+    const previewIndex = new cloudfront.Function(this, 'PreviewIndex', {
+      runtime: cloudfront.FunctionRuntime.JS_2_0,
+      code: cloudfront.FunctionCode.fromInline(`
+function handler(event) {
+    var request = event.request;
+    var preview = request.uri.match(${PREVIEW});
+    if (!preview) {
+        return request;
+    }
+    if (!preview[2]) {
+        return {
+            statusCode: 301,
+            statusDescription: 'Moved Permanently',
+            headers: { location: { value: '/' + preview[1] + '/' } }
+        };
+    }
+    if (preview[2].charAt(preview[2].length - 1) === '/') {
+        request.uri = request.uri + 'index.html';
+    }
+    return request;
+}
+`),
+    });
+
     const distribution = new cloudfront.Distribution(this, 'Distribution', {
       comment: `${props.domainName} — EnergyPlus in the browser`,
       defaultRootObject: 'index.html',
@@ -141,6 +220,9 @@ function handler(event) {
         // compresses everything itself and uploads it with `Content-Encoding`,
         // so what ships does not depend on this flag's heuristics.
         compress: true,
+        functionAssociations: [
+          { function: previewIndex, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST },
+        ],
       },
       additionalBehaviors: {
         [`${PREFIX}/*`]: {
@@ -175,8 +257,10 @@ function handler(event) {
     const deployRole = new iam.Role(this, 'DeployRole', {
       // The `sub` condition is the whole security boundary: without it any
       // GitHub Actions workflow in the world could assume this role. It is
-      // pinned to one repository and one branch, so a pull request from a fork
-      // cannot reach the bucket.
+      // pinned to this repository, on its deploying branch or on a pull request
+      // raised within it — two exact strings, matched as a list, so a workflow
+      // in another repository cannot reach the bucket and neither can a fork.
+      // See `previewSubject` for why the second one is as narrow as it gets.
       // Only the immutable form is accepted. Allowing the documented
       // `repo:owner/repo:...` form alongside it would quietly restore exactly
       // the weakness the immutable claim removes, so if GitHub ever changes
@@ -184,10 +268,10 @@ function handler(event) {
       assumedBy: new iam.OpenIdConnectPrincipal(provider, {
         StringEquals: {
           [`${GITHUB_OIDC_ISSUER}:aud`]: 'sts.amazonaws.com',
-          [`${GITHUB_OIDC_ISSUER}:sub`]: subject(props),
+          [`${GITHUB_OIDC_ISSUER}:sub`]: [subject(props), previewSubject(props)],
         },
       }),
-      description: `Publishes ${props.domainName} from ${props.githubRepo}`,
+      description: `Publishes ${props.domainName} and its previews from ${props.githubRepo}`,
       maxSessionDuration: cdk.Duration.hours(1),
     });
 
