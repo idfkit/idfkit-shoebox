@@ -700,12 +700,17 @@
       /* ── the schedule ───────────────────────────────────────────── */
 
       .schedule { margin-top: 26px; }
-      .schedule table {
+      /* The bill is the same instrument as the results schedule — quantities
+         down the side, a rate against each — so it is lettered with the same
+         table and not a second one that merely looks similar. */
+      .schedule table,
+      .bill table {
         width: 100%;
         margin-top: 10px;
         border-collapse: collapse;
       }
-      .schedule th {
+      .schedule th,
+      .bill th {
         font: 500 10px/1 var(--cond);
         text-transform: uppercase;
         letter-spacing: 0.13em;
@@ -714,8 +719,10 @@
         padding: 0 0 8px;
         border-bottom: 1px solid var(--rule);
       }
-      .schedule th:first-child { text-align: left; }
-      .schedule td {
+      .schedule th:first-child,
+      .bill th:first-child { text-align: left; }
+      .schedule td,
+      .bill td {
         padding: 9px 0;
         border-bottom: 1px solid var(--rule-soft);
         font: 400 12.5px/1.2 var(--mono);
@@ -724,35 +731,43 @@
         color: var(--ink);
         white-space: nowrap;
       }
-      .schedule td:first-child {
+      .schedule td:first-child,
+      .bill td:first-child {
         text-align: left;
         font: 400 13px/1.3 var(--sans);
         color: var(--ink-2);
         white-space: normal;
         width: 42%;
       }
-      .schedule td.unit { color: var(--ink-3); width: 46px; }
-      .schedule td.void { color: var(--ink-ghost); }
+      .schedule td.unit,
+      .bill td.unit { color: var(--ink-3); width: 46px; }
+      .schedule td.void,
+      .bill td.void { color: var(--ink-ghost); }
       /* Change against the shape you took hold of. Set in the margin of its own
          value, at metadata weight — the number is the reading, this is a note on
          it, and it is deliberately not coloured for good or bad. */
-      .schedule td.delta {
+      .schedule td.delta,
+      .bill td.delta {
         width: 62px;
         padding-left: 12px;
         font-size: 11.5px;
         color: var(--ink-3);
       }
-      .schedule .base {
+      .schedule .base,
+      .bill .base {
         text-transform: none;
         letter-spacing: 0;
         font: 400 10.5px/1 var(--mono);
         color: var(--ink-ghost);
         margin-left: 10px;
       }
-      .schedule .base:empty { display: none; }
+      .schedule .base:empty,
+      .bill .base:empty { display: none; }
       /* the schedule changes subject: a firmer rule and a breath of space */
-      .schedule tr.group td { border-top: 1px solid var(--rule); padding-top: 17px; }
-      .schedule tr:last-child td { border-bottom: 0; }
+      .schedule tr.group td,
+      .bill tr.group td { border-top: 1px solid var(--rule); padding-top: 17px; }
+      .schedule tr:last-child td,
+      .bill tr:last-child td { border-bottom: 0; }
       /* the marker that ties a row to its curve on the plate */
       .schedule td:first-child .key {
         display: inline-block;
@@ -765,6 +780,263 @@
       }
       .key.zone { border-top: 2px solid var(--redline); }
       .key.out { border-top: 2px dashed var(--ink-ghost); }
+
+      /* ── the bill ───────────────────────────────────────────────── */
+
+      /* A priced schedule. Nothing here is a new colour: energy, cost and
+         carbon are all unsigned magnitudes, so the cold/warm pair stays where
+         it belongs — on watts and degrees — and the end uses are told apart by
+         a graphite tone ramp instead, the same move the balance rail makes with
+         its hue. The redline appears once, on the divergence mark, because
+         "look at this" is exactly what a markup pen is for. */
+
+      .bill {
+        margin-top: 34px;
+        padding-top: 28px;
+        border-top: 1px solid var(--rule);
+      }
+      .bill[hidden] { display: none; }
+
+      .bill-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 24px;
+      }
+      .bill-lede {
+        margin: 9px 0 0;
+        max-width: 58ch;
+        font-size: 13px;
+        line-height: 1.55;
+        color: var(--ink-2);
+      }
+
+      /* The same square marker the run ledger and the console patches use,
+         because it means the same thing again: a step that is armed. */
+      .pin {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        padding: 8px 13px;
+        background: var(--inset);
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        font: 500 10px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--ink-3);
+        cursor: pointer;
+        transition: border-color 0.15s ease, color 0.15s ease;
+      }
+      .pin:hover { border-color: var(--rule-firm); color: var(--ink); }
+      .pin:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+      .pin .mark {
+        width: 9px;
+        height: 9px;
+        border: 1px solid var(--ink-ghost);
+        border-radius: 1px;
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }
+      .pin[aria-pressed="true"] { color: var(--ink); }
+      .pin[aria-pressed="true"] .mark { background: var(--redline); border-color: var(--redline); }
+
+      /* ── the meter heads: quantity × rate = amount ──────────────── */
+
+      /* The signature of this section. A figure with no rate beside it is a
+         figure nobody can argue with, and arguing with it is the point. */
+      .meterheads {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(232px, 1fr));
+        gap: 10px;
+        margin-top: 20px;
+      }
+      .meterhead {
+        background: var(--inset);
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        padding: 13px 15px 12px;
+      }
+      .meterhead h4 {
+        margin: 0;
+        font: 500 9.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+      .meterhead .qty {
+        display: block;
+        margin-top: 6px;
+        font: 400 22px/1 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+      }
+      .meterhead .qty i {
+        font-style: normal;
+        font-size: 11px;
+        color: var(--ink-3);
+        margin-left: 4px;
+      }
+      /* Three columns: the operator, what it is, and what it comes to. Reading
+         down the first column gives × × , which is the arithmetic of any
+         priced bill and is meant to be recognised on sight. */
+      .buildup {
+        display: grid;
+        grid-template-columns: 12px 1fr auto;
+        gap: 3px 6px;
+        margin-top: 11px;
+        padding-top: 10px;
+        border-top: 1px solid var(--rule-soft);
+        font: 400 10.5px/1.5 var(--mono);
+        font-variant-numeric: tabular-nums;
+      }
+      .buildup .op { color: var(--ink-ghost); }
+      .buildup .what { color: var(--ink-3); }
+      .buildup .amount { color: var(--ink); text-align: right; white-space: nowrap; }
+      .buildup .amount.void { color: var(--ink-ghost); }
+      /* One line per rate. The sector leads in label type, because whether a
+         tariff is commercial or residential changes what the whole bill means
+         and it must not be something you have to go looking for. */
+      .meterhead .cite {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin-top: 10px;
+        padding-top: 9px;
+        border-top: 1px solid var(--rule-soft);
+        font: 400 10px/1.45 var(--sans);
+        color: var(--ink-ghost);
+      }
+      .meterhead .cite b {
+        font: 500 9px/1.45 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        color: var(--ink-3);
+        margin-right: 6px;
+      }
+
+      /* ── the composition rule ───────────────────────────────────── */
+
+      .bar { margin-top: 26px; }
+      .bar-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 9px;
+      }
+      .bar-head .segments { flex: 0 0 216px; }
+      /* on the sheet, not on the console's vellum */
+      .bill .segment.here { color: var(--sheet); }
+
+      .bar-track {
+        position: relative;
+        display: flex;
+        height: 10px;
+        background: var(--inset);
+        border: 1px solid var(--rule-soft);
+        border-radius: 1px;
+        overflow: hidden;
+      }
+      /* A cut rather than an outline, so the segments read as one measured
+         length divided up and not as a row of separate objects. */
+      .bar-seg { box-shadow: 1px 0 0 0 var(--sheet); }
+      .bar-seg:last-child { box-shadow: none; }
+
+      /* Two columns, like the balance rail's key, and for the same reason: the
+         list is ranked, and a rank you have to hunt across four columns to
+         follow is not a rank. */
+      .bar-key {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 2px 28px;
+        margin-top: 11px;
+      }
+      .bar-item {
+        display: flex;
+        align-items: baseline;
+        gap: 7px;
+        font: 400 10.5px/1.7 var(--mono);
+        font-variant-numeric: tabular-nums;
+      }
+      .bar-swatch {
+        flex: none;
+        width: 9px;
+        height: 9px;
+        border-radius: 1px;
+        transform: translateY(1px);
+      }
+      .bar-item span { flex: 1; color: var(--ink-3); }
+      .bar-item b { font-weight: 400; color: var(--ink); }
+      .bar-item em { font-style: normal; color: var(--ink-ghost); }
+
+      /* ── the schedule below it ──────────────────────────────────── */
+
+      .bill table { margin-top: 22px; }
+      .bill td:first-child { width: 34%; }
+      /* A section subtotal is still a reading, so it stays mono — it is set
+         apart by its rule and its weight, not by becoming a different kind of
+         thing. */
+      .bill tr.sum td {
+        border-top: 1px solid var(--rule);
+        border-bottom: 0;
+        padding-top: 11px;
+        color: var(--ink);
+      }
+      .bill tr.sum td:first-child {
+        font: 500 10px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+        color: var(--ink-2);
+      }
+      .bill tr.total td { border-top: 1px solid var(--rule-firm); }
+      .bill tr.section td {
+        border-bottom: 0;
+        padding: 18px 0 4px;
+        font: 500 10px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+        color: var(--ink-3);
+      }
+      .bill tr.section:first-child td { padding-top: 4px; }
+      /* The plant division, set under the line it belongs to rather than in a
+         column of its own: it is the working, not a reading. */
+      .bill .plant-note {
+        display: inline-block;
+        margin-top: 3px;
+        font: 400 10.5px/1.4 var(--mono);
+        color: var(--ink-ghost);
+      }
+      /* The one mark the redline makes down here: this row ranks differently
+         under cost than under carbon, which is the argument the whole section
+         exists to start. */
+      .bill td .diverges {
+        display: inline-block;
+        width: 0;
+        height: 0;
+        margin-left: 7px;
+        border: 3.5px solid transparent;
+        border-left-color: var(--redline);
+        transform: translateY(1px);
+      }
+
+      .bill-note,
+      .bill-refs {
+        margin: 16px 0 0;
+        font-size: 12px;
+        line-height: 1.6;
+        color: var(--ink-3);
+      }
+      .bill-note:empty,
+      .bill-refs:empty { display: none; }
+      .bill-refs {
+        font-size: 11px;
+        color: var(--ink-ghost);
+        border-top: 1px solid var(--rule-soft);
+        padding-top: 12px;
+      }
+      .bill-refs a { color: inherit; text-decoration-color: var(--rule); }
+      .bill-refs a:hover { color: var(--ink-3); }
 
       /* ── title block ────────────────────────────────────────────── */
 
@@ -1489,6 +1761,38 @@
           <section class="schedule">
             <p class="eyebrow">Results schedule<span class="base" id="baseline-note"></span></p>
             <table id="schedule"></table>
+          </section>
+
+          <!-- The bill. A priced schedule, not a dashboard: quantity, rate and
+               amount in three columns, with the rate carrying the dataset and
+               the date that published it. Everything in it is drawn by
+               `renderBill` in main.js from the end-use meters. -->
+          <section class="bill" id="bill" hidden>
+            <header class="bill-head">
+              <div>
+                <p class="eyebrow">Bill of quantities<span class="base" id="bill-scope"></span></p>
+                <p class="bill-lede" id="bill-lede"></p>
+              </div>
+              <button type="button" class="pin" id="bill-pin" aria-pressed="false">
+                <i class="mark"></i><span id="bill-pin-label">Pin as scheme A</span>
+              </button>
+            </header>
+
+            <div class="meterheads" id="bill-meters"></div>
+
+            <div class="bar">
+              <div class="bar-head">
+                <p class="eyebrow">Where it goes</p>
+                <div class="segments" id="bill-basis" role="group" aria-label="Rank end uses by"></div>
+              </div>
+              <div class="bar-track" id="bill-track"></div>
+              <div class="bar-key" id="bill-key"></div>
+            </div>
+
+            <table id="bill-table"></table>
+            <p class="finding" id="bill-finding"></p>
+            <p class="bill-note" id="bill-absences"></p>
+            <p class="bill-refs" id="bill-refs"></p>
           </section>
         </div>
       </div>

@@ -93,6 +93,70 @@ on).
 - **`must(doc, type, name)`** throws when an expected object is missing instead
   of quietly re-adding it. See "No silent fallbacks" below.
 
+### Channels that price rather than simulate
+
+`Plant` and `Tariff` carry `prices: true`. Nothing they own reaches the IDF, so:
+
+- Their keys are **excluded from `shapeKey`** (`PRICED_KEYS` in `main.js`). Left
+  in, every turn of a tariff would start a run that could only reproduce the
+  numbers already on the sheet.
+- `commit` routes them to `reprice()` instead of `pump()`, which re-letters the
+  bill from the meters already in hand. Turning a boiler efficiency moves the
+  bill within the frame and never touches the engine.
+- They have no applier in `applyModel`. Their meters are `derived`, fed through
+  `derivedReadings` like the geometry ones.
+
+`Channel.requires.test` is handed `(params, on)` where `on(id)` reads whether an
+earlier channel is engaged, so Plant can require System. Channels are declared in
+physical order, which is the order those dependencies run in.
+
+### The bill (src/bill.js, src/rates.js)
+
+A priced schedule read off `Output:Meter`, sectioned into building and site.
+Things that cost real debugging:
+
+- **Ideal loads report as `DistrictHeatingWater` and `DistrictCooling`** —
+  delivered heat at 100 % efficiency. There is no boiler in this model, so the
+  Plant channel divides by a seasonal efficiency or COP *after* the run, and the
+  schedule prints the division rather than hiding it.
+- **`parseMTR` is `parseESO` under another name and mis-parses every meter.** A
+  variable is declared `id,count,KEY,Name [units] !Freq`; a meter has no key, so
+  the name lands in `keyValue` with its units and frequency still attached. A
+  monthly meter's `[Value,Min,Day,...]` tail splits further on its commas, and an
+  hourly meter's three-field line falls below the parser's minimum of four and is
+  dropped from the dictionary entirely. The ids and the data survive, so
+  `meterName()` in `bill.js` recovers the name from `keyValue`. That is also why
+  the meters are requested **Monthly** — the one frequency that survives the
+  parse, and enough to total the bill and draw the year.
+- **An annual run contains the design days too.** Meters accumulate straight
+  through all three environments; summed whole, a year's bill carried an extra
+  48 hours of the most extreme weather in the file (about 3 % on the heating).
+  `computeBill` is handed only the environments being billed.
+- **The stock example's 5.25 kW of grounds lighting is 23 MWh a year**, against
+  the building's 18. Undivided it swamps every envelope decision, so the schedule
+  is sectioned and the per-m² intensity is of the building alone.
+- **Per-m² is only drawn on an annual run.** Every published benchmark is annual,
+  and 0.3 kgCO₂e/m² over two design days has no use but to be mistaken for one.
+- Rates come from six dated open datasets, generated into `src/rates.data.js` by
+  `scripts/build-rates.mjs` (run by hand; needs the network and a Python with
+  `openpyxl` and `xlrd`). Coverage is **North America by state and province**
+  (EIA, StatCan) and **Europe by country** (Eurostat); everywhere else the
+  tariff is `Absent` with a reason and reads as an em dash. Canada is derived
+  rather than published: StatCan's only price table is a selling price *index*,
+  which cannot become a rate, so the prices come from revenue over volume for
+  the same customer class — the same derivation the EIA gas figures go through.
+  `CAD` is its own `Currency` object rather than an alias of `USD`, so
+  `comparable()` refuses to difference Winnipeg against Minneapolis.
+- **Every price table is non-residential, and the interface says so.**
+  `Source.kind` carries the sector in the reader's terms ("Commercial tariff",
+  "Non-household tariff", "Commercial and institutional tariff"); it heads each
+  meter head's citation and is named once in the lede. Each agency uses its own
+  word for the same thing, so the label is per source rather than global.
+- **Attaching a weather file switches `sizingPeriods` to `No`.** Done through
+  `commit`, so the Run strip and the document agree and auto-solve picks it up.
+  Verified locally that skipping the sizing periods introduces no warnings of
+  its own.
+
 ### The solve scheduler (src/main.js)
 
 `@idfkit/engine` rejects a second `run()` while one is in flight, so every solve
@@ -100,8 +164,11 @@ goes through one `pump()` loop and it is latest-wins: whatever the controls show
 when the engine comes free is what gets solved, and shapes the drag passed
 through are skipped rather than queued.
 
-`shapeKey` is `JSON.stringify([params, patching()])`. **Anything that reaches the
-IDF must live on `params`**, or it will move the drawing and never be simulated.
+`shapeKey` is `JSON.stringify([params, patching()])` minus `PRICED_KEYS`.
+**Anything that reaches the IDF must live on `params`**, or it will move the
+drawing and never be simulated — and anything on `params` that does *not* reach
+the IDF must be declared on a `prices: true` channel, or it will start runs that
+change nothing.
 
 Auto-solve has two cadences: a design day (48 h, ~50 ms) re-solves continuously
 during a drag; a weather file (8,760 h, ~0.7 s) re-solves once on release.

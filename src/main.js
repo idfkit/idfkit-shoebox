@@ -22,6 +22,8 @@ import {
   controlFor,
 } from './controls.js';
 import { mountConsole } from './console.js';
+import { END_USES, GROUPS, computeBill, meterTotal } from './bill.js';
+import { assume, isRate, placeName, resolveRates } from './rates.js';
 import {
   climateDescription,
   climateZone,
@@ -815,6 +817,499 @@ function renderSchedule(columns, baseColumns) {
   table.append(tbody);
 }
 
+/* ══ the bill ════════════════════════════════════════════════════════════ */
+
+/**
+ * The three ways of measuring the same energy.
+ *
+ * Declared once, so the composition rule, the table head and the delta
+ * arithmetic cannot disagree about what a column is called or how it reads.
+ * The formatter is part of the declaration for the same reason `deltaText`
+ * formats both sides before differencing them: a change too small to move the
+ * printed figure is not a reading.
+ */
+class BillColumn {
+  constructor({ id, label, field, unit, format }) {
+    this.id = id;
+    this.label = label;
+    this.field = field;
+    this.unit = unit;
+    this.format = format;
+    Object.freeze(this);
+  }
+
+  /** The value on a line, or NaN where nothing was behind it. */
+  at(line) {
+    const v = line?.[this.field];
+    return Number.isFinite(v) ? v : NaN;
+  }
+}
+
+const group = (v, digits = 0) =>
+  v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+
+const BILL_COLUMNS = Object.freeze([
+  new BillColumn({
+    id: 'metered', label: 'At the meter', field: 'metered', unit: 'kWh',
+    format: (v) => group(v, v < 100 ? 1 : 0),
+  }),
+  new BillColumn({
+    id: 'cost', label: 'Cost', field: 'cost', unit: '',
+    format: (v, bill) => bill.currency.format(v, Math.abs(v) < 100 ? 2 : 0),
+  }),
+  new BillColumn({
+    id: 'carbon', label: 'Carbon', field: 'carbon', unit: 'kgCO₂e',
+    format: (v) => group(v, Math.abs(v) < 100 ? 1 : 0),
+  }),
+]);
+
+// The sheet ships with Denver's two design days, so it ships with Colorado's
+// tariffs. This is not a default standing in for a missing answer -- it is the
+// site the stock model actually describes, and it is replaced whole the moment
+// a station is picked.
+let station = { country: 'USA', state: 'CO' };
+let bill = null;
+let pinned = null; // { bill, label } — a scheme held to be measured against
+let billGhost = null; // the bill as it stood when this gesture began
+let billBasis = BILL_COLUMNS[1]; // cost, because that is the argument that gets had
+/**
+ * The run the bill is a reading of, held whole so a tariff can be turned
+ * without asking the engine for anything.
+ *
+ * All four fields are captured at the solve rather than read off live state
+ * when the bill is lettered. Attaching a weather file flips `annual()` at once
+ * while the meters in hand are still the two design days, which had the bill
+ * announcing a year and totalling forty-eight hours.
+ */
+let lastRun = null; // { eso, environments, hours, annual }
+
+/** The published card with the Tariff strip's assumptions written over it. */
+const rateCard = () => assume(resolveRates(station), params);
+
+/**
+ * Price the meters of one solved run.
+ *
+ * Kept apart from the run itself so that turning a tariff or a boiler
+ * efficiency re-letters the bill from the meters already in hand. Those
+ * controls change what the energy is worth, not how much of it there was, and
+ * making the engine re-solve to answer them would be both slow and wrong.
+ */
+function billFrom(run) {
+  if (!run) return null;
+  const series = new Map();
+  for (const use of END_USES) {
+    const total = meterTotal(run.eso, use.meter, run.environments);
+    if (total != null) series.set(use.meter, total);
+  }
+  if (!series.size) return null;
+  return computeBill({
+    series,
+    params,
+    card: rateCard(),
+    floorArea: geometryFacts(model).floor,
+    hours: run.hours,
+    engaged: new Set([...(modelState ?? [])].filter(([, s]) => s.engaged).map(([id]) => id)),
+    annual: run.annual,
+  });
+}
+
+/** Re-letter the bill from the meters already read, with no new run. */
+function reprice() {
+  if (!lastRun) return;
+  bill = billFrom(lastRun);
+  renderBill();
+  desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt);
+}
+
+/**
+ * Change against the scheme being measured against, at display precision.
+ *
+ * Same rule as the results schedule: format both sides first, and say nothing
+ * when the printed figures agree.
+ */
+function billDelta(column, value, base) {
+  if (!Number.isFinite(value) || !Number.isFinite(base)) return '';
+  if (column.format(value, bill) === column.format(base, bill)) return '';
+  const d = value - base;
+  return `${d > 0 ? '+' : '−'}${column.format(Math.abs(d), bill)}`;
+}
+
+const cell = (row, text, className) => {
+  const td = row.insertCell();
+  td.textContent = text;
+  if (className) td.className = className;
+  return td;
+};
+
+/**
+ * Whether two bills can be differenced at all.
+ *
+ * Patching a channel out does not make a scheme cheaper, it makes it a
+ * different building with fewer lines on its bill, and setting the two side by
+ * side would report a saving that is really an absence. The currency has to
+ * match for the plainer reason that subtracting euros from dollars is not
+ * arithmetic. Same refusal the results schedule makes when its baseline
+ * describes another set of environments.
+ */
+function comparable(a, b) {
+  if (!a || !b || a.currency !== b.currency) return false;
+  const uses = (bill) => bill.lines.map((l) => l.use.id).join();
+  return uses(a) === uses(b);
+}
+
+function renderBill() {
+  const host = $('bill');
+  host.hidden = !bill;
+  if (!bill) return;
+
+  // What is being measured against, and whether anyone asked for it. A pinned
+  // scheme outranks the gesture, because it was chosen and the gesture is
+  // merely current. Either is dropped unless it is like for like -- the same
+  // end uses in the same currency -- so the schedule never heads a column with
+  // a comparison that most of its rows have to leave blank.
+  const candidate = pinned?.bill ?? billGhost;
+  const against = comparable(bill, candidate) ? candidate : null;
+  const againstLabel = !against ? null : pinned ? pinned.label : 'where you took hold';
+
+  renderBillHead(againstLabel);
+  renderMeterHeads();
+  renderBillBar();
+  renderBillTable(against);
+  renderBillFinding();
+  renderBillNotes();
+}
+
+function renderBillHead(againstLabel) {
+  const site = bill.card.site;
+  $('bill-scope').textContent = againstLabel ? ` Δ against ${againstLabel}` : '';
+  // Named in full at the top as well as beside each rate, because "is this a
+  // commercial rate or a household one" is the first question anyone sensible
+  // asks of a bill they did not receive themselves.
+  const tariff = bill.card.electricity;
+  const priced = !isRate(tariff)
+    ? ''
+    : tariff.source.id === 'assumed'
+      ? ' Priced at the rates assumed on the Tariff strip.'
+      : ` Priced at the ${tariff.source.kind.toLowerCase()} published for ${placeName(site)}, never a residential one, and factored at its grid carbon intensity.`;
+  $('bill-lede').textContent = bill.annual
+    ? `Metered across the ${group(bill.hours)}-hour run.${priced}`
+    : `These are the ${group(bill.hours)} hours of the sizing days — two conditions chosen for being extreme. They are a real bill for a real two days, and they are deliberately not multiplied up into a year; attach a weather file for one of those.${priced}`;
+}
+
+/**
+ * One head per fuel that arrived, each showing what the amount was built from.
+ *
+ * The whole reason this section is not three big numbers in boxes: a figure
+ * with its rate beside it can be argued with, and an architect who cannot
+ * argue with the bill cannot design against it.
+ */
+function renderMeterHeads() {
+  const host = $('bill-meters');
+  host.textContent = '';
+  for (const row of bill.byFuel) {
+    const card = document.createElement('div');
+    card.className = 'meterhead';
+
+    const head = document.createElement('h4');
+    head.textContent = row.fuel.meterLabel;
+    const qty = document.createElement('b');
+    qty.className = 'qty';
+    qty.textContent = group(row.metered, row.metered < 100 ? 1 : 0);
+    qty.append(Object.assign(document.createElement('i'), { textContent: 'kWh' }));
+
+    const buildup = document.createElement('div');
+    buildup.className = 'buildup';
+    const step = (op, what, amount = '') => {
+      buildup.append(
+        Object.assign(document.createElement('span'), { className: 'op', textContent: op }),
+        Object.assign(document.createElement('span'), { className: 'what', textContent: what }),
+        Object.assign(document.createElement('b'), {
+          // Blank where a row simply carries no amount, an em dash only where
+          // there should have been one and no rate was published. The two must
+          // not look alike: this schedule's whole claim is that a missing
+          // figure says so.
+          className: amount === null ? 'amount void' : 'amount',
+          textContent: amount === null ? '—' : amount,
+        }),
+      );
+    };
+    // The rate a fuel is priced at, or the reason it could not be.
+    step('×', isRate(row.costRate) ? row.costRate.text : row.costRate.what.toLowerCase());
+    step('=', 'cost', row.cost == null ? null : bill.currency.format(row.cost, row.cost < 100 ? 2 : 0));
+    step('×', isRate(row.carbonRate) ? `${row.carbonRate.value.toFixed(0)} gCO₂e/kWh` : row.carbonRate.what.toLowerCase());
+    step('=', 'carbon', row.carbon == null ? null : `${group(row.carbon, row.carbon < 100 ? 1 : 0)} kg`);
+
+    // One line per rate, each opening with what kind of number it is. Run
+    // together on a single line the sector was the first thing to get lost.
+    const cite = document.createElement('div');
+    cite.className = 'cite';
+    for (const r of [row.costRate, row.carbonRate].filter(isRate)) {
+      const line = document.createElement('span');
+      line.append(Object.assign(document.createElement('b'), { textContent: r.source.kind }));
+      line.append(r.region === r.source.publisher ? r.region : `${r.source.publisher}, ${r.region}`);
+      cite.append(line);
+    }
+
+    card.append(head, qty, buildup, cite);
+    host.append(card);
+  }
+}
+
+/**
+ * Where it goes, as one measured length divided up.
+ *
+ * Never a pie and never a colour per end use. This palette has already spent
+ * its colour on meaning, so the segments are told apart by tone -- each step
+ * out mixed further towards the trough it sits in -- and ranked largest first,
+ * so the ramp also ranks them. The three bases are the same energy measured
+ * three ways, and watching the order change when you switch from cost to
+ * carbon is the finding this whole section exists to hand over.
+ */
+const TONES = [100, 74, 54, 39, 28];
+
+function renderBillBar() {
+  const seg = $('bill-basis');
+  if (!seg.childElementCount) {
+    for (const column of BILL_COLUMNS) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'segment';
+      button.textContent = column.id === 'metered' ? 'Energy' : column.label;
+      button.addEventListener('click', () => {
+        billBasis = column;
+        renderBill();
+      });
+      seg.append(button);
+    }
+  }
+  for (const [i, button] of [...seg.children].entries()) {
+    button.classList.toggle('here', BILL_COLUMNS[i] === billBasis);
+    button.setAttribute('aria-pressed', String(BILL_COLUMNS[i] === billBasis));
+  }
+
+  const track = $('bill-track');
+  const key = $('bill-key');
+  track.textContent = '';
+  key.textContent = '';
+
+  const ranked = bill.ranked(billBasis.field);
+  const total = ranked.reduce((a, l) => a + billBasis.at(l), 0);
+  if (!total) {
+    key.append(
+      Object.assign(document.createElement('p'), {
+        className: 'bill-note',
+        textContent: `Nothing on this run can be measured in ${billBasis.label.toLowerCase()} — the rate behind it was not published for this location.`,
+      }),
+    );
+    return;
+  }
+
+  const toneOf = (i) => `color-mix(in srgb, var(--ink) ${TONES[Math.min(i, TONES.length - 1)]}%, var(--inset))`;
+  for (const [i, line] of ranked.entries()) {
+    const fill = toneOf(i);
+    const bar = document.createElement('i');
+    bar.className = 'bar-seg';
+    bar.style.width = `${(billBasis.at(line) / total) * 100}%`;
+    bar.style.background = fill;
+    bar.title = `${line.use.label}: ${billBasis.format(billBasis.at(line), bill)}`;
+    track.append(bar);
+
+    // Keyed in the order they are laid, so a swatch can be matched to its
+    // segment by walking along the rule.
+    const item = document.createElement('div');
+    item.className = 'bar-item';
+    const swatch = document.createElement('i');
+    swatch.className = 'bar-swatch';
+    swatch.style.background = fill;
+    item.append(
+      swatch,
+      Object.assign(document.createElement('span'), { textContent: line.use.label }),
+      Object.assign(document.createElement('b'), {
+        textContent: billBasis.format(billBasis.at(line), bill),
+      }),
+      Object.assign(document.createElement('em'), {
+        textContent: `${((billBasis.at(line) / total) * 100).toFixed(0)} %`,
+      }),
+    );
+    key.append(item);
+  }
+}
+
+function renderBillTable(against) {
+  const table = $('bill-table');
+  table.textContent = '';
+  const diverging = bill.divergence?.line ?? null;
+
+  const thead = document.createElement('thead');
+  const hr = thead.insertRow();
+  const th = (text, span = 1) => {
+    const el = document.createElement('th');
+    el.textContent = text;
+    el.colSpan = span;
+    hr.append(el);
+  };
+  th('End use');
+  for (const column of BILL_COLUMNS) th(column.unit ? `${column.label} (${column.unit})` : column.label, against ? 2 : 1);
+  table.append(thead);
+
+  const tbody = document.createElement('tbody');
+  const line = (row, values, { className = '', head = null, note = null, mark = false, base = null } = {}) => {
+    const tr = tbody.insertRow();
+    if (className) tr.className = className;
+    const first = tr.insertCell();
+    first.append(head ?? '');
+    if (mark) first.append(Object.assign(document.createElement('i'), { className: 'diverges' }));
+    if (note) {
+      first.append(document.createElement('br'));
+      const small = document.createElement('span');
+      small.className = 'plant-note';
+      small.textContent = note;
+      first.append(small);
+    }
+    for (const [i, column] of BILL_COLUMNS.entries()) {
+      const v = values[i];
+      cell(tr, Number.isFinite(v) ? column.format(v, bill) : '—', Number.isFinite(v) ? '' : 'void');
+      if (against) cell(tr, base ? billDelta(column, v, base[i]) : '', 'delta');
+    }
+    return tr;
+  };
+
+  const width = 1 + BILL_COLUMNS.length * (against ? 2 : 1);
+  for (const section of GROUPS) {
+    const rows = bill.section(section.id);
+    if (!rows.length) continue;
+    // A section heading is a heading, not a row of empty readings: one cell
+    // across the schedule, the way a works section is titled in a priced bill.
+    const head = tbody.insertRow();
+    head.className = 'section';
+    cell(head, section.label).colSpan = width;
+
+    for (const row of rows) {
+      const baseRow = against?.lines.find((l) => l.use === row.use);
+      line(row, BILL_COLUMNS.map((c) => c.at(row)), {
+        head: row.use.label,
+        mark: row.use === diverging,
+        note: row.divisor
+          ? `${group(row.delivered, row.delivered < 100 ? 1 : 0)} kWh delivered ÷ ${row.divisor.value.toFixed(2)} ${row.divisor.noun}, ${row.divisor.label.toLowerCase()}`
+          : null,
+        base: baseRow ? BILL_COLUMNS.map((c) => c.at(baseRow)) : null,
+      });
+    }
+
+    line(null, BILL_COLUMNS.map((c) => bill.total(c.field, section.id) ?? NaN), {
+      className: 'sum',
+      head: `${section.label} total`,
+      base: against ? BILL_COLUMNS.map((c) => against.total(c.field, section.id) ?? NaN) : null,
+    });
+
+    // Per square metre only on a year. The figure exists to be held against a
+    // published benchmark, every one of which is annual, and 0.3 kgCO₂e/m²
+    // over two design days is a number whose only possible use is to be
+    // mistaken for one.
+    if (section.id === 'building' && bill.annual) {
+      line(null, BILL_COLUMNS.map((c) => bill.intensity(c.field) ?? NaN), {
+        className: 'sum',
+        head: 'Per m² of floor, per year',
+        base: against ? BILL_COLUMNS.map((c) => against.intensity(c.field) ?? NaN) : null,
+      });
+    }
+  }
+
+  line(null, BILL_COLUMNS.map((c) => bill.total(c.field) ?? NaN), {
+    className: 'sum total',
+    head: 'Everything metered',
+    base: against ? BILL_COLUMNS.map((c) => against.total(c.field) ?? NaN) : null,
+  });
+
+  table.append(tbody);
+}
+
+/**
+ * Where cost and carbon disagree, said in a sentence.
+ *
+ * This is the argument the section exists to start, so it is stated in words
+ * and not left for the reader to spot by comparing two orderings.
+ */
+function renderBillFinding() {
+  const host = $('bill-finding');
+  host.textContent = '';
+  const d = bill.divergence;
+  if (!d) return;
+
+  const q = (text) =>
+    Object.assign(document.createElement('span'), { className: 'q', textContent: text });
+  // Nothing is the "first largest" anything.
+  const ordinal = (n) => ['', 'second', 'third', 'fourth', 'fifth'][n] ?? `${n + 1}th`;
+  host.append(
+    `${d.line.use.label} is only the `,
+    q(ordinal(d.cost)),
+    ' largest cost here but the ',
+    ...(d.carbon === 0 ? [] : [q(ordinal(d.carbon)), ' ']),
+    `largest emitter, because it runs on ${d.line.fuel.label.toLowerCase()} at `,
+    q(`${d.line.carbonRate.value.toFixed(0)} gCO₂e/kWh`),
+    '. Designing against the bill and designing against the carbon are not the same brief.',
+  );
+}
+
+// A dataset's name and vintage, unless the vintage is already the name -- an
+// assumed rate has no period and "assumed (assumed)" is not a citation.
+const cited = (source) =>
+  source.period === 'assumed' ? source.short : `${source.short} (${source.period})`;
+
+function renderBillNotes() {
+  const absences = bill.card.absences;
+  $('bill-absences').textContent = absences.length
+    ? `${absences.map((a) => `${a.what}: ${a.reason}`).join(' ')} Those columns read as an em dash and are left out of every total on this schedule.`
+    : '';
+
+  const refs = $('bill-refs');
+  refs.textContent = '';
+  refs.append('Rates and factors from ');
+  const sources = bill.card.sources;
+  for (const [i, source] of sources.entries()) {
+    if (i) refs.append(i === sources.length - 1 ? ' and ' : ', ');
+    if (source.url) {
+      const a = document.createElement('a');
+      a.href = source.url;
+      a.target = '_blank';
+      a.rel = 'noreferrer';
+      a.textContent = cited(source);
+      refs.append(a);
+    } else {
+      refs.append(cited(source));
+    }
+  }
+  refs.append('.');
+}
+
+/* ── pinning a scheme ─────────────────────────────────────────────────────
+ *
+ * The gesture ghost answers "what did that move just do", and evaporates when
+ * you let go. A scheme has to outlast that: an architect works one option for
+ * twenty minutes before comparing it with another, so the pin holds a whole
+ * bill until it is unpinned, and every bill after it reads as a change against
+ * the scheme rather than against the last thing they touched.
+ */
+const pinButton = $('bill-pin');
+
+function syncPin() {
+  pinButton.setAttribute('aria-pressed', String(Boolean(pinned)));
+  // Just the state. Which scheme is pinned is lettered in the eyebrow beside
+  // the heading, where it is set in the schedule's own type and keeps its
+  // lowercase unit -- run through this button's tracked capitals, `4.57 m`
+  // becomes `4.57 M`.
+  $('bill-pin-label').textContent = pinned ? 'Pinned' : 'Pin as scheme';
+  pinButton.disabled = !bill;
+}
+
+pinButton.addEventListener('click', () => {
+  pinned = pinned ? null : { bill, label: shapeLabel(solvedParams ?? params) };
+  syncPin();
+  renderBill();
+});
+
+syncPin();
+
 const set = (id, text, cls) => {
   const el = $(id);
   el.textContent = text;
@@ -823,6 +1318,12 @@ const set = (id, text, cls) => {
 
 function clearResults() {
   renderSchedule(null);
+  // The meters go with the results they were read from. A bill left standing
+  // over a cleared plate would be describing a run the sheet no longer shows.
+  bill = null;
+  lastRun = null;
+  renderBill();
+  syncPin();
   set('t-vars', '—');
   set('t-err', '—', '');
   set('t-exit', '—', '');
@@ -860,7 +1361,17 @@ function patching() {
  * There are eighty-odd parameters now and no prospect of keeping a hand-written
  * key honest, so it is taken wholesale.
  */
-const shapeKey = (p) => JSON.stringify([p, patching()]);
+// The two priced channels are the exception the note above now needs: nothing
+// they own reaches the IDF, so a tariff or a boiler efficiency must not read as
+// a new shape. Left in, every turn of the Tariff strip would start a run that
+// could only ever produce the numbers already on the sheet.
+const PRICED_KEYS = new Set(CHANNELS.filter((c) => c.prices).flatMap((c) => c.keys()));
+
+const shapeKey = (p) =>
+  JSON.stringify([
+    Object.fromEntries(Object.entries(p).filter(([key]) => !PRICED_KEYS.has(key))),
+    patching(),
+  ]);
 
 const shapeLabel = (p) =>
   `${p.width.toFixed(2)} × ${p.depth.toFixed(2)} × ${p.height.toFixed(2)} m · ` +
@@ -878,7 +1389,7 @@ function markStale() {
   // Continuous mode closes this gap within a frame or two, so dimming there
   // would be a strobe. On release-solving and by hand the gap is real.
   const show = stale && !continuous();
-  for (const el of [$('trace'), $('finding'), $('schedule')]) el.classList.toggle('stale', show);
+  for (const el of [$('trace'), $('finding'), $('schedule'), $('bill')]) el.classList.toggle('stale', show);
   if (!show) return;
   // A sheet that is about to solve itself does not need telling to go and press
   // something — it needs to say what it is waiting for.
@@ -944,12 +1455,18 @@ function applyGeometry() {
  */
 function commit(key, value, done = false) {
   if (params[key] !== value) {
-    beginGesture();
+    // A priced control changes what the energy was worth, not how much of it
+    // there was, so it re-letters the bill from the meters already in hand and
+    // never asks the engine for anything. It still opens a gesture, because the
+    // bill still wants a ghost of where it stood when you took hold.
+    const priced = PRICED_KEYS.has(key);
+    beginGesture({ priced });
     params[key] = value;
     syncSlider[key]?.();
     desk?.sync(key);
     applyGeometry();
-    if (continuous()) pump();
+    if (priced) reprice();
+    else if (continuous()) pump();
   }
   if (done) {
     endGesture();
@@ -1030,6 +1547,9 @@ function revert(keys = null) {
   for (const sync of Object.values(syncSlider)) sync();
   desk?.sync();
   applyGeometry();
+  // Reverting takes the plant and the tariff back too, and those do not go
+  // through the engine, so the bill has to be re-lettered by hand.
+  reprice();
   endGesture();
   desk?.settle();
   if (autoOn()) pump();
@@ -1077,6 +1597,25 @@ function derivedReadings(facts) {
     ['shading', facts.shadeArea > 0 ? `${facts.shadeArea.toFixed(1)} m²` : 'None'],
     ['solver', `${params.timestep} / hour`],
     ['run', lastHours ? `${lastHours.toLocaleString('en-US')} solved` : `${hours.toLocaleString('en-US')} to solve`],
+    // What the plant has to buy to deliver the heat the system moved. Reads an
+    // em dash until something has been solved, because it is a meter reading
+    // and there is no meter reading before a run.
+    [
+      'plant',
+      (() => {
+        const heat = bill?.lines.find((l) => l.use.id === 'heating');
+        return heat ? `${heat.metered.toFixed(0)} kWh ${heat.fuel.label.toLowerCase()}` : '—';
+      })(),
+    ],
+    // This one is true before any run at all: it describes the place, not the
+    // building, and the place is known as soon as a station is picked.
+    [
+      'tariff',
+      (() => {
+        const rate = rateCard().electricity;
+        return isRate(rate) ? rate.text : '—';
+      })(),
+    ],
   ]);
 }
 
@@ -1197,12 +1736,15 @@ let baseline = null; // { columns, label }
 let solvedColumns = null; // the schedule behind the visible results
 let solvedParams = null; // the shape those results describe
 
-function beginGesture() {
+function beginGesture({ priced = false } = {}) {
   if (gesture) return;
   gesture = true;
-  // The label comes off the solved shape, not off `params` — by the time the
-  // first input event fires the slider has already moved.
-  if (!solvedColumns || !solvedParams) return;
+  // Money gets the same treatment the plate gives temperature: a figure that
+  // changes with no record of what it changed from is a flicker, not a reading.
+  billGhost = bill;
+  // A priced control cannot move the plate or the results schedule, so it must
+  // not letter them with a baseline it did not shift.
+  if (priced || !solvedColumns || !solvedParams) return;
   baseline = { columns: solvedColumns, label: shapeLabel(solvedParams) };
   ghost = plot ? plot.zone : null;
   $('baseline-note').textContent = `Δ against ${baseline.label}`;
@@ -1552,10 +2094,41 @@ async function choose(row, pick) {
   // they describe the place, and the place has just changed.
   renderTrace();
 
+  // The tariffs and the grid factor follow the weather, because they are
+  // properties of where the building is and the building has just moved.
+  //
+  // The bill goes with them rather than being re-priced. Its meters were
+  // solved against the old city's weather, and running the new city's tariffs
+  // over the old city's energy would produce a figure that is true of nowhere
+  // -- the exact mismatch the design-conditions refusal above exists to
+  // prevent, in another column. A pinned scheme goes too: one priced in
+  // Colorado cannot be differenced against one priced in Bavaria, in another
+  // currency and against another grid.
+  station = picked;
+  pinned = null;
+  bill = null;
+  lastRun = null;
+  syncPin();
+  renderBill();
+
+  // With a real year attached the sizing days stop earning their place. They
+  // are 48 hours of the most extreme weather in the file, run ahead of 8,760
+  // hours of the actual one, and every reading downstream then has to be told
+  // which of the three environments it means -- the plate labels them, the
+  // meters had to be filtered to exclude them, and the bill would otherwise
+  // carry them. Skipped by default once there is a year to run, and still
+  // switchable on the Run strip for anyone sizing equipment.
+  //
+  // Through `commit` rather than by assignment, because that is the one path
+  // from a control to the model and it is what keeps the Run strip agreeing
+  // with the document. It also means auto-solve picks the change up, so the
+  // year starts solving on the release rather than waiting to be asked.
+  commit('sizingPeriods', 'No', true);
+
   set('t-run', 'Annual');
   $('t-run-sub').textContent = 'Weather file, 8,760 hours';
   statusEl.className = 'status';
-  statusEl.textContent = `${siteName(picked)} attached, design conditions and all — the next run covers all 8,760 hours.`;
+  statusEl.textContent = `${siteName(picked)} attached, design conditions and all — the run covers all 8,760 hours, with the sizing days skipped.`;
   syncAuto();
   markStale();
 }
@@ -1635,7 +2208,7 @@ async function solve() {
   quiet = live;
 
   clearLog();
-  for (const el of [$('trace'), $('finding'), $('schedule')]) el.classList.remove('stale');
+  for (const el of [$('trace'), $('finding'), $('schedule'), $('bill')]) el.classList.remove('stale');
   // An auto-solve leaves the previous result standing until the new one lands.
   // Blanking the plate every 0.7 s would be a strobe, and the old numbers are
   // the only thing that makes the new ones mean anything.
@@ -1738,6 +2311,25 @@ async function solve() {
     ? `${String(stamp.hour ?? 0).padStart(2, '0')}:00, ${stamp.day} ${MONTHS[stamp.month - 1]} · zone ${zone[at].toFixed(1)} °C`
     : null;
   lastReadings = readMeters(eso, at);
+
+  // The end-use meters ride in on the same ESO -- `Output:Meter` writes to both
+  // the .eso and the .mtr -- so the bill is priced off the run that is already
+  // in hand rather than a second parse of a second file.
+  // Which environments the bill covers. A weather file brings a real run
+  // period with it and that is the only thing anyone means by an energy bill;
+  // without one there are just the sizing days, and those are billed as
+  // themselves rather than passed off as a year.
+  const billed = runs.some((r) => r.kind === null) ? runs.filter((r) => r.kind === null) : runs;
+  lastRun = {
+    eso,
+    environments: new Set(billed.map((r) => r.key)),
+    hours: billed.reduce((total, r) => total + (r.end - r.start + 1), 0),
+    annual: billed.some((r) => r.kind === null),
+  };
+  bill = billFrom(lastRun);
+  syncPin();
+  renderBill();
+
   desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt);
 
   $('fig-cap').textContent = hasOutdoor

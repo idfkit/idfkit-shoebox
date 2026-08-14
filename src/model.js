@@ -1,5 +1,6 @@
 import { IDFDocument, parseIdf } from '@idfkit/core';
 import { CHANNELS, DEFAULT_BYPASS, DEFAULT_PARAMETERS } from './controls.js';
+import { END_USES } from './bill.js';
 
 /**
  * The stock `1ZoneUncontrolled.idf` example from the EnergyPlus 26.1.0 release,
@@ -637,9 +638,15 @@ const addVariable = (doc, name, frequency, key = '*') =>
  */
 export function channelState(params, bypass) {
   const state = new Map();
+  // A precondition can be about another channel rather than about a parameter
+  // -- the plant has nothing to supply until the system is in the path -- so
+  // the predicate is handed a reader for the channels already decided. The
+  // strips are declared in physical order, which is the order those
+  // dependencies run in, so a channel can only ever ask about one above it.
+  const on = (id) => Boolean(state.get(id)?.engaged);
   for (const channel of CHANNELS) {
     const off = channel.bypassable && Boolean(bypass[channel.id]);
-    const blocked = !off && channel.requires && !channel.requires.test(params);
+    const blocked = !off && channel.requires && !channel.requires.test(params, on);
     state.set(channel.id, {
       engaged: !off && !blocked,
       bypassed: off,
@@ -1359,6 +1366,8 @@ const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
  * the warning count on the title block with warnings about itself.
  */
 function syncOutputs(doc, state) {
+  syncEndUseMeters(doc, state);
+
   const wanted = new Set();
   for (const channel of CHANNELS) {
     if (!state.get(channel.id).engaged || !channel.meter) continue;
@@ -1376,6 +1385,35 @@ function syncOutputs(doc, state) {
   }
   for (const name of wanted) {
     if (!present.has(name) && !base.has(name)) addVariable(doc, name, 'Hourly');
+  }
+}
+
+/**
+ * The end-use meters the bill reads, added and removed with their channels.
+ *
+ * Same argument as the variables above and the same failure if it is skipped:
+ * a meter that no object can feed is reported as "requested but not generated"
+ * at the foot of the error file, and the title block would then count the
+ * console's own bypasses as warnings about the model.
+ *
+ * Monthly, deliberately. It is twelve values per meter for a year and one per
+ * environment for a design day, which is enough to total the bill and enough
+ * to draw its shape across the year, where hourly would be 8,760 points per
+ * meter for a number that is only ever read as a sum.
+ */
+function syncEndUseMeters(doc, state) {
+  const wanted = new Set(
+    END_USES.filter((use) => !use.needs || state.get(use.needs)?.engaged).map((use) => use.meter),
+  );
+  const present = new Set();
+  for (const meter of doc.all('Output:Meter').toArray()) {
+    const name = String(meter.key_name);
+    if (wanted.has(name)) present.add(name);
+    else doc.remove(meter);
+  }
+  for (const name of wanted) {
+    if (present.has(name)) continue;
+    doc.add('Output:Meter', null, { key_name: name, reporting_frequency: 'Monthly' });
   }
 }
 

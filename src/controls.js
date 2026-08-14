@@ -241,7 +241,7 @@ export class Meter {
 export class Channel {
   constructor({
     id, index, name, term, blurb, controls,
-    meter = null, bypassable = true, bypassed = false, requires = null,
+    meter = null, bypassable = true, bypassed = false, requires = null, prices = false,
   }) {
     this.id = id;
     this.index = index;
@@ -251,6 +251,13 @@ export class Channel {
     this.controls = Object.freeze(controls);
     this.meter = meter;
     this.bypassable = bypassable;
+    // This channel prices the run rather than shaping it. Nothing it owns
+    // reaches the IDF, so nothing it owns belongs in the solve key either --
+    // turning a tariff must re-letter the bill within the frame and must never
+    // start a simulation, because the physics did not move. The strip says so,
+    // in the one place where "set this and nothing runs" could otherwise read
+    // as a control that had stopped working.
+    this.prices = prices;
     // Where a channel starts. The ones that start out are the ones absent from
     // `1ZoneUncontrolled.idf`, so a console at its defaults writes the stock
     // model and nothing else.
@@ -948,8 +955,90 @@ export const CHANNELS = Object.freeze([
   }),
 
   new Channel({
-    id: 'solver',
+    id: 'plant',
     index: '12',
+    name: 'Plant',
+    term: 'η',
+    prices: true,
+    bypassable: false,
+    blurb:
+      'What would have to supply the heat. The ideal unit above delivers it at 100 % efficiency and no efficiency is simulated anywhere in this model, so the plant is applied to the meter reading instead — and the bill prints the division rather than burying it.',
+    requires: {
+      test: (p, on) => on('system'),
+      reason: 'Needs the System channel in the path before there is any heat to supply.',
+    },
+    meter: new Meter({ label: 'Heat at the meter', terms: [], derived: true }),
+    controls: [
+      new Selector({
+        key: 'heatSource', label: 'Heating plant', value: 'GasBoiler',
+        options: [
+          { value: 'GasBoiler', label: 'Gas boiler' },
+          { value: 'Resistance', label: 'Direct electric' },
+          { value: 'HeatPump', label: 'Heat pump' },
+        ],
+      }),
+      new Scale({
+        key: 'heatEfficiency', label: 'Seasonal efficiency', value: 0.85,
+        min: 0.5, max: 1.05, step: 0.01, digits: 2,
+        needs: (p) => p.heatSource !== 'HeatPump',
+        note: 'Fuel in against useful heat out, across the season.',
+      }),
+      new Scale({
+        key: 'heatCOP', label: 'Seasonal COP', value: 3, min: 1.5, max: 5.5, step: 0.1, digits: 1,
+        needs: (p) => p.heatSource === 'HeatPump',
+        note: 'Heat delivered per unit of electricity, across the season.',
+      }),
+      new Scale({
+        key: 'coolCOP', label: 'Cooling COP', value: 3.5, min: 2, max: 7, step: 0.1, digits: 1,
+        note: 'The chiller is electric whatever the heat runs on.',
+      }),
+    ],
+  }),
+
+  new Channel({
+    id: 'tariff',
+    index: '13',
+    name: 'Tariff',
+    term: '¤',
+    prices: true,
+    bypassable: false,
+    blurb:
+      'The published rate, and what happens if it is wrong. Left alone the bill uses the tariff and grid factor on file for this country; taken to Assumed, it uses what you set — which is how a grid that has not decarbonised yet gets tested against one that has.',
+    meter: new Meter({ label: 'Electricity rate', terms: [], derived: true }),
+    controls: [
+      new Selector({
+        key: 'rateBasis', label: 'Tariff', value: 'Published',
+        options: [
+          { value: 'Published', label: 'Published' },
+          { value: 'Assumed', label: 'Assumed' },
+        ],
+      }),
+      new Scale({
+        key: 'elecPrice', label: 'Electricity', value: 0.15, min: 0.02, max: 0.6, step: 0.005, digits: 3,
+        unit: '/kWh', needs: (p) => p.rateBasis === 'Assumed',
+      }),
+      new Scale({
+        key: 'gasPrice', label: 'Gas', value: 0.07, min: 0.01, max: 0.3, step: 0.005, digits: 3,
+        unit: '/kWh', needs: (p) => p.rateBasis === 'Assumed',
+      }),
+      new Selector({
+        key: 'factorBasis', label: 'Grid factor', value: 'Published',
+        options: [
+          { value: 'Published', label: 'Published' },
+          { value: 'Assumed', label: 'Assumed' },
+        ],
+      }),
+      new Scale({
+        key: 'gridFactor', label: 'Grid intensity', value: 200, min: 0, max: 900, step: 5, digits: 0,
+        unit: 'gCO₂e/kWh', needs: (p) => p.factorBasis === 'Assumed',
+        note: 'The building will outlive the grid it was designed against. Wind this down to find out what it costs then.',
+      }),
+    ],
+  }),
+
+  new Channel({
+    id: 'solver',
+    index: '14',
     name: 'Solver',
     term: 'Δt',
     blurb:
@@ -1006,7 +1095,7 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'run',
-    index: '13',
+    index: '15',
     name: 'Run',
     term: '∑h',
     blurb:

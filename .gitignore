@@ -3,3 +3,6 @@ dist/
 public/energyplus/
 public/schemas/
 public/weather/
+
+# scratch for scripts/build-rates.mjs
+.rates-cache/

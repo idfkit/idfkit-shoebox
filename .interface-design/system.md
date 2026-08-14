@@ -50,6 +50,14 @@ sheet edge), `--rule-focus` (focus rings only).
   degrees Celsius on the drawing, watts into or out of the zone on the console.
   Warm is heat arriving, cold is heat leaving.
 
+Money and carbon get **no colour at all**. Energy, cost and emissions are
+unsigned magnitudes, so the cold/warm pair would be encoding nothing, and a
+green-for-clean or red-for-dirty on a carbon figure would be the interface
+grading the design rather than measuring it. The bill is entirely graphite,
+with one redline mark on the divergence. Extending the signed pair to "saved
+against spent" was considered and rejected for the same reason the schedule's
+delta column is deliberately uncoloured.
+
 Do not add a hue for a category, a channel, or a section. Non-photo blue was
 explored for the "set but not in the model" state and rejected as a fourth
 accent; ghost-weight graphite says the same thing in the palette that exists.
@@ -158,6 +166,67 @@ rather than a border, so it reads as a cut rather than an outline.
 This is the general answer whenever a category needs distinguishing inside a
 palette that has already spent its colour on meaning. Reach for tone, order and
 labelling before reaching for a new hue.
+
+### The rate build-up
+
+Any figure derived from a published number is drawn as `quantity × rate =
+amount`, in three columns, with the rate carrying the dataset and the date that
+published it. Reading down the operator column gives `× = × =`, which is the
+arithmetic of any priced bill and is meant to be recognised on sight.
+
+The rule this enforces: **a figure nobody can argue with is a figure nobody can
+design against.** An architect shown "12,295 kg" has been told an answer; one
+shown "37,296 kWh × 330 gCO₂e/kWh" has been shown where to push.
+
+Where a row simply carries no amount — a multiplier line — the amount cell is
+**blank**. The em dash is reserved for a figure that should have been there and
+was not. The two must never look alike.
+
+A rate also carries **what kind of number it is**, in the reader's terms rather
+than the publisher's, set in label type at the head of its citation: `COMMERCIAL
+TARIFF`, `GRID CARBON INTENSITY`, `COMBUSTION CONSTANT`. Every price table
+behind this sheet is non-residential, but each agency has its own word for that
+— commercial, non-household, other industries — and a bill that never states the
+sector leaves the reader to guess whether they are looking at what the building
+will be charged or at what a house is charged. That qualifier belongs beside the
+rate, not in the reference line at the foot.
+
+### Composition without a hue
+
+A stacked composition (end uses within a total) is a **left-anchored rule in a
+graphite tone ramp**, not a pie and not a colour per category:
+
+```js
+const TONES = [100, 74, 54, 39, 28];
+`color-mix(in srgb, var(--ink) ${TONES[i]}%, var(--inset))`
+```
+
+Same move as the balance rail's tonal ramp, one level up: the rail spends its
+hue on sign, and a composition has no sign to carry, so it spends nothing and
+uses tone alone. Rank the segments largest first and key them in that order.
+
+Where a section needs to say "look here" — a divergence, an exception — that is
+what `--redline` is for, spent on one small mark, not on a category.
+
+### Measuring the same thing three ways
+
+When one quantity can be measured on several scales (energy, cost, carbon), draw
+**one composition rule with a segmented selector**, not three charts. The
+re-ordering as the basis changes is the finding; three charts side by side hide
+it by making the reader do the comparison.
+
+### Comparison is refused unless it is like for like
+
+A delta column appears only when both sides describe the same thing: the same
+rows, the same units, the same currency. Patching a channel out does not make a
+scheme cheaper, it makes it a different building with fewer lines, and
+differencing the two would report a saving that is really an absence. When the
+two do not match, the comparison is dropped whole and the column disappears
+rather than heading a mostly-blank field.
+
+Deltas are **never coloured for good or bad**, in any section. They are set in
+the margin of their own value at metadata weight. The reading is the number; the
+delta is a note on it.
 
 ### Absence is not zero
 
