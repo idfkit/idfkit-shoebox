@@ -26,9 +26,9 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -39,12 +39,27 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      # Both come from repository variables rather than the file, so no account
-      # identifier or ARN lands in a public repository. Set AWS_DEPLOY_ROLE_ARN
-      # to the stack's DeployRoleArn output; AWS_REGION is optional.
-      - uses: aws-actions/configure-aws-credentials@v4
+      # Temporary: prints the two claims the IAM trust policy matches on, and
+      # nothing else. The token is masked the instant it is read, and only the
+      # decoded `sub` and `aud` are echoed, because the token itself is a
+      # credential that would grant this role to anyone who copied it out of a
+      # public log.
+      - name: Inspect OIDC claims
+        run: |
+          token=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
+          echo "::add-mask::$token"
+          payload=$(echo "$token" | cut -d. -f2 | tr '_-' '/+')
+          while [ $((${#payload} % 4)) -ne 0 ]; do payload="${payload}="; done
+          echo "$payload" | base64 -d | jq '{sub, aud}'
+
+      # The role ARN is a secret rather than a variable purely so the log masks
+      # it: the runner echoes every `with:` input verbatim, and this repository
+      # is public, so a variable would publish the AWS account id. The ARN is
+      # not itself a credential, but there is no reason to broadcast it.
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       - run: npm run deploy
