@@ -2218,9 +2218,10 @@ const model = buildModel(schema);
 // cannot describe a building the engine did not simulate.
 DATUMS = designDayDatums(model);
 buildSliders();
-// The desk is the point of the page, so it is open on arrival. It costs a
-// column, which is the honest price of having every control to hand.
-openDesk(true);
+// The desk starts closed. The static markup already is the closed state --
+// no `desk-open` on the body, the button reading "Every control on the desk"
+// with `aria-expanded="false"` -- so arrival needs no call at all, and the
+// sheet keeps its full width until the reader asks for the controls.
 applyGeometry(); // also sets SURFACES and draws the axonometric
 const facts = modelFacts(model);
 $('t-project').textContent = facts.project;
