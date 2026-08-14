@@ -1,20 +1,27 @@
 import { createEnergyPlus, findVariables, getTimeSeries } from '@idfkit/engine';
 import { httpSource, SchemaBundle, writeIdf } from '@idfkit/core';
 import {
+  applyModel,
   buildModel,
-  DEFAULT_PARAMETERS,
   designConditionsFrom,
   designDayDatums,
   geometryFacts,
   modelFacts,
-  PARAMETERS,
   setAnnual,
   setDesignConditions,
-  setParameters,
   shadeGeometry,
   surfaceGeometry,
+  WALLS,
   windowGeometry,
 } from './model.js';
+import {
+  CHANNELS,
+  DEFAULT_BYPASS,
+  DEFAULT_PARAMETERS,
+  SHEET_KEYS,
+  controlFor,
+} from './controls.js';
+import { mountConsole } from './console.js';
 import {
   climateDescription,
   climateZone,
@@ -142,11 +149,36 @@ function renderAxon(meanC) {
   const edges = [];
   const faces = [];
 
+  /*
+   * The building is drawn square to the page, and north turns instead.
+   *
+   * The orientation is real and lives in the vertices, so drawing them straight
+   * would turn the box under a fixed viewpoint — and at 45°, which is one of
+   * the stops the rose snaps to, that viewpoint looks straight down the
+   * diagonal and the box collapses into a flat elevation. Which is a true
+   * projection and a useless drawing.
+   *
+   * So the vertices are turned back by the same angle before they are
+   * projected, and a north point is drawn turning over them. That is how a
+   * plan has always handled orientation: the building sits square on the sheet
+   * and the arrow does the work. Nothing about the model changes — this is the
+   * one place on the page that draws something other than raw coordinates, and
+   * it draws the same building from a viewpoint that moves with it.
+   */
+  const pivot = [params.width / 2, params.depth / 2];
+  const square = ([x, y, z]) => {
+    const t = (-params.northAxis * Math.PI) / 180;
+    const [c, sn] = [Math.cos(t), Math.sin(t)];
+    const [dx, dy] = [x - pivot[0], y - pivot[1]];
+    return [pivot[0] + dx * c + dy * sn, pivot[1] - dx * sn + dy * c, z];
+  };
+  const draw = (v) => project(square(v));
+
   for (const s of SURFACES) {
-    const screen = s.verts.map(project);
+    const screen = s.verts.map(draw);
     pts.push(...screen);
     for (let i = 0; i < screen.length; i++) edges.push([screen[i], screen[(i + 1) % screen.length]]);
-    const n = normal(s.verts);
+    const n = normal(s.verts.map(square));
     const facing = n[0] * VIEW[0] + n[1] * VIEW[1] + n[2] * VIEW[2];
     if (facing > 1e-6) {
       // Top face reads brightest, then the +x wall, then the +y wall.
@@ -156,28 +188,51 @@ function renderAxon(meanC) {
 
   // The overhang is drawn last but measured now: it stands outside the box, so
   // the frame has to be told about it before the viewBox is settled.
-  const shades = SHADES.map((s) => s.verts.map(project));
+  const shades = SHADES.map((s) => s.verts.map(draw));
   for (const screen of shades) pts.push(...screen);
 
-  // One dimension line per slider, each offset off the model in its own
-  // coordinate space and anchored to an edge the south-east view keeps in
-  // silhouette.
+  // One dimension line per length, taken along the walls themselves rather
+  // than across the drawing's bounding box. The difference only shows once the
+  // building is turned, and then it shows badly: the bounding box of a 15.24 m
+  // square set at 45° is 21.55 m across, so a box-based dimension would letter
+  // a wall with a number no wall in the model has.
+  const byName = new Map(SURFACES.map((s) => [s.name, s]));
+  const walls = WALLS.map((w) => byName.get(w.name)).filter(Boolean);
   const all = SURFACES.flatMap((s) => s.verts);
   const ext = (i) => [Math.min(...all.map((v) => v[i])), Math.max(...all.map((v) => v[i]))];
   const [x0, x1] = ext(0);
   const [y0, y1] = ext(1);
   const [, z1] = ext(2);
   const off = Math.max(x1 - x0, y1 - y0) * 0.15;
-  const dims = [
-    { a: [x0, y0, 0], b: [x1, y0, 0], d: [0, -off, 0], text: `${(x1 - x0).toFixed(2)} m` },
-    { a: [x1, y0, 0], b: [x1, y1, 0], d: [off, 0, 0], text: `${(y1 - y0).toFixed(2)} m` },
-    { a: [x0, y0, 0], b: [x0, y0, z1], d: [-off, -off * 0.35, 0], text: `${z1.toFixed(2)} m` },
-  ];
-  const centre = project([(x0 + x1) / 2, (y0 + y1) / 2, z1 / 2]);
+
+  // A wall's bottom edge, and the way it faces, straight off its vertices.
+  const edgeOf = (wall) => {
+    const [a, b] = [wall.verts[1], wall.verts[2]];
+    const length = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    const u = [(b[0] - a[0]) / length, (b[1] - a[1]) / length];
+    return { a, b, length, n: [u[1], -u[0]] };
+  };
+  const dims = [];
+  if (walls.length === 4) {
+    const [south, east, , west] = walls.map(edgeOf);
+    dims.push(
+      { a: south.a, b: south.b, d: south.n.map((v) => v * off).concat(0), text: `${south.length.toFixed(2)} m` },
+      { a: east.a, b: east.b, d: east.n.map((v) => v * off).concat(0), text: `${east.length.toFixed(2)} m` },
+      {
+        // The upright, stood at the corner the two faces share so it reads
+        // clear of both.
+        a: south.a,
+        b: [south.a[0], south.a[1], z1],
+        d: [(south.n[0] + west.n[0]) * off * 0.8, (south.n[1] + west.n[1]) * off * 0.8, 0],
+        text: `${z1.toFixed(2)} m`,
+      },
+    );
+  }
+  const centre = draw([pivot[0], pivot[1], z1 / 2]);
   const dimGeo = dims.map((dim) => {
-    const a = project(dim.a.map((v, i) => v + dim.d[i]));
-    const b = project(dim.b.map((v, i) => v + dim.d[i]));
-    const geo = { a, b, from: project(dim.a), to: project(dim.b), text: dim.text };
+    const a = draw(dim.a.map((v, i) => v + dim.d[i]));
+    const b = draw(dim.b.map((v, i) => v + dim.d[i]));
+    const geo = { a, b, from: draw(dim.a), to: draw(dim.b), text: dim.text };
     pts.push(a, b);
     return geo;
   });
@@ -216,6 +271,35 @@ function renderAxon(meanC) {
       }
     }
   }
+
+  /*
+   * The north point, which is the half of the orientation the drawing can
+   * still show once the building has been set square to the page. Laid out
+   * before the viewBox is settled, because it is part of what the viewBox has
+   * to contain.
+   */
+  const northArrow = (() => {
+    const a = draw([pivot[0], pivot[1], 0]);
+    const b = draw([pivot[0], pivot[1] + 1, 0]);
+    const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
+    const length = Math.hypot(dx, dy) || 1;
+    const dir = [dx / length, dy / length];
+    const perp = [-dir[1], dir[0]];
+    const arm = unit * 10;
+    const at = [
+      Math.min(...pts.map((p) => p[0])) + arm * 0.4,
+      Math.min(...pts.map((p) => p[1])) - arm * 0.9,
+    ];
+    const tip = [at[0] + dir[0] * arm, at[1] + dir[1] * arm];
+    const tail = [at[0] - dir[0] * arm, at[1] - dir[1] * arm];
+    const wing = (side) => [
+      tip[0] - dir[0] * arm * 0.42 + perp[0] * arm * 0.17 * side,
+      tip[1] - dir[1] * arm * 0.42 + perp[1] * arm * 0.17 * side,
+    ];
+    const label = [at[0] + dir[0] * arm * 1.6, at[1] + dir[1] * arm * 1.6];
+    return { tip, tail, head: [tip, wing(1), wing(-1)], label, arm };
+  })();
+  pts.push(northArrow.tip, northArrow.tail, northArrow.label);
 
   const pad = 1.5;
   const xs = pts.map((p) => p[0]);
@@ -259,7 +343,7 @@ function renderAxon(meanC) {
   // temperature colour, and glass has to stay legible against any of it — then
   // struck through on the diagonal, the way glass is marked in elevation.
   for (const win of WINDOWS) {
-    const screen = win.verts.map(project);
+    const screen = win.verts.map(draw);
     const points = screen.map((p) => p.join(',')).join(' ');
     root.append(
       svg('polygon', {
@@ -330,6 +414,31 @@ function renderAxon(meanC) {
     dimG.append(label);
   }
   root.append(dimG);
+
+  const rose = svg('g');
+  rose.append(
+    svg('line', {
+      x1: northArrow.tail[0], y1: northArrow.tail[1],
+      x2: northArrow.tip[0], y2: northArrow.tip[1],
+      stroke: 'var(--ink-3)', 'stroke-width': 0.6, 'vector-effect': 'non-scaling-stroke',
+    }),
+  );
+  rose.append(
+    svg('polygon', {
+      points: northArrow.head.map((p) => p.join(',')).join(' '),
+      fill: 'var(--ink-3)', stroke: 'none',
+    }),
+  );
+  const northLabel = svg('text', {
+    x: northArrow.label[0], y: northArrow.label[1],
+    'text-anchor': 'middle', 'dominant-baseline': 'middle',
+    fill: 'var(--ink-3)', 'font-family': 'var(--cond)',
+    'font-size': fontSize * 0.95, 'letter-spacing': '0.12em',
+  });
+  northLabel.textContent = 'N';
+  rose.append(northLabel);
+  root.append(rose);
+
   host.append(root);
 
   // The tint is a quantity, so it is reported with the others below the drawing.
@@ -723,17 +832,39 @@ function clearResults() {
 /* ══ dimensions ══════════════════════════════════════════════════════════ */
 
 const params = { ...DEFAULT_PARAMETERS };
+const bypass = { ...DEFAULT_BYPASS };
+let solo = null; // the one channel being heard alone, if any
 const syncSlider = {}; // key -> redraw that slider from `params`
 let solvedShape = null; // the shape the visible results were solved for
 let lastMean = null; // zone mean of the last run, for the axonometric tint
+let modelState = null; // which channels the model says are in the path
 
-// Every parameter that reaches the IDF belongs in here: the pump solves a shape
-// only if its key differs from the one on screen, so anything left out would
-// move the drawing and never be simulated.
-const shapeKey = (p) => `${p.width}×${p.depth}×${p.height}@${p.wwr}+${p.overhang}`;
+/**
+ * Solo, as the desk applies it: one channel in, every other bypassable one out.
+ *
+ * Held here rather than in the console because it is a property of the model,
+ * not of the drawing of it — the appliers need the same answer the strips do.
+ */
+function patching() {
+  if (!solo) return bypass;
+  return Object.fromEntries(
+    CHANNELS.filter((c) => c.bypassable).map((c) => [c.id, c.id !== solo]),
+  );
+}
+
+/**
+ * Everything that reaches the IDF, in one string.
+ *
+ * The pump solves a shape only if its key differs from the one on screen, so
+ * anything left out of this would move the drawing and never be simulated.
+ * There are eighty-odd parameters now and no prospect of keeping a hand-written
+ * key honest, so it is taken wholesale.
+ */
+const shapeKey = (p) => JSON.stringify([p, patching()]);
+
 const shapeLabel = (p) =>
-  `${p.width.toFixed(2)} × ${p.depth.toFixed(2)} × ${p.height.toFixed(2)} m · ${(p.wwr * 100).toFixed(0)} %` +
-  (p.overhang > 0 ? ` · ${p.overhang.toFixed(2)} m overhang` : '');
+  `${p.width.toFixed(2)} × ${p.depth.toFixed(2)} × ${p.height.toFixed(2)} m · ` +
+  `${((p.wwrN + p.wwrE + p.wwrS + p.wwrW) * 25).toFixed(0)} % mean WWR`;
 
 // Results describe a shape. Once the shape moves, they describe a building that
 // is no longer on the sheet, so say so rather than letting them sit there.
@@ -759,19 +890,30 @@ function markStale() {
   runBtn.textContent = 'Run simulation';
 }
 
+/**
+ * Put the desk into the document and re-letter everything that reads it.
+ *
+ * This is the one path from a control to the model. The sheet's sliders and the
+ * console's strips both come through it, which is what keeps them agreeing.
+ */
 function applyGeometry() {
-  setParameters(model, params);
+  modelState = applyModel(model, params, patching());
   SURFACES = surfaceGeometry(model);
   WINDOWS = windowGeometry(model);
-  SHADES = shadeGeometry(model);
+  // The neighbours are real geometry and belong in the model, but not in this
+  // drawing: an obstruction a hundred metres off would set the viewBox and
+  // leave the building a speck. The Context strip reads its altitude instead.
+  SHADES = shadeGeometry(model).filter((s) => !s.context);
   renderAxon(lastMean);
 
   const facts = geometryFacts(model);
   const m2 = (v) => `${v.toFixed(1)} m²`;
   $('q-floor').textContent = m2(facts.floor);
-  $('q-exposed').textContent = m2(facts.exposed);
+  $('q-exposed').textContent = facts.exposed > 0 ? m2(facts.exposed) : 'None — adiabatic';
   $('q-volume').textContent = `${facts.volume.toFixed(1)} m³`;
-  $('q-compact').textContent = `${facts.compactness.toFixed(3)} m⁻¹`;
+  $('q-compact').textContent = Number.isFinite(facts.compactness)
+    ? `${facts.compactness.toFixed(3)} m⁻¹`
+    : '—';
   $('q-glazing').textContent = facts.glazing > 0 ? m2(facts.glazing) : 'None';
   // Depth and projection factor together: the depth is what the slider says,
   // the factor is what it means against the opening it shades.
@@ -779,53 +921,84 @@ function applyGeometry() {
     facts.overhang > 0
       ? `${facts.overhang.toFixed(2)} m · PF ${facts.projection.toFixed(2)}`
       : 'None';
+
+  desk?.setState(modelState);
+  // A reading survives until the next solve supersedes it, the way the plate's
+  // curve does — except on a channel that has just gone out of the path, where
+  // the last number it produced would now be describing a path that is no
+  // longer there.
+  desk?.setReadings(
+    new Map([...lastReadings].map(([id, w]) => [id, modelState.get(id)?.engaged ? w : null])),
+    derivedReadings(facts),
+    lastAt,
+  );
   markStale();
 }
 
+/**
+ * Commit one control, from wherever it was turned.
+ *
+ * `done` marks the end of a gesture — a pointer release or the keyboard's
+ * commit — which is where the annual run solves and where a design day catches
+ * its last shape.
+ */
+function commit(key, value, done = false) {
+  if (params[key] !== value) {
+    beginGesture();
+    params[key] = value;
+    syncSlider[key]?.();
+    desk?.sync(key);
+    applyGeometry();
+    if (continuous()) pump();
+  }
+  if (done) {
+    endGesture();
+    desk?.settle();
+    if (autoOn()) pump();
+  }
+}
+
+/**
+ * The five the sheet keeps under its axonometric.
+ *
+ * Their specs are looked up out of the console's declaration rather than
+ * written again here, so a range or a label changed there changes both.
+ */
 function buildSliders() {
   const host = $('sliders');
   host.textContent = '';
-  for (const [key, spec] of Object.entries(PARAMETERS)) {
+  for (const key of SHEET_KEYS) {
+    const { control, side } = controlFor(key);
     const row = document.createElement('div');
-    row.className = spec.group ? 'dim group' : 'dim';
+    // The two that describe the opening rather than the box are ruled off from
+    // the three lengths above them.
+    row.className = key === 'wwrS' ? 'dim group' : 'dim';
 
     const label = document.createElement('label');
     label.htmlFor = `dim-${key}`;
-    label.textContent = spec.label;
+    label.textContent = side ? `${control.short} ${side.label}` : control.label;
 
     const input = document.createElement('input');
     Object.assign(input, {
       type: 'range',
       id: `dim-${key}`,
-      min: spec.min,
-      max: spec.max,
-      step: spec.step,
+      min: control.min,
+      max: control.max,
+      step: control.step,
       value: params[key],
     });
-    input.setAttribute('aria-label', spec.label);
+    input.setAttribute('aria-label', label.textContent);
 
     const value = document.createElement('output');
     value.htmlFor = `dim-${key}`;
     const show = () => {
-      value.textContent = spec.format(params[key]);
-      input.setAttribute('aria-valuetext', spec.format(params[key]));
+      value.textContent = control.format(params[key]);
+      input.setAttribute('aria-valuetext', control.format(params[key]));
     };
     show();
 
-    input.addEventListener('input', () => {
-      params[key] = Number(input.value);
-      show();
-      beginGesture();
-      applyGeometry();
-      if (continuous()) pump();
-    });
-    // Pointer release, or the keyboard's commit. Where the annual run solves,
-    // and where a design day catches its last shape. The baseline stays on
-    // screen after it — you have only stopped moving, not stopped comparing.
-    input.addEventListener('change', () => {
-      endGesture();
-      if (autoOn()) pump();
-    });
+    input.addEventListener('input', () => commit(key, Number(input.value)));
+    input.addEventListener('change', () => commit(key, Number(input.value), true));
 
     row.append(label, input, value);
     host.append(row);
@@ -836,13 +1009,180 @@ function buildSliders() {
   }
 }
 
-$('reset').addEventListener('click', () => {
+/**
+ * Back to the issued drawing.
+ *
+ * Two scopes, because the two buttons sit under two different headings and a
+ * control has to do what the words above it say. The sheet's is under
+ * "Dimensions" and resets the five dimensions; the desk's says "Revert all" and
+ * means it -- every control, every patch, and solo.
+ */
+function revert(keys = null) {
   beginGesture();
-  Object.assign(params, DEFAULT_PARAMETERS);
+  if (keys) {
+    for (const key of keys) params[key] = DEFAULT_PARAMETERS[key];
+  } else {
+    Object.assign(params, DEFAULT_PARAMETERS);
+    Object.assign(bypass, DEFAULT_BYPASS);
+    solo = null;
+    if (desk) desk.solo = null;
+  }
   for (const sync of Object.values(syncSlider)) sync();
+  desk?.sync();
   applyGeometry();
   endGesture();
+  desk?.settle();
   if (autoOn()) pump();
+}
+
+$('reset').addEventListener('click', () => revert(SHEET_KEYS));
+
+/* ══ the console ═════════════════════════════════════════════════════════ */
+
+let desk = null;
+let lastReadings = new Map();
+let lastHours = null;
+let lastAt = null; // the instant the desk's meters are reading
+
+const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+/**
+ * The readings that need no simulation.
+ *
+ * Four strips describe something true about the model rather than something
+ * measured in it, and they are lettered from the geometry the same way the
+ * quantities panel is — so they are right before the first run, and stay right
+ * between runs.
+ */
+function derivedReadings(facts) {
+  const months = () => {
+    const [a, b] = params.beginMonth <= params.endMonth
+      ? [params.beginMonth, params.endMonth]
+      : [params.endMonth, params.beginMonth];
+    return DAYS_IN_MONTH.slice(a - 1, b).reduce((total, d) => total + d, 0) * 24;
+  };
+  const hours =
+    (params.sizingPeriods === 'Yes' ? 48 : 0) + (annual() ? months() : 0);
+
+  return new Map([
+    ['massing', Number.isFinite(facts.compactness) ? `${facts.compactness.toFixed(3)} m⁻¹` : '—'],
+    // How high the neighbours stand from where the building is looking, which
+    // is the number that decides whether they matter.
+    [
+      'context',
+      bypass.context || (solo && solo !== 'context')
+        ? '—'
+        : `${((Math.atan2(params.ctxHeight, params.ctxDistance) * 180) / Math.PI).toFixed(0)}° up`,
+    ],
+    ['shading', facts.shadeArea > 0 ? `${facts.shadeArea.toFixed(1)} m²` : 'None'],
+    ['solver', `${params.timestep} / hour`],
+    ['run', lastHours ? `${lastHours.toLocaleString('en-US')} solved` : `${hours.toLocaleString('en-US')} to solve`],
+  ]);
+}
+
+/** Anchor a variable name so one meter cannot pick up another's series. */
+const exactly = (name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+
+/**
+ * What each channel was contributing at one instant.
+ *
+ * At one instant, and not averaged over the run, which was the first attempt
+ * and was useless: a free-running zone comes back to roughly where it started,
+ * so every term of its balance averages to nearly nothing over a day and the
+ * whole desk reads zero. A console meter shows level now, not the mean of the
+ * song. So the desk reads at the hour the building is having the hardest time —
+ * the one furthest from 20 °C, which is the hour the design is judged at, and
+ * an instant where the balance genuinely closes.
+ *
+ * A channel whose series the ESO did not carry reads null, not zero. Zero is a
+ * measurement; this is the absence of one, and the strip letters it as an em
+ * dash and stays out of the rail.
+ */
+function readMeters(eso, at) {
+  const readings = new Map();
+  if (!eso || at == null) return readings;
+  for (const channel of CHANNELS) {
+    if (!channel.meter || channel.meter.derived || !channel.meter.terms.length) continue;
+    if (!modelState?.get(channel.id).engaged) {
+      readings.set(channel.id, null);
+      continue;
+    }
+    let total = 0;
+    let found = true;
+    for (const term of channel.meter.terms) {
+      const series = hourly(eso, exactly(term.variable));
+      const point = series[at];
+      if (!point) {
+        found = false;
+        break;
+      }
+      total += (term.sign * point.value) / (term.perBuilding ? params.multiplier : 1);
+    }
+    readings.set(channel.id, found ? total : null);
+  }
+  return readings;
+}
+
+/** The hour the building is having the hardest time, within one environment. */
+function worstHour(zone, run) {
+  let at = run.start;
+  let worst = -Infinity;
+  for (let i = run.start; i <= run.end; i += 1) {
+    const off = Math.abs(zone[i] - 20);
+    if (off > worst) {
+      worst = off;
+      at = i;
+    }
+  }
+  return at;
+}
+
+const deskPanel = $('desk');
+const deskButton = $('desk-open');
+
+desk = mountConsole({
+  host: deskPanel,
+  params,
+  bypass,
+  onChange: commit,
+  onPatch(id, off) {
+    beginGesture();
+    bypass[id] = off;
+    // Taking a channel in by hand is an answer to the solo question too.
+    if (solo && solo !== id) {
+      solo = null;
+      desk.solo = null;
+    }
+    applyGeometry();
+    endGesture();
+    desk.settle();
+    if (autoOn()) pump();
+  },
+  onSolo(next) {
+    beginGesture();
+    solo = next;
+    applyGeometry();
+    endGesture();
+    desk.settle();
+    if (autoOn()) pump();
+  },
+  onReset: () => revert(),
+});
+
+function openDesk(open) {
+  document.body.classList.toggle('desk-open', open);
+  deskButton.setAttribute('aria-expanded', String(open));
+  $('desk-count').textContent = open ? 'Close the desk' : 'Every control on the desk';
+  // The plate is inside a column that just changed width.
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(renderTrace, 60);
+}
+
+deskButton.addEventListener('click', () => openDesk(!document.body.classList.contains('desk-open')));
+$('desk-revert').addEventListener('click', () => revert());
+$('desk-close').addEventListener('click', () => {
+  openDesk(false);
+  deskButton.focus();
 });
 
 /* ══ the baseline ════════════════════════════════════════════════════════ */
@@ -1253,6 +1593,9 @@ const model = buildModel(schema);
 // cannot describe a building the engine did not simulate.
 DATUMS = designDayDatums(model);
 buildSliders();
+// The desk is the point of the page, so it is open on arrival. It costs a
+// column, which is the honest price of having every control to hand.
+openDesk(true);
 applyGeometry(); // also sets SURFACES and draws the axonometric
 const facts = modelFacts(model);
 $('t-project').textContent = facts.project;
@@ -1377,10 +1720,25 @@ async function solve() {
   solvedParams = snapshot;
 
   // Tint the model by the environment the finding talks about, so the swatch
-  // and the sentence agree.
-  const lead = columns.reduce((a, b) => (b.metrics.o.swing > a.metrics.o.swing ? b : a));
+  // and the sentence agree — and read the console's meters over that same
+  // environment, so the strips, the drawing and the sentence are all describing
+  // one weather story rather than an average of two that share nothing.
+  const leadIndex = columns.reduce(
+    (best, c, i) => (c.metrics.o.swing > columns[best].metrics.o.swing ? i : best),
+    0,
+  );
+  const lead = columns[leadIndex];
   lastMean = lead.metrics.z.mean;
   renderAxon(lastMean);
+
+  lastHours = nn;
+  const at = worstHour(zone, runs[leadIndex]);
+  const stamp = points[at]?.timestamp;
+  lastAt = stamp
+    ? `${String(stamp.hour ?? 0).padStart(2, '0')}:00, ${stamp.day} ${MONTHS[stamp.month - 1]} · zone ${zone[at].toFixed(1)} °C`
+    : null;
+  lastReadings = readMeters(eso, at);
+  desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt);
 
   $('fig-cap').textContent = hasOutdoor
     ? nn > 900

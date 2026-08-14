@@ -42,6 +42,9 @@
         --cold: #3d6478; /* −15.5 °C, the winter design condition */
         --warm: #b4552a; /* 32 °C, the summer design condition */
 
+        --vellum: #f1ede4; /* the trace sheet the console is drawn on */
+        --desk: 436px; /* the console's column */
+
         --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
         --cond: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", system-ui, sans-serif;
         --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -68,6 +71,7 @@
           --redline-wash: rgba(217, 106, 84, 0.14);
           --cold: #6d9bb2;
           --warm: #d08355;
+          --vellum: #191c20;
         }
       }
 
@@ -893,6 +897,429 @@
         color: var(--ink-3);
       }
 
+      /* ── the model console ──────────────────────────────────────────
+         A second sheet laid on the same board, not a dialog floating over
+         one. It takes a column of its own and pushes the drawing left,
+         which is the honest cost of having every control on the desk at
+         once: the desk needs the width, so the window does too. */
+
+      /* The tab that opens the desk. Shaped like the auto-solve toggle it
+         stands beside, without the square marker — that marker means "armed",
+         and this only means "shown". */
+      .deskbtn {
+        all: unset;
+        box-sizing: border-box;
+        flex: 0 0 auto;
+        min-height: 46px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 3px;
+        padding: 6px 16px;
+        background: var(--inset);
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        cursor: pointer;
+        transition: border-color 0.15s ease;
+      }
+      .deskbtn:hover { border-color: var(--rule-firm); }
+      .deskbtn:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+      .deskbtn[aria-expanded="true"] { border-color: var(--rule-firm); background: var(--vellum); }
+
+      body.desk-open {
+        display: grid;
+        grid-template-columns: minmax(12px, 1fr) minmax(0, 1080px) var(--desk) minmax(12px, 1fr);
+        align-items: start;
+        gap: 0;
+        padding-right: 0;
+      }
+      body.desk-open .sheet {
+        grid-column: 2;
+        justify-self: stretch;
+      }
+
+      .desk {
+        position: sticky;
+        top: 16px;
+        max-height: calc(100vh - 32px);
+        display: none;
+        flex-direction: column;
+        min-height: 0;
+        background: var(--vellum);
+        border: 1px solid var(--rule-firm);
+        border-right: 0;
+        border-radius: var(--r) 0 0 var(--r);
+        margin-left: -1px;
+      }
+      body.desk-open .desk {
+        grid-column: 3;
+        display: flex;
+      }
+
+      .desk-head {
+        padding: 16px 18px 14px;
+        border-bottom: 1px solid var(--rule);
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 4px 12px;
+        align-items: baseline;
+        flex: none;
+      }
+      .desk-head h2 {
+        grid-column: 1;
+        margin: 4px 0 0;
+        font: 600 17px/1.1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .desk-head .eyebrow { grid-column: 1; }
+      .desk-actions {
+        grid-row: 1 / span 2;
+        grid-column: 2;
+        align-self: center;
+        display: flex;
+        gap: 14px;
+      }
+      .desk-sub {
+        grid-column: 1 / -1;
+        margin: 7px 0 0;
+        font: 400 11.5px/1.5 var(--sans);
+        color: var(--ink-3);
+      }
+      /* Only says anything when the window is too narrow to hold both. */
+      .desk-widen { display: none; margin: 8px 0 0; font: 400 11.5px/1.45 var(--sans); color: var(--redline); }
+      @media (max-width: 1180px) {
+        body.desk-open .desk-widen { display: block; }
+      }
+
+      .strips { overflow-y: auto; flex: 1; min-height: 0; }
+
+      .strip { border-bottom: 1px solid var(--rule); padding: 14px 18px 16px; }
+      .strip:last-child { border-bottom: 0; }
+      /* Out of the path: still legible, still settable, plainly not in the
+         model. This is what a non-photo-blue pencil would have said. */
+      .strip.out .strip-body,
+      .strip.out .meter { opacity: 0.38; }
+      .strip.soloed { background: var(--redline-wash); }
+
+      .strip-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 7px;
+      }
+      .strip-no {
+        font: 400 10px/1 var(--mono);
+        color: var(--ink-ghost);
+        letter-spacing: 0.04em;
+      }
+      .strip-head h3 {
+        flex: 1;
+        margin: 0;
+        font: 600 12px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink);
+      }
+      .strip-term {
+        font: 400 10.5px/1 var(--mono);
+        color: var(--ink-3);
+        border: 1px solid var(--rule);
+        border-radius: 1px;
+        padding: 3px 4px;
+      }
+
+      .patch, .solo {
+        all: unset;
+        font: 500 9px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        padding: 4px 6px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .patch:hover, .solo:hover { border-color: var(--rule-firm); color: var(--ink); }
+      .patch:focus-visible, .solo:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+      /* The same square marker the run ledger uses, because it means the same
+         thing here: a step that is armed. */
+      .patch-mark {
+        width: 8px; height: 8px;
+        border: 1px solid var(--ink-ghost);
+        border-radius: 1px;
+      }
+      .patch.on { color: var(--ink); }
+      .patch.on .patch-mark { background: var(--redline); border-color: var(--redline); }
+      .solo.on { color: var(--sheet); background: var(--redline); border-color: var(--redline); }
+
+      .strip-blurb {
+        margin: 0 0 11px;
+        font: 400 11.5px/1.5 var(--sans);
+        color: var(--ink-3);
+      }
+      .strip-blocked {
+        margin: 0 0 11px;
+        padding: 7px 9px;
+        border: 1px dashed var(--rule-focus);
+        border-radius: var(--r);
+        font: 400 11.5px/1.45 var(--sans);
+        color: var(--redline);
+      }
+      .strip-blocked[hidden] { display: none; }
+
+      .strip-body { display: flex; flex-direction: column; gap: 11px; }
+
+      /* ── one control ──────────────────────────────────────────────── */
+
+      .ctl-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 4px;
+      }
+      .ctl-head label, .ctl-label {
+        font: 500 9.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+      .ctl-value {
+        font: 400 11px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+        white-space: nowrap;
+      }
+      .ctl-note {
+        margin: 5px 0 0;
+        font: 400 10.5px/1.45 var(--sans);
+        color: var(--ink-ghost);
+      }
+      /* Set, but not reaching the model in the current configuration. */
+      .ctl.idle { opacity: 0.4; }
+
+      /* A ruled calibration face with a penciled tick. The range input is
+         real and transparent on top of it: it carries the keyboard and the
+         ARIA, the drawing below carries the reading. */
+      .face { position: relative; height: 15px; }
+      .face::before {
+        content: "";
+        position: absolute;
+        left: 0; right: 0; bottom: 5px;
+        height: 4px;
+        background-image: repeating-linear-gradient(
+          to right, var(--rule) 0 1px, transparent 1px 10%
+        );
+      }
+      .face-rule {
+        position: absolute;
+        left: 0; right: 0; bottom: 5px;
+        height: 1px;
+        background: var(--rule-firm);
+      }
+      .face-tick {
+        position: absolute;
+        bottom: 1px;
+        width: 1px;
+        height: 13px;
+        margin-left: -0.5px;
+        background: var(--ink);
+        transition: background 0.15s ease;
+      }
+      .face-tick::after {
+        content: "";
+        position: absolute;
+        left: -2px; bottom: 0;
+        width: 5px; height: 5px;
+        background: var(--ink);
+        border-radius: 1px;
+      }
+      /* Where it stood when you took hold. Same pen, no weight. */
+      .face-ghost {
+        position: absolute;
+        bottom: 3px;
+        width: 1px;
+        height: 9px;
+        margin-left: -0.5px;
+        background: var(--ink-ghost);
+      }
+      .face-ghost[hidden] { display: none; }
+      .face input {
+        position: absolute;
+        inset: -2px 0;
+        width: 100%;
+        margin: 0;
+        opacity: 0;
+        cursor: ew-resize;
+      }
+      .face:hover .face-tick, .face:hover .face-tick::after { background: var(--redline); }
+      .face:has(input:focus-visible) { outline: 2px solid var(--rule-focus); outline-offset: 3px; }
+
+      /* Exclusive states on one segmented rule. Never a dropdown: the desk
+         has to be readable without opening anything. */
+      .segments {
+        display: flex;
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        overflow: hidden;
+      }
+      .segment {
+        all: unset;
+        flex: 1;
+        text-align: center;
+        padding: 5px 3px;
+        font: 500 9px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--ink-3);
+        cursor: pointer;
+        border-right: 1px solid var(--rule-soft);
+        transition: background 0.14s ease, color 0.14s ease;
+      }
+      .segment:last-child { border-right: 0; }
+      .segment:hover { color: var(--ink); }
+      .segment.here { background: var(--ink); color: var(--vellum); }
+      .segment:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: -2px; }
+
+      .rose { display: block; width: 92px; height: 92px; margin: 2px auto 0; }
+      .rose-grab { cursor: grab; }
+      .rose-grab:active { cursor: grabbing; }
+
+      .plan { display: block; width: 148px; height: 148px; margin: 0 auto; }
+      .plan-grab { cursor: ew-resize; }
+      .plan-legend {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+        margin-top: 4px;
+      }
+      .plan-read { display: flex; flex-direction: column; gap: 2px; text-align: center; }
+      .plan-read span {
+        font: 500 9px/1 var(--cond);
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+      .plan-read b {
+        font: 400 10px/1.2 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+      }
+
+      .band { display: block; width: 100%; height: auto; }
+      .band-grab { cursor: ew-resize; }
+
+      /* ── what a channel is actually contributing ──────────────────── */
+
+      .meter {
+        margin-top: 13px;
+        padding-top: 10px;
+        border-top: 1px solid var(--rule-soft);
+      }
+      .meter-head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 5px;
+      }
+      .meter-label {
+        flex: 1;
+        font: 500 9.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+      /* Marks the readings that are terms of the rail below. */
+      .meter-rail {
+        font: 500 8.5px/1 var(--cond);
+        font-style: normal;
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-ghost);
+        border: 1px solid var(--rule);
+        border-radius: 1px;
+        padding: 2px 3px;
+      }
+      .meter-value {
+        font: 400 11.5px/1.2 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+      }
+      .meter-bar {
+        position: relative;
+        height: 6px;
+        background: var(--inset);
+        border: 1px solid var(--rule-soft);
+        border-radius: 1px;
+      }
+      .meter-bar[hidden] { display: none; }
+      .meter-zero {
+        position: absolute;
+        left: 50%; top: -2px; bottom: -2px;
+        width: 1px;
+        background: var(--rule-firm);
+      }
+      .meter-fill { position: absolute; top: 0; bottom: 0; }
+      .meter-fill[hidden] { display: none; }
+      .meter-note {
+        margin: 6px 0 0;
+        font: 400 10.5px/1.45 var(--sans);
+        color: var(--ink-ghost);
+      }
+
+      /* ── the master bus ───────────────────────────────────────────── */
+
+      .rail {
+        flex: none;
+        padding: 12px 18px 14px;
+        border-top: 1px solid var(--rule-firm);
+        background: var(--vellum);
+      }
+      .rail-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+      .rail-total {
+        font: 400 11.5px/1.2 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+      }
+      .rail-track {
+        position: relative;
+        height: 11px;
+        margin: 9px 0 10px;
+        background: var(--inset);
+        border: 1px solid var(--rule-soft);
+        border-radius: 1px;
+      }
+      /* Tone, not hue, separates neighbours on the same side of zero; the
+         divider is cut in the panel's own surface so it reads as a gap. */
+      .rail-seg { position: absolute; top: 0; bottom: 0; box-shadow: 1px 0 0 0 var(--vellum), -1px 0 0 0 var(--vellum); }
+      .rail-zero { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--ink); }
+      .rail-key { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px 16px; }
+      .rail-item { display: flex; align-items: baseline; gap: 6px; font: 400 10px/1.6 var(--mono); }
+      .rail-swatch {
+        width: 8px; height: 8px;
+        border: 1px solid var(--rule-soft);
+        border-radius: 1px;
+        flex: none;
+        align-self: center;
+      }
+      .rail-item span { flex: 1; color: var(--ink-3); }
+      .rail-item b { font-weight: 400; font-variant-numeric: tabular-nums; color: var(--ink); }
+      .rail-when {
+        margin: 0 0 2px;
+        font: 400 10px/1.4 var(--mono);
+        color: var(--ink-3);
+      }
+      .desk-sub em { font-style: normal; color: var(--ink-2); }
+      .rail-note, .rail-empty {
+        margin: 9px 0 0;
+        font: 400 10.5px/1.45 var(--sans);
+        color: var(--ink-ghost);
+      }
+      .rail-note.loose { color: var(--ink-3); }
+
       @media (max-width: 780px) {
         body { padding: 20px 12px 48px; }
         .head { grid-template-columns: 1fr; padding: 24px; }
@@ -917,6 +1344,20 @@
         .notes summary, #log { padding-left: 24px; padding-right: 24px; }
         .disclosure-body { padding-left: 24px; padding-right: 24px; }
         .disclaimers { grid-template-columns: 1fr; gap: 12px; }
+        /* No width left to take a column of, so the desk goes below the sheet
+           and gives up its sticky rail. */
+        body.desk-open { grid-template-columns: 1fr; padding-right: 12px; }
+        body.desk-open .sheet,
+        body.desk-open .desk { grid-column: auto; }
+        .desk {
+          position: static;
+          max-height: none;
+          margin-left: 0;
+          border-right: 1px solid var(--rule-firm);
+          border-radius: var(--r);
+        }
+        .strips { overflow-y: visible; }
+        .rail-key { grid-template-columns: 1fr; }
       }
     </style>
   </head>
@@ -1001,6 +1442,10 @@
                 </div>
               </div>
             </div>
+            <button type="button" class="deskbtn" id="desk-open" aria-expanded="false" aria-controls="desk">
+              <span class="toggle-main">Model console</span>
+              <span class="toggle-sub" id="desk-count">Every control on the desk</span>
+            </button>
           </div>
           <p class="status" id="status"></p>
 
@@ -1137,6 +1582,27 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
         </div>
       </details>
     </main>
+
+    <aside class="desk" id="desk" aria-label="Model console">
+      <header class="desk-head">
+        <p class="eyebrow">Recall sheet</p>
+        <h2>Model console</h2>
+        <span class="desk-actions">
+          <button type="button" class="link" id="desk-revert">Revert all</button>
+          <button type="button" class="link" id="desk-close">Close</button>
+        </span>
+        <p class="desk-sub">
+          Fourteen channels in the order the physics happens. Every control writes a real object
+          into the IDF, and every strip reads back what its path is actually contributing. The five
+          marked <em>rail</em> are terms of the zone air heat balance, and they sum at the foot.
+        </p>
+        <p class="desk-widen">
+          The sheet is being squeezed. Widen the window to work the desk and read the drawing at
+          the same time.
+        </p>
+      </header>
+    </aside>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
