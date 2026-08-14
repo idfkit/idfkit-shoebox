@@ -1,0 +1,192 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+```bash
+npm install
+npm run dev       # predev stages ~50 MB of engine assets, schemas and the station index
+npm run build     # prebuild does the same staging
+npm run preview
+```
+
+`predev` / `prebuild` copy `@idfkit/engine-assets` into `public/energyplus/`, the
+schema bundle into `public/schemas/`, and the TMYx station index into
+`public/weather/`. All three are gitignored, so a fresh clone must run one of the
+npm scripts before the page will load.
+
+There is **no test runner and no linter** configured. See below for how changes
+are actually verified.
+
+## Verifying changes
+
+Schema validation alone does not catch what breaks a run, and the browser is a
+slow place to find out. EnergyPlus 26.1.0 is installed locally at
+`/Applications/EnergyPlus-26-1-0`, and the idfkit MCP tools find it unaided, so
+model changes should be checked outside the browser first:
+
+1. Write a throwaway Node script that imports `src/model.js`, builds the document
+   at several console positions, and writes each IDF to disk. Outside the
+   browser the schema comes from `localBundle()` in `@idfkit/schemas/node`, not
+   from `httpSource('/schemas/')`.
+2. Assert idempotence: `applyModel` runs on every parameter change, so applying
+   it three times must produce byte-identical output.
+3. Run each IDF through `load_model` then `validate_model`,
+   `check_model_integrity`, and `run_simulation`.
+4. Read the run's `eplus.rdd` to confirm any output variable name exists rather
+   than guessing its spelling, and grep `eplus.err` for "requested but not
+   generated".
+
+Then load the page and drive it. A design day solves in about 50 ms once the
+engine is warm, so the whole desk can be exercised quickly.
+
+## Architecture
+
+A one-page client-side EnergyPlus demo, laid out as a drafting sheet with a
+"model console" panel. The governing rule, which the whole codebase is arranged
+around:
+
+> **Everything drawn is read back off the `IDFDocument`.** Never letter the page
+> from a variable when the model holds the answer. The axonometric projects
+> `BuildingSurface:Detailed` vertices, the plate's datum lines come from
+> `SizingPeriod:DesignDay`, the title block reads `Site:Location`, and the
+> quantities are summed off surfaces with Newell's method.
+
+### The through-line
+
+```
+controls.js  declares every control (typed classes) and groups them into Channels
+     |
+     +--> model.js   one applier per channel writes the IDF objects
+     +--> console.js draws the strips from the same declaration
+     +--> main.js    owns `params`, wires gestures, schedules solves, reads the ESO
+```
+
+`src/controls.js` is the single source of truth. A control exists once, as a
+`Scale`, `Selector`, `Arm`, `Bearing`, `Facade` (four walls on one plan key) or
+`Profile` (a 24 hour band), attached to a `Channel`. The console draws it, the
+model applies it, and the sheet's five dimension sliders look their specs up by
+key from the same place, so the two surfaces cannot drift.
+
+**To add a control:** declare it in `controls.js`, then write the field in that
+channel's applier in `model.js`. Do not add markup, defaults, or label strings
+anywhere else. `DEFAULT_PARAMETERS` is derived from the declaration.
+
+### `applyModel` (src/model.js)
+
+One idempotent function puts the whole desk into the document. It runs on every
+parameter change and again at the end of `buildModel`, in strip order, because
+later channels read geometry earlier ones wrote (shades need openings to hang
+on).
+
+- **Bypass removes, it does not zero.** A channel that is out has its objects
+  deleted from the document. That is what keeps the drawing and the IDF agreeing
+  about what is in the path.
+- **`Channel.requires`** is a precondition on the rest of the desk. Unmet, the
+  channel is not written at all and the strip states what is missing, rather than
+  handing the engine objects it would reject.
+- **`syncOutputs`** adds and removes `Output:Variable` objects to match the
+  engaged channels. Without this, EnergyPlus lists every unproducible variable at
+  the end of the error file and inflates the warning count the title block
+  reports.
+- **`must(doc, type, name)`** throws when an expected object is missing instead
+  of quietly re-adding it. See "No silent fallbacks" below.
+
+### The solve scheduler (src/main.js)
+
+`@idfkit/engine` rejects a second `run()` while one is in flight, so every solve
+goes through one `pump()` loop and it is latest-wins: whatever the controls show
+when the engine comes free is what gets solved, and shapes the drag passed
+through are skipped rather than queued.
+
+`shapeKey` is `JSON.stringify([params, patching()])`. **Anything that reaches the
+IDF must live on `params`**, or it will move the drawing and never be simulated.
+
+Auto-solve has two cadences: a design day (48 h, ~50 ms) re-solves continuously
+during a drag; a weather file (8,760 h, ~0.7 s) re-solves once on release.
+
+### The balance rail
+
+The console's signature. Five channel meters are terms of the zone *air* heat
+balance and therefore sum. Non-obvious facts, each of which cost real debugging:
+
+- Use the `Zone Air Heat Balance …` family and nothing else. Mixing in
+  per-mechanism variables (infiltration in joules, ideal loads in watts) does not
+  close, because those belong to different balances.
+- `Zone Air Heat Balance Air Energy Storage Rate` is the accumulation side, so it
+  enters negated.
+- `Zone Air Heat Balance System Air Transfer Rate` is reported at **building**
+  level, already multiplied by the zone multiplier, while the other four are per
+  zone. `Term.perBuilding` marks it and the reader divides it back down.
+- Meters read **one instant**, the hour furthest from 20 °C in the lead
+  environment, not an average. A free-running zone returns to where it started,
+  so every term averages to roughly nothing over a day and the whole desk reads
+  zero.
+
+## Invariants that fail quietly
+
+- **`Building.north_axis` is ignored** because `GlobalGeometryRules` declares
+  World coordinates. Orientation lives in the vertices via `turn()` in
+  `model.js`, and `north_axis` is pinned at 0. The axonometric un-turns the
+  geometry with `square()` so the building is drawn square to the page under a
+  north arrow that rotates, which also avoids the projection collapsing into a
+  flat elevation at 45 degrees.
+- **Geometry measured along fixed axes breaks under rotation.** Dimension lines
+  take wall lengths off the wall's own bottom edge, and shade projection is
+  measured along the host wall's outward normal (`reachOff`), not along x or y.
+- **`Schedule:Compact`**: `Until: 08:00` and the value after it are two separate
+  extensible fields. Joining them into one comma-bearing string produces a
+  malformed IDF.
+- **Field names drift between EnergyPlus versions.** `Lights` and
+  `ElectricEquipment` use `watts_per_floor_area`, not
+  `watts_per_zone_floor_area`. In 26.1 transmitted solar is
+  `Enclosure Windows Total Transmitted Solar Radiation Rate`, not the older
+  `Zone Windows …`. Check with `describe_object_type` or the `.rdd` rather than
+  from memory.
+- **An economizer requires a cooling flow limit**, or EnergyPlus raises a severe
+  error. Nothing here is autosized, so the limit is computed from zone volume.
+- **A shading device cannot be hung on `WindowMaterial:SimpleGlazingSystem`**,
+  which is why the Blinds channel requires the layered glazing model.
+- **Per-surface output variables are ruinously expensive.** Requesting them with
+  key `*` took the ESO from 15 series to 173 and the annual run from 681 ms to
+  2,984 ms, almost all of it after the simulation finished. Keep new output
+  requests zone-level or site-level.
+
+## Conventions
+
+**No silent fallbacks.** When a code path cannot get what it needs it throws,
+naming the specific thing that was missing, and the caller refuses the whole
+operation and says so in the interface. Do not substitute a previous value, a
+default, or a nearest match. The worked example is the weather picker: a station
+whose DDY cannot be read is refused entirely rather than running one city's year
+against another city's design conditions. The visual half of this is that a
+reading with no data behind it renders as an em dash and stays out of any total,
+because zero is a measurement and missing is not one.
+
+**Comments explain why, not what.** The house style is prose, often several
+sentences, recording the reasoning and frequently the measurement or the error
+message that forced a decision. Match it.
+
+**Interface work** follows `.interface-design/system.md`: four surfaces on one
+hue, hairline borders and no shadows, one accent (`--redline`) plus a cold/warm
+pair reserved for signed physical quantities. Read it before touching visual
+design.
+
+**Prefer typed objects** (classes with constructors, frozen instances) over loose
+dictionaries, especially for declarations like the ones in `controls.js`.
+
+## Weather data
+
+`src/weather.js` sits over `@idfkit/weather`. The 1.7 MB station index is fetched
+lazily on the first keystroke in the picker and kept for the session.
+climate.onebuilding.org sends no CORS header, so requests go through the
+`/onebuilding` dev-server proxy in `vite.config.js`; a static deployment needs
+the equivalent rewrite at the host, or a proxy origin in `VITE_WEATHER_PROXY`.
+`asIndexed()` is a temporary query-normalisation workaround pending a fix
+upstream.
+
+The README documents the weather picker, the output-variable measurements, and
+the glazing and overhang parameter studies in detail. It predates the model
+console, so where it describes five sliders and `setParameters`, the current code
+has the console and `applyModel`.
