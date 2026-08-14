@@ -2147,7 +2147,10 @@ $('t-date').textContent = `Issued ${new Date().toLocaleDateString('en-CA')}`;
 let quiet = false;
 
 const enginePromise = createEnergyPlus({
-  assetBaseUrl: '/energyplus',
+  // `BASE_URL` rather than a leading slash: a PR preview is built with
+  // `--base=/<pr>/` and served from that subdirectory, and an absolute path
+  // would have it download the published site's engine. See `weather.js`.
+  assetBaseUrl: `${import.meta.env.BASE_URL}energyplus`,
   onConsole: log,
   onProgress: ({ phase, message }) => {
     if (quiet) return;
@@ -2159,7 +2162,9 @@ const enginePromise = createEnergyPlus({
 // `predev`/`prebuild` stage the bundle into `public/schemas/`; `httpSource`
 // resolves the path against the document and inflates the `.gz` files, or not,
 // depending on what the host has already done to them.
-const schema = await new SchemaBundle(httpSource('/schemas/')).load(ENERGYPLUS_VERSION);
+const schema = await new SchemaBundle(httpSource(`${import.meta.env.BASE_URL}schemas/`)).load(
+  ENERGYPLUS_VERSION,
+);
 const model = buildModel(schema);
 
 // Everything the drawing asserts is now read back off the model, so the sheet
