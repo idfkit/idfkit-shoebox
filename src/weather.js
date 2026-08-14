@@ -7,7 +7,7 @@
  * between that and the sheet: it decides *when* to pay for the index, which of
  * a station's several flavours to offer, and how a station reads in one line.
  */
-import { fetchEpw, loadStationIndex } from '@idfkit/weather';
+import { fetchWeatherFiles, loadStationIndex } from '@idfkit/weather';
 
 /** Staged out of the package's `data/` by `scripts/stage-weather.mjs`. */
 const INDEX_URL = '/weather/stations.json.gz';
@@ -74,11 +74,22 @@ function group(stations, limit) {
   });
 }
 
+/**
+ * Punctuation, spelled the way the index spells it.
+ *
+ * `scoreStation` normalises the station name with `[.-]` → space but leaves the
+ * query as typed, so a hyphen or a dot in the query can never match: "Montreal
+ * Trudeau" finds the airport and "Montreal-Trudeau" finds nothing. The list
+ * shows the name with its hyphen, so typing back what you just read is the
+ * failing case. Until the package normalises both sides, do it here.
+ */
+const asIndexed = (query) => query.replace(/[.\-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+
 /** Text search, grouped to one row per site. */
 export async function searchSites(query, limit = 8) {
   const index = await stationIndex();
   // Over-fetch, because up to five raw hits group into one row.
-  const hits = index.search(query, { limit: limit * 6 });
+  const hits = index.search(asIndexed(query), { limit: limit * 6 });
   return group(
     hits.map((hit) => hit.station),
     limit
@@ -105,19 +116,48 @@ export const degreeDays = (station) =>
     .filter(Boolean)
     .join(' · ');
 
-/** The browser's own coordinate, only ever on an explicit click. */
+/**
+ * The three ways this fails, which are three different things to do about it.
+ *
+ * Reporting all of them as a refusal was the unhelpful case: it sent you to a
+ * site setting that was never the problem. A denied permission is in the
+ * browser; an unavailable position is almost always the operating system
+ * withholding location from the browser, whatever the page was granted.
+ */
+const GEOLOCATION_ERRORS = {
+  1: 'Location permission was declined — search for a city instead',
+  2: 'The browser could not work out where you are. On macOS this is usually Chrome itself being denied Location Services, in System Settings › Privacy & Security',
+  3: 'The browser took too long to find you — try again, or search for a city',
+};
+
+/**
+ * The browser's own coordinate, only ever on an explicit click.
+ *
+ * The timeout has to cover the permission prompt, because the clock starts when
+ * the call is made and the prompt is answered at reading speed: 10 s was a 10 s
+ * deadline for noticing a dialog, and missing it reported a timeout as a
+ * refusal. A fix from the last five minutes is good enough to reuse, and comes
+ * back without waking the radio at all.
+ */
 export const here = () =>
   new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error('This browser has no geolocation'));
     navigator.geolocation.getCurrentPosition(
       (position) => resolve([position.coords.latitude, position.coords.longitude]),
-      () => reject(new Error('Location permission was declined')),
-      { timeout: 10_000 }
+      (error) => reject(new Error(GEOLOCATION_ERRORS[error.code] ?? error.message)),
+      { timeout: 30_000, maximumAge: 300_000 }
     );
   });
 
-/** Download and unpack a site's EPW, as text ready for `ep.run({ idf, epw })`. */
-export const epwFor = (station, signal) => fetchEpw(station, { rewriteUrl, signal });
+/**
+ * Download and unpack a site's archive: the EPW for `ep.run({ idf, epw })`, and
+ * the DDY that states the same site's design conditions.
+ *
+ * Both come out of one request — the archive already holds them — so taking the
+ * DDY as well costs nothing beyond the unzip. `ddy` is null for the handful of
+ * sites published without one.
+ */
+export const weatherFor = (station, signal) => fetchWeatherFiles(station, { rewriteUrl, signal });
 
 /* ── how a station reads ──────────────────────────────────────────────── */
 

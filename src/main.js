@@ -1,14 +1,17 @@
 import { createEnergyPlus, findVariables, getTimeSeries } from '@idfkit/engine';
-import { SchemaBundle, writeIdf } from '@idfkit/core';
+import { httpSource, SchemaBundle, writeIdf } from '@idfkit/core';
 import {
   buildModel,
   DEFAULT_PARAMETERS,
+  designConditionsFrom,
   designDayDatums,
   geometryFacts,
   modelFacts,
   PARAMETERS,
   setAnnual,
+  setDesignConditions,
   setParameters,
+  shadeGeometry,
   surfaceGeometry,
   windowGeometry,
 } from './model.js';
@@ -16,12 +19,12 @@ import {
   climateDescription,
   climateZone,
   degreeDays,
-  epwFor,
   here,
   nearestSites,
   searchSites,
   siteName,
   siteRegion,
+  weatherFor,
 } from './weather.js';
 
 const ENERGYPLUS_VERSION = '26.1.0';
@@ -33,32 +36,6 @@ const runBtn = $('run');
 const statusEl = $('status');
 const logEl = $('log');
 const elapsedEl = $('elapsed');
-
-/* ══ the schema bundle ═══════════════════════════════════════════════════ */
-
-/**
- * Where `@idfkit/schemas` reads its bundle from.
- *
- * Not `httpSource`, for two reasons. It resolves against an absolute base, so a
- * bare '/schemas/' throws. And it always pipes the body through a
- * `DecompressionStream`, which breaks the moment a host serves the `.gz` files
- * with `Content-Encoding: gzip` — Vite's static middleware does exactly that, so
- * the browser has already inflated the body and there is nothing left to
- * decompress. Sniffing the gzip magic bytes covers both kinds of host.
- */
-function schemaSource(basePath) {
-  const base = new URL(basePath, location.href).href;
-  return {
-    async read(fileName) {
-      const response = await fetch(new URL(`${fileName}.gz`, base));
-      if (!response.ok) throw new Error(`Failed to load ${fileName}.gz: ${response.status}`);
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      if (bytes[0] !== 0x1f || bytes[1] !== 0x8b) return JSON.parse(new TextDecoder().decode(bytes));
-      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-      return new Response(stream).json();
-    },
-  };
-}
 
 /* ══ the run ledger ══════════════════════════════════════════════════════ */
 
@@ -176,6 +153,11 @@ function renderAxon(meanC) {
       faces.push({ screen, alpha: 0.1 + 0.2 * Math.max(0, n[2]) + 0.07 * Math.max(0, n[0]) });
     }
   }
+
+  // The overhang is drawn last but measured now: it stands outside the box, so
+  // the frame has to be told about it before the viewBox is settled.
+  const shades = SHADES.map((s) => s.verts.map(project));
+  for (const screen of shades) pts.push(...screen);
 
   // One dimension line per slider, each offset off the model in its own
   // coordinate space and anchored to an edge the south-east view keeps in
@@ -299,6 +281,24 @@ function renderAxon(meanC) {
     );
   }
 
+  // The overhang, drawn over both: from the south-east it is the nearest thing
+  // in the drawing to the eye. It takes no tint — it is not a surface of the
+  // zone and has no temperature — so it reads as the solid it is, and the
+  // hairline along its outer edge is what the eye measures the projection by.
+  for (const screen of shades) {
+    root.append(
+      svg('polygon', {
+        points: screen.map((p) => p.join(',')).join(' '),
+        fill: 'var(--ink-3)',
+        'fill-opacity': 0.42,
+        stroke: 'var(--ink)',
+        'stroke-width': 0.9,
+        'stroke-linejoin': 'round',
+        'vector-effect': 'non-scaling-stroke',
+      }),
+    );
+  }
+
   // Dimension lines, drawn the way they are drawn on paper: extension lines,
   // slash ticks, text set along the line.
   const dimG = svg('g', { stroke: 'var(--ink-3)', 'stroke-width': 0.5, opacity: 0.85 });
@@ -343,6 +343,7 @@ const PAD = { t: 18, r: 68, b: 30, l: 46 }; // right gutter holds the curve labe
 const H = 268;
 let SURFACES = [];
 let WINDOWS = [];
+let SHADES = [];
 let DATUMS = [];
 let plot = null; // last rendered dataset, kept so a resize can redraw it
 // The zone curve as it stood when the current gesture began. Auto-solve makes a
@@ -582,17 +583,32 @@ function environmentRuns(points, environments) {
   });
 }
 
-// Design days become one labelled band each; a year long enough to crowd them
-// gets month ticks instead.
+/**
+ * Design days become one labelled band each; a year long enough to crowd them
+ * gets month ticks instead.
+ *
+ * An annual run is both at once — two design days ahead of 8,760 hours — and
+ * each environment is bucketed on its own, because running the month walk
+ * across the whole axis would print the design days as two more months and set
+ * their names against the year's January. Twenty-four hours out of 8,808 is far
+ * too narrow a band to letter, so on a dense axis they keep their rule and give
+ * up their label.
+ */
 function axisSegments(points, runs) {
   if (runs.length > 1 && points.length <= 400) return runs;
-  const months = [];
-  points.forEach((p, i) => {
-    const m = p.timestamp.month;
-    if (!months.length || months.at(-1).key !== m) months.push({ key: m, start: i, end: i, label: MONTHS[m - 1] });
-    else months.at(-1).end = i;
+  const months = (run) => {
+    const found = [];
+    for (let i = run.start; i <= run.end; i++) {
+      const m = points[i].timestamp.month;
+      if (!found.length || found.at(-1).key !== m) found.push({ key: m, start: i, end: i, label: MONTHS[m - 1] });
+      else found.at(-1).end = i;
+    }
+    return found;
+  };
+  return runs.flatMap((run) => {
+    const found = months(run);
+    return found.length > 1 ? found : [{ ...run, label: runs.length > 1 ? '' : run.label }];
   });
-  return months.length > 1 ? months : runs;
 }
 
 function metricsFor(zone, out, run, hasOutdoor) {
@@ -711,9 +727,13 @@ const syncSlider = {}; // key -> redraw that slider from `params`
 let solvedShape = null; // the shape the visible results were solved for
 let lastMean = null; // zone mean of the last run, for the axonometric tint
 
-const shapeKey = (p) => `${p.width}×${p.depth}×${p.height}@${p.wwr}`;
+// Every parameter that reaches the IDF belongs in here: the pump solves a shape
+// only if its key differs from the one on screen, so anything left out would
+// move the drawing and never be simulated.
+const shapeKey = (p) => `${p.width}×${p.depth}×${p.height}@${p.wwr}+${p.overhang}`;
 const shapeLabel = (p) =>
-  `${p.width.toFixed(2)} × ${p.depth.toFixed(2)} × ${p.height.toFixed(2)} m · ${(p.wwr * 100).toFixed(0)} %`;
+  `${p.width.toFixed(2)} × ${p.depth.toFixed(2)} × ${p.height.toFixed(2)} m · ${(p.wwr * 100).toFixed(0)} %` +
+  (p.overhang > 0 ? ` · ${p.overhang.toFixed(2)} m overhang` : '');
 
 // Results describe a shape. Once the shape moves, they describe a building that
 // is no longer on the sheet, so say so rather than letting them sit there.
@@ -743,6 +763,7 @@ function applyGeometry() {
   setParameters(model, params);
   SURFACES = surfaceGeometry(model);
   WINDOWS = windowGeometry(model);
+  SHADES = shadeGeometry(model);
   renderAxon(lastMean);
 
   const facts = geometryFacts(model);
@@ -752,6 +773,12 @@ function applyGeometry() {
   $('q-volume').textContent = `${facts.volume.toFixed(1)} m³`;
   $('q-compact').textContent = `${facts.compactness.toFixed(3)} m⁻¹`;
   $('q-glazing').textContent = facts.glazing > 0 ? m2(facts.glazing) : 'None';
+  // Depth and projection factor together: the depth is what the slider says,
+  // the factor is what it means against the opening it shades.
+  $('q-overhang').textContent =
+    facts.overhang > 0
+      ? `${facts.overhang.toFixed(2)} m · PF ${facts.projection.toFixed(2)}`
+      : 'None';
   markStale();
 }
 
@@ -1099,10 +1126,16 @@ $('site-near').addEventListener('click', async () => {
 });
 
 /**
- * Take a station: download its archive, unpack the EPW, and re-letter the
- * sheet. The download is the one slow step on this page that is not the engine
- * — a few hundred kilobytes through a proxy — so it narrates itself in the
- * status line and can be superseded by a second choice mid-flight.
+ * Take a station: download its archive, unpack it, and re-letter the sheet. The
+ * download is the one slow step on this page that is not the engine — a few
+ * hundred kilobytes through a proxy — so it narrates itself in the status line
+ * and can be superseded by a second choice mid-flight.
+ *
+ * The archive carries the site's design conditions beside its year, and both go
+ * into the model: the run period comes off the EPW, the two design days and the
+ * `Site:Location` come off the DDY. Keeping Denver's while running another
+ * city's weather was not just untidy on the sheet — the engine warned that the
+ * two disagreed, and sized the design days at the wrong pressure.
  */
 async function choose(row, pick) {
   const picked = pick.station;
@@ -1117,18 +1150,39 @@ async function choose(row, pick) {
   statusEl.className = 'status';
   statusEl.textContent = `Downloading TMYx ${pick.label} for ${siteName(picked)}…`;
 
-  try {
-    epwText = await epwFor(picked, signal);
-  } catch (error) {
-    if (signal.aborted) return;
+  // Hand the field back, saying why. The sheet keeps whatever climate it
+  // already had, which is the one it is still lettered with.
+  const refuse = (message) => {
     site.classList.remove('picked');
     $('site-main').textContent = 'Choose a weather location';
     $('site-sub').textContent = 'Any of 17,292 TMYx stations, for a full 8,760-hour year';
     statusEl.className = 'status bad';
-    statusEl.textContent = `${siteName(picked)} could not be fetched: ${error.message}`;
+    statusEl.textContent = message;
+  };
+
+  let files;
+  try {
+    files = await weatherFor(picked, signal);
+  } catch (error) {
+    if (signal.aborted) return;
+    refuse(`${siteName(picked)} could not be fetched: ${error.message}`);
     return;
   }
   if (signal.aborted) return;
+
+  // The design conditions are not optional and there is nothing to fall back
+  // to: keeping the previous city's design days under this city's name is the
+  // exact mismatch this path exists to remove, and doing it quietly would be
+  // worse than not running at all. So a station whose DDY cannot be read is
+  // refused whole, before the EPW is attached.
+  let conditions;
+  try {
+    if (!files.ddy) throw new Error('its archive carries no DDY');
+    conditions = designConditionsFrom(files.ddy, schema);
+  } catch (error) {
+    refuse(`${siteName(picked)} cannot be used: ${error.message}`);
+    return;
+  }
 
   const zone = document.createElement('span');
   zone.className = 'cz';
@@ -1142,23 +1196,26 @@ async function choose(row, pick) {
     )
   );
 
-  // The drawing follows the weather: name the place, and redraw the datums from
-  // this station's design conditions rather than the model's Denver ones.
+  // The whole climate arrives together: the year on the EPW, the design days
+  // and the location on the DDY. Denver's come out, this station's go in.
+  epwText = files.epw;
+  setDesignConditions(model, conditions);
+
+  // The drawing follows the weather, and reads it off the model exactly as it
+  // did for Denver: the datum lines from the design days, the co-ordinates from
+  // `Site:Location`. Only the place name comes from the picker.
   $('t-location').textContent = `${siteName(picked)}, ${siteRegion(picked)}`;
-  $('t-site').textContent =
-    `${Math.abs(picked.latitude).toFixed(2)}° ${picked.latitude >= 0 ? 'N' : 'S'} ` +
-    `${Math.abs(picked.longitude).toFixed(2)}° ${picked.longitude >= 0 ? 'E' : 'W'} · ` +
-    `${picked.elevation.toLocaleString('en-US')} m`;
-  if (Number.isFinite(picked.heatingDesignDbC) && Number.isFinite(picked.coolingDesignDbC)) {
-    DATUMS = [
-      { value: picked.heatingDesignDbC, label: '99% htg db' },
-      { value: picked.coolingDesignDbC, label: '1% clg db' },
-    ];
-  }
+  $('t-site').textContent = modelFacts(model).site;
+  DATUMS = designDayDatums(model);
+
+  // The datums are the one thing on the plate that does not wait for a run:
+  // they describe the place, and the place has just changed.
+  renderTrace();
 
   set('t-run', 'Annual');
   $('t-run-sub').textContent = 'Weather file, 8,760 hours';
-  statusEl.textContent = `${siteName(picked)} attached — the next run covers all 8,760 hours.`;
+  statusEl.className = 'status';
+  statusEl.textContent = `${siteName(picked)} attached, design conditions and all — the next run covers all 8,760 hours.`;
   syncAuto();
   markStale();
 }
@@ -1186,7 +1243,11 @@ const enginePromise = createEnergyPlus({
   },
 });
 
-const model = buildModel(await new SchemaBundle(schemaSource('/schemas/')).load(ENERGYPLUS_VERSION));
+// `predev`/`prebuild` stage the bundle into `public/schemas/`; `httpSource`
+// resolves the path against the document and inflates the `.gz` files, or not,
+// depending on what the host has already done to them.
+const schema = await new SchemaBundle(httpSource('/schemas/')).load(ENERGYPLUS_VERSION);
+const model = buildModel(schema);
 
 // Everything the drawing asserts is now read back off the model, so the sheet
 // cannot describe a building the engine did not simulate.

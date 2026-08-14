@@ -1,4 +1,4 @@
-import { IDFDocument } from '@idfkit/core';
+import { IDFDocument, parseIdf } from '@idfkit/core';
 
 /**
  * The stock `1ZoneUncontrolled.idf` example from the EnergyPlus 26.1.0 release,
@@ -15,18 +15,21 @@ import { IDFDocument } from '@idfkit/core';
 export const ZONE_NAME = 'ZONE ONE';
 export const SOUTH_WALL = 'Zn001:Wall001'; // the y = 0 wall; north_axis is 0, so it faces south
 export const SOUTH_WINDOW = 'Zn001:Wall001:Win001';
+export const SOUTH_OVERHANG = 'Zn001:Wall001:Shade001';
 
 /**
- * The stock example's box (50 × 50 × 15 ft), plus glazing.
+ * The stock example's box (50 × 50 × 15 ft), plus glazing and its overhang.
  *
  * `wwr: 0` reproduces `1ZoneUncontrolled.idf` exactly — it has no fenestration
- * at all. Anything above that is this demo's addition.
+ * at all, and with no window there is nothing for the overhang to shade either.
+ * Anything above that is this demo's addition.
  */
 export const DEFAULT_PARAMETERS = Object.freeze({
   width: 15.24,
   depth: 15.24,
   height: 4.572,
   wwr: 0.2,
+  overhang: 0.6,
 });
 
 const metres = (v) => `${v.toFixed(2)} m`;
@@ -43,6 +46,15 @@ export const PARAMETERS = Object.freeze({
     label: 'Glazing S',
     group: true, // a ratio, not a length: give it its own rule in the panel
     format: (v) => `${(v * 100).toFixed(0)} % WWR`,
+  },
+  // Belongs with the glazing rather than with the box, so it sits inside the
+  // rule the ratio opens: it measures the opening, not the building.
+  overhang: {
+    min: 0,
+    max: 3,
+    step: 0.01,
+    label: 'Overhang S',
+    format: (v) => (v > 0 ? metres(v) : 'None'),
   },
 });
 
@@ -150,6 +162,71 @@ const windowVertexFields = (verts) =>
     ]),
   );
 
+/**
+ * A flat overhang on the head of the south window, projecting due south.
+ *
+ * Written out as vertices rather than as `Shading:Overhang`, which would say the
+ * same thing in four numbers, because the drawing reads its geometry back off
+ * the model like everything else on the sheet — and only a detailed surface
+ * carries coordinates to read.
+ *
+ * It runs the width of the opening, so what the slider changes is the one thing
+ * that matters on a south face: how far it reaches out. Wound counter-clockwise
+ * seen from above, which puts the outward normal up towards the sky.
+ */
+function southOverhangVertices(parameters) {
+  const window = southWindowVertices(parameters);
+  const depth = parameters.overhang;
+  if (!window || !(depth > 0)) return null;
+  const [x0, x1] = [window[0][0], window[2][0]];
+  const head = window[0][2];
+  return [
+    [x0, 0, head],
+    [x0, -depth, head],
+    [x1, -depth, head],
+    [x1, 0, head],
+  ];
+}
+
+/**
+ * Place the south opening and its overhang, or take them away.
+ *
+ * Both come and go as the sliders cross zero — the window at 0 % WWR, the
+ * overhang at 0 m or wherever there is no window left to shade — so one routine
+ * adds, reshapes and removes, and both the initial build and every later drag
+ * go through it.
+ */
+function setAperture(doc, parameters) {
+  const verts = southWindowVertices(parameters);
+  const window = doc.get('FenestrationSurface:Detailed', SOUTH_WINDOW);
+  if (!verts) {
+    if (window) doc.remove(window);
+  } else {
+    const target =
+      window ??
+      doc.add('FenestrationSurface:Detailed', SOUTH_WINDOW, {
+        surface_type: 'Window',
+        construction_name: 'WINDOW',
+        building_surface_name: SOUTH_WALL,
+        view_factor_to_ground: 0.5,
+        multiplier: 1,
+      });
+    target.number_of_vertices = verts.length;
+    for (const [field, value] of Object.entries(windowVertexFields(verts))) target.set(field, value);
+  }
+
+  const shade = southOverhangVertices(parameters);
+  const existing = doc.get('Shading:Zone:Detailed', SOUTH_OVERHANG);
+  if (!shade) {
+    if (existing) doc.remove(existing);
+    return;
+  }
+  const target =
+    existing ?? doc.add('Shading:Zone:Detailed', SOUTH_OVERHANG, { base_surface_name: SOUTH_WALL });
+  target.number_of_vertices = shade.length;
+  target.set('vertices', vertexGroups(shade));
+}
+
 /*
  * What the run reports.
  *
@@ -201,7 +278,13 @@ export function buildModel(schema, parameters = DEFAULT_PARAMETERS) {
     terrain: 'Suburbs',
     loads_convergence_tolerance_value: 0.04,
     temperature_convergence_tolerance_value: 0.004,
-    solar_distribution: 'MinimalShadowing',
+    // The stock example says MinimalShadowing, under which there is no exterior
+    // shadowing at all except from window and door reveals — an overhang would
+    // be drawn on the sheet and ignored by the engine. FullExterior computes
+    // the shadow the overhang actually casts. Beam solar that gets in is still
+    // laid on the floor exactly as before, so with no overhang standing the two
+    // settings agree: the box is convex, and its walls cannot shade each other.
+    solar_distribution: 'FullExterior',
     maximum_number_of_warmup_days: 30,
     minimum_number_of_warmup_days: 6,
   });
@@ -353,18 +436,7 @@ export function buildModel(schema, parameters = DEFAULT_PARAMETERS) {
     surface.set('vertices', vertexGroups(face.verts));
   }
 
-  const window = southWindowVertices(parameters);
-  if (window) {
-    doc.add('FenestrationSurface:Detailed', SOUTH_WINDOW, {
-      surface_type: 'Window',
-      construction_name: 'WINDOW',
-      building_surface_name: SOUTH_WALL,
-      view_factor_to_ground: 0.5,
-      multiplier: 1,
-      number_of_vertices: window.length,
-      ...windowVertexFields(window),
-    });
-  }
+  setAperture(doc, parameters);
 
   const diagnostics = doc.add('Output:Diagnostics', null);
   diagnostics.extensible.push({ key: 'DisplayAdvancedReportVariables' });
@@ -450,25 +522,7 @@ export function setParameters(doc, parameters) {
     surface.number_of_vertices = face.verts.length;
   }
 
-  // The window comes and goes as the ratio crosses zero, so this both reshapes
-  // an existing opening and adds or removes one.
-  const verts = southWindowVertices(parameters);
-  const existing = doc.get('FenestrationSurface:Detailed', SOUTH_WINDOW);
-  if (!verts) {
-    if (existing) doc.remove(existing);
-    return;
-  }
-  const target =
-    existing ??
-    doc.add('FenestrationSurface:Detailed', SOUTH_WINDOW, {
-      surface_type: 'Window',
-      construction_name: 'WINDOW',
-      building_surface_name: SOUTH_WALL,
-      view_factor_to_ground: 0.5,
-      multiplier: 1,
-    });
-  target.number_of_vertices = verts.length;
-  for (const [field, value] of Object.entries(windowVertexFields(verts))) target.set(field, value);
+  setAperture(doc, parameters);
 }
 
 /** Area of a planar polygon, via the magnitude of its Newell normal. */
@@ -483,6 +537,10 @@ function polygonArea(verts) {
   }
   return Math.hypot(nx, ny, nz) / 2;
 }
+
+/** Extent of a vertex list along one axis. */
+const span = (verts, axis) =>
+  Math.max(...verts.map((v) => v[axis])) - Math.min(...verts.map((v) => v[axis]));
 
 /**
  * Quantities an architect gets without running anything, summed off the
@@ -501,11 +559,30 @@ export function geometryFacts(doc) {
   const exposed = area(surfaces.filter((s) => s.boundary === 'outdoors'));
   const volume = floor * height;
 
-  const glazing = area(windowGeometry(doc));
+  const windows = windowGeometry(doc);
+  const glazing = area(windows);
   const southWall = surfaces.find((s) => s.name === SOUTH_WALL);
   const wwr = southWall ? glazing / polygonArea(southWall.verts) : NaN;
 
-  return { floor, exposed, volume, glazing, wwr, compactness: volume > 0 ? exposed / volume : NaN };
+  // How far the overhang reaches off the wall plane, and that reach against the
+  // height of the opening beneath it — the projection factor an architect sizes
+  // a shade by. Both are measured off the vertices, so neither can drift from
+  // what was simulated.
+  const shade = shadeGeometry(doc)[0];
+  const overhang = shade ? span(shade.verts, 1) : 0;
+  const opening = windows[0] ? span(windows[0].verts, 2) : 0;
+  const projection = overhang > 0 && opening > 0 ? overhang / opening : NaN;
+
+  return {
+    floor,
+    exposed,
+    volume,
+    glazing,
+    wwr,
+    overhang,
+    projection,
+    compactness: volume > 0 ? exposed / volume : NaN,
+  };
 }
 
 /** Window vertices, for the axonometric and the glazing area. */
@@ -519,6 +596,75 @@ export function windowGeometry(doc) {
       Number(window.get(`vertex_${i}_z_coordinate`)),
     ]),
   }));
+}
+
+/** Shading vertices, for the axonometric and the projection factor. */
+export function shadeGeometry(doc) {
+  return doc.all('Shading:Zone:Detailed').map((shade) => ({
+    name: shade.name,
+    host: String(shade.base_surface_name),
+    verts: shade.extensible.map((v) => [
+      Number(v.vertex_x_coordinate),
+      Number(v.vertex_y_coordinate),
+      Number(v.vertex_z_coordinate),
+    ]),
+  }));
+}
+
+/**
+ * A station's design conditions, read out of the DDY that ships beside its EPW.
+ *
+ * The file holds the whole ASHRAE set — annual and monthly, heating,
+ * dehumidification, wind, enthalpy, some forty objects — and this sheet draws
+ * two datum lines. So it takes the same pair the stock Denver file uses, the
+ * 99% heating drybulb and the 1% cooling drybulb at mean coincident wetbulb,
+ * and falls back to the first winter and summer day in the file for any station
+ * whose naming departs from the convention.
+ *
+ * Parsed non-strictly on purpose: a DDY carries object types this model has no
+ * use for, so an unknown one is skipped rather than thrown. What is not
+ * tolerated is coming out the other side without the pair, which throws — the
+ * caller has a station to refuse, and no business running one city's year
+ * against another city's design conditions.
+ */
+export function designConditionsFrom(text, schema) {
+  const { document } = parseIdf(text, schema, { strict: false });
+  const days = document.all('SizingPeriod:DesignDay').toArray();
+  const pick = (pattern, dayType) =>
+    days.find((day) => pattern.test(String(day.name))) ??
+    days.find((day) => String(day.day_type) === dayType);
+  const site = document.all('Site:Location').toArray()[0];
+  const carry = (object) => ({ name: object.name, values: object.toJSON() });
+
+  const winter = pick(/Ann Htg 99% Condns DB$/i, 'WinterDesignDay');
+  const summer = pick(/Ann Clg 1% Condns DB=>MWB$/i, 'SummerDesignDay');
+  if (!winter || !summer) {
+    const missing = [!winter && 'heating', !summer && 'cooling'].filter(Boolean).join(' or ');
+    throw new Error(`its DDY names no ${missing} design day this sheet can read`);
+  }
+  if (!site) throw new Error('its DDY carries no Site:Location');
+
+  return { location: carry(site), days: [winter, summer].map(carry) };
+}
+
+/**
+ * Put a station's design conditions in the model, in place of Denver's.
+ *
+ * Denver's two days and Denver's `Site:Location` are what the stock example
+ * ships. Leaving them there while another city's year runs is not a cosmetic
+ * mismatch: the engine warns that the model and the weather file disagree, then
+ * sizes the design days at Denver's barometric pressure, 1,829 m up.
+ *
+ * Everything the sheet says about design conditions is read back out of these
+ * objects afterwards, so the datum lines and the title block follow without
+ * being told. There is no partial application: `designConditionsFrom` has
+ * already refused anything short of the full pair and a location.
+ */
+export function setDesignConditions(doc, conditions) {
+  for (const day of doc.all('SizingPeriod:DesignDay').toArray()) doc.remove(day);
+  for (const { name, values } of conditions.days) doc.add('SizingPeriod:DesignDay', name, values);
+  for (const site of doc.all('Site:Location').toArray()) doc.remove(site);
+  doc.add('Site:Location', conditions.location.name, conditions.location.values);
 }
 
 /** Switch between the two design days and a full weather-file year. */

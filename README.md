@@ -24,14 +24,6 @@ npm run dev
 The `predev` script copies ~50 MB of engine assets (WASM binary, IDD, datasets)
 from `@idfkit/engine-assets` into `public/energyplus/`, which is gitignored.
 
-> **Temporary.** `@idfkit/weather@0.0.0` was published without its `dist/`
-> directory — the tarball holds only `data/` and `LICENSE` — so the package has
-> no code to import. Until a fixed version ships, build the package from source
-> and point the staging script at it:
->
-> ```bash
-> IDFKIT_WEATHER_DIST=/path/to/idfkit-js/packages/weather/dist npm run dev
-> ```
 First load downloads and compiles the ~28 MB binary; after that it is cached.
 
 ## Files
@@ -63,8 +55,43 @@ Three things about that index are worth knowing:
   one you want, listing the degree days that separate them. Searching gives you
   places; choosing a place gives you its files.
 - Each record carries its ASHRAE climate zone and design conditions, which is
-  what lets the sheet redraw its datum lines for the site you chose instead of
-  leaving Denver's on the plate.
+  what letters the picker itself: the zone chip, the description, the degree
+  days that separate one window from another.
+
+### Taking the design conditions with the year
+
+Choosing a station swaps the whole climate, not just the 8,760 hours. The
+archive holds a DDY beside the EPW, so `fetchWeatherFiles` returns both from the
+one request, and the model takes its `Site:Location` and its two
+`SizingPeriod:DesignDay` objects from that DDY: the 99% heating drybulb and the
+1% cooling drybulb at mean coincident wetbulb, which is the pair the stock
+Denver file uses and the pair the plate draws as datum lines.
+
+Leaving Denver's in place was not merely untidy. EnergyPlus simulated them
+inside every annual run, which is why the schedule showed a Denver winter design
+day beside a Montreal year and the run reported 8,808 hours rather than 8,760,
+and it said so:
+
+```
+** Warning ** Weather file location will be used rather than entered (IDF) Location object.
+**   ~~~   ** ..due to location differences, Latitude difference=[5.73] degrees, ...
+**   ~~~   ** ..Elevation difference=[98.03] percent, [1793.00] meters.
+** Warning ** SetUpDesignDay: Entered DesignDay Barometric Pressure=81198 differs by
+              more than 10% from Standard Barometric Pressure=100893.
+```
+
+With the DDY in, Montreal's design days run at Montreal's pressure and those
+three warnings are gone. The winter column moves from 21 December to 21 January
+and its datum from −15.5 °C to −19.5 °C, both read back off the model rather
+than off the index, so the drawing and the engine cannot disagree about where
+the building is.
+
+A station whose archive carries no DDY, or whose DDY names neither of the two
+days, is refused whole: the picker hands the field back and says why, and no EPW
+is attached. There is deliberately no fallback. Keeping the previous city's
+design days under the new city's name is the exact mismatch this path exists to
+remove, and a sheet that did it quietly would be wrong in the one way nobody
+would catch.
 
 ### The proxy
 
@@ -129,9 +156,11 @@ still here, and the results are unchanged. The sheet itself reads two of them.
 
 ## Reshaping the zone
 
-The width, depth, height and glazing sliders call `setParameters(doc, ...)`, which
-rewrites the vertex groups on the six surfaces in place rather than rebuilding
+The five sliders call `setParameters(doc, ...)`, which rewrites the vertex groups
+on the six surfaces in place rather than rebuilding
 the document, so the run-period switch and the output requests keep their state.
+The window and its overhang are the two objects that come and go as their
+sliders cross zero, and one routine adds, reshapes and removes them both.
 The axonometric and the quantities panel update on every frame of the drag; the
 floor area, exposed envelope, volume and envelope-to-volume ratio are summed off
 the surfaces with Newell's method, so they need no simulation and follow
@@ -211,12 +240,73 @@ Solar gain through the south wall is the whole point, and it shows:
 The EPW toggle is now a field write on `SimulationControl` rather than string
 interpolation, and `writeIdf(doc)` produces the text handed to the engine.
 
-### Serving the schema bundle
+## The overhang
+
+A shelf over the south window, sized by one slider: how far it reaches out.
+
+It is authored as a `Shading:Zone:Detailed` on `Zn001:Wall001` rather than as
+`Shading:Overhang`, which would say the same thing in four numbers. Only a
+detailed surface carries coordinates, and the drawing reads the shelf's geometry
+back off the model exactly the way it reads the walls. The shelf spans the width
+of the opening, so the slider changes the one thing that matters on a south
+face. It leaves the document entirely at 0 m, or whenever the WWR slider takes
+the window away and leaves nothing to shade.
+
+The quantities panel reports the depth beside its projection factor: the depth
+over the height of the opening beneath it, which is the number a shade is
+usually sized by. Both are measured off the vertices, so neither can drift from
+what was simulated.
+
+### It only counts if the engine is looking
+
+`1ZoneUncontrolled.idf` sets `Solar Distribution` to `MinimalShadowing`, under
+which there is no exterior shadowing at all except from window and door reveals.
+An overhang under that setting is drawn on the sheet and ignored by the engine,
+and it measures exactly that way: the zone mean sits at 31.8 °C whether the
+shelf projects 0.3 m or 3 m. The model now asks for `FullExterior`, which
+computes the shadow the shelf actually casts.
+
+Beam solar that does get in is still laid on the floor exactly as before, and
+the box is convex, so its walls cannot shade each other. With no shelf standing
+the two settings therefore agree: the WWR table above was re-measured under
+`FullExterior` and every row is unchanged, including the unglazed case that
+reproduces the stock example. Interleaved A/B in one session, a design day
+solves in 0.08 s either way, so the shadow calculation costs nothing you can
+feel on a drag.
+
+### What it buys
+
+Denver, summer design day, 20 % WWR:
+
+| South overhang | Zone mean | Zone peak | Damping |
+| -------------- | --------- | --------- | ------- |
+| None           | 31.8 °C   | 34.2 °C   | 0.32    |
+| 0.60 m, PF 0.29 | 30.6 °C  | 32.7 °C   | 0.29    |
+| 1.50 m, PF 0.73 | 30.4 °C  | 32.5 °C   | 0.29    |
+| 3.00 m, PF 1.47 | 30.3 °C  | 32.5 °C   | 0.28    |
+
+The glazing costs 2.0 °C of zone mean against the unglazed box; the first 0.6 m
+of shelf gives back 1.2 °C of that, and everything past about a metre gives back
+almost nothing. At 39.7° N the July sun is high enough around noon that a modest
+projection already cuts the beam, and what still arrives is diffuse, which no
+amount of overhang will stop. The effect scales with the opening it shades: at
+60 % WWR the same building goes from 34.8 °C to 31.4 °C under a 1.5 m shelf.
+
+Only the summer column moves. The winter design day is specified with a sky
+clearness of 0, so it carries no solar at all, which means there is no winter sun
+for the shelf either to block or to let past. Attach a weather file and both
+seasons come from the year instead.
+
+## Serving the schema bundle
 
 `@idfkit/schemas` needs its `data/` directory served; `predev`/`prebuild` copy it
-to `public/schemas/`. The demo supplies its own `BundleSource` instead of the
-package's `httpSource`, because `httpSource` requires an absolute base URL and
-always pipes the response through a `DecompressionStream` — which fails under
-Vite, whose static middleware serves `.gz` files with `Content-Encoding: gzip`,
-so the browser has already inflated the body. The local source sniffs the gzip
-magic bytes and handles either case.
+to `public/schemas/`, and the page reads it with `httpSource('/schemas/')`.
+
+Up to `@idfkit/schemas@0.0.1` that call could not be made from this demo, so the
+page carried its own `BundleSource`: `httpSource` resolved against an absolute
+base, which a bare `/schemas/` has no way to satisfy, and it always piped the
+response through a `DecompressionStream`, which fails under Vite because its
+static middleware serves `.gz` files with `Content-Encoding: gzip` and the
+browser has therefore already inflated the body. Both are fixed in 0.1.0, which
+resolves the base against the document and sniffs the gzip magic bytes before
+inflating, so the local copy is gone.

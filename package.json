@@ -10,11 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@idfkit/core": "^0.0.1",
+    "@idfkit/core": "^0.1.0",
     "@idfkit/engine": "^0.1.0",
     "@idfkit/engine-assets": "26.1.0",
-    "@idfkit/schemas": "^0.0.1",
-    "@idfkit/weather": "^0.0.0"
+    "@idfkit/schemas": "^0.1.0",
+    "@idfkit/weather": "^0.1.0"
   },
   "devDependencies": {
     "vite": "^7.0.0"
