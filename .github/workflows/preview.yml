@@ -1,0 +1,157 @@
+# Publish every pull request to shoebox.idfkit.com/<number>/, and take it down
+# again when the pull request closes.
+#
+# The preview goes into the published site's own bucket and distribution rather
+# than a separate one, because the two things that break a deployment of this
+# page — the `/onebuilding` weather origin and the pre-compressed engine — exist
+# only at the edge and cannot be exercised on localhost at all. A preview served
+# from anywhere else would test the half that never fails.
+name: Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+# A superseded preview is worth cancelling: the newer run uploads every file and
+# prunes what it did not produce, so an interrupted upload is repaired rather
+# than left behind. This is the opposite call from `deploy.yml`, where the
+# published site is what would be caught half-written.
+concurrency:
+  group: preview-shoebox-${{ github.event.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    # Two conditions, and the second is the security boundary. GitHub issues a
+    # pull request from a fork a read-only token whatever `permissions` says, so
+    # the OIDC token is never minted and the AWS role is out of reach; this makes
+    # that refusal explicit and early, rather than a credentials step failing
+    # eight minutes into a build. Raising a preview therefore takes write access
+    # to this repository. See `previewSubject` in infra/lib/shoebox-stack.ts.
+    if: >-
+      github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # The base has to be baked in at build time: Vite rewrites every asset URL
+      # against it, and `src/main.js` and `src/weather.js` resolve the engine,
+      # the schema bundle and the station index against `import.meta.env.BASE_URL`
+      # for the same reason. Built at the default `/`, a preview would silently
+      # load the published site's 50 MB of staged assets and report on those.
+      - run: npm run build -- --base=/${{ github.event.number }}/
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - run: npm run deploy
+        env:
+          SHOEBOX_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          SHOEBOX_PREVIEW: ${{ github.event.number }}
+
+      # The comment comes from the idfkit app rather than github-actions[bot] so
+      # that the link is posted by the same identity the organisation's other
+      # automation speaks as. `owner:` scopes the installation token to this
+      # organisation; the app's Pull requests: write permission is what the
+      # comment needs.
+      - name: Mint app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Post the preview link
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            // `context.sha` on a pull_request event is the merge commit, which
+            // is not a commit anyone reviewing this can find. The head is.
+            const sha = context.payload.pull_request.head.sha.slice(0, 7);
+            const url = `https://shoebox.idfkit.com/${context.issue.number}/`;
+            const body = [
+              '<!-- shoebox-preview-comment -->',
+              `**Preview** of this pull request: ${url}`,
+              '',
+              `Built from ${sha}. It is the whole page, engine and schema bundle and`,
+              'weather proxy, served from the same distribution as the site. It is',
+              'removed when this pull request closes.',
+            ].join('\n');
+            // Resolved against the workspace: `require` inside github-script
+            // otherwise looks in the action's own directory, not the checkout.
+            const comment = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/preview-comment.cjs`);
+            await comment({ github, context, body });
+
+  cleanup:
+    if: >-
+      github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      # The base branch, not the default merge ref: GitHub drops
+      # `refs/pull/<n>/merge` once the pull request closes, which is precisely
+      # when this job runs.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      # `--remove` needs the AWS SDK and nothing else, and the staging steps that
+      # `prebuild` runs would fetch 50 MB to delete a directory. `npm ci` alone
+      # is what this job installs.
+      - run: npm ci
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - run: npm run undeploy
+        env:
+          SHOEBOX_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          SHOEBOX_PREVIEW: ${{ github.event.number }}
+
+      - name: Mint app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      # Edited rather than deleted, so the thread still records that a preview
+      # existed and why the link in anyone's history now 404s.
+      - name: Retire the preview comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const body = [
+              '<!-- shoebox-preview-comment -->',
+              `**Preview** for this pull request has been removed.`,
+              '',
+              'It was published while the pull request was open; the current page is',
+              'at https://shoebox.idfkit.com/.',
+            ].join('\n');
+            const comment = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/preview-comment.cjs`);
+            await comment({ github, context, body, edit: true });

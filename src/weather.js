@@ -9,8 +9,17 @@
  */
 import { fetchWeatherFiles, loadStationIndex } from '@idfkit/weather';
 
-/** Staged out of the package's `data/` by `scripts/stage-weather.mjs`. */
-const INDEX_URL = '/weather/stations.json.gz';
+/**
+ * Staged out of the package's `data/` by `scripts/stage-weather.mjs`.
+ *
+ * Resolved against `BASE_URL` rather than written as `/weather/…`, because a
+ * pull request preview is built with `--base=/<pr>/` and served from that
+ * subdirectory. An absolute path would have every preview quietly read the
+ * index — and the engine and the schema below it — from the published site
+ * instead of from its own build, which is the one thing a preview exists to
+ * rule out.
+ */
+const INDEX_URL = `${import.meta.env.BASE_URL}weather/stations.json.gz`;
 
 /**
  * climate.onebuilding.org sends no `Access-Control-Allow-Origin`, so the
@@ -22,6 +31,11 @@ const INDEX_URL = '/weather/stations.json.gz';
  *     which takes the whole URL percent-encoded.
  *
  * Set `VITE_WEATHER_PROXY` to move between them without touching this file.
+ *
+ * Unlike the staged assets above this one stays root-absolute under a preview
+ * build. It is not a file this site publishes; it is a path the distribution
+ * routes to a second origin, and that behavior is matched on `/onebuilding/*`
+ * at the root.
  */
 const ORIGIN = 'https://climate.onebuilding.org';
 const PROXY = import.meta.env.VITE_WEATHER_PROXY ?? '/onebuilding';

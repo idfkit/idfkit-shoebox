@@ -8,7 +8,8 @@
     "prebuild": "idfkit-engine-assets public/energyplus && node scripts/copy-schemas.mjs && node scripts/stage-weather.mjs",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "node scripts/deploy.mjs"
+    "deploy": "node scripts/deploy.mjs",
+    "undeploy": "node scripts/deploy.mjs --remove"
   },
   "dependencies": {
     "@idfkit/core": "^0.1.0",

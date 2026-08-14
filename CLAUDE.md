@@ -10,6 +10,7 @@ npm run dev       # predev stages ~50 MB of engine assets, schemas and the stati
 npm run build     # prebuild does the same staging
 npm run preview
 npm run deploy    # compresses dist/ and publishes it; needs a built dist/ and AWS credentials
+npm run undeploy  # removes a preview; needs SHOEBOX_PREVIEW=<pr number>
 ```
 
 `predev` / `prebuild` copy `@idfkit/engine-assets` into `public/energyplus/`, the
@@ -268,6 +269,40 @@ stays vite and nothing else). Pushing to `main` publishes:
 `.github/workflows/deploy.yml` assumes a role by GitHub OIDC and runs
 `npm run deploy`. No AWS key is stored.
 
+Opening a pull request publishes a preview at `shoebox.idfkit.com/<number>/`
+(`.github/workflows/preview.yml`), and closing it takes the preview down again.
+
+- **A preview is the same bucket and the same distribution**, under the pull
+  request's number as a key prefix. A separate host would leave the two things
+  that actually break a deployment of this page untested: the `/onebuilding`
+  weather origin and the pre-compressed engine both exist only at the edge.
+- **The preview build carries its base**: `npm run build -- --base=/42/`.
+  `src/main.js` and `src/weather.js` resolve the engine, the schema bundle and
+  the station index against `import.meta.env.BASE_URL` for this reason. Written
+  as `/energyplus`, a preview would load the published site's staged assets and
+  report on those. `/onebuilding` is the exception and stays root-absolute — it
+  is a distribution behavior, not a file this site publishes.
+- **The top-level numeric directory is reserved.** `scripts/deploy.mjs` spares
+  keys matching `^\d+/` when it prunes the site, and a preview run
+  (`SHOEBOX_PREVIEW=42`) never lists or deletes outside its own prefix. Without
+  the first half, the next push to main would delete every open pull request's
+  preview.
+- **`/42` and `/42/` reach the preview through a CloudFront function.**
+  `defaultRootObject` covers exactly one path, `/`, so a subdirectory index has
+  to be appended by hand; the bare `/42` is redirected rather than rewritten.
+- **The preview job is gated twice.** GitHub gives a fork's pull request a
+  read-only token whatever `permissions` says, so no OIDC token is minted and
+  the role is unreachable; the job additionally refuses to run unless the head
+  branch is in this repository. The role's trust policy accepts
+  `…:pull_request`, which carries no branch, so raising a preview takes write
+  access — the narrowing has to live in the workflow.
+- **The comment comes from the idfkit GitHub App**, which needs `APP_ID` and
+  `APP_PRIVATE_KEY` as repository secrets (the same pair `idfkit` uses in
+  `notify-downstream.yml`) and Pull requests: write on the installation. One
+  comment is kept per pull request, found again by an HTML marker; see
+  `.github/scripts/preview-comment.cjs`, which is `.cjs` because this
+  `package.json` declares `"type": "module"` and github-script's `require`
+  needs CommonJS.
 - **The `/onebuilding` rewrite is infrastructure, not code.** A second origin on
   the distribution points at climate.onebuilding.org and a viewer-request
   function strips the prefix, because CloudFront can prepend an origin path but

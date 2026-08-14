@@ -1,6 +1,12 @@
 /**
  * Publish `dist/` to the bucket behind shoebox.idfkit.com.
  *
+ * With `SHOEBOX_PREVIEW` set to a pull request number the same build is
+ * published under that number instead, at `shoebox.idfkit.com/<n>/`, and
+ * `--remove` takes it down again when the pull request closes. The two modes
+ * share everything below because a preview is only worth having if it is the
+ * same artefact reaching the same distribution; only the key prefix differs.
+ *
  * The interesting part of this script is not the upload, it is the compression.
  * CloudFront will compress on the fly, but only objects between 1 KB and 10 MB,
  * and only when the response `Content-Type` is on its own fixed list. This site
@@ -45,6 +51,36 @@ const dist = resolve(root, 'dist');
 // for why that is us-east-1 and effectively fixed.
 const REGION = process.env.SHOEBOX_REGION ?? process.env.AWS_REGION ?? 'us-east-1';
 const STACK = process.env.SHOEBOX_STACK ?? 'ShoeboxStack';
+
+/**
+ * The pull request number this run publishes under, or the empty string for the
+ * site itself.
+ *
+ * Digits only, and refused otherwise rather than sanitised, because the shape is
+ * load-bearing in two other places: the CloudFront function in
+ * `infra/lib/shoebox-stack.ts` recognises a preview by it, and the prune below
+ * spares a key from the published site by it. A preview published outside that
+ * shape would 404 on its own index and then be deleted by the next deploy of
+ * main, and neither failure would name this line.
+ */
+const PREVIEW = process.env.SHOEBOX_PREVIEW ?? '';
+if (PREVIEW && !/^\d+$/.test(PREVIEW)) {
+  throw new Error(`SHOEBOX_PREVIEW must be a pull request number, not ${JSON.stringify(PREVIEW)}.`);
+}
+
+/** Where a `dist`-relative path lands in the bucket. */
+const at = (key) => (PREVIEW ? `${PREVIEW}/${key}` : key);
+
+/** The keys this run owns, and the only ones it may delete. */
+const scope = PREVIEW ? `${PREVIEW}/` : undefined;
+
+/**
+ * A top-level directory of digits is a preview, and the site's own deploy must
+ * leave it alone. Without this the prune below — which deletes everything the
+ * current build did not produce — would take every open pull request's preview
+ * with it on the next push to main.
+ */
+const isPreview = (key) => /^\d+\//.test(key);
 
 /**
  * What each extension is, and whether it is worth compressing.
@@ -137,7 +173,75 @@ async function outputs() {
   return found;
 }
 
+/** Every key this run is allowed to see: the whole bucket, or one preview. */
+async function inventory(s3, Bucket) {
+  const keys = [];
+  let token;
+  do {
+    const page = await s3.send(
+      new ListObjectsV2Command({ Bucket, Prefix: scope, ContinuationToken: token }),
+    );
+    for (const object of page.Contents ?? []) keys.push(object.Key);
+    token = page.NextContinuationToken;
+  } while (token);
+  return keys;
+}
+
+async function drop(s3, Bucket, keys) {
+  for (let i = 0; i < keys.length; i += 1000) {
+    await s3.send(
+      new DeleteObjectsCommand({
+        Bucket,
+        Delete: { Objects: keys.slice(i, i + 1000).map((Key) => ({ Key })) },
+      }),
+    );
+  }
+}
+
+/**
+ * One wildcard counts as a single path against the 1,000 free invalidation
+ * paths a month, where listing each file would not. A preview invalidates only
+ * its own subtree; the site invalidates everything, previews included, which
+ * costs them a re-fetch and nothing else.
+ */
+async function invalidate(DistributionId) {
+  const cloudfront = new CloudFrontClient({ region: REGION });
+  await cloudfront.send(
+    new CreateInvalidationCommand({
+      DistributionId,
+      InvalidationBatch: {
+        Paths: { Quantity: 1, Items: [PREVIEW ? `/${PREVIEW}/*` : '/*'] },
+        CallerReference: `deploy-${Date.now()}`,
+      },
+    }),
+  );
+}
+
+/**
+ * Take a preview down. Only ever a preview: removing the published site is not
+ * something a script invoked by a closing pull request should be able to do by
+ * accident, so the absence of a prefix is an error rather than a wildcard.
+ */
+async function unpublish() {
+  if (!PREVIEW) throw new Error('--remove needs SHOEBOX_PREVIEW. It will not empty the site.');
+
+  const { BucketName, DistributionId } = await outputs();
+  const s3 = new S3Client({ region: REGION });
+  const keys = await inventory(s3, BucketName);
+
+  await drop(s3, BucketName, keys);
+  await invalidate(DistributionId);
+
+  console.log(
+    keys.length
+      ? `Removed the preview for pull request ${PREVIEW}: ${keys.length} files.`
+      : `No preview for pull request ${PREVIEW} to remove.`,
+  );
+}
+
 async function main() {
+  if (process.argv.includes('--remove')) return unpublish();
+
   if (!(await stat(dist).catch(() => null))) {
     throw new Error(`No build at ${dist}. Run \`npm run build\` first.`);
   }
@@ -179,7 +283,7 @@ async function main() {
       await s3.send(
         new PutObjectCommand({
           Bucket: BucketName,
-          Key: key,
+          Key: at(key),
           Body: payload,
           ContentType,
           ContentEncoding,
@@ -189,46 +293,21 @@ async function main() {
 
       raw += body.length;
       sent += payload.length;
-      keys.add(key);
+      keys.add(at(key));
     }),
     8,
   );
 
-  // Anything in the bucket that this build did not produce is from an older
-  // one. Leaving it would keep a deleted page reachable at its old URL.
-  const stale = [];
-  let token;
-  do {
-    const page = await s3.send(
-      new ListObjectsV2Command({ Bucket: BucketName, ContinuationToken: token }),
-    );
-    for (const object of page.Contents ?? []) {
-      if (!keys.has(object.Key)) stale.push({ Key: object.Key });
-    }
-    token = page.NextContinuationToken;
-  } while (token);
-
-  for (let i = 0; i < stale.length; i += 1000) {
-    await s3.send(
-      new DeleteObjectsCommand({
-        Bucket: BucketName,
-        Delete: { Objects: stale.slice(i, i + 1000) },
-      }),
-    );
-  }
-
-  const cloudfront = new CloudFrontClient({ region: REGION });
-  await cloudfront.send(
-    new CreateInvalidationCommand({
-      DistributionId,
-      InvalidationBatch: {
-        // One wildcard counts as a single path against the 1,000 free
-        // invalidation paths a month, where listing each file would not.
-        Paths: { Quantity: 1, Items: ['/*'] },
-        CallerReference: `deploy-${Date.now()}`,
-      },
-    }),
+  // Anything in this run's scope that it did not just produce is from an older
+  // build. Leaving it would keep a deleted page reachable at its old URL. The
+  // open pull requests' previews are not in scope: a preview run never sees
+  // outside its own prefix, and a site run steps over them.
+  const stale = (await inventory(s3, BucketName)).filter(
+    (key) => !keys.has(key) && (PREVIEW || !isPreview(key)),
   );
+  await drop(s3, BucketName, stale);
+
+  await invalidate(DistributionId);
 
   // GitHub Actions logs for a public repository are world-readable, and the
   // bucket and distribution ids are needless disclosure there. Neither is a
@@ -237,8 +316,9 @@ async function main() {
   // knowing which bucket you just published to is rather the point.
   const mib = (n) => (n / 1048576).toFixed(1);
   const target = process.env.CI ? '' : ` to ${BucketName}`;
+  const where = PREVIEW ? ` under /${PREVIEW}/` : '';
   console.log(
-    `Published ${files.length} files${target}: ` +
+    `Published ${files.length} files${where}${target}: ` +
       `${mib(raw)} MiB on disk, ${mib(sent)} MiB stored and served.`,
   );
   if (stale.length) console.log(`Removed ${stale.length} files left by an earlier build.`);
