@@ -22,8 +22,17 @@ if (!account) {
   );
 }
 
+/**
+ * Overridable, but only one value actually works: CloudFront will accept an ACM
+ * certificate from us-east-1 and nowhere else, so moving this moves the
+ * certificate somewhere the distribution cannot use it. It is a variable rather
+ * than a literal so nothing about the deployment is baked into a public
+ * repository, not because the choice is free.
+ */
+const region = process.env.SHOEBOX_REGION ?? 'us-east-1';
+
 new ShoeboxStack(app, 'ShoeboxStack', {
-  env: { account, region: 'us-east-1' },
+  env: { account, region },
   domainName: app.node.tryGetContext('domainName') ?? 'shoebox.idfkit.com',
   zoneName: app.node.tryGetContext('zoneName') ?? 'idfkit.com',
   githubRepo: app.node.tryGetContext('githubRepo') ?? 'idfkit/idfkit-shoebox',

@@ -39,9 +39,14 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+      # Both come from repository variables rather than the file, so no account
+      # identifier or ARN lands in a public repository. Set AWS_DEPLOY_ROLE_ARN
+      # to the stack's DeployRoleArn output; AWS_REGION is optional.
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: us-east-1
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       - run: npm run deploy
+        env:
+          SHOEBOX_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}

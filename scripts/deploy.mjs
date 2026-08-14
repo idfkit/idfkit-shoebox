@@ -41,7 +41,9 @@ const brotli = promisify(zlib.brotliCompress);
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
-const REGION = 'us-east-1';
+// Must match the region the stack was deployed into; see infra/bin/shoebox.ts
+// for why that is us-east-1 and effectively fixed.
+const REGION = process.env.SHOEBOX_REGION ?? process.env.AWS_REGION ?? 'us-east-1';
 const STACK = process.env.SHOEBOX_STACK ?? 'ShoeboxStack';
 
 /**
