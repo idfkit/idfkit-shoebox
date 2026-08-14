@@ -163,6 +163,7 @@ function manifest(run) {
     ['model.idf', 'the model, with its sizing periods included'],
     epwFile && [epwFile, 'the weather file, exactly as downloaded'],
     run.html && ['results/eplustbl.htm', 'the AllSummary tabular report EnergyPlus wrote'],
+    run.log && ['results/console.log', 'the engine console, warnings and severes in its own words'],
     ['MANIFEST.txt', 'this file'],
   ].filter(Boolean);
   const filePad = Math.max(...files.map(([k]) => k.length));
@@ -216,6 +217,9 @@ export async function runBundle(run) {
   }
   if (run.html) {
     files.push({ name: 'results/eplustbl.htm', bytes: enc.encode(run.html) });
+  }
+  if (run.log) {
+    files.push({ name: 'results/console.log', bytes: enc.encode(run.log) });
   }
   files.push({ name: 'MANIFEST.txt', bytes: enc.encode(manifest(withDate)) });
 

@@ -2388,11 +2388,18 @@ async function solve() {
     // off live state at click time: the inputs the engine ran and the report it
     // wrote, alongside the run facts the manifest states. `html` is the genuine
     // eplustbl.htm — the model requests AllSummary with an All column separator,
-    // so EnergyPlus writes it on every run and it arrives on the result.
+    // so EnergyPlus writes it on every run and it arrives on the result. `log`
+    // is the engine's own console output, which the run already carries: it
+    // costs nothing to keep and it is where EnergyPlus states its warnings and
+    // severes in its own words, which the raw .err would otherwise be needed
+    // for. The .eso and .err themselves come back only parsed, so shipping them
+    // as files would mean re-serialising into something that isn't what the
+    // engine wrote — left out rather than faked.
     bundle: {
       idf,
       epw: epwText ?? null,
       html: result.html ?? null,
+      log: result.consoleOutput?.length ? result.consoleOutput.join('\n') : null,
       version: ENERGYPLUS_VERSION,
       annual: Boolean(epwText),
       hours: nn,

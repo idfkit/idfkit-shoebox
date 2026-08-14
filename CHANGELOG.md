@@ -11,9 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Downloadable run bundle. A **Download run bundle** button on the run ledger
   packages the exact IDF and EPW handed to the engine together with the tabular
-  report it wrote and a plain-text manifest, so any run can be reproduced in a
-  local EnergyPlus rather than taken on faith. A design-day run carries no
-  weather file, and the manifest says so instead of shipping a fabricated one.
+  report and console log it wrote and a plain-text manifest, so any run can be
+  reproduced in a local EnergyPlus rather than taken on faith. A design-day run
+  carries no weather file, and the manifest says so instead of shipping a
+  fabricated one.
 
 ## [0.1.0] - 2026-08-14
 
