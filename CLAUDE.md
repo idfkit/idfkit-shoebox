@@ -286,9 +286,15 @@ stays vite and nothing else). Pushing to `main` publishes:
   Declaring the encoding would have the browser inflate them first.
 - **The bucket is `RETAIN`.** `cdk destroy` must not be able to take the
   published site with it.
-- **The GitHub OIDC provider is imported, not created.** IAM allows one provider
-  per issuer URL and the account already has one; creating a second fails the
-  deploy with `EntityAlreadyExists`.
+- **Whether the GitHub OIDC provider is created or imported is per account.**
+  IAM allows exactly one per issuer URL, so `createOidcProvider` decides it. The
+  idfkit account had none, so it is created; an account that already has one
+  must pass `-c createOidcProvider=false` or the deploy fails with
+  `EntityAlreadyExists`. Neither mistake is silent.
+- **Everything is in the idfkit AWS account**, including the `idfkit.com` hosted
+  zone, so the stack looks the zone up instead of hardcoding an id and no
+  account number enters the repository. Deploy with `AWS_PROFILE=idfkit`, which
+  is what fills in `CDK_DEFAULT_ACCOUNT`.
 
 Cloudflare Pages cannot host this at all: its hard per-asset limit is 25 MiB and
 the engine binary is 28.40 MiB. GitHub Pages, which serves `idfkit.com`, cannot

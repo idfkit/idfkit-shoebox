@@ -35,9 +35,14 @@ CDK app in `infra/`. Pushing to `main` publishes it: the workflow in
 `.github/workflows/deploy.yml` mints a short-lived OIDC token, trades it for the
 deploy role, and runs `npm run deploy`. There is no AWS key stored in the repo.
 
+Everything lives in the idfkit AWS account, which is also where the `idfkit.com`
+hosted zone lives, so the stack looks the zone up rather than being told about
+it. Set the profile and the CDK CLI fills the account in.
+
 ```bash
-cd infra && npm install && npx cdk deploy   # once, to provision
-npm run build && npm run deploy             # to publish by hand
+cd infra && npm install
+AWS_PROFILE=idfkit npx cdk deploy   # once, to provision
+npm run build && npm run deploy     # to publish by hand
 ```
 
 After the first `cdk deploy`, set the repository variable

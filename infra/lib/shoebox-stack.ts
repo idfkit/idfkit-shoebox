@@ -17,6 +17,15 @@ export interface ShoeboxStackProps extends cdk.StackProps {
   readonly githubRepo: string;
   /** Only this branch may deploy. */
   readonly githubBranch: string;
+  /**
+   * Whether to create the GitHub OIDC provider. IAM allows exactly one per
+   * issuer URL per account, so this is a property of the target account rather
+   * than a fixed choice: true for an account that has never run a GitHub
+   * Actions deploy, false for one that already has a provider. Wrong in either
+   * direction the deploy fails by name, with `EntityAlreadyExists` on a
+   * duplicate, so neither mistake is silent.
+   */
+  readonly createOidcProvider: boolean;
 }
 
 /**
@@ -34,13 +43,7 @@ export interface ShoeboxStackProps extends cdk.StackProps {
 const UPSTREAM = 'climate.onebuilding.org';
 const PREFIX = '/onebuilding';
 
-/**
- * GitHub's OIDC issuer already has a provider in this account, created by an
- * earlier stack. IAM allows exactly one provider per issuer URL, so creating a
- * second here would fail the deploy with `EntityAlreadyExists`. It is imported
- * by ARN instead, which also means this stack never owns it and cannot delete
- * it out from under whatever else is trusting it.
- */
+/** GitHub's OIDC issuer. See `createOidcProvider` for why it is not always created. */
 const GITHUB_OIDC_ISSUER = 'token.actions.githubusercontent.com';
 
 export class ShoeboxStack extends cdk.Stack {
@@ -125,11 +128,16 @@ function handler(event) {
     new route53.AaaaRecord(this, 'AliasRecordV6', { zone, recordName: props.domainName, target });
 
     // ── Deploying from GitHub Actions, without a stored key ──────────────
-    const provider = iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
-      this,
-      'GitHubOidc',
-      `arn:aws:iam::${this.account}:oidc-provider/${GITHUB_OIDC_ISSUER}`,
-    );
+    const provider = props.createOidcProvider
+      ? new iam.OpenIdConnectProvider(this, 'GitHubOidc', {
+          url: `https://${GITHUB_OIDC_ISSUER}`,
+          clientIds: ['sts.amazonaws.com'],
+        })
+      : iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
+          this,
+          'GitHubOidc',
+          `arn:aws:iam::${this.account}:oidc-provider/${GITHUB_OIDC_ISSUER}`,
+        );
 
     const deployRole = new iam.Role(this, 'DeployRole', {
       // The `sub` condition is the whole security boundary: without it any

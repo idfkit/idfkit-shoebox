@@ -28,5 +28,8 @@ new ShoeboxStack(app, 'ShoeboxStack', {
   zoneName: app.node.tryGetContext('zoneName') ?? 'idfkit.com',
   githubRepo: app.node.tryGetContext('githubRepo') ?? 'idfkit/idfkit-shoebox',
   githubBranch: app.node.tryGetContext('githubBranch') ?? 'main',
+  // Context arrives from the CLI as a string, so `-c createOidcProvider=false`
+  // has to be compared as one.
+  createOidcProvider: String(app.node.tryGetContext('createOidcProvider') ?? 'true') !== 'false',
   description: 'Static hosting and weather proxy for shoebox.idfkit.com',
 });
