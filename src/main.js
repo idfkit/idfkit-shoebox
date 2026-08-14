@@ -22,6 +22,7 @@ import {
   controlFor,
 } from './controls.js';
 import { mountConsole } from './console.js';
+import { runBundle } from './bundle.js';
 import { END_USES, GROUPS, computeBill, meterTotal } from './bill.js';
 import { assume, isRate, placeName, resolveRates } from './rates.js';
 import {
@@ -45,6 +46,7 @@ const runBtn = $('run');
 const statusEl = $('status');
 const logEl = $('log');
 const elapsedEl = $('elapsed');
+const downloadBtn = $('download');
 
 /* ══ the run ledger ══════════════════════════════════════════════════════ */
 
@@ -1310,6 +1312,50 @@ pinButton.addEventListener('click', () => {
 
 syncPin();
 
+/* ── downloading the run ───────────────────────────────────────────────────
+ *
+ * The trust move on a page that solves where nobody can watch: hand the run
+ * over whole — the IDF and EPW the engine was given, and the report it wrote —
+ * so the numbers can be reproduced in any EnergyPlus rather than believed. The
+ * button follows the results it describes: dark until a run lands, gone again
+ * the moment the plate is cleared, because a download offered over no results
+ * would zip up the last run under the current sheet and call it this one.
+ */
+function syncDownload() {
+  downloadBtn.disabled = !lastRun?.bundle;
+}
+
+let bundling = false;
+
+downloadBtn.addEventListener('click', async () => {
+  if (!lastRun?.bundle || bundling) return;
+  bundling = true;
+  const was = downloadBtn.textContent;
+  downloadBtn.textContent = 'Zipping…';
+  downloadBtn.disabled = true;
+  try {
+    const { blob, filename } = await runBundle(lastRun.bundle);
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    // Freed on the next tick rather than at once: some browsers have not
+    // finished reading the blob out to disk when click() returns, and revoking
+    // synchronously cancels the download it was still fulfilling.
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  } catch (error) {
+    statusEl.className = 'status bad';
+    statusEl.textContent = `The run could not be bundled: ${error.message}`;
+  } finally {
+    downloadBtn.textContent = was;
+    bundling = false;
+    syncDownload();
+  }
+});
+
+syncDownload();
+
 const set = (id, text, cls) => {
   const el = $(id);
   el.textContent = text;
@@ -1324,6 +1370,7 @@ function clearResults() {
   lastRun = null;
   renderBill();
   syncPin();
+  syncDownload();
   set('t-vars', '—');
   set('t-err', '—', '');
   set('t-exit', '—', '');
@@ -2232,9 +2279,16 @@ async function solve() {
 
   setAnnual(model, Boolean(epwText));
 
+  // Held rather than inlined into the run call, so the download bundle can hand
+  // over the exact bytes the engine was given. A fresh `writeIdf(model)` at
+  // download time would usually match, but "usually" is the whole thing the
+  // bundle exists to remove: a slider nudged since the solve would have it
+  // shipping inputs that never produced the results on the sheet.
+  const idf = writeIdf(model);
+
   let result;
   try {
-    result = await ep.run({ idf: writeIdf(model), epw: epwText });
+    result = await ep.run({ idf, epw: epwText });
   } catch (error) {
     solvedShape = shape;
     stopAuto();
@@ -2330,10 +2384,32 @@ async function solve() {
     environments: new Set(billed.map((r) => r.key)),
     hours: billed.reduce((total, r) => total + (r.end - r.start + 1), 0),
     annual: billed.some((r) => r.kind === null),
+    // Everything the download bundle needs, captured here rather than read back
+    // off live state at click time: the inputs the engine ran and the report it
+    // wrote, alongside the run facts the manifest states. `html` is the genuine
+    // eplustbl.htm — the model requests AllSummary with an All column separator,
+    // so EnergyPlus writes it on every run and it arrives on the result.
+    bundle: {
+      idf,
+      epw: epwText ?? null,
+      html: result.html ?? null,
+      version: ENERGYPLUS_VERSION,
+      annual: Boolean(epwText),
+      hours: nn,
+      weatherStem: epwText && station?.url
+        ? station.url.split('/').pop().replace(/\.zip$/i, '')
+        : null,
+      location: $('t-location').textContent,
+      exitCode: result.exitCode,
+      severe,
+      warnings,
+      seconds,
+    },
   };
   bill = billFrom(lastRun);
   syncPin();
   renderBill();
+  syncDownload();
 
   desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt);
 
