@@ -230,13 +230,19 @@ async function main() {
     }),
   );
 
+  // GitHub Actions logs for a public repository are world-readable, and the
+  // bucket and distribution ids are needless disclosure there. Neither is a
+  // credential and the bucket blocks public access, but nothing outside the
+  // account has any use for them. Run by hand they are worth printing, because
+  // knowing which bucket you just published to is rather the point.
   const mib = (n) => (n / 1048576).toFixed(1);
+  const target = process.env.CI ? '' : ` to ${BucketName}`;
   console.log(
-    `Published ${files.length} files to ${BucketName}: ` +
+    `Published ${files.length} files${target}: ` +
       `${mib(raw)} MiB on disk, ${mib(sent)} MiB stored and served.`,
   );
   if (stale.length) console.log(`Removed ${stale.length} files left by an earlier build.`);
-  console.log(`Invalidated ${DistributionId}.`);
+  console.log(process.env.CI ? 'Invalidated the distribution.' : `Invalidated ${DistributionId}.`);
 }
 
 await main();
