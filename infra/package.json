@@ -1,0 +1,23 @@
+{
+  "name": "idfkit-shoebox-infra",
+  "private": true,
+  "version": "0.0.0",
+  "description": "CDK app for shoebox.idfkit.com. Installed and run separately from the site, so the page's own toolchain stays vite and nothing else.",
+  "bin": { "shoebox": "bin/shoebox.js" },
+  "scripts": {
+    "build": "tsc",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "aws-cdk": "^2.170.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.170.0",
+    "constructs": "^10.4.0"
+  }
+}

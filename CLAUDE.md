@@ -9,6 +9,7 @@ npm install
 npm run dev       # predev stages ~50 MB of engine assets, schemas and the station index
 npm run build     # prebuild does the same staging
 npm run preview
+npm run deploy    # compresses dist/ and publishes it; needs a built dist/ and AWS credentials
 ```
 
 `predev` / `prebuild` copy `@idfkit/engine-assets` into `public/energyplus/`, the
@@ -248,8 +249,9 @@ dictionaries, especially for declarations like the ones in `controls.js`.
 `src/weather.js` sits over `@idfkit/weather`. The 1.7 MB station index is fetched
 lazily on the first keystroke in the picker and kept for the session.
 climate.onebuilding.org sends no CORS header, so requests go through the
-`/onebuilding` dev-server proxy in `vite.config.js`; a static deployment needs
-the equivalent rewrite at the host, or a proxy origin in `VITE_WEATHER_PROXY`.
+`/onebuilding` dev-server proxy in `vite.config.js`; in production the same
+rewrite is a second CloudFront origin (see Deployment), or a proxy origin in
+`VITE_WEATHER_PROXY`.
 `asIndexed()` is a temporary query-normalisation workaround pending a fix
 upstream.
 
@@ -257,3 +259,37 @@ The README documents the weather picker, the output-variable measurements, and
 the glazing and overhang parameter studies in detail. It predates the model
 console, so where it describes five sliders and `setParameters`, the current code
 has the console and `applyModel`.
+
+## Deployment
+
+Served at `shoebox.idfkit.com` from an S3 bucket behind CloudFront, defined as a
+CDK app in `infra/` (TypeScript, its own `package.json`, so the page's toolchain
+stays vite and nothing else). Pushing to `main` publishes:
+`.github/workflows/deploy.yml` assumes a role by GitHub OIDC and runs
+`npm run deploy`. No AWS key is stored.
+
+- **The `/onebuilding` rewrite is infrastructure, not code.** A second origin on
+  the distribution points at climate.onebuilding.org and a viewer-request
+  function strips the prefix, because CloudFront can prepend an origin path but
+  never remove one. This mirrors the Vite proxy deliberately: a picker that
+  works on localhost and 404s in production is the exact failure the arrangement
+  exists to prevent.
+- **`scripts/deploy.mjs` compresses; CloudFront is not trusted to.** The edge
+  compresses only objects between 1 KB and 10 MB whose content type is on its
+  list. The engine binary (28.40 MiB) and schema (9.88 MiB) exceed the ceiling,
+  and `.idd` arrives as `application/octet-stream`, which is off the list. The
+  difference is about 45 MB against about 10 MB on a cold visit. Brotli quality
+  is picked by size: q9 above 4 MiB, q11 below, because q11 on the binary costs
+  62 s to save 0.93 MiB over q9's 3 s.
+- **`.gz` files must never carry `Content-Encoding`.** The page inflates
+  `stations.json.gz` and the schema bundle itself with `DecompressionStream`.
+  Declaring the encoding would have the browser inflate them first.
+- **The bucket is `RETAIN`.** `cdk destroy` must not be able to take the
+  published site with it.
+- **The GitHub OIDC provider is imported, not created.** IAM allows one provider
+  per issuer URL and the account already has one; creating a second fails the
+  deploy with `EntityAlreadyExists`.
+
+Cloudflare Pages cannot host this at all: its hard per-asset limit is 25 MiB and
+the engine binary is 28.40 MiB. GitHub Pages, which serves `idfkit.com`, cannot
+do the `/onebuilding` rewrite.

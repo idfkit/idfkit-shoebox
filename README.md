@@ -1,4 +1,6 @@
-# idfkit-engine-demo
+# idfkit-shoebox
+
+Live at **[shoebox.idfkit.com](https://shoebox.idfkit.com)**.
 
 The smallest possible showcase of EnergyPlus running in the browser via
 `@idfkit/engine` and `@idfkit/engine-assets`. One page, no button needed: it
@@ -26,6 +28,46 @@ from `@idfkit/engine-assets` into `public/energyplus/`, which is gitignored.
 
 First load downloads and compiles the ~28 MB binary; after that it is cached.
 
+## Deploying
+
+The site is an S3 bucket behind CloudFront at `shoebox.idfkit.com`, defined as a
+CDK app in `infra/`. Pushing to `main` publishes it: the workflow in
+`.github/workflows/deploy.yml` mints a short-lived OIDC token, trades it for the
+deploy role, and runs `npm run deploy`. There is no AWS key stored in the repo.
+
+```bash
+cd infra && npm install && npx cdk deploy   # once, to provision
+npm run build && npm run deploy             # to publish by hand
+```
+
+After the first `cdk deploy`, set the repository variable
+`AWS_DEPLOY_ROLE_ARN` to the stack's `DeployRoleArn` output, which is what the
+workflow assumes. The role trusts one repository on one branch, so a pull
+request from a fork cannot reach the bucket.
+
+Three things about this arrangement are load-bearing, and each cost real
+measurement to find:
+
+- **CloudFront compresses only between 1 KB and 10 MB**, and only for content
+  types on its own list. The engine binary (28.40 MiB) and the schema
+  (9.88 MiB) are both above that ceiling, and S3 serves `.idd` as
+  `application/octet-stream`, which is not on the list. Left to the edge, a cold
+  visit transfers about 45 MB. `scripts/deploy.mjs` compresses everything itself
+  and uploads it with `Content-Encoding: br`, which brings that to about 10 MB.
+- **Brotli quality is chosen by file size.** On the engine binary, q9 took 3.0 s
+  for 6.23 MiB and q11 took 62.0 s for 5.30 MiB. A minute per deploy is not
+  worth 0.93 MiB on a file the browser caches after first visit, so anything
+  over 4 MiB is compressed at q9 and everything else at q11.
+- **`.gz` files ship exactly as stored.** `stations.json.gz` and the schema
+  bundle are inflated by the page itself. Declaring `Content-Encoding: gzip`
+  would have the browser inflate them first and hand the loader JSON where it
+  expects a gzip member.
+
+Cloudflare Pages was the first choice and cannot host this: its hard limit is
+25 MiB for a single asset, and `energyplus.js-26.1.wasm` is 28.40 MiB. GitHub
+Pages, which serves `idfkit.com`, cannot rewrite `/onebuilding` to the upstream
+and would leave the weather picker dead.
+
 ## Files
 
 - `src/model.js`: authors the model with `@idfkit/core` and reads it back
@@ -35,6 +77,8 @@ First load downloads and compiles the ~28 MB binary; after that it is cached.
 - `index.html`: the sheet — tokens, run ledger, plate, schedule, title block
 - `scripts/copy-schemas.mjs`: stages the schema bundle into `public/schemas/`
 - `scripts/stage-weather.mjs`: stages the station index into `public/weather/`
+- `scripts/deploy.mjs`: compresses `dist/` and publishes it to the bucket
+- `infra/`: the CDK app for `shoebox.idfkit.com`, installed separately
 
 ## Picking a weather location
 
@@ -100,8 +144,9 @@ cannot fetch the archives directly. `@idfkit/weather` takes a `rewriteUrl` hook
 for this; `vite.config.js` supplies the other end as a dev-server proxy at
 `/onebuilding`, which covers `npm run dev` and `npm run preview`.
 
-A static deployment has no dev server and needs the same rewrite from its host —
-one Netlify `_redirects` line, one Vercel rewrite, or a small Cloudflare Worker.
+A static deployment has no dev server and needs the same rewrite from its host.
+In production that is a second CloudFront origin plus a viewer-request function
+that strips the prefix, which is what `infra/` provisions; see [Deploying](#deploying).
 To point at a proxy origin instead, set `VITE_WEATHER_PROXY`: a path prefix
 (`/onebuilding`) replaces the upstream origin, and a value ending in `=`
 (`https://corsproxy.io/?url=`) receives the whole URL percent-encoded.

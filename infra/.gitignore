@@ -1,0 +1,9 @@
+node_modules/
+cdk.out/
+*.js
+*.d.ts
+
+# `HostedZone.fromLookup` caches the resolved zone id and the account number
+# here. Neither is a secret, but neither belongs in a public repository, and a
+# stale cache is worse than a fresh lookup.
+cdk.context.json

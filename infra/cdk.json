@@ -1,0 +1,9 @@
+{
+  "app": "npx ts-node --prefer-ts-exts bin/shoebox.ts",
+  "watch": { "include": ["**"], "exclude": ["node_modules", "cdk.out", "*.d.ts"] },
+  "context": {
+    "@aws-cdk/core:bootstrapQualifier": "hnb659fds",
+    "@aws-cdk/aws-iam:minimizePolicies": true,
+    "@aws-cdk/core:checkSecretUsage": true
+  }
+}
