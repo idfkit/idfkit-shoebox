@@ -967,6 +967,24 @@
       .pin[aria-pressed="true"] { color: var(--ink); }
       .pin[aria-pressed="true"] .mark { background: var(--redline); border-color: var(--redline); }
 
+      /* The rail's pin holds the reading hour rather than a whole bill, and it
+         has to sit inside a line of running mono type without becoming the
+         loudest thing on the desk's foot. So it keeps the marker — the one
+         part that carries the armed state — and gives up the button chrome:
+         no inset, no border, no tracked capitals, the label set in the same
+         mono the instant was always lettered in. */
+      .pin-inline {
+        gap: 7px;
+        padding: 0;
+        background: none;
+        border: 0;
+        border-radius: 0;
+        font: 400 10px/1.4 var(--mono);
+        text-transform: none;
+        letter-spacing: 0;
+      }
+      .pin-inline .mark { width: 7px; height: 7px; }
+
       /* ── the meter heads: quantity × rate = amount ──────────────── */
 
       /* The signature of this section. A figure with no rate beside it is a

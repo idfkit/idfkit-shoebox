@@ -340,6 +340,32 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   environment, not an average. A free-running zone returns to where it started,
   so every term averages to roughly nothing over a day and the whole desk reads
   zero.
+- **That instant is chosen by the result, so it moves — and the pin is what
+  holds it.** `worstHour` is an `argmax` over |T − 20| with two candidates half
+  a year apart, so it is not a continuous function of any control, and it is
+  chosen by one signal and then applied to all five meters. On Boston TMYx the
+  two candidates sit 0.6 K apart: a concrete slab reads at 31.4 °C on 3 August
+  (612 W of transmitted solar), and *only* changing the slab to lightweight
+  reads at 5.6 °C on 21 January (no sun at all), because the lighter slab costs
+  the winter night 3.6 K of coasting while adding 1.0 K to the summer peak and
+  the ranking inverts. The transmitted-solar series is byte-identical between
+  those two runs — 8,760 hours, max difference 0 W — so the whole apparent
+  change was the hour. Both readings are true; the pair is not a comparison.
+  `pinnedHour` in `main.js` holds the instant, and the rail's `Read at …` line
+  is the control that takes it.
+- **The pin is a calendar stamp, not an index.** `{ kind, month, day, hour }`,
+  where kind is `year` / `winter` / `summer` — by environment *kind* because
+  the index is not a property of the desk (keeping the sizing days renumbers
+  the year from 0 to 2). `resolvePin` re-finds it in each new run; when it is
+  not there — a year pin in a design-day run, a design-day pin after a station
+  attach sets `sizingPeriods=No` — the pin is **released and the rail says
+  which hour went missing**, rather than sliding to the nearest one. It rides
+  the permalink as the reserved key `at=year.8-3T13`, separator a full stop
+  because `URLSearchParams` escapes `@`.
+- **Turning the pin runs nothing.** It reaches no IDF object, so it stays off
+  `params` (anything there starts a run) and re-letters from the ESO already
+  held, exactly as `reprice` does for a tariff. It is `pinnedHour`, not
+  `pinned` — the bill has held a pinned *scheme* since long before this.
 
 ## Invariants that fail quietly
 

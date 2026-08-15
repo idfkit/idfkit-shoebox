@@ -152,6 +152,21 @@ and its subject on the sheet is circled with the dashed markup hairline
 reads — the index sheet's rule; retired, they are gone. If a feature changes
 what a step points at or teaches, the note changes with it — see CLAUDE.md.
 
+### Inline pin (`.pin-inline`)
+
+The rail's reading hour is stated in one line of mono type, and that line is
+also the control that holds it. So the pin keeps the marker — the one part
+carrying the armed state, and the same square the patch buttons and the bill's
+pin use — and gives up the button chrome entirely: no inset, no border, no
+tracked capitals, the label set in the mono the instant was always lettered
+in. The marker labels the instant rather than sitting beside it, because what
+is being armed is that hour and no other.
+
+Reach for this shape wherever a reading is *also* a switch. A second full
+`.pin` button at the desk's foot would have made the rail's quietest line its
+loudest, and a separate control elsewhere would have separated the state from
+the sentence that states it.
+
 ### Signed meter bar
 
 Centre-zero trough on `--inset` with a `--rule-soft` border, `6px` tall, a

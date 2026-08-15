@@ -82,12 +82,58 @@ const MIGRATIONS = Object.freeze({});
  * quietly collide with one — `controlFor` would route the collision to a
  * parameter and the link would mean two things at once.
  */
-const RESERVED = Object.freeze(['in', 'out', 'stn', 'win']);
+const RESERVED = Object.freeze(['in', 'out', 'stn', 'win', 'at']);
 for (const key of RESERVED) {
   if (ALL_KEYS.includes(key)) {
     throw new Error(`the reserved link key "${key}" collides with a control parameter`);
   }
 }
+
+/**
+ * Which environment a pinned hour belongs to, as the link spells it.
+ *
+ * By kind rather than by the environment's index in the run, because the index
+ * is not a property of the desk: keeping the sizing days renumbers the year
+ * from 0 to 2, and a link that pinned "environment 0" would silently move from
+ * the year to the winter design day. The kind is what the reader pinned.
+ */
+const PIN_KINDS = Object.freeze(['year', 'winter', 'summer']);
+
+/**
+ * The pinned reading hour: `year.8-3T13` — kind, then the month, day and hour
+ * the meters are read at.
+ *
+ * A calendar stamp rather than an index into the series: 5,148 means nothing
+ * on a run of a different length, and a desk whose timestep or run period
+ * moved would read a different hour under the same number. The stamp is
+ * re-found in each new run, or it is not found and the pin is released saying
+ * so — see `resolvePin` in `readings.js`.
+ *
+ * A full stop between the kind and the date, not the `@` this first carried:
+ * `URLSearchParams` escapes `@` to `%40`, and an address bar reading
+ * `at=year%408-3T13` gives up exactly the legibility this whole encoding is
+ * arranged around. `.`, `-`, `_` and `*` are the separators it leaves alone;
+ * the date already spends the first two.
+ */
+const encodePin = ({ kind, month, day, hour }) => `${kind}.${month}-${day}T${hour}`;
+
+const PIN_FORM = /^(year|winter|summer)\.(\d{1,2})-(\d{1,2})T(\d{1,2})$/;
+
+function decodePin(raw) {
+  const match = PIN_FORM.exec(raw);
+  if (!match) throw new Error(`"${raw}" is not a pinned hour like year.8-3T13`);
+  const [, kind, month, day, hour] = match;
+  const pin = { kind, month: Number(month), day: Number(day), hour: Number(hour) };
+  // The grammar admits 19-40T31, so the calendar is checked separately. Hour 0
+  // to 23: EnergyPlus stamps an hourly point with the hour it ends, and the
+  // parser hands that back as 0 for midnight.
+  if (pin.month < 1 || pin.month > 12) throw new Error(`"${raw}" names month ${pin.month}`);
+  if (pin.day < 1 || pin.day > 31) throw new Error(`"${raw}" names day ${pin.day}`);
+  if (pin.hour > 23) throw new Error(`"${raw}" names hour ${pin.hour}`);
+  return pin;
+}
+
+export { PIN_KINDS, encodePin, decodePin };
 
 /**
  * Encode the desk. Returns the fragment without its leading `#`, or an empty
@@ -100,7 +146,7 @@ for (const key of RESERVED) {
  * samples that disagree by up to 9 % on degree days, so a link that named only
  * the site would reproduce a different year than the one argued over.
  */
-export function encodeState({ params, bypass, station = null }) {
+export function encodeState({ params, bypass, station = null, pin = null }) {
   const pairs = new URLSearchParams();
   for (const key of ALL_KEYS) {
     // `String` rather than a display format: the display rounds, and a link
@@ -115,6 +161,12 @@ export function encodeState({ params, bypass, station = null }) {
     pairs.append('stn', String(station.wmo));
     if (station.window) pairs.append('win', station.window);
   }
+  // The pinned hour is a reading instruction, not a parameter: it reaches no
+  // IDF object and starts no run. It rides on the link all the same, because a
+  // scheme shared to make a point about one hour has to arrive reading at that
+  // hour — a link that landed on the receiver's own worst hour would be the
+  // two-permalinks-disagreeing problem the pin exists to end.
+  if (pin) pairs.append('at', encodePin(pin));
   const body = pairs.toString();
   return body ? `${LINK_VERSION}&${body}` : '';
 }
@@ -233,6 +285,15 @@ export function decodeState(raw) {
     station = { wmo, window: win };
   }
 
+  // A pin on the year needs a year to land in. Refused here rather than at
+  // resolve time so the link fails as a link, whole and before anything is
+  // loaded, which is the same treatment `win` without `stn` gets above.
+  const at = pairs.get('at');
+  const pin = at === null ? null : decodePin(at);
+  if (pin?.kind === 'year' && wmo === null) {
+    throw new Error('an hour pinned in the run period ("at") with no station ("stn") to supply one');
+  }
+
   // `in` and `out` are lists and repeat by design; every other key — the
   // station pair included — is one claim, and a repeated one is two claims
   // about one thing. Either could be meant, so neither is taken. The check
@@ -256,5 +317,5 @@ export function decodeState(raw) {
     );
   }
 
-  return { params, bypass, station };
+  return { params, bypass, station, pin };
 }

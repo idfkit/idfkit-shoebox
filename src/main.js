@@ -43,7 +43,18 @@ import {
   weatherFor,
 } from './weather.js';
 import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
-import { MONTHS, environmentRuns, hourly, readDemand, readExtremes } from './readings.js';
+import {
+  MONTHS,
+  NEUTRAL_C,
+  environmentRuns,
+  hourly,
+  pinAt,
+  readDemand,
+  readExtremes,
+  resolvePin,
+  stampText,
+  worstHour,
+} from './readings.js';
 
 const ENERGYPLUS_VERSION = '26.1.0';
 
@@ -138,8 +149,9 @@ function svg(tag, attrs = {}) {
 
 // The zone tinted by its own result. The scale is hinged at 20 °C — room
 // temperature, the only neutral point that means anything here — and runs out
-// to the two design conditions. Colour is degrees, never decoration.
-const NEUTRAL_C = 20;
+// to the two design conditions. Colour is degrees, never decoration. The hinge
+// is `readings.js`'s, because the reading hour is measured from the same point
+// and two copies of "neutral" would drift.
 function tint(celsius) {
   const cold = [61, 100, 120];
   const paper = [178, 170, 154];
@@ -1389,6 +1401,11 @@ function clearResults() {
   // over a cleared plate would be describing a run the sheet no longer shows.
   bill = null;
   lastRun = null;
+  // The instant goes with them: it is an index into a run that is no longer
+  // on the sheet. The pin itself survives — it is a calendar stamp and a
+  // request, not a reading, so the next solve is asked for the same hour.
+  lastReadFrom = null;
+  lastAt = null;
   renderBill();
   syncPin();
   syncDownload();
@@ -1679,7 +1696,31 @@ $('reset').addEventListener('click', () => revert(SHEET_KEYS));
 let desk = null;
 let lastReadings = new Map();
 let lastHours = null;
-let lastAt = null; // the instant the desk's meters are reading
+let lastAt = null; // the instant the desk's meters are reading, as the rail letters it
+
+/**
+ * The hour the reader has pinned, or null to read the worst one.
+ *
+ * The desk's own instant is an `argmax` over the zone temperature, so it is
+ * chosen by one signal and applied to all of them: a control with no optical
+ * effect can move the transmitted-solar reading, because it moved the hour.
+ * Worse, it is discontinuous — the annual low and the annual high sit close
+ * enough on a balanced climate that a slider can invert the ranking and take
+ * every meter on the rail from an August afternoon to a January night in one
+ * step. Both readings are true; the pair is not a comparison, and a console
+ * whose whole purpose is turning a control back and forth has to be able to
+ * hold its subject still.
+ *
+ * Deliberately not a parameter. It reaches no IDF object, so it must stay off
+ * `params` — anything there starts a run, and this one could only reproduce
+ * the numbers already in hand. Turning it re-letters from the ESO already
+ * held, the way a tariff re-letters the bill.
+ *
+ * `pinnedHour`, not `pinned`: the bill has held a pinned *scheme* since long
+ * before this, and the two are different instruments — one holds a whole bill
+ * to measure against, this one holds the instant the meters read at.
+ */
+let pinnedHour = null;
 
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
@@ -1773,6 +1814,75 @@ function derivedReadings(facts) {
 const exactly = (name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 
 /**
+ * Everything the instant is chosen from, kept so the pin can be turned without
+ * asking the engine for anything. The ESO is already held for the bill; this
+ * adds the zone series and its environments, which are parsed out of it once
+ * per solve rather than once per click.
+ */
+let lastReadFrom = null;
+
+/** An hour pin lettered without a run to look it up in — for saying what went missing. */
+const hourPinText = (pin) =>
+  `${String(pin.hour).padStart(2, '0')}:00, ${pin.day} ${MONTHS[pin.month - 1]}` +
+  (pin.kind === 'year' ? '' : ` on the ${pin.kind} design day`);
+
+/**
+ * Put the meters on one hour of a solved run: the pinned one if it is in
+ * there, the worst one otherwise.
+ *
+ * A pin that cannot be found is released rather than slid to the nearest hour,
+ * and the rail says which hour went missing. Sliding would be the substitution
+ * this codebase refuses everywhere else, and it would be the worst kind here:
+ * silently reading an hour nobody asked for, under a marker claiming the
+ * reading is held still.
+ */
+function readAt(points, runs, leadIndex, zone, eso) {
+  lastReadFrom = { points, runs, leadIndex, zone, eso };
+  let at = resolvePin(pinnedHour, points, runs);
+  let released = null;
+  if (pinnedHour && at == null) {
+    released = pinnedHour;
+    pinnedHour = null;
+  }
+  if (at == null) at = worstHour(points, runs[leadIndex]);
+  const stamp = stampText(points, at);
+  lastAt = stamp
+    ? {
+        text: `${stamp} · zone ${zone[at].toFixed(1)} °C`,
+        pinned: Boolean(pinnedHour),
+        released: released ? hourPinText(released) : null,
+      }
+    : null;
+  lastReadings = readMeters(eso, at);
+  // A released pin has to leave the address with it. Without this the bar goes
+  // on carrying `at=winter.1-1T5` for an hour the desk has already told the
+  // reader it could not find — the address claiming a scheme the sheet is not
+  // showing, which is the failure the `hashchange` reload exists to prevent,
+  // arriving by the one route that never touches the hash.
+  if (released) updatePermalink();
+}
+
+/**
+ * Take or release the pin, off the run already in hand.
+ *
+ * No solve: the hour is a way of reading a result, not a property of one, so
+ * this is the same move `reprice` makes for a tariff. The address bar follows,
+ * because a click is a whole gesture — there is no drag here to hold it still.
+ */
+function toggleHourPin() {
+  if (!lastReadFrom) return;
+  const { points, runs, leadIndex, zone, eso } = lastReadFrom;
+  if (pinnedHour) pinnedHour = null;
+  else {
+    pinnedHour = pinAt(points, runs, worstHour(points, runs[leadIndex]));
+    if (!pinnedHour) return; // no stamp to pin; leave the desk exactly as it was
+  }
+  readAt(points, runs, leadIndex, zone, eso);
+  desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt);
+  updatePermalink();
+}
+
+/**
  * What each channel was contributing at one instant.
  *
  * At one instant, and not averaged over the run, which was the first attempt
@@ -1781,7 +1891,9 @@ const exactly = (name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\
  * whole desk reads zero. A console meter shows level now, not the mean of the
  * song. So the desk reads at the hour the building is having the hardest time —
  * the one furthest from 20 °C, which is the hour the design is judged at, and
- * an instant where the balance genuinely closes.
+ * an instant where the balance genuinely closes. Unless the reader has pinned
+ * an hour, in which case it is that one: see `pinned` below for why a console
+ * that only ever picks its own instant cannot be used to compare two desks.
  *
  * A channel whose series the ESO did not carry reads null, not zero. Zero is a
  * measurement; this is the absence of one, and the strip letters it as an em
@@ -1812,20 +1924,6 @@ function readMeters(eso, at) {
   return readings;
 }
 
-/** The hour the building is having the hardest time, within one environment. */
-function worstHour(zone, run) {
-  let at = run.start;
-  let worst = -Infinity;
-  for (let i = run.start; i <= run.end; i += 1) {
-    const off = Math.abs(zone[i] - 20);
-    if (off > worst) {
-      worst = off;
-      at = i;
-    }
-  }
-  return at;
-}
-
 const deskPanel = $('desk');
 const deskButton = $('desk-open');
 
@@ -1840,6 +1938,7 @@ desk = mountConsole({
     if (params[key] !== value && !PRICED_KEYS.has(key)) tour?.note('drag');
     commit(key, value, done);
   },
+  onPin: toggleHourPin,
   onPatch(id, off) {
     tour?.note('patch');
     beginGesture();
@@ -2421,7 +2520,7 @@ let linkAttachPending = false;
  * pre-solo patch state while the bundle's manifest carried the solo map.
  */
 const schemeHash = (p = params) =>
-  encodeState({ params: p, bypass: patching(), station: stationToken() });
+  encodeState({ params: p, bypass: patching(), station: stationToken(), pin: pinnedHour });
 
 /** The absolute form, for the clipboard and the run bundle's manifest. */
 const schemeUrl = (p = params) => {
@@ -2478,6 +2577,10 @@ function refuseLink(message) {
   syncSweepGate();
   stopAuto();
   revert();
+  // `revert` restores the parameters and the patch bay; the pinned hour is
+  // neither, so it has to be released by name or a refused link would leave
+  // its one surviving claim on the desk.
+  pinnedHour = null;
   clearResults();
   history.replaceState(null, '', location.pathname + location.search);
   statusEl.className = 'status bad';
@@ -2612,6 +2715,11 @@ if (location.hash.length > 1) {
     linked = decodeState(location.hash.slice(1));
     Object.assign(params, linked.params);
     Object.assign(bypass, linked.bypass);
+    // The pinned hour is taken here rather than after the first solve, because
+    // it has to be in force *for* that solve: honoured afterwards, the desk
+    // would letter its own worst hour first and jump to the link's, which is
+    // the flicker a link exists to avoid.
+    pinnedHour = linked.pin;
     desk?.sync();
   } catch (error) {
     linkError = error;
@@ -2782,12 +2890,7 @@ async function solve() {
   renderAxon(lastMean);
 
   lastHours = nn;
-  const at = worstHour(zone, runs[leadIndex]);
-  const stamp = points[at]?.timestamp;
-  lastAt = stamp
-    ? `${String(stamp.hour ?? 0).padStart(2, '0')}:00, ${stamp.day} ${MONTHS[stamp.month - 1]} · zone ${zone[at].toFixed(1)} °C`
-    : null;
-  lastReadings = readMeters(eso, at);
+  readAt(points, runs, leadIndex, zone, eso);
 
   // The end-use meters ride in on the same ESO -- `Output:Meter` writes to both
   // the .eso and the .mtr -- so the bill is priced off the run that is already
