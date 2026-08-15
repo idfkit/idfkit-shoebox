@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Shareable scheme links. The address bar now carries the whole desk — every
+  control off its default, the patch state, and the attached TMYx station with
+  its exact year window — as a readable URL fragment
+  (`#v1&width=20&wwrS=0.35&stn=725650`), rewritten on every gesture release. A
+  **Copy scheme link** action joins the run ledger beside the bundle download,
+  and the bundle's manifest now cites the link, so a run can be reproduced
+  locally *and* re-solved live from the same download. Opening a link rebuilds
+  and re-solves the scheme; a link that cannot be honoured — an unknown key, an
+  out-of-range value, a station whose archive cannot be fetched — is refused
+  whole with the reason in the status line, never half-loaded. The encoding is
+  versioned so links keep working as controls are added.
+
 - Downloadable run bundle. A **Download run bundle** button on the run ledger
   packages the exact IDF and EPW handed to the engine together with the tabular
   report and console log it wrote and a plain-text manifest, so any run can be

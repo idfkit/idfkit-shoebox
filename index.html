@@ -557,7 +557,15 @@
          as a live control that happens to do nothing. */
       .link:disabled { color: var(--ink-ghost); border-bottom-color: transparent; cursor: default; }
       .link:disabled:hover { color: var(--ink-ghost); border-bottom-color: transparent; }
-      .ledger-download { align-self: start; }
+      /* Tighter than the ledger's own 16px gap: the two are one idea — take
+         this away — not two entries in the log above them. */
+      .ledger-take {
+        align-self: start;
+        display: flex;
+        flex-direction: column;
+        align-items: start;
+        gap: 9px;
+      }
 
       .dim {
         display: grid;
@@ -1675,9 +1683,18 @@
               <span class="sub" id="runs-sub">this session</span>
             </div>
           </div>
-          <button type="button" class="link ledger-download" id="download" disabled>
-            Download run bundle
-          </button>
+          <!-- The two reproduction paths, together: the bundle re-runs this
+               run in a local EnergyPlus, the link re-solves this scheme here.
+               Only the first waits for a run — a scheme exists from the first
+               frame, results do not. -->
+          <div class="ledger-take">
+            <button type="button" class="link" id="download" disabled>
+              Download run bundle
+            </button>
+            <button type="button" class="link" id="share">
+              Copy scheme link
+            </button>
+          </div>
         </aside>
 
         <div class="field">

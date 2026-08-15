@@ -25,17 +25,25 @@
 const enc = new TextEncoder();
 
 /**
- * CRC-32 (IEEE, the polynomial ZIP uses), computed straight rather than from a
- * precomputed table: these payloads run to a couple of megabytes at most and
- * are crc'd once on a click nobody is timing, so the table would be memory
- * spent to save nothing anyone would feel.
+ * CRC-32 (IEEE, the polynomial ZIP uses), table-driven. The first cut computed
+ * it bit-serially to spare the table, and had the arithmetic backwards: a
+ * TMYx EPW is a couple of megabytes, and eight shift/XOR steps per byte held
+ * the main thread for on the order of a hundred milliseconds per download
+ * click — dropped frames and a frozen "Zipping…" label — to save one kilobyte
+ * built once.
  */
+let CRC_TABLE;
 function crc32(bytes) {
-  let crc = ~0;
-  for (let i = 0; i < bytes.length; i++) {
-    crc ^= bytes[i];
-    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  if (!CRC_TABLE) {
+    CRC_TABLE = new Int32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let bit = 0; bit < 8; bit++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+      CRC_TABLE[n] = c;
+    }
   }
+  let crc = ~0;
+  for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ bytes[i]) & 0xff];
   return ~crc >>> 0;
 }
 
@@ -134,6 +142,34 @@ export async function zip(files, { date = new Date() } = {}) {
 const group = (n) => n.toLocaleString('en-US');
 
 /**
+ * The bundle's members, named once. `manifest()` letters its Files section and
+ * `runBundle()` zips its bytes off this same list, because the first cut wrote
+ * the list twice — a member added to one copy would have shipped in a ZIP
+ * whose own description did not mention it, in the artifact that exists to be
+ * checked.
+ */
+function members(run) {
+  return [
+    { name: 'model.idf', text: run.idf, note: 'the model, with its sizing periods included' },
+    run.epw && {
+      name: `${run.weatherStem ?? 'weather'}.epw`,
+      text: run.epw,
+      note: 'the weather file, exactly as downloaded',
+    },
+    run.html && {
+      name: 'results/eplustbl.htm',
+      text: run.html,
+      note: 'the AllSummary tabular report EnergyPlus wrote',
+    },
+    run.log && {
+      name: 'results/console.log',
+      text: run.log,
+      note: 'the engine console, warnings and severes in its own words',
+    },
+  ].filter(Boolean);
+}
+
+/**
  * The plain-text README that makes the bundle self-describing.
  *
  * Written the way the meter heads on the bill are written: every figure stated
@@ -141,8 +177,8 @@ const group = (n) => n.toLocaleString('en-US');
  * the whole reason the download exists, so it is spelled out for both run kinds
  * rather than left as an exercise.
  */
-function manifest(run) {
-  const epwFile = run.epw ? `${run.weatherStem ?? 'weather'}.epw` : null;
+function manifest(run, list) {
+  const epwFile = list.find((m) => m.name.endsWith('.epw'))?.name ?? null;
   const rows = [
     ['EnergyPlus', run.version],
     ['Run', run.annual ? `Annual (${group(run.hours)} hours)` : `Design days (${group(run.hours)} hours)`],
@@ -159,18 +195,19 @@ function manifest(run) {
   ];
   const pad = Math.max(...rows.map(([k]) => k.length));
 
-  const files = [
-    ['model.idf', 'the model, with its sizing periods included'],
-    epwFile && [epwFile, 'the weather file, exactly as downloaded'],
-    run.html && ['results/eplustbl.htm', 'the AllSummary tabular report EnergyPlus wrote'],
-    run.log && ['results/console.log', 'the engine console, warnings and severes in its own words'],
-    ['MANIFEST.txt', 'this file'],
-  ].filter(Boolean);
+  const files = [...list.map((m) => [m.name, m.note]), ['MANIFEST.txt', 'this file']];
   const filePad = Math.max(...files.map(([k]) => k.length));
 
   const reproduce = run.epw
     ? `  energyplus -w ${epwFile} model.idf`
     : '  energyplus model.idf';
+
+  // The other reproduction path: the same scheme, re-solved live on the page
+  // that made this bundle. Stated only when the caller captured it — a missing
+  // link is left out rather than fabricated, like the missing EPW above.
+  const live = run.permalink
+    ? `\n  Or open the same scheme live, re-solved in the browser:\n  ${run.permalink}\n`
+    : '';
 
   return (
     `idfkit shoebox — simulation bundle\n` +
@@ -189,7 +226,8 @@ function manifest(run) {
     `To reproduce\n` +
     `  Install EnergyPlus ${run.version}, then from this folder run:\n` +
     reproduce +
-    `\n`
+    `\n` +
+    live
   );
 }
 
@@ -209,19 +247,10 @@ function slug(run) {
  */
 export async function runBundle(run) {
   const date = run.date ?? new Date();
-  const withDate = { ...run, date };
+  const list = members(run);
 
-  const files = [{ name: 'model.idf', bytes: enc.encode(run.idf) }];
-  if (run.epw) {
-    files.push({ name: `${run.weatherStem ?? 'weather'}.epw`, bytes: enc.encode(run.epw) });
-  }
-  if (run.html) {
-    files.push({ name: 'results/eplustbl.htm', bytes: enc.encode(run.html) });
-  }
-  if (run.log) {
-    files.push({ name: 'results/console.log', bytes: enc.encode(run.log) });
-  }
-  files.push({ name: 'MANIFEST.txt', bytes: enc.encode(manifest(withDate)) });
+  const files = list.map((m) => ({ name: m.name, bytes: enc.encode(m.text) }));
+  files.push({ name: 'MANIFEST.txt', bytes: enc.encode(manifest({ ...run, date }, list)) });
 
   const blob = await zip(files, { date });
   return { blob, filename: `shoebox-${slug(run)}-${run.annual ? 'annual' : 'designday'}.zip` };

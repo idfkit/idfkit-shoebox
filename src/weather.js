@@ -71,6 +71,18 @@ function flavor(station) {
 }
 
 /**
+ * The flavour's window in the plain form a permalink carries: `2007-2021`, or
+ * null for the bare undated `_TMYx` archive. Kept beside `flavor` because both
+ * read the same filename convention, and a link that named only the site would
+ * reproduce a different year than the one argued over — the five samples of
+ * one site disagree by up to 9 % on degree days.
+ */
+export const flavorWindow = (station) => {
+  const match = station.url.match(/_TMYx(?:\.(\d{4})-(\d{4}))?\.zip$/);
+  return match?.[1] ? `${match[1]}-${match[2]}` : null;
+};
+
+/**
  * One row per site, each carrying every flavour of that site, most recent
  * window first. Ranked results keep their ranking: the first time a site
  * appears is the best score it earned.
