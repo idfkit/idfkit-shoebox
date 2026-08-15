@@ -138,6 +138,20 @@ is armed". Used by the run ledger, the auto-solve toggle, and the console's
 patch buttons. Filled `--redline` when on, `--ink-ghost` outline when off.
 Reuse it for any armed/not-armed state rather than inventing a switch.
 
+### The general notes (onboarding)
+
+New-reader guidance is lettered as a drawing set letters it: a numbered block
+of general notes at the head of the sheet, never a modal tour — nothing on
+this board floats, the onboarding included. Each note carries the square
+marker, and the marker fills only when its step has genuinely happened on the
+desk, because the onboarding obeys the same rule as the drawing: state is
+read back, never asserted. The next step takes the redline (statically — the
+ledger's breathing means a run in flight, and "your next move" is not one),
+and its subject on the sheet is circled with the dashed markup hairline
+(`.guided`), one region at a time. Folded, the notes are one row that still
+reads — the index sheet's rule; retired, they are gone. If a feature changes
+what a step points at or teaches, the note changes with it — see CLAUDE.md.
+
 ### Signed meter bar
 
 Centre-zero trough on `--inset` with a `--rule-soft` border, `6px` tall, a

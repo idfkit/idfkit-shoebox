@@ -23,6 +23,7 @@ import {
   controlFor,
 } from './controls.js';
 import { mountConsole } from './console.js';
+import { mountTour } from './tour.js';
 import { COARSE_SAMPLES, SWEEP_SAMPLES, samplePoints, sampleOrder } from './study.js';
 import { createEnginePool, poolLimit } from './pool.js';
 import { createStudyScheduler, makeStudyJob } from './scheduler.js';
@@ -1623,7 +1624,14 @@ function buildSliders() {
     };
     show();
 
-    input.addEventListener('input', () => commit(key, Number(input.value)));
+    // The general notes hear about the gesture from the listener, not from
+    // `commit`: commit is also the path programmatic changes take (a station
+    // attach setting `sizingPeriods`), and those must not fill the square
+    // that says the reader took hold of something.
+    input.addEventListener('input', () => {
+      tour?.note('drag');
+      commit(key, Number(input.value));
+    });
     input.addEventListener('change', () => commit(key, Number(input.value), true));
 
     row.append(label, input, value);
@@ -1825,8 +1833,15 @@ desk = mountConsole({
   host: deskPanel,
   params,
   bypass,
-  onChange: commit,
+  onChange(key, value, done = false) {
+    // A console control genuinely turned is the same "take hold of
+    // something" note the sheet's sliders file. Priced keys are excluded —
+    // they re-letter the bill and resolve nothing, which is not the lesson.
+    if (params[key] !== value && !PRICED_KEYS.has(key)) tour?.note('drag');
+    commit(key, value, done);
+  },
   onPatch(id, off) {
+    tour?.note('patch');
     beginGesture();
     bypass[id] = off;
     // Taking a channel in by hand is an answer to the solo question too.
@@ -1840,6 +1855,8 @@ desk = mountConsole({
     if (autoOn()) pump();
   },
   onSolo(next) {
+    // Solo is patching by another route: every other channel goes out.
+    tour?.note('patch');
     beginGesture();
     solo = next;
     applyGeometry();
@@ -1859,6 +1876,10 @@ function openDesk(open) {
   document.body.classList.toggle('desk-open', open);
   deskButton.setAttribute('aria-expanded', String(open));
   $('desk-count').textContent = open ? 'Close the desk' : 'Every control on the desk';
+  if (open) tour?.note('desk');
+  // The patch note's subject moves with the desk: the first patch button when
+  // the console is open, the button that opens it when it is not.
+  tour?.syncGuide();
   // The plate is inside a column that just changed width.
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(renderTrace, 60);
@@ -1870,6 +1891,19 @@ $('desk-close').addEventListener('click', () => {
   openDesk(false);
   deskButton.focus();
 });
+
+/* ══ the general notes ═══════════════════════════════════════════════════ */
+
+// The onboarding reads the desk rather than asking it: this module reports
+// each real event once — the solve, the drag, the attach, the patch — and the
+// notes decide whether it fills a square. Mounted after the console so the
+// patch note can point at a real patch button, and handed `openDesk` so a
+// note whose subject lives on the console can stage it.
+const tour = mountTour({ openDesk });
+// The two carry-away paths are one step: either proves the scheme leaves the
+// page. The buttons keep their own handlers; the note is a second listener.
+$('share').addEventListener('click', () => tour?.note('link'));
+$('download').addEventListener('click', () => tour?.note('link'));
 
 /* ══ the baseline ════════════════════════════════════════════════════════ */
 
@@ -2356,6 +2390,10 @@ async function choose(row, pick, sizing = 'No') {
       : `${siteName(picked)} attached, design conditions and all — the run covers ${hours} hours, with the sizing days skipped.`;
   syncAuto();
   markStale();
+  // Filed on the attach itself, wherever it came from: a reader arriving on a
+  // station link has a year genuinely attached, and the notes record what has
+  // happened on this desk, not who did it.
+  tour?.note('station');
   return true;
 }
 
@@ -2839,6 +2877,10 @@ async function solve() {
   statusEl.textContent = live
     ? `${nn.toLocaleString('en-US')} hours solved locally in ${seconds.toFixed(2)} s · auto-solve`
     : `${nn.toLocaleString('en-US')} hours solved locally in ${seconds.toFixed(2)} s · ${warnings} warning${warnings === 1 ? '' : 's'}`;
+
+  // Only a run that produced readable results fills the first square — the
+  // early returns above are exactly the runs the note must not claim.
+  tour?.note('solve');
 }
 
 /* ══ the scheduler ═══════════════════════════════════════════════════════ */
