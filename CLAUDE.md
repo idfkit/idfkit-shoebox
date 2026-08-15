@@ -88,10 +88,17 @@ on).
 - **`Channel.requires`** is a precondition on the rest of the desk. Unmet, the
   channel is not written at all and the strip states what is missing, rather than
   handing the engine objects it would reject.
-- **`syncOutputs`** adds and removes `Output:Variable` objects to match the
-  engaged channels. Without this, EnergyPlus lists every unproducible variable at
-  the end of the error file and inflates the warning count the title block
-  reports.
+- **`syncReporting`** owns every `Output:*` object and rewrites them all on
+  every apply, to one of three profiles: `'sheet'` (the full apparatus),
+  `'extremes'` (one hourly zone temperature series) or `'energy'` (that series
+  plus four Monthly building meters, still channel-gated). Without the gating,
+  EnergyPlus lists every unproducible variable at the end of the error file and
+  inflates the warning count the title block reports. The lean profiles exist
+  because a sweep sample is read for one series or four meters and used to
+  carry the AllSummary tables, the DXF and the dictionary anyway — clear-and-
+  rewrite rather than differential, so "lean then sheet" serializes
+  byte-identically to "always sheet", which the sweep's restore depends on.
+  Meters stay Monthly whatever the profile; see the `parseMTR` note below.
 - **`must(doc, type, name)`** throws when an expected object is missing instead
   of quietly re-adding it. See "No silent fallbacks" below.
 
@@ -165,10 +172,14 @@ Things that cost real debugging:
 
 ### The solve scheduler (src/main.js)
 
-`@idfkit/engine` rejects a second `run()` while one is in flight, so every solve
-goes through one `pump()` loop and it is latest-wins: whatever the controls show
-when the engine comes free is what gets solved, and shapes the drag passed
-through are skipped rather than queued.
+One engine instance rejects a second `run()` while one is in flight, so the
+sheet's own solves go through one `pump()` loop on a dedicated engine and it is
+latest-wins: whatever the controls show when the engine comes free is what gets
+solved, and shapes the drag passed through are skipped rather than queued. The
+studies do **not** share that engine — they run on a pool of further instances
+(`src/pool.js`, sized by cores and memory against the heap's 256 MB start,
+capped at six), so the live sheet never queues behind a curve and `pumping` is
+a plain boolean, not a mutex with holders.
 
 `shapeKey` is `JSON.stringify([params, patching()])` minus `PRICED_KEYS`.
 **Anything that reaches the IDF must live on `params`**, or it will move the
@@ -179,25 +190,43 @@ change nothing.
 Auto-solve has two cadences: a design day (48 h, ~50 ms) re-solves continuously
 during a drag; a weather file (8,760 h, ~0.7 s) re-solves once on release.
 
-A **study** (`sweepRun`, with `samplePoints` in `src/study.js`) is the mutex's
-second holder: it takes `pumping`, solves ~21 overlays of one key — the run
-the sheet would solve, design days or the attached year — and releases through
-`releaseEngine`, after which the pump catches up once if the desk moved. Each
-sample keeps two numbers off the hourly zone mean air temperature: the high in
-the warm pen and the low in the cold one, read over the billed environments
-(the year when there is one, so kept sizing days stay out; otherwise the
-winter day owns the low and the summer day the high). With System engaged and
-a year attached the reading is `readDemand` instead — TEDI, CEDI and building
-EUI off the meters through `meterTotal`, by the bill's building-section
-intensity rule, each sample divided by its own floor area. A sweep never touches
-live `params` — each sample is `applyModel(model, { ...snapshot, [key]: v },
-patch)` and the `finally` re-applies the live desk, which idempotence makes a
-byte-exact restore (the throwaway harness asserts this at every sample).
-`applyGeometry` is the one cancel point: anything that re-applies the desk to
-the model sets the sweep's `cancelled` flag, the partial curve is discarded,
-and staleness afterwards is `restShapeKey` — the shape minus the swept key, so
-moving the swept control itself only walks the study's tick. Studies clear on
-a station change and are absent on priced channels.
+A **study** (`src/scheduler.js`, with `samplePoints`/`sampleOrder` in
+`src/study.js`) queues per *sample*, not per study, so one sweep fans out
+across the whole pool and a backlog of studies is just more samples in the same
+queue. Each sample keeps two numbers off the hourly zone mean air temperature:
+the high in the warm pen and the low in the cold one, read over the billed
+environments (the year when there is one, so kept sizing days stay out;
+otherwise the winter day owns the low and the summer day the high). With System
+engaged and a year attached the reading is `readDemand` instead — TEDI, CEDI
+and building EUI off the meters through `meterTotal`, by the bill's
+building-section intensity rule, each sample divided by its own floor area. The
+readers live in `src/readings.js`, DOM-free, so the harness calls the real
+ones.
+
+A sweep never touches live `params`, and the one shared mutable is the model
+document: `buildSample` applies the overlay with the metric's lean reporting
+profile, writes the IDF and restores the live desk **in one synchronous
+breath** — no await ever sees the document in overlay state, `setAnnual` is
+bracketed both ways, and idempotence makes the restore byte-exact (the
+throwaway harness asserts this). Only IDF strings reach the pool. Samples land
+out of order; the card redraws per point in bisection order so the silhouette
+stands after four runs. Points are cached by the sample's desk key plus metric
+and run kind — never consulted by the pump — and two studies wanting the same
+sample share one run.
+
+`applyGeometry` is the one cancel point: anything that re-applies the desk
+cancels the jobs whose `restShapeKey` no longer matches (the shape minus the
+swept key, so moving the swept control itself only walks the study's tick),
+and in-flight samples land into nothing — engine runs cannot be aborted, only
+disowned. On the gesture's release `refreshStudies` re-queues every stale
+study coarse-first (11 points, a strict subset of the 21-point grid, so the
+idle densify pays only the ten new runs), gated by the auto-solve toggle and
+by `linkAttachPending` — the button gate does not cover this path, and a
+sample built during a link attach would fatal on zero environments. A Stop or
+the global "Set studies aside" suppresses a key until the rest of the desk
+next moves. Studies and the sample cache clear on a station change — sample
+shapes deliberately carry no climate — and studies are absent on priced
+channels.
 
 ### The permalink (src/permalink.js)
 
@@ -288,6 +317,18 @@ the conformance by itself, because there was never a flag to go stale.
   draw; the reading is shown with no verdict. And a reading that is absent says
   *why* — "attach a weather file, this is a year's number" — rather than
   standing as a bare em dash the reader can do nothing about.
+- **`Target.needs` separates a load from an energy**, and the distinction earns
+  its keep. `'year'` (the demand intensities, the exceedance frequency) has
+  nothing to say about two design days. `'run'` — the peak loads — reads on any
+  run at all, because sizing days *are* the conditions plant is designed
+  against, so the scoreboard answers something before a weather file is ever
+  attached. `targetAbsence` tests System before the year for the same reason: a
+  free-running desk should not be sent to fetch a year it does not need.
+  `readPeaks` costs no new `Output:Variable` — it reads the hourly
+  `Zone Air Heat Balance System Air Transfer Rate` the balance rail already
+  requests, signed positive into the zone. Watch this one in practice: a desk
+  can clear the Passivhaus *demand* at 8.6 kWh/m²·yr and miss its *load* at
+  13.9 W/m², which is the whole argument for reading both.
 - **`refuses()` moved into `controls.js`.** Both the link codec and the preset
   declarations hand a control a bare value, and the rules for what a control can
   hold belong with the declaration. `permalink.js` reads it rather than

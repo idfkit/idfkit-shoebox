@@ -30,6 +30,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   partis, a shaded free-running heavyweight and an all-glass office plate,
   labelled as the sheet's own rather than borrowing anybody's authority.
 
+- **Peak loads, read beside the energy.** A demand is what a building costs to
+  run; a load is what has to be there on the worst hour, and it is the number
+  the plant, the risers and the distribution are actually sized from — so the
+  scoreboard now carries peak heating and peak cooling in W/m², and the shelf
+  keeps the heating peak beside each scheme's energy. Passivhaus's *heating
+  load ≤ 10 W/m²*, previously listed among the things this sheet could not
+  judge, is now one of its lines, alongside the demand it is an alternative
+  route to rather than a second hurdle. Unlike every other criterion here a
+  load does **not** need a weather file: sizing days are precisely the
+  conditions plant is designed against, so `Target.needs` distinguishes
+  `'year'` from `'run'` and the board answers something on a desk that has
+  never been near an EPW. It costs no new output request — the hourly system
+  transfer rate the balance rail already draws is the whole of it. Worth
+  seeing: the stock desk built to Passivhaus in Denver clears the heating
+  *demand* at 8.6 kWh/m²·yr and misses the *load* at 13.9 W/m². Peaks get
+  treated as an afterthought; this is what that costs.
+
 - The targets became a **scoreboard on the sheet**, under the results they are
   read from — every standard's criteria against the one run, all at once, since
   nothing is remembered and there is no "applied standard" to filter by: one

@@ -567,31 +567,9 @@ export function buildModel(schema, parameters = DEFAULT_PARAMETERS, bypass = DEF
     surface.set('vertices', vertexGroups(face.verts));
   }
 
-  const diagnostics = doc.add('Output:Diagnostics', null);
-  diagnostics.extensible.push({ key: 'DisplayAdvancedReportVariables' });
-
-  for (const name of VARIABLES_HOURLY) addVariable(doc, name, 'Hourly');
-  for (const name of VARIABLES_DAILY) addVariable(doc, name, 'Daily');
-  doc.add('Output:Variable', null, {
-    key_value: ZONE_NAME,
-    variable_name: 'Zone Wetbulb Globe Temperature',
-    reporting_frequency: 'Hourly',
-  });
-  for (const name of VARIABLES_MONTHLY) addVariable(doc, name, 'Monthly');
-
-  doc.add('Output:VariableDictionary', null, { key_field: 'IDF' });
-  doc.add('Output:Surfaces:Drawing', null, { report_type: 'DXF:WireFrame' });
-  doc.add('Output:Constructions', null, { details_type_1: 'Constructions' });
-
-  // The stock example also requests three hourly `Output:Meter:MeterFileOnly`
-  // meters. They are not carried here: MeterFileOnly writes only to the .mtr,
-  // a file nothing on this page parses -- the bill reads its meters off the
-  // .eso -- and one of the three was the grounds lighting, whose object now
-  // comes and goes with its channel and must not leave a request behind.
-
-  doc.add('OutputControl:Table:Style', null, { column_separator: 'All' });
-  const summary = doc.add('Output:Table:SummaryReports', null);
-  summary.extensible.push({ report_name: 'AllSummary' });
+  // Every Output:* object is owned by `syncReporting`, written by the
+  // `applyModel` call at the end of this build. Adding any here as well would
+  // give the reconciler a second author to fight with.
 
   doc.add('Schedule:Constant', 'AlwaysOn', {
     schedule_type_limits_name: 'On/Off',
@@ -649,7 +627,7 @@ export function channelState(params, bypass) {
  * openings have to exist before anything can be hung on them or dimmed by them
  * -- so the appliers run in strip order, which is already that order.
  */
-export function applyModel(doc, params, bypass = {}) {
+export function applyModel(doc, params, bypass = {}, { reporting = 'sheet' } = {}) {
   const state = channelState(params, bypass);
   const on = (id) => state.get(id).engaged;
 
@@ -668,7 +646,7 @@ export function applyModel(doc, params, bypass = {}) {
   applyGrounds(doc, params, on('grounds'));
   applySolver(doc, params);
   applyRun(doc, params);
-  syncOutputs(doc, state);
+  syncReporting(doc, state, reporting);
 
   return state;
 }
@@ -1367,63 +1345,115 @@ function applyRun(doc, params) {
 
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
-/**
- * Ask for exactly the meters the engaged channels can answer.
- *
- * A bypassed channel is out of the model, and that has to include its
- * reporting: EnergyPlus lists every requested variable it could not produce at
- * the end of the error file, and a desk with half its strips out would inflate
- * the warning count on the title block with warnings about itself.
- */
-function syncOutputs(doc, state) {
-  syncEndUseMeters(doc, state);
+/** Every type the reporting reconciler owns — no other author may add these. */
+const REPORTING_TYPES = [
+  'Output:Diagnostics',
+  'Output:Variable',
+  'Output:VariableDictionary',
+  'Output:Surfaces:Drawing',
+  'Output:Constructions',
+  'Output:Meter:MeterFileOnly',
+  'OutputControl:Table:Style',
+  'Output:Table:SummaryReports',
+  'Output:Meter',
+];
 
+/**
+ * Ask for exactly what the run's reader will read, and nothing else.
+ *
+ * Two rules meet here. The first is the old one: a bypassed channel is out of
+ * the model, and that has to include its reporting — EnergyPlus lists every
+ * requested variable it could not produce at the end of the error file, and a
+ * desk with half its strips out would inflate the warning count on the title
+ * block with warnings about itself.
+ *
+ * The second is why this takes a profile. A sweep sample is read for one
+ * hourly series (`'extremes'`) or that series plus four monthly meters
+ * (`'energy'`), yet it used to carry the sheet's whole apparatus — the
+ * AllSummary tables, a DXF drawing, a constructions report, the dictionary,
+ * fifteen-odd series — all computed, written, parsed and cloned per sample,
+ * then discarded. Output volume is the knob that has already moved this app's
+ * run time four-fold once (15 → 173 series took the annual run from 681 ms to
+ * 2,984 ms, almost all of it after the simulation finished), so a study turns
+ * it the other way. The profile is a mode of `applyModel` rather than a
+ * post-pass because this reconciler runs on every apply and would quietly put
+ * back whatever a post-pass had stripped.
+ *
+ * Every owned type is cleared and rewritten on every apply. A differential
+ * update would preserve whatever insertion order history happened to leave,
+ * and "lean then sheet" would serialize differently from "always sheet" —
+ * breaking the byte-identical restore the sweep depends on. Rewriting is a
+ * few dozen small objects per apply; determinism is worth more.
+ *
+ * The end-use meters are Monthly, deliberately, twice over: twelve values per
+ * meter is enough to total a bill, and Monthly is the one frequency whose
+ * dictionary line survives `parseMTR` at all — an hourly meter's three-field
+ * line falls below the parser's minimum and is dropped (see `bill.js`).
+ */
+function syncReporting(doc, state, reporting) {
+  for (const type of REPORTING_TYPES) {
+    for (const object of doc.all(type).toArray()) doc.remove(object);
+  }
+
+  const addMeter = (use) =>
+    doc.add('Output:Meter', null, { key_name: use.meter, reporting_frequency: 'Monthly' });
+  const producible = (use) => !use.needs || state.get(use.needs)?.engaged;
+
+  if (reporting === 'extremes' || reporting === 'energy') {
+    // The one series both study readers open with: `zoneRuns` needs the hourly
+    // zone temperature even when the reading itself is meters.
+    addVariable(doc, 'Zone Mean Air Temperature', 'Hourly');
+    if (reporting === 'energy') {
+      // Only the building group — `readDemand` bills nothing else — and still
+      // gated per channel: the metric implies System is engaged, but Gains may
+      // be out, and its meters must leave with it.
+      for (const use of END_USES) {
+        if (use.group === 'building' && producible(use)) addMeter(use);
+      }
+    }
+    return;
+  }
+  if (reporting !== 'sheet') throw new Error(`unknown reporting profile "${reporting}"`);
+
+  const diagnostics = doc.add('Output:Diagnostics', null);
+  diagnostics.extensible.push({ key: 'DisplayAdvancedReportVariables' });
+
+  for (const name of VARIABLES_HOURLY) addVariable(doc, name, 'Hourly');
+  for (const name of VARIABLES_DAILY) addVariable(doc, name, 'Daily');
+  doc.add('Output:Variable', null, {
+    key_value: ZONE_NAME,
+    variable_name: 'Zone Wetbulb Globe Temperature',
+    reporting_frequency: 'Hourly',
+  });
+  for (const name of VARIABLES_MONTHLY) addVariable(doc, name, 'Monthly');
+
+  // The engaged channels' balance-rail terms, deduplicated in channel order.
+  const base = new Set([...VARIABLES_HOURLY, ...VARIABLES_DAILY, ...VARIABLES_MONTHLY, 'Zone Wetbulb Globe Temperature']);
   const wanted = new Set();
   for (const channel of CHANNELS) {
     if (!state.get(channel.id).engaged || !channel.meter) continue;
     for (const term of channel.meter.terms) wanted.add(term.variable);
   }
-  // The base set is not the console's to remove.
-  const base = new Set([...VARIABLES_HOURLY, ...VARIABLES_DAILY, ...VARIABLES_MONTHLY, 'Zone Wetbulb Globe Temperature']);
-
-  const present = new Set();
-  for (const variable of doc.all('Output:Variable').toArray()) {
-    const name = String(variable.variable_name);
-    if (base.has(name)) continue;
-    if (wanted.has(name)) present.add(name);
-    else doc.remove(variable);
-  }
   for (const name of wanted) {
-    if (!present.has(name) && !base.has(name)) addVariable(doc, name, 'Hourly');
+    if (!base.has(name)) addVariable(doc, name, 'Hourly');
   }
-}
 
-/**
- * The end-use meters the bill reads, added and removed with their channels.
- *
- * Same argument as the variables above and the same failure if it is skipped:
- * a meter that no object can feed is reported as "requested but not generated"
- * at the foot of the error file, and the title block would then count the
- * console's own bypasses as warnings about the model.
- *
- * Monthly, deliberately. It is twelve values per meter for a year and one per
- * environment for a design day, which is enough to total the bill and enough
- * to draw its shape across the year, where hourly would be 8,760 points per
- * meter for a number that is only ever read as a sum.
- */
-function syncEndUseMeters(doc, state) {
-  const wanted = new Set(
-    END_USES.filter((use) => !use.needs || state.get(use.needs)?.engaged).map((use) => use.meter),
-  );
-  const present = new Set();
-  for (const meter of doc.all('Output:Meter').toArray()) {
-    const name = String(meter.key_name);
-    if (wanted.has(name)) present.add(name);
-    else doc.remove(meter);
-  }
-  for (const name of wanted) {
-    if (present.has(name)) continue;
-    doc.add('Output:Meter', null, { key_name: name, reporting_frequency: 'Monthly' });
+  doc.add('Output:VariableDictionary', null, { key_field: 'IDF' });
+  doc.add('Output:Surfaces:Drawing', null, { report_type: 'DXF:WireFrame' });
+  doc.add('Output:Constructions', null, { details_type_1: 'Constructions' });
+
+  // The stock example also requests three hourly `Output:Meter:MeterFileOnly`
+  // meters. They are not carried: MeterFileOnly writes only to the .mtr, a
+  // file nothing on this page parses -- the bill reads its meters off the
+  // .eso -- and one of the three was the grounds lighting, whose object now
+  // comes and goes with its channel and must not leave a request behind.
+
+  doc.add('OutputControl:Table:Style', null, { column_separator: 'All' });
+  const summary = doc.add('Output:Table:SummaryReports', null);
+  summary.extensible.push({ report_name: 'AllSummary' });
+
+  for (const use of END_USES) {
+    if (producible(use)) addMeter(use);
   }
 }
 

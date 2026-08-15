@@ -481,6 +481,12 @@
         color: var(--ink-3);
       }
       .status.bad { color: var(--redline); }
+      /* The one Stop for the whole study queue, beside the sentence that
+         counts it. Baseline-aligned with the status line and absent — not
+         merely disabled — when nothing is draining. */
+      .status-row { display: flex; align-items: baseline; gap: 14px; }
+      .status-row .status { flex: 1; }
+      .status-row .link { flex: none; margin-top: 12px; font-size: 10.5px; }
 
       /* ── the plate ──────────────────────────────────────────────── */
 
@@ -1383,25 +1389,43 @@
         color: var(--ink-3);
       }
 
-      /* On a head wide enough to seat them, the presets run left to right —
-         five ruled columns on one shelf, each opening downward in place —
-         because a multi-column desk's head is pushing 2,000px, and five
-         stacked rows there spend the vertical space the strips want to save
-         horizontal space the head has in surplus. The columns share the
-         hairline the stacked rows ruled between themselves, turned upright. */
-      @container (min-width: 1280px) {
+      /* On a head with width to spare, the presets run left to right: closed,
+         they tile across as many columns as fit; opened, the one you are
+         working spans the full width in place, so the clause build-up gets the
+         whole head rather than a column of it. Five stacked rows spent the
+         vertical space the strips want in order to save horizontal space the
+         head has in surplus — and the desk head is wide and short by nature,
+         because it sits over a column set.
+
+         `auto-fit` rather than a column count: the head's width is a
+         negotiation between the sheet and the window, and the register should
+         take what it was actually dealt rather than assume five will fit. The
+         query is on the brief's container width for the same reason — a
+         viewport breakpoint would be guessing at a width it does not set. */
+      @container (min-width: 380px) {
         .presets { max-width: none; }
-        #presets { display: flex; align-items: stretch; }
-        .preset { flex: 1 1 0; min-width: 0; }
-        .preset + .preset { border-top: 0; border-left: 1px solid var(--rule-soft); }
-        /* The folded line becomes a column head: name above, reading below,
-           the way a strip letters its label over its meter. */
-        .preset > summary { display: block; padding: 9px 14px 8px 2px; }
-        .preset + .preset > summary { padding-left: 14px; }
+        #presets {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+          column-gap: 20px;
+        }
+        /* Rows are ruled and columns are separated by air. A vertical hairline
+           would have to know which tile starts a row, which `auto-fit` will
+           not say. */
+        .preset { min-width: 0; border-top: 1px solid var(--rule-soft); }
+        .preset:first-child { border-top: 0; }
+        .preset + .preset { border-top: 1px solid var(--rule-soft); }
+        /* The one being worked takes the whole shelf. Grid keeps it in source
+           order, so the tiles simply flow around it and nothing jumps. */
+        .preset[open] { grid-column: 1 / -1; }
+        /* Folded, the line becomes a tile head: name above, reading below, the
+           way a strip letters its label over its meter. Opened, the reading
+           goes back beside the name, where a full-width row has room for it. */
+        .preset > summary { display: block; padding: 8px 2px; }
         .preset > summary::before { display: inline-block; width: auto; margin-right: 7px; }
         .preset-state { display: block; margin: 4px 0 0 calc(1ch + 7px); }
-        .preset-body { padding: 2px 14px 13px calc(1ch + 7px); }
-        .preset + .preset .preset-body { padding-left: calc(1ch + 7px + 12px); }
+        .preset[open] > summary { display: flex; align-items: baseline; }
+        .preset[open] .preset-state { display: inline; margin: 0 0 0 auto; }
       }
 
       /* ── the shelf ──────────────────────────────────────────────── */
@@ -2446,7 +2470,10 @@
               <span class="toggle-sub" id="desk-count">Every control on the desk</span>
             </button>
           </div>
-          <p class="status" id="status"></p>
+          <div class="status-row">
+            <p class="status" id="status"></p>
+            <button type="button" class="link" id="studies-stop" hidden>Set studies aside</button>
+          </div>
 
           <figure class="plate" id="plate">
             <div class="plate-body">

@@ -117,12 +117,20 @@ export class Spec {
  * Absence is not zero and it is not a pass either.
  */
 export class Target {
-  constructor({ id, label, metric, limit = null, above = null, unit, asks, note = null }) {
+  constructor({ id, label, metric, needs = 'year', limit = null, above = null, unit, asks, note = null }) {
     this.id = id;
     this.label = label;
-    // Which reading answers it: 'tedi', 'cedi', 'eui' off the meters, or
-    // 'overheat' off the hourly zone temperature.
+    // Which reading answers it: 'tedi', 'cedi', 'eui' off the meters,
+    // 'overheat' off the hourly zone temperature, or 'peakHeat' / 'peakCool'
+    // off the system's hourly transfer rate.
     this.metric = metric;
+    // What the run has to carry for the question to mean anything. An energy
+    // intensity and an exceedance frequency are both `'year'`: there is no
+    // annual total in two design days and nothing to be a frequency of. A peak
+    // load is `'run'`, and the distinction is the whole point — sizing days
+    // are the conditions plant is designed against, so a load reads honestly
+    // on a desk that has never been near a weather file.
+    this.needs = needs;
     this.limit = limit;
     this.above = above; // the threshold, for an exceedance-frequency target
     this.unit = unit;
@@ -365,12 +373,39 @@ export const PRESETS = Object.freeze([
           'rather than at one figure, so there is no line for this sheet to draw. The ' +
           'reading stands on its own.',
       }),
+      new Target({
+        id: 'heatload',
+        label: 'Peak heating load',
+        metric: 'peakHeat',
+        needs: 'run',
+        limit: 10,
+        unit: 'W/m²',
+        asks: '≤ 10 W/m², the alternative route',
+        note:
+          'PHI accepts either the demand or the load, not both, so this line and the ' +
+          'heating demand above are two ways of passing rather than two hurdles. It reads ' +
+          'off the same hourly system transfer rate the balance rail draws, over the ' +
+          'billed environments — which on a desk with no weather file means the sizing ' +
+          'days, and those are exactly the conditions plant is sized against. PHPP ' +
+          'computes its load under two standardised design conditions instead, and an ' +
+          'hourly figure is an average within the hour, so a true instantaneous peak sits ' +
+          'above this.',
+      }),
+      new Target({
+        id: 'coolload',
+        label: 'Peak cooling load',
+        metric: 'peakCool',
+        needs: 'run',
+        unit: 'W/m²',
+        asks: 'no published figure',
+        note:
+          'PHI publishes no single cooling-load limit, so there is nothing to draw a line ' +
+          'at. It is here because a peak is what sizes the plant whether or not a standard ' +
+          'names it, and reading the heating peak while hiding the cooling one would be ' +
+          'choosing which half of the plant matters.',
+      }),
     ],
     unjudged: [
-      new Unjudged({
-        criterion: 'Heating load ≤ 10 W/m², the alternative to the demand criterion',
-        why: 'This sheet totals meters monthly and never reads a peak, so it cannot see a load.',
-      }),
       new Unjudged({
         criterion: 'Renewable primary energy ≤ 60 kWh/(m²a)',
         why:
@@ -729,6 +764,7 @@ export class Measure {
     annual = false, hours = null, uses = null, currency = null,
     metered = null, cost = null, carbon = null,
     eui = null, tedi = null, cedi = null, low = null, high = null,
+    peakHeat = null, peakCool = null,
   } = {}) {
     this.annual = annual;
     this.hours = hours;
@@ -742,6 +778,12 @@ export class Measure {
     this.cedi = cedi;
     this.low = low;
     this.high = high;
+    // The loads, kept beside the energy because comparing two schemes on what
+    // they cost to run while saying nothing about what they cost to install is
+    // half an argument. Unlike the intensities these survive a design-day run,
+    // so a kept scheme carries them from the first solve.
+    this.peakHeat = peakHeat;
+    this.peakCool = peakCool;
     Object.freeze(this);
   }
 
