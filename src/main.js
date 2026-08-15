@@ -1739,6 +1739,16 @@ function derivedReadings(facts) {
         return heat ? `${heat.metered.toFixed(0)} kWh ${heat.fuel.label.toLowerCase()}` : '—';
       })(),
     ],
+    // What the site bought around the building. Same rule as the plant's
+    // reading: it is a meter reading, so it is an em dash until a run has put
+    // one in hand.
+    [
+      'grounds',
+      (() => {
+        const ext = bill?.lines.find((l) => l.use.id === 'exterior');
+        return ext ? `${ext.metered.toFixed(0)} kWh` : '—';
+      })(),
+    ],
     // This one is true before any run at all: it describes the place, not the
     // building, and the place is known as soon as a station is picked.
     [
@@ -3097,21 +3107,25 @@ function restoreStudyCard(key) {
 }
 
 /**
- * One quiet line for the whole drain. The per-card counters carry the
- * detail; this only says how much is left, and never over the pump's own
- * narration or a refusal.
+ * One quiet line for the drain — but only for a study the reader asked for.
+ *
+ * The status line reports what was last asked for, and a background refresh
+ * is housekeeping rather than a request: left free to write, it replaced the
+ * sheet's own "8,760 hours solved locally in 11.38 s" with a sample counter a
+ * moment after the run it describes landed, which loses the one number the
+ * reader was waiting on. Refreshes narrate on the cards instead, each with
+ * its own count, and the Set-aside button appearing is the global sign that
+ * the pool is busy. The same rule as the pump's tail keeps a refusal on top
+ * of both.
  */
-function syncStudyStatus(finalLine = null) {
+function syncStudyStatus(finalLine = null, { quietly = false } = {}) {
   const p = studyScheduler.progress();
   studiesStopBtn.hidden = p.jobs === 0;
-  if (pumping || statusEl.classList.contains('bad')) return;
-  if (p.jobs > 0) {
+  if (pumping || quietly || statusEl.classList.contains('bad')) return;
+  if (p.manual > 0) {
     statusEl.className = 'status';
-    statusEl.textContent =
-      p.jobs === 1
-        ? `Study — ${p.done} of ${p.total} samples solved.`
-        : `Refreshing ${p.jobs} studies — ${p.done} of ${p.total} samples.`;
-  } else if (finalLine) {
+    statusEl.textContent = `Study — ${p.done} of ${p.total} samples solved.`;
+  } else if (p.jobs === 0 && finalLine) {
     statusEl.className = 'status';
     statusEl.textContent = finalLine;
   }
@@ -3164,10 +3178,16 @@ function onStudyUpdate(job, event) {
     // Stale already, when the desk moved while the curve was landing — drawn
     // dimmed rather than fresh, so the card never claims a desk it missed.
     desk.setStudy(key, study, { stale: study.restShape !== restShapeKey(key) });
-    syncStudyStatus(`Study drawn — ${job.total} ${kind} runs across ${said}.`);
+    // A curve the reader asked for says so when it lands; one that healed
+    // itself in the background just appears, which is the whole point of it.
+    syncStudyStatus(`Study drawn — ${job.total} ${kind} runs across ${said}.`, {
+      quietly: job.origin !== 'manual',
+    });
   } else if (event === 'failed') {
     desk.setStudyProgress(key, null);
     restoreStudyCard(key);
+    // A failure is worth saying whichever way the study was asked for — it is
+    // the one study outcome that leaves nothing drawn to speak for itself.
     if (!pumping) {
       statusEl.className = 'status bad';
       statusEl.textContent = `The study of ${said} could not be drawn: every sample failed to solve.`;

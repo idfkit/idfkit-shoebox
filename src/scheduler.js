@@ -232,18 +232,24 @@ export function createStudyScheduler({
     /** Resume dispatching — call when a pause condition lifts. */
     drain,
 
-    /** One line's worth of drain state: jobs still active, samples done/total. */
+    /**
+     * One line's worth of drain state. `manual` counts the jobs the reader
+     * asked for by name, which is what decides whether the drain has any
+     * claim on the status line at all.
+     */
     progress() {
       let done = 0;
       let total = 0;
       let count = 0;
+      let manual = 0;
       for (const job of jobs) {
         if (!active(job)) continue;
         count += 1;
+        if (job.origin === 'manual') manual += 1;
         done += job.done;
         total += job.total;
       }
-      return { jobs: count, done, total, inFlight };
+      return { jobs: count, manual, done, total, inFlight };
     },
   };
 }

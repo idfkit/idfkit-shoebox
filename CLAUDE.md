@@ -143,7 +143,11 @@ Things that cost real debugging:
   `computeBill` is handed only the environments being billed.
 - **The stock example's 5.25 kW of grounds lighting is 23 MWh a year**, against
   the building's 18. Undivided it swamps every envelope decision, so the schedule
-  is sectioned and the per-m² intensity is of the building alone.
+  is sectioned and the per-m² intensity is of the building alone. It now lives
+  behind the bypassable Grounds strip (off by default) rather than silently in
+  the baseline — as do the stock file's other demonstration loads: the matched
+  ±352 W `OtherEquipment` test pair and the `.mtr`-only meters are gone
+  entirely, since nothing read either.
 - **Per-m² is only drawn on an annual run.** Every published benchmark is annual,
   and 0.3 kgCO₂e/m² over two design days has no use but to be mistaken for one.
 - Rates come from six dated open datasets, generated into `src/rates.data.js` by
@@ -259,6 +263,30 @@ round-trip of every key and refusal of every malformed input class.
   (`schemeHash`) for the bar, the clipboard and the bundle manifest alike.
 - The run bundle's manifest cites the permalink of the *snapshot* that was
   solved, not live params, for the same reason it holds the exact IDF text.
+
+### The index sheet (narrow screens)
+
+Below the `780px` breakpoint the desk stops being a column beside the drawing and
+becomes a page of its own, where sixteen strips end to end is about ten screens
+with nothing in them to say which one you are in. So the strips fold to a line
+each — number, name, reading, patch marker — and the console becomes its own
+index, one screen tall, in signal order.
+
+- **The breakpoint is declared once**, in the media query, as `--index` on
+  `.strips`. `console.js` reads that flag back rather than repeating the number
+  as a `matchMedia` string. Layout is CSS's decision; the module only asks which
+  one it got.
+- **Closed a row reads, open it is worked.** The folded row keeps the reading and
+  the armed marker, because "readable without opening anything" is the rule the
+  desk exists to honour; only the controls go behind the fold. The blocked note
+  sits *outside* the fold for the same reason — a channel you cannot patch in has
+  to say so on the index, not one tap further in.
+- **`refold()` uses the `hidden` attribute**, so a folded strip's controls leave
+  the tab order with it. On the wide layout every fold is open and the toggle is
+  `disabled`, which is what keeps the desktop desk exactly what it was.
+- **Opening anchors the tapped row**: the head's `top` is measured before the
+  folds change and the difference is `scrollBy`-ed back after, or closing a strip
+  above the one you opened yanks the page under your thumb.
 
 ### The balance rail
 
