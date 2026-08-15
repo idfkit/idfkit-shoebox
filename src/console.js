@@ -153,7 +153,19 @@ export function mountConsole({ host, params, bypass, onChange, onPatch, onSolo, 
     // A channel with no "off" has no arming to report, so its cell is left
     // blank rather than drawn as a marker that is permanently lit. Blank is not
     // an em dash: there is no figure missing here, there is no figure.
-    if (channel.bypassable) mark.classList.add('armed');
+    //
+    // An armed marker says "in the model" with a filled square and nothing
+    // else, which is a colour -- no use to a reader who is being read the row,
+    // and gone entirely under forced colours, where the custom-property
+    // background is dropped. So the square is given the sentence it is drawing
+    // and `setState` keeps it current. It sits inside the button, so the state
+    // joins the row's name; above the breakpoint the marker is `display: none`
+    // and leaves the accessibility tree with its label, which is right, because
+    // there the patch button is on the row saying the same thing at full size.
+    if (channel.bypassable) {
+      mark.classList.add('armed');
+      mark.setAttribute('role', 'img');
+    }
     toggle.append(
       el('span', 'strip-no', channel.index),
       el('span', 'strip-name', channel.name),
@@ -217,7 +229,10 @@ export function mountConsole({ host, params, bypass, onChange, onPatch, onSolo, 
     if (meter) fold.append(meter.node);
     strip.append(fold);
 
-    strips.set(channel.id, { strip, note, patch, solo: soloBtn, meter, body, toggle, read, fold });
+    strips.set(channel.id, {
+      strip, note, patch, solo: soloBtn, meter, body, toggle, read, fold,
+      mark: channel.bypassable ? mark : null,
+    });
     return strip;
   }
 
@@ -700,6 +715,10 @@ export function mountConsole({ host, params, bypass, onChange, onPatch, onSolo, 
         here.strip.classList.toggle('soloed', solo === channel.id);
         here.note.hidden = !s.blocked;
         here.note.textContent = s.blocked ?? '';
+        // The index row's marker draws this with a colour; this is the same
+        // reading in words, so the folded row answers "is it in the model" to a
+        // reader who is being read it rather than looking at it.
+        if (here.mark) here.mark.setAttribute('aria-label', s.engaged ? 'In the model' : 'Out of the model');
         if (here.patch) {
           here.patch.classList.toggle('on', !s.bypassed);
           here.patch.setAttribute('aria-pressed', String(!s.bypassed));
@@ -734,9 +753,9 @@ export function mountConsole({ host, params, bypass, onChange, onPatch, onSolo, 
         // figure, and an em dash would claim otherwise.
         if (!here.meter) continue;
         if (channel.meter.derived) {
-          const reading = derived?.get(channel.id) ?? '—';
-          here.meter.value.textContent = reading;
-          here.read.textContent = reading;
+          const lettered = derived?.get(channel.id) ?? '—';
+          here.meter.value.textContent = lettered;
+          here.read.textContent = lettered;
           here.meter.bar.hidden = true;
           continue;
         }

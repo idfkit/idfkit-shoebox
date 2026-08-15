@@ -284,7 +284,11 @@ honest against the rule the console is built on — that state is readable witho
 opening anything. Closed, a row reads; open, it is worked. Anything that would
 leave the closed row unable to answer "what is this contributing, and is it in
 the model" belongs on the row, not behind the fold — which is why a blocked
-section states what it is missing while still closed.
+section states what it is missing while still closed. The armed marker draws
+that second answer as a colour and nothing else, so it also carries it in words:
+a live `aria-label` on the square, or the row reads identically in and out to
+anyone being read it, and says nothing at all under forced colours. The control
+that would have answered instead — the patch button — is behind the fold.
 
 Two mechanics are worth copying:
 
