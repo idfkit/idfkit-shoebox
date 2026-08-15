@@ -266,8 +266,46 @@ body.desk-open {
 
 It is `position: sticky` with its own scroll, and its master readout is pinned
 at the foot with `flex: none` so it stays visible while the strips scroll. Below
-`780px` it stops being a column, stacks under the sheet, and gives up the sticky
-foot.
+`780px` it stops being a column, stacks under the sheet, gives up the sticky
+foot, and folds to the index sheet below.
+
+### The index sheet
+
+Where a panel is too long to navigate on the screen it has, fold its sections to
+one line each and let the list become its own index — the sheet a drawing set
+already carries for this. On the console below `780px`, sixteen strips end to
+end is about ten screens with nothing in them to say which one you are in; as an
+index it is one screen, in signal order.
+
+A folded row is a **reading, not a label**. It carries the section's number, its
+name, its current reading and its armed marker, which is everything the reader
+was getting from the open strip except the controls. That is what keeps the fold
+honest against the rule the console is built on — that state is readable without
+opening anything. Closed, a row reads; open, it is worked. Anything that would
+leave the closed row unable to answer "what is this contributing, and is it in
+the model" belongs on the row, not behind the fold — which is why a blocked
+section states what it is missing while still closed. The armed marker draws
+that second answer as a colour and nothing else, so it also carries it in words:
+a live `aria-label` on the square, or the row reads identically in and out to
+anyone being read it, and says nothing at all under forced colours. The control
+that would have answered instead — the patch button — is behind the fold.
+
+Two mechanics are worth copying:
+
+- **The breakpoint is declared once, in the media query**, as a custom property
+  (`--index: 0` / `1`) that the module reads back. A media query and a
+  `matchMedia` string that disagree is a bug that exists at exactly one window
+  width, which is the width nobody tests at.
+- **Anchor the row you tapped.** Read its `getBoundingClientRect().top` before
+  the folds change and `window.scrollBy` the difference after, or closing a
+  section above the one you opened drags the page out from under your thumb.
+
+Fold with the `hidden` attribute rather than a class, so a folded section's
+controls leave the tab order and the accessibility tree with it. The heading
+wraps the disclosure button rather than sitting inside it — a button's content
+model is phrasing, and an `h3` is not — and the button is `disabled` in the
+layout that has room to stay open, because a control that does nothing should
+not take a tab stop.
 
 ## Declaring controls once
 
