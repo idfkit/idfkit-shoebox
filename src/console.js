@@ -69,6 +69,10 @@ export function mountConsole({
   // The instant every meter on the desk is reading at: `{ text, pinned,
   // released }`, or null before anything has been solved.
   let reading = null;
+  // The rail's pin, as of the last redraw. Held because the rail is rebuilt
+  // whole on every reading, so the node that took a click is never the node
+  // that has to take the focus back.
+  let whenButton = null;
   let engaged = new Set(); // which channels the model says are in the path
   let ghost = {}; // where each control stood when the current gesture began
   // Whether a study can be taken at all, and the sentence for when it cannot.
@@ -1114,13 +1118,24 @@ export function mountConsole({
   function whenLine() {
     const wrap = el('div', 'rail-when');
     const button = el('button', 'pin pin-inline');
+    whenButton = button;
     button.type = 'button';
     button.setAttribute('aria-pressed', String(reading.pinned));
     button.title = reading.pinned
       ? 'Release the hour and read the worst one in each run again'
       : 'Hold this hour, so the meters keep reading it as the desk changes';
     button.append(el('i', 'mark'), el('span', null, `Read at ${reading.text}`));
-    button.addEventListener('click', () => onPin?.());
+    button.addEventListener('click', () => {
+      onPin?.();
+      // Turning the pin re-letters the rail, and `drawRail` empties the host,
+      // so by the time this handler returns the button that was clicked is
+      // detached and the focus has fallen to the body. Every other control on
+      // the desk keeps its node across a redraw; this one is rebuilt, so it
+      // has to hand the focus on to its replacement or a reader working the
+      // desk from the keyboard loses their place on every press -- and the
+      // `aria-pressed` they just changed is never announced.
+      if (whenButton?.isConnected) whenButton.focus();
+    });
     wrap.append(button);
     // A pin that could not be found is released, and the reader is told which
     // hour went missing -- a marker that quietly went dark would leave every

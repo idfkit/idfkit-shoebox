@@ -117,19 +117,27 @@ const PIN_KINDS = Object.freeze(['year', 'winter', 'summer']);
  */
 const encodePin = ({ kind, month, day, hour }) => `${kind}.${month}-${day}T${hour}`;
 
-const PIN_FORM = /^(year|winter|summer)\.(\d{1,2})-(\d{1,2})T(\d{1,2})$/;
+// Built from `PIN_KINDS` rather than repeating the alternation, so the list of
+// kinds is stated once and a fourth environment kind cannot be admitted by the
+// grammar while the roster it is checked against still says three.
+const PIN_FORM = new RegExp(`^(${PIN_KINDS.join('|')})\\.(\\d{1,2})-(\\d{1,2})T(\\d{1,2})$`);
 
 function decodePin(raw) {
   const match = PIN_FORM.exec(raw);
   if (!match) throw new Error(`"${raw}" is not a pinned hour like year.8-3T13`);
   const [, kind, month, day, hour] = match;
   const pin = { kind, month: Number(month), day: Number(day), hour: Number(hour) };
-  // The grammar admits 19-40T31, so the calendar is checked separately. Hour 0
-  // to 23: EnergyPlus stamps an hourly point with the hour it ends, and the
-  // parser hands that back as 0 for midnight.
+  // The grammar admits 19-40T31, so the calendar is checked separately.
+  //
+  // The hour runs to 24, not to 23. EnergyPlus stamps an hourly point with the
+  // hour it *ends*, so a day is 1 through 24 and never carries a 0 — checked
+  // against the shipped engine rather than assumed, because the ceiling
+  // decides whether a minted link loads: the desk's own winter design day is
+  // coldest in its last hour, so `at=winter.12-21T24` is a link the sheet
+  // hands out, and a 23 here refused it whole on arrival.
   if (pin.month < 1 || pin.month > 12) throw new Error(`"${raw}" names month ${pin.month}`);
   if (pin.day < 1 || pin.day > 31) throw new Error(`"${raw}" names day ${pin.day}`);
-  if (pin.hour > 23) throw new Error(`"${raw}" names hour ${pin.hour}`);
+  if (pin.hour > 24) throw new Error(`"${raw}" names hour ${pin.hour}`);
   return pin;
 }
 

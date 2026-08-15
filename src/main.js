@@ -916,7 +916,7 @@ function reprice() {
   if (!lastRun) return;
   bill = billFrom(lastRun);
   renderBill();
-  desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt);
+  desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt);
 }
 
 /**
@@ -1404,8 +1404,16 @@ function clearResults() {
   // The instant goes with them: it is an index into a run that is no longer
   // on the sheet. The pin itself survives — it is a calendar stamp and a
   // request, not a reading, so the next solve is asked for the same hour.
+  //
+  // The meters go with the instant, in the same breath. Every figure on the
+  // rail is a reading at one hour, so clearing the hour and leaving the watts
+  // would draw a whole closed heat balance with nothing above it saying when
+  // — which is the unfalsifiable rail the "Read at" line exists to prevent.
+  // It is visible whenever a non-live solve fails: `clearResults` runs, the
+  // engine fatals, and the next `applyGeometry` re-letters the strips.
   lastReadFrom = null;
   lastAt = null;
+  lastReadings = new Map();
   renderBill();
   syncPin();
   syncDownload();
@@ -1561,15 +1569,7 @@ function applyGeometry() {
   desk?.setState(modelState);
   syncStudies();
   syncRunSub();
-  // A reading survives until the next solve supersedes it, the way the plate's
-  // curve does — except on a channel that has just gone out of the path, where
-  // the last number it produced would now be describing a path that is no
-  // longer there.
-  desk?.setReadings(
-    new Map([...lastReadings].map(([id, w]) => [id, modelState.get(id)?.engaged ? w : null])),
-    derivedReadings(facts),
-    lastAt,
-  );
+  desk?.setReadings(engagedReadings(), derivedReadings(facts), lastAt);
   markStale();
 }
 
@@ -1697,6 +1697,22 @@ let desk = null;
 let lastReadings = new Map();
 let lastHours = null;
 let lastAt = null; // the instant the desk's meters are reading, as the rail letters it
+
+/**
+ * The readings as the desk is allowed to show them.
+ *
+ * A reading survives until the next solve supersedes it, the way the plate's
+ * curve does — except on a channel that has just gone out of the path, where
+ * the last number it produced would now be describing a path that is no
+ * longer there. Every route that re-letters the strips from the run already in
+ * hand goes through here rather than handing `lastReadings` straight over:
+ * turning a tariff and taking the reading pin both re-letter without solving,
+ * and either would otherwise give a channel patched out since the run its
+ * watts back, under a strip the drawing says is out of the document.
+ */
+function engagedReadings() {
+  return new Map([...lastReadings].map(([id, w]) => [id, modelState?.get(id)?.engaged ? w : null]));
+}
 
 /**
  * The hour the reader has pinned, or null to read the worst one.
@@ -1836,8 +1852,8 @@ const hourPinText = (pin) =>
  * silently reading an hour nobody asked for, under a marker claiming the
  * reading is held still.
  */
-function readAt(points, runs, leadIndex, zone, eso) {
-  lastReadFrom = { points, runs, leadIndex, zone, eso };
+function readAt(points, runs, leadIndex, eso) {
+  lastReadFrom = { points, runs, leadIndex, eso };
   let at = resolvePin(pinnedHour, points, runs);
   let released = null;
   if (pinnedHour && at == null) {
@@ -1848,7 +1864,10 @@ function readAt(points, runs, leadIndex, zone, eso) {
   const stamp = stampText(points, at);
   lastAt = stamp
     ? {
-        text: `${stamp} · zone ${zone[at].toFixed(1)} °C`,
+        // The temperature off `points` rather than the plate's parallel array
+        // of bare values: the same number, and one series to be indexed by one
+        // instant is one fewer thing that can be sliced differently.
+        text: `${stamp} · zone ${points[at].value.toFixed(1)} °C`,
         pinned: Boolean(pinnedHour),
         released: released ? hourPinText(released) : null,
       }
@@ -1871,14 +1890,14 @@ function readAt(points, runs, leadIndex, zone, eso) {
  */
 function toggleHourPin() {
   if (!lastReadFrom) return;
-  const { points, runs, leadIndex, zone, eso } = lastReadFrom;
+  const { points, runs, leadIndex, eso } = lastReadFrom;
   if (pinnedHour) pinnedHour = null;
   else {
     pinnedHour = pinAt(points, runs, worstHour(points, runs[leadIndex]));
     if (!pinnedHour) return; // no stamp to pin; leave the desk exactly as it was
   }
-  readAt(points, runs, leadIndex, zone, eso);
-  desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt);
+  readAt(points, runs, leadIndex, eso);
+  desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt);
   updatePermalink();
 }
 
@@ -2890,7 +2909,7 @@ async function solve() {
   renderAxon(lastMean);
 
   lastHours = nn;
-  readAt(points, runs, leadIndex, zone, eso);
+  readAt(points, runs, leadIndex, eso);
 
   // The end-use meters ride in on the same ESO -- `Output:Meter` writes to both
   // the .eso and the .mtr -- so the bill is priced off the run that is already
