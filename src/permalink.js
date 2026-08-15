@@ -43,7 +43,7 @@ import {
   controlFor,
 } from './controls.js';
 
-export const LINK_VERSION = 'v1';
+export const LINK_VERSION = 'v2';
 
 /**
  * Whether a fragment is scheme-shaped at all — a version token first, alone or
@@ -56,20 +56,29 @@ export const LINK_VERSION = 'v1';
 export const isSchemeFragment = (raw) => /^v\d+(&|$)/.test(raw);
 
 /**
- * What an omitted key meant, per version. Today one entry; a changed default
- * adds the outgoing table here under the old version before the new one ships.
+ * What an omitted key meant, per version. No parameter default has changed
+ * between the versions yet, so both entries read the live table; a changed
+ * default freezes the outgoing values here under the old version before the
+ * new one ships.
  */
-const DEFAULTS_BY_VERSION = Object.freeze({ v1: DEFAULT_PARAMETERS });
+const DEFAULTS_BY_VERSION = Object.freeze({ v1: DEFAULT_PARAMETERS, v2: DEFAULT_PARAMETERS });
 
 /**
  * One step per version bump, `(pairs) => ({ to, pairs })`, rewriting old
- * vocabulary into the next version's under the version it lands on. Empty
- * until a key actually churns; the structure exists
- * from day one because retrofitting it after unversioned links are in the wild
- * is the expensive path — there would be no way left to tell which defaults an
- * omission meant.
+ * vocabulary into the next version's under the version it lands on.
  */
-const MIGRATIONS = Object.freeze({});
+const MIGRATIONS = Object.freeze({
+  // v1 predates the Grounds channel: the stock example's 5.25 kW of grounds
+  // lighting was in every v1 baseline, unconditionally, so a v1 link *means* a
+  // desk with that load in it. v2 ships the channel bypassed. Carrying a v1
+  // link forward therefore engages the strip, and an omitted `extLights`
+  // lands on 5.25 kW — the wattage every v1 desk had — so the bill a v1 link
+  // reproduces is the bill it was minted over.
+  v1: (pairs) => {
+    pairs.append('in', 'grounds');
+    return { to: 'v2', pairs };
+  },
+});
 
 /**
  * Keys that are not parameters: the patch lists and the station. Declared

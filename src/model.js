@@ -7,6 +7,13 @@ import { END_USES } from './bill.js';
  * authored through the object model rather than pasted in as text, and then
  * opened up to the console.
  *
+ * Opened up, and stripped of its demonstration loads. The stock file carries a
+ * matched +352 W / −352 W `OtherEquipment` pair -- a test article whose halves
+ * cancel exactly, so it buys nothing and fails quietly the day an edit touches
+ * one half -- and 5.25 kW of astronomical-clock grounds lighting, which now
+ * lives behind the Grounds strip instead of silently in the baseline. Every
+ * load in this document is one somebody engaged.
+ *
  * The geometry is still the point of the exercise: the plan loop in
  * `boxSurfaces` generates the four walls, and every consumer of this model --
  * the axonometric, the datum lines on the plate, the quantities panel, the
@@ -576,38 +583,15 @@ export function buildModel(schema, parameters = DEFAULT_PARAMETERS, bypass = DEF
   doc.add('Output:Surfaces:Drawing', null, { report_type: 'DXF:WireFrame' });
   doc.add('Output:Constructions', null, { details_type_1: 'Constructions' });
 
-  for (const meter of ['ExteriorLights:Electricity', 'EnergyTransfer:Building', 'EnergyTransfer:Facility']) {
-    doc.add('Output:Meter:MeterFileOnly', null, { key_name: meter, reporting_frequency: 'Hourly' });
-  }
+  // The stock example also requests three hourly `Output:Meter:MeterFileOnly`
+  // meters. They are not carried here: MeterFileOnly writes only to the .mtr,
+  // a file nothing on this page parses -- the bill reads its meters off the
+  // .eso -- and one of the three was the grounds lighting, whose object now
+  // comes and goes with its channel and must not leave a request behind.
 
   doc.add('OutputControl:Table:Style', null, { column_separator: 'All' });
   const summary = doc.add('Output:Table:SummaryReports', null);
   summary.extensible.push({ report_name: 'AllSummary' });
-
-  doc.add('Exterior:Lights', 'ExtLights', {
-    schedule_name: 'AlwaysOn',
-    design_level: 5250,
-    control_option: 'AstronomicalClock',
-    end_use_subcategory: 'Grounds Lights',
-  });
-
-  // A matched pair, +352 W and −352 W, so the zone stays genuinely free-running
-  // until the Gains channel is engaged.
-  for (const [name, level] of [
-    ['Test 352a', 352],
-    ['Test 352 minus', -352],
-  ]) {
-    doc.add('OtherEquipment', name, {
-      fuel_type: 'None',
-      zone_or_zonelist_or_space_or_spacelist_name: ZONE_NAME,
-      schedule_name: 'AlwaysOn',
-      design_level_calculation_method: 'EquipmentLevel',
-      design_level: level,
-      fraction_latent: 0,
-      fraction_radiant: 0,
-      fraction_lost: 0,
-    });
-  }
 
   doc.add('Schedule:Constant', 'AlwaysOn', {
     schedule_type_limits_name: 'On/Off',
@@ -681,6 +665,7 @@ export function applyModel(doc, params, bypass = {}) {
   applyGains(doc, params, on('gains'));
   applyDaylight(doc, params, on('daylight'), on('gains'));
   applySystem(doc, params, on('system'), on('gains'));
+  applyGrounds(doc, params, on('grounds'));
   applySolver(doc, params);
   applyRun(doc, params);
   syncOutputs(doc, state);
@@ -1322,7 +1307,32 @@ function applySystem(doc, params, engaged, gainsOn) {
   });
 }
 
-/** 12 — the engine room. */
+/**
+ * 12 — the site around the building, after dark.
+ *
+ * The stock example's grounds lighting, put behind a strip. On the astronomical
+ * clock the schedule is a formality -- the engine switches the load by sun
+ * position -- but the field is required, and `AlwaysOn` is the honest value for
+ * a load whose only controller is the sky. Its meter follows the channel
+ * through `syncEndUseMeters` like heating and cooling follow System, so a
+ * bypassed strip leaves neither the object nor a request the engine would
+ * report as unproducible.
+ */
+function applyGrounds(doc, params, engaged) {
+  drop(doc, 'Exterior:Lights', 'ExtLights');
+  if (!engaged) return;
+
+  doc.add('Exterior:Lights', 'ExtLights', {
+    schedule_name: 'AlwaysOn',
+    // The console letters kilowatts, because 5.25 kW reads as the car park it
+    // is; the engine wants watts.
+    design_level: params.extLights * 1000,
+    control_option: params.extControl,
+    end_use_subcategory: 'Grounds Lights',
+  });
+}
+
+/** 15 — the engine room. */
 function applySolver(doc, params) {
   must(doc, 'Timestep').number_of_timesteps_per_hour = params.timestep;
   must(doc, 'SurfaceConvectionAlgorithm:Inside').algorithm = params.insideConv;
@@ -1339,7 +1349,7 @@ function applySolver(doc, params) {
   building.temperature_convergence_tolerance_value = params.tempTol;
 }
 
-/** 13 — what actually gets simulated. */
+/** 16 — what actually gets simulated. */
 function applyRun(doc, params) {
   const period = must(doc, 'RunPeriod', 'Run Period 1');
   const [from, to] = params.beginMonth <= params.endMonth

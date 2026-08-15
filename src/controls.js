@@ -258,9 +258,12 @@ export class Channel {
     // in the one place where "set this and nothing runs" could otherwise read
     // as a control that had stopped working.
     this.prices = prices;
-    // Where a channel starts. The ones that start out are the ones absent from
-    // `1ZoneUncontrolled.idf`, so a console at its defaults writes the stock
-    // model and nothing else.
+    // Where a channel starts. The ones that start out are the ones whose
+    // objects are absent from the baseline document -- the stock
+    // `1ZoneUncontrolled.idf` fabric and geometry, minus the demonstration
+    // loads the stock file hung on it (see the note atop `model.js`). Grounds
+    // starts out for exactly that reason: its 5.25 kW is the stock example's,
+    // but a load nobody engaged has no business in anyone's baseline.
     this.bypassed = bypassed;
     // A precondition the rest of the desk has to meet. Unmet, the channel is
     // not written into the document at all and the strip states what is
@@ -803,7 +806,7 @@ export const CHANNELS = Object.freeze([
     name: 'Gains',
     term: 'Qint',
     blurb:
-      'People, light and equipment on one occupancy profile. The stock model carries a matched +352 / −352 W pair that nets to nothing; these are the first gains that actually land.',
+      'People, light and equipment on one occupancy profile. Bypassed, the zone holds nothing that gives off heat; these are the first gains that land.',
     bypassed: true,
     meter: new Meter({
       label: 'Internal convective gain',
@@ -955,8 +958,34 @@ export const CHANNELS = Object.freeze([
   }),
 
   new Channel({
-    id: 'plant',
+    id: 'grounds',
     index: '12',
+    name: 'Grounds',
+    term: '☾',
+    blurb:
+      'The site after dark. The stock example hangs 5.25 kW of car-park lighting off this model — 23 MWh a year against the building\'s 18 — which is why the bill sections it under Site, outside the building intensity, and why it starts bypassed: a load that size belongs on a strip, not buried in the baseline.',
+    bypassed: true,
+    meter: new Meter({ label: 'Site electricity', terms: [], derived: true }),
+    controls: [
+      new Scale({
+        key: 'extLights', label: 'Grounds lighting', value: 5.25,
+        min: 0.05, max: 20, step: 0.05, digits: 2, unit: 'kW',
+        note: 'Installed power across the site: car park, paths, floodlighting. The stock example carries 5.25 kW.',
+      }),
+      new Selector({
+        key: 'extControl', label: 'Switched', value: 'AstronomicalClock',
+        options: [
+          { value: 'AstronomicalClock', label: 'Dusk to dawn' },
+          { value: 'ScheduleNameOnly', label: 'Always on' },
+        ],
+        note: 'Dusk to dawn follows the sun at the site, so the same kilowatts burn longer hours in a northern winter.',
+      }),
+    ],
+  }),
+
+  new Channel({
+    id: 'plant',
+    index: '13',
     name: 'Plant',
     term: 'η',
     prices: true,
@@ -997,7 +1026,7 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'tariff',
-    index: '13',
+    index: '14',
     name: 'Tariff',
     term: '¤',
     prices: true,
@@ -1038,7 +1067,7 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'solver',
-    index: '14',
+    index: '15',
     name: 'Solver',
     term: 'Δt',
     blurb:
@@ -1095,7 +1124,7 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'run',
-    index: '15',
+    index: '16',
     name: 'Run',
     term: '∑h',
     blurb:
