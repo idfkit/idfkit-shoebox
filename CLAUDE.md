@@ -199,9 +199,15 @@ round-trip of every key and refusal of every malformed input class.
 - **A pasted link is a same-document navigation** — the browser moves the hash
   and loads nothing — so a `hashchange` listener reloads the page into the
   boot decode. Gestures never trip it: `replaceState` fires no `hashchange`.
-- **The station attach reuses `choose`**, which skips sizing days the moment a
-  year lands; the link's own `sizingPeriods` is committed back afterwards so a
-  link that kept them reproduces faithfully (8,808 hours, not 8,760).
+- **The station attach reuses `choose`**, handing it the link's own
+  `sizingPeriods` so a link that kept the sizing days solves once, as itself
+  (8,808 hours, not 8,760). A station link also defers the boot solve to the
+  attach: minted links carry `sizingPeriods=No`, and solving that desk before
+  the year arrives is a run with no environments at all — it fatals.
+- **The address bar encodes `patching()`**, not the raw patch bay, because
+  `patching()` is what reaches the IDF — a link copied under solo must
+  reproduce the soloed building. There is exactly one scheme builder
+  (`schemeHash`) for the bar, the clipboard and the bundle manifest alike.
 - The run bundle's manifest cites the permalink of the *snapshot* that was
   solved, not live params, for the same reason it holds the exact IDF text.
 

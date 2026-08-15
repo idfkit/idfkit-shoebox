@@ -106,8 +106,7 @@ export function encodeState({ params, bypass, station = null }) {
 
 /** One value, read through the control that owns its key. Throws, never clamps. */
 function readValue(key, raw) {
-  const { control, side } = controlFor(key); // throws naming an unowned key
-  const kind = side ? 'facade' : control.kind;
+  const { control } = controlFor(key); // throws naming an unowned key
   if (control.kind === 'selector') {
     // Matched as text because the URL carries text: `timestep=4` has to find
     // the numeric option 4, and the option's own value — number or string — is
@@ -116,19 +115,43 @@ function readValue(key, raw) {
     if (!option) throw new Error(`"${raw}" is not an option of ${key}`);
     return option.value;
   }
+  // The text is checked before the number, because `Number`'s grammar is wider
+  // than a link's: `Number('')` is 0 and `Number('0x18')` is 24, and either
+  // would load a value the sharer never set — a truncated `occFrom=` became a
+  // building occupied from midnight before this check existed.
+  if (!/^-?\d+(\.\d+)?$/.test(raw)) throw new Error(`"${raw}" is not a number for ${key}`);
   const value = Number(raw);
-  if (!Number.isFinite(value)) throw new Error(`"${raw}" is not a number for ${key}`);
-  // Range, not step alignment: several defaults (a wall R of 2.290965) do not
-  // sit on their own step grid, so alignment would refuse values the desk
-  // itself produces.
-  const [min, max] =
-    kind === 'scale' || kind === 'facade'
-      ? [control.min, control.max]
-      : control.kind === 'bearing'
-        ? [0, 360]
-        : [0, 24]; // a profile key is an hour of the day
+  let min;
+  let max;
+  let integer = false;
+  switch (control.kind) {
+    case 'scale':
+    case 'facade':
+      ({ min, max } = control);
+      // Step alignment is not required — several defaults (a wall R of
+      // 2.290965) sit off their own step grid — but a control whose step and
+      // floor are both whole numbers can only ever produce whole numbers, and
+      // a fraction there reaches an integer IDF field the engine rejects
+      // (a RunPeriod month of 6.5).
+      integer = Number.isInteger(control.step) && Number.isInteger(control.min);
+      break;
+    case 'bearing':
+      [min, max] = [0, 360];
+      break;
+    case 'profile':
+      [min, max] = [0, 24]; // an hour of the day, and the band sweeps whole cells
+      integer = true;
+      break;
+    default:
+      // A sixth control kind must be taught its rules here explicitly, not
+      // fall into whichever range happens to be last.
+      throw new Error(`no link validation is written for a "${control.kind}" control`);
+  }
   if (value < min || value > max) {
     throw new Error(`${key} is ${raw}, outside its ${min}–${max} range`);
+  }
+  if (integer && !Number.isInteger(value)) {
+    throw new Error(`${key} is ${raw}, and it only takes whole numbers`);
   }
   return value;
 }
@@ -145,7 +168,10 @@ function readValue(key, raw) {
 export function decodeState(raw) {
   const cut = raw.indexOf('&');
   const version = cut === -1 ? raw : raw.slice(0, cut);
-  if (!(version in DEFAULTS_BY_VERSION)) {
+  // `Object.hasOwn`, not `in`: a fragment of `#toString` would otherwise walk
+  // the prototype chain, pass the gate, and be refused later with a message
+  // about a migration instead of the true offense.
+  if (!Object.hasOwn(DEFAULTS_BY_VERSION, version)) {
     throw new Error(`"${version || '(empty)'}" is not a link version this page knows`);
   }
   let pairs = new URLSearchParams(cut === -1 ? '' : raw.slice(cut + 1));
@@ -153,7 +179,7 @@ export function decodeState(raw) {
   // the defaults table with no path forward is a programming error worth
   // throwing on, not a link problem.
   for (let at = version; at !== LINK_VERSION; ) {
-    const step = MIGRATIONS[at];
+    const step = Object.hasOwn(MIGRATIONS, at) ? MIGRATIONS[at] : null;
     if (!step) throw new Error(`no migration is written from link version "${at}"`);
     ({ to: at, pairs } = step(pairs));
   }
@@ -192,13 +218,27 @@ export function decodeState(raw) {
     station = { wmo, window: win };
   }
 
+  // `in` and `out` are lists and repeat by design; every other key — the
+  // station pair included — is one claim, and a repeated one is two claims
+  // about one thing. Either could be meant, so neither is taken. The check
+  // runs before the reserved skip: `stn` given twice used to slip through
+  // here and silently load the first station named.
   for (const key of new Set(pairs.keys())) {
-    if (RESERVED.includes(key)) continue;
+    if (key === 'in' || key === 'out') continue;
     const values = pairs.getAll(key);
-    // A repeated key is two claims about one control. Either could be meant,
-    // so neither is taken.
     if (values.length > 1) throw new Error(`${key} is given ${values.length} times`);
+    if (RESERVED.includes(key)) continue;
     params[key] = readValue(key, values[0]);
+  }
+
+  // The one cross-key rule: the occupied band runs forwards. The desk's sweep
+  // can only produce `from < to`, and a backwards band accepted here writes a
+  // Schedule:Compact whose Until: times run in reverse, which the engine
+  // rejects after the link was already declared loaded.
+  if (params.occFrom >= params.occTo) {
+    throw new Error(
+      `the occupied hours run from ${params.occFrom} to ${params.occTo}, which is not a band`,
+    );
   }
 
   return { params, bypass, station };
