@@ -2949,7 +2949,9 @@ async function sweepRun(key) {
   try {
     for (const [i, value] of samples.entries()) {
       if (me.cancelled) return;
-      applyModel(model, { ...snapshot, [key]: value }, patch);
+      // The sample is read for one series or four meters; the metric names the
+      // reporting profile that requests exactly that and nothing else.
+      applyModel(model, { ...snapshot, [key]: value }, patch, { reporting: metric });
       const idf = writeIdf(model);
       // Each sample's intensity divides by that sample's own floor, which the
       // swept key may itself be moving — the same live read the bill takes.
