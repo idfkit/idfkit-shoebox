@@ -228,6 +228,44 @@ Deltas are **never coloured for good or bad**, in any section. They are set in
 the margin of their own value at metadata weight. The reading is the number; the
 delta is a note on it.
 
+### Measuring against somebody else's number
+
+A criterion is not a reading and must not be drawn as one. Set it as **asks for
+· reads · margin**, in that order, with the criterion in the publisher's own
+words and the reading in the sheet's — the same three-column build-up the bill
+uses for a rate, one level up.
+
+- The margin is a note on the reading, not a verdict on the design, so it is
+  set at metadata weight in the reading's margin like every other delta.
+- **A criterion that is met gets no mark at all.** A tick beside a number is the
+  interface grading the design. A criterion that is *missed* gets one small
+  `--redline` mark on the margin figure and nothing else, because a divergence
+  is exactly what the markup pen is for.
+- Where the publisher's limit is climate- or building-specific, there is no line
+  to draw: print the reading with no margin and say in the row why. A missing
+  limit is not a pass.
+- List the criteria the sheet **cannot** judge beside the ones it can, with the
+  reason for each. A panel showing only the questions it happens to be able to
+  answer reads as a certification.
+
+### Folding a table to stacked rows
+
+The table equivalent of the index sheet. Where a schedule has more columns than
+a narrow screen can carry, do not scroll it sideways and do not drop columns:
+below the breakpoint, set every part of the table to `display: block` so each
+row becomes a small stack, drop the head row, and give each cell the head it
+lost as `data-label`, drawn back through `::before`. Write the label once, in
+the builder, so the head row and the folded label cannot come to disagree.
+
+Two mechanics that cost real debugging:
+
+- **Column widths set as `.table td.class` out-specify anything shorter.** A
+  media query does not win a specificity argument by coming later, so every
+  width the wide layout set has to be named and given back explicitly.
+- **Move a unit onto the label it belongs to.** A unit column on its own line
+  reads as another value; folded, `46.6` under `READS, KWH/M²·YR` is the
+  reading, and the unit column is dropped.
+
 ### Absence is not zero
 
 A reading with no data behind it renders as an em dash and is excluded from any

@@ -235,6 +235,73 @@ round-trip of every key and refusal of every malformed input class.
 - The run bundle's manifest cites the permalink of the *snapshot* that was
   solved, not live params, for the same reason it holds the exact IDF text.
 
+### The register (src/schemes.js)
+
+Two things that would be one thing in a lesser arrangement, kept apart on
+purpose:
+
+- A **standard** is a specification and is applied as an **overlay**. It writes
+  the controls it has an opinion about and leaves every other control where the
+  architect put it, which is what makes "what would it take to build *this* to
+  Passivhaus" a question you can ask of the building already on the sheet.
+  `UNTOUCHABLE` names the channels a preset may never write — Massing, Site and
+  Context (the brief), Solver and Run (not the building), and the two priced
+  ones (nothing they own reaches the IDF, so a preset that turned a tariff would
+  move the bill without moving the building). Asserted at module load, not
+  documented and hoped for.
+- A **kept scheme** is a whole desk and is applied as a **replacement**. It is
+  stored as its permalink fragment and nothing else, so the save format and the
+  share format are one string: the version ledger in `permalink.js` carries both,
+  and there is one codec to keep honest rather than two.
+
+**Nothing is remembered.** There is no "currently selected standard" anywhere on
+this page and there must not be. `conformance()` measures the desk against a
+preset's clauses every time `applyGeometry` runs, exactly as the axonometric
+measures the vertices — so nudging a wall a second after pressing Apply drops
+the conformance by itself, because there was never a flag to go stale.
+
+- **A specification and a target are different things**, and the split is drawn
+  on the sheet. `Spec` sets a control; `Target` states a number the finished
+  building has to reach and is read off the run. LETI is the pure case — no
+  specs at all, two targets — and having it in the list is what keeps the
+  distinction visible for the others. `conformance().built` is `null` for such a
+  preset, not `true`: "conforms to a specification with no clauses in it" is the
+  emptiest true statement available.
+- **`Spec.why` carries the arithmetic**, because almost no published figure is
+  in the units an IDF field wants. An assembly U-value becomes a construction
+  resistance by taking the ISO 6946 surface films off it (the Fabric strip
+  writes one `Material:NoMass` and EnergyPlus adds the films itself); a
+  blower-door n50 becomes a natural-conditions infiltration rate by the LBL
+  divide-by-twenty rule of thumb, which is coarse and is printed rather than
+  buried so it can be disagreed with. Same rule as the bill's rate build-up.
+- **`Unjudged` is the most important list in the module.** A one-zone shoebox
+  with ideal loads can speak to about half of what Passivhaus requires, and a
+  panel showing only the half it can answer would read as a certification. What
+  is *not* being checked is printed beside what is.
+- **A target with no line is not a pass.** PHI sets the cooling limit per
+  building and per climate, so there is no figure this sheet is entitled to
+  draw; the reading is shown with no verdict. And a reading that is absent says
+  *why* — "attach a weather file, this is a year's number" — rather than
+  standing as a bare em dash the reader can do nothing about.
+- **`refuses()` moved into `controls.js`.** Both the link codec and the preset
+  declarations hand a control a bare value, and the rules for what a control can
+  hold belong with the declaration. `permalink.js` reads it rather than
+  restating the ranges.
+- **A full shelf refuses; it does not evict.** Dropping the oldest to make room
+  is the silent fallback this codebase refuses everywhere else. A shelf that
+  cannot be read is refused whole with the reason standing where the schemes
+  would have been, because an empty table would tell the reader they never saved
+  anything.
+- **Restoring across a station change goes through the link.** A scheme naming
+  the attached station is applied in place like `revert`; one naming a different
+  station is a different climate, tariff and grid — that is a boot, so it is
+  handed to the hash and the page reloads into the existing decode path,
+  refusals and all, rather than growing a second thinner copy of it.
+- **A kept scheme stores a currency code, not a `Currency`.** Nothing with an
+  identity survives `JSON.stringify` into the browser's storage, so
+  `Measure.comparableWith` restates the bill's own refusal on flat data: same
+  kind of run, same currency, same end uses, or no delta at all.
+
 ### The index sheet (narrow screens)
 
 Below the `780px` breakpoint the desk stops being a column beside the drawing and

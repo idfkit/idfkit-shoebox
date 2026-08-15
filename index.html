@@ -717,15 +717,21 @@
       .schedule { margin-top: 26px; }
       /* The bill is the same instrument as the results schedule — quantities
          down the side, a rate against each — so it is lettered with the same
-         table and not a second one that merely looks similar. */
+         table and not a second one that merely looks similar. The register of
+         schemes is the third: a criterion down the side and what the run reads
+         against it, which is the same shape again. Three schedules that agree
+         on how a table is set read as one drawing set; three that each invented
+         their own would read as three products. */
       .schedule table,
-      .bill table {
+      .bill table,
+      .register table {
         width: 100%;
         margin-top: 10px;
         border-collapse: collapse;
       }
       .schedule th,
-      .bill th {
+      .bill th,
+      .register th {
         font: 500 10px/1 var(--cond);
         text-transform: uppercase;
         letter-spacing: 0.13em;
@@ -735,9 +741,11 @@
         border-bottom: 1px solid var(--rule);
       }
       .schedule th:first-child,
-      .bill th:first-child { text-align: left; }
+      .bill th:first-child,
+      .register th:first-child { text-align: left; }
       .schedule td,
-      .bill td {
+      .bill td,
+      .register td {
         padding: 9px 0;
         border-bottom: 1px solid var(--rule-soft);
         font: 400 12.5px/1.2 var(--mono);
@@ -747,7 +755,8 @@
         white-space: nowrap;
       }
       .schedule td:first-child,
-      .bill td:first-child {
+      .bill td:first-child,
+      .register td:first-child {
         text-align: left;
         font: 400 13px/1.3 var(--sans);
         color: var(--ink-2);
@@ -755,21 +764,25 @@
         width: 42%;
       }
       .schedule td.unit,
-      .bill td.unit { color: var(--ink-3); width: 46px; }
+      .bill td.unit,
+      .register td.unit { color: var(--ink-3); width: 46px; }
       .schedule td.void,
-      .bill td.void { color: var(--ink-ghost); }
+      .bill td.void,
+      .register td.void { color: var(--ink-ghost); }
       /* Change against the shape you took hold of. Set in the margin of its own
          value, at metadata weight — the number is the reading, this is a note on
          it, and it is deliberately not coloured for good or bad. */
       .schedule td.delta,
-      .bill td.delta {
+      .bill td.delta,
+      .register td.delta {
         width: 62px;
         padding-left: 12px;
         font-size: 11.5px;
         color: var(--ink-3);
       }
       .schedule .base,
-      .bill .base {
+      .bill .base,
+      .register .base {
         text-transform: none;
         letter-spacing: 0;
         font: 400 10.5px/1 var(--mono);
@@ -777,12 +790,15 @@
         margin-left: 10px;
       }
       .schedule .base:empty,
-      .bill .base:empty { display: none; }
+      .bill .base:empty,
+      .register .base:empty { display: none; }
       /* the schedule changes subject: a firmer rule and a breath of space */
       .schedule tr.group td,
-      .bill tr.group td { border-top: 1px solid var(--rule); padding-top: 17px; }
+      .bill tr.group td,
+      .register tr.group td { border-top: 1px solid var(--rule); padding-top: 17px; }
       .schedule tr:last-child td,
-      .bill tr:last-child td { border-bottom: 0; }
+      .bill tr:last-child td,
+      .register tr:last-child td { border-bottom: 0; }
       /* the marker that ties a row to its curve on the plate */
       .schedule td:first-child .key {
         display: inline-block;
@@ -1052,6 +1068,224 @@
       }
       .bill-refs a { color: inherit; text-decoration-color: var(--rule); }
       .bill-refs a:hover { color: var(--ink-3); }
+
+      /* ── the register of schemes ────────────────────────────────── */
+
+      /* A specification clause and a criterion are both arguments, and an
+         argument is set as prose with its figures in mono beside it — the same
+         arrangement the bill's rate build-up uses, one level up. Nothing here
+         is a new colour: a clause that has drifted and a criterion that has
+         been missed are divergences, which is the one thing the redline pen is
+         for, and it is spent on the smallest mark that will carry it. Meeting a
+         criterion gets no mark at all, because a tick beside a number is the
+         interface grading the design, and this sheet measures. */
+
+      .register {
+        margin-top: 34px;
+        padding-top: 28px;
+        border-top: 1px solid var(--rule);
+      }
+      .register-lede {
+        margin: 9px 0 0;
+        max-width: 58ch;
+        font: 400 13px/1.55 var(--sans);
+        color: var(--ink-2);
+      }
+      .register-lede em { font-style: normal; color: var(--ink); }
+      .register-note {
+        margin: 12px 0 0;
+        max-width: 62ch;
+        font: 400 11.5px/1.55 var(--sans);
+        color: var(--ink-3);
+      }
+      .register-note[hidden] { display: none; }
+      .register-note b { font-weight: 500; color: var(--ink-2); }
+
+      /* One standard per band, ruled off the next the way the console's strips
+         are. Not cards in a grid: these are read down, in the order an argument
+         goes in, and a grid would invite them to be scanned across. */
+      .standards { margin-top: 22px; }
+      .standard {
+        padding: 18px 0;
+        border-top: 1px solid var(--rule);
+      }
+      .standard:last-child { border-bottom: 1px solid var(--rule); }
+      .standard-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 20px;
+      }
+      .standard-head .link { flex: none; margin-top: 2px; }
+      .standard h3 {
+        margin: 0;
+        font: 600 13px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        color: var(--ink);
+      }
+      .standard-cite {
+        margin: 6px 0 0;
+        font: 400 10.5px/1.4 var(--mono);
+        color: var(--ink-3);
+      }
+      /* A parti carries no citation because it has nothing to cite. Setting it
+         at ghost weight is the whole of the distinction: it is this sheet
+         talking, not a published document, and it should not borrow the
+         authority of the four lines above it. */
+      .standard.parti .standard-cite { color: var(--ink-ghost); font-style: italic; }
+      .standard-blurb {
+        margin: 10px 0 0;
+        max-width: 60ch;
+        font: 400 12.5px/1.55 var(--sans);
+        color: var(--ink-2);
+      }
+      .standard-state {
+        margin: 11px 0 0;
+        max-width: 62ch;
+        font: 400 12px/1.5 var(--sans);
+        color: var(--ink-3);
+      }
+      /* Built to the specification: the one state worth lettering in full ink,
+         because it is the answer to the question the section exists to ask. */
+      .standard-state.met { color: var(--ink); }
+      .standard-sub {
+        margin: 16px 0 0;
+        font: 500 9.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+
+      /* The clause and criterion tables run narrower than the schedules above:
+         their first column carries a sentence of reasoning under the label, so
+         it is given the room and the figures are kept tight at the right. */
+      /* The register's tables carry sentences where the schedules above carry
+         figures — a criterion in the standard's own words, a reason a reading
+         is absent — so their text cells wrap and are given a measure to wrap
+         within. Only the readings stay on one line. Cells are also spaced from
+         one another here: the schedules get away with none because only their
+         delta column ever sits beside another number, and five columns of
+         right-aligned text with no gutter run into each other. */
+      .register th + th,
+      .register td + td { padding-left: 14px; }
+      .register .clauses td:first-child,
+      .register .targets td:first-child { width: 40%; }
+      .register .targets td.asks {
+        color: var(--ink-3);
+        width: 14%;
+        white-space: normal;
+      }
+      .register .clauses td.delta,
+      .register .targets td.delta {
+        width: 24%;
+        white-space: normal;
+      }
+      .register .targets td.unit { width: 78px; }
+      .register td .why {
+        display: block;
+        margin-top: 4px;
+        max-width: 54ch;
+        font: 400 10.5px/1.45 var(--sans);
+        font-style: normal;
+        color: var(--ink-ghost);
+      }
+      .register tr.adrift td:first-child { color: var(--ink); }
+      .register td.delta.absent { font-size: 10.5px; color: var(--ink-ghost); white-space: normal; }
+      /* The one mark on the whole section. A criterion that has been missed is
+         a divergence, and this is the markup pen doing what it is for. */
+      .register td.delta.over { color: var(--redline); }
+
+      .standard-fold { margin-top: 14px; }
+      .standard-fold > summary {
+        font: 500 9.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+        cursor: pointer;
+        list-style: none;
+      }
+      .standard-fold > summary::-webkit-details-marker { display: none; }
+      .standard-fold > summary::before {
+        content: "+ ";
+        font-family: var(--mono);
+      }
+      .standard-fold[open] > summary::before { content: "− "; }
+      .standard-fold > summary:hover { color: var(--ink); }
+      .standard-fold > summary:focus-visible {
+        outline: 2px solid var(--rule-focus);
+        outline-offset: 3px;
+      }
+      .unjudged {
+        margin: 12px 0 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+        gap: 8px 20px;
+        align-items: baseline;
+      }
+      .unjudged dt {
+        font: 400 11.5px/1.45 var(--sans);
+        color: var(--ink-2);
+      }
+      .unjudged dd {
+        margin: 0;
+        font: 400 11px/1.45 var(--sans);
+        color: var(--ink-ghost);
+      }
+      .standard-caveat {
+        margin: 14px 0 0;
+        max-width: 62ch;
+        padding: 11px 13px;
+        background: var(--inset);
+        border-radius: var(--r);
+        font: 400 11px/1.5 var(--sans);
+        color: var(--ink-3);
+      }
+
+      /* ── the shelf ──────────────────────────────────────────────── */
+
+      .shelf { margin-top: 30px; }
+      .shelf table[hidden] { display: none; }
+      .register .scheme-name {
+        display: block;
+        width: 100%;
+        max-width: 24ch;
+        padding: 4px 6px;
+        margin: -4px -6px 0;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: var(--r);
+        font: 500 13px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--ink);
+      }
+      /* Inset on hover and focus rather than always: a field that is always
+         drawn as a field turns a schedule into a form. It reads as a name until
+         you go to change it, which is when it says it can be changed. */
+      .register .scheme-name:hover { border-color: var(--rule); }
+      .register .scheme-name:focus {
+        background: var(--inset);
+        border-color: var(--rule);
+        outline: none;
+      }
+      .register .scheme-name:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 1px; }
+      .register .scheme-sub {
+        display: block;
+        margin-top: 5px;
+        font: 400 10.5px/1.45 var(--mono);
+        font-style: normal;
+        color: var(--ink-ghost);
+      }
+      /* The shelf runs to ten cells — four readings, each with its delta beside
+         it — so the name column gives up the 40 % the schedules hand their
+         first column and the actions are kept tight. */
+      .register #shelf-table td:first-child { width: 28%; }
+      .register td.scheme-actions {
+        width: 112px;
+        white-space: nowrap;
+      }
+      .register td.scheme-actions .link + .link { margin-left: 12px; }
 
       /* ── title block ────────────────────────────────────────────── */
 
@@ -1859,6 +2093,63 @@
         .titleblock div:nth-child(2n) { border-right: 0; }
         .titleblock div:nth-child(n + 5) { border-bottom: 1px solid var(--rule-soft); }
         .titleblock div:nth-child(n + 7) { border-bottom: 0; }
+        /* The register's tables stop being tables.
+           A criterion row is five columns and a kept scheme is ten, which is
+           two and four columns more than the schedules above have ever had to
+           fit, and no amount of narrowing gets ten right-aligned figures into a
+           thumb's width. So each row folds to a stack — the same answer the
+           console gives at this breakpoint, for the same reason — and the head
+           row goes, because a head is no use to a column that no longer exists.
+           Each cell carries the head it lost on `data-label`, written once in
+           the builder so the two cannot come to disagree. */
+        .register table,
+        .register tbody,
+        .register tr,
+        .register td { display: block; width: auto; }
+        .register thead { display: none; }
+        .register tr {
+          padding: 12px 0;
+          border-bottom: 1px solid var(--rule-soft);
+        }
+        .register tr:last-child { border-bottom: 0; }
+        .register td {
+          padding: 0;
+          border: 0;
+          text-align: left;
+          white-space: normal;
+        }
+        /* Named one by one rather than as `.register td`, because the column
+           widths above are set on `.class td.class` and out-specify anything
+           shorter — a media query does not win a specificity argument just by
+           coming later. Every one of them has to be given back. */
+        .register .clauses td:first-child,
+        .register .targets td:first-child,
+        .register .targets td.asks,
+        .register .clauses td.delta,
+        .register .targets td.delta,
+        .register .targets td.unit,
+        .register #shelf-table td:first-child,
+        .register td.scheme-actions { width: auto; }
+        .register td + td { padding-left: 0; }
+        .register td:empty { display: none; }
+        /* The unit has moved onto the reading's own label. */
+        .register .targets td.unit { display: none; }
+        .register td[data-label]::before {
+          content: attr(data-label);
+          display: inline-block;
+          min-width: 11ch;
+          margin-right: 8px;
+          font: 500 9px/1.6 var(--cond);
+          text-transform: uppercase;
+          letter-spacing: 0.11em;
+          color: var(--ink-3);
+        }
+        .register td:first-child { margin-bottom: 6px; }
+        .register td .why { margin-bottom: 4px; }
+        .register .scheme-name { max-width: none; }
+        .register td.scheme-actions { margin-top: 8px; }
+        .unjudged { grid-template-columns: 1fr; gap: 3px; }
+        .unjudged dd { margin-bottom: 9px; }
         .notes summary, #log { padding-left: 24px; padding-right: 24px; }
         .disclosure-body { padding-left: 24px; padding-right: 24px; }
         .disclaimers { grid-template-columns: 1fr; gap: 12px; }
@@ -1932,6 +2223,14 @@
             </button>
             <button type="button" class="link" id="share">
               Copy scheme link
+            </button>
+            <!-- The third way out, and the only one that stays: the bundle is
+                 this run, the link is this scheme, and this keeps the scheme
+                 where you can come back to it. It sits with the other two
+                 because it is the same act — the shelf stores exactly the
+                 string the button above copies. -->
+            <button type="button" class="link" id="save-scheme">
+              Save this scheme
             </button>
           </div>
         </aside>
@@ -2058,6 +2357,43 @@
             <p class="finding" id="bill-finding"></p>
             <p class="bill-note" id="bill-absences"></p>
             <p class="bill-refs" id="bill-refs"></p>
+          </section>
+
+          <!-- The third schedule on the sheet, lettered with the same
+               instrument as the other two, because it is the same instrument:
+               quantities down the side and a figure against each. What it
+               schedules is schemes — the ones somebody published, and the ones
+               you kept. -->
+          <section class="register" id="register">
+            <p class="eyebrow">Schedule of schemes</p>
+            <p class="register-lede">
+              What this design could be built to, and what you kept. A standard is laid
+              <em>over</em> the drawing rather than in place of it: it writes the controls it has
+              an opinion about and leaves the massing, the site, the context and the engine
+              settings exactly where you put them, so <em>what would it take to build this to
+              Passivhaus</em> is a question you can ask of the building already on the sheet.
+              Whether the desk still meets one is measured off the controls every time they move
+              and never remembered — nudge a wall and the conformance falls away by itself.
+            </p>
+            <div class="standards" id="standards"></div>
+
+            <div class="shelf">
+              <p class="eyebrow">Kept schemes<span class="base" id="shelf-count"></span></p>
+              <p class="register-lede">
+                A kept scheme is the whole desk, stored as the same link <b>Copy scheme link</b>
+                hands out — one format for keeping and for sharing, carried forward by the same
+                version ledger, so a scheme kept today still opens on a page that has since grown
+                a channel. It is held in this browser and goes nowhere else.
+              </p>
+              <p class="register-note" id="shelf-note" hidden></p>
+              <p class="register-note" id="shelf-empty">
+                Nothing kept yet. <b>Save this scheme</b>, in the run log at the left, keeps the
+                desk as it stands together with whatever it was reading — so an option can be put
+                down, another one worked, and the two set side by side.
+              </p>
+              <table id="shelf-table" hidden></table>
+              <p class="register-note" id="shelf-foot"></p>
+            </div>
           </section>
         </div>
       </div>

@@ -40,6 +40,16 @@ import {
   weatherFor,
 } from './weather.js';
 import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
+import {
+  LEFT_ALONE,
+  Measure,
+  PRESETS,
+  Scheme,
+  SHELF_LIMIT,
+  Shelf,
+  applyPreset,
+  conformance,
+} from './schemes.js';
 
 const ENERGYPLUS_VERSION = '26.1.0';
 
@@ -940,10 +950,16 @@ function billDelta(column, value, base) {
   return `${d > 0 ? '+' : '−'}${column.format(Math.abs(d), bill)}`;
 }
 
-const cell = (row, text, className) => {
+const cell = (row, text, className, label = null) => {
   const td = row.insertCell();
   td.textContent = text;
   if (className) td.className = className;
+  // The column head, carried on the cell. On a phone the register's tables
+  // stop being tables — five columns will not fit in a thumb's width — and
+  // each row folds to a stack, where a figure with no label beside it is
+  // unreadable. Held as data rather than drawn twice, so the head row and the
+  // folded label cannot disagree about what a column is called.
+  if (label) td.dataset.label = label;
   return td;
 };
 
@@ -1409,9 +1425,14 @@ function clearResults() {
   // over a cleared plate would be describing a run the sheet no longer shows.
   bill = null;
   lastRun = null;
+  // And so do the readings the register's targets are judged on: a criterion
+  // still showing "under by 3.2" over a cleared plate would be quoting a run
+  // that is no longer on the sheet.
+  lastOutcome = null;
   renderBill();
   syncPin();
   syncDownload();
+  renderRegister();
   set('t-vars', '—');
   set('t-err', '—', '');
   set('t-exit', '—', '');
@@ -1503,6 +1524,15 @@ function markStale() {
   // would be a strobe. On release-solving and by hand the gap is real.
   const show = stale && !continuous();
   for (const el of [$('trace'), $('finding'), $('schedule'), $('bill')]) el.classList.toggle('stale', show);
+  // The register is half live and half not, so it is dimmed by the half. The
+  // conformance sentences are measurements of the desk as it stands and are
+  // true the instant a control moves; the target readings and the kept
+  // schemes' deltas are readings of the last run, and once the shape has moved
+  // they describe a building that is no longer on the sheet — the same thing
+  // the plate and the bill are saying by going pale.
+  for (const el of document.querySelectorAll('.register .targets, #shelf-table')) {
+    el.classList.toggle('stale', show);
+  }
   if (!show) return;
   // A sheet that is about to solve itself does not need telling to go and press
   // something — it needs to say what it is waiting for.
@@ -1567,6 +1597,11 @@ function applyGeometry() {
     derivedReadings(facts),
     lastAt,
   );
+  // Whether the desk is built to a standard is a measurement of the desk, not
+  // a flag set when a button was pressed, so it is re-taken here — the one
+  // place every change to the parameters passes through. Nudge a wall
+  // resistance and the conformance falls away by itself.
+  syncStandards();
   markStale();
 }
 
@@ -2304,8 +2339,13 @@ async function choose(row, pick, sizing = 'No') {
   pinned = null;
   bill = null;
   lastRun = null;
+  // The register's targets go with them. A heating demand read in Denver has
+  // nothing to say about a criterion being asked of a building in Bavaria, and
+  // the kept schemes' deltas would be differencing two climates.
+  lastOutcome = null;
   syncPin();
   renderBill();
+  renderRegister();
   // The bundle goes with the run it described. Without this, the download
   // button stayed lettered live over a cleared `lastRun` and clicking it did
   // nothing at all — the exact silent control the design refuses.
@@ -2518,6 +2558,631 @@ async function attachFromLink(linked) {
   // rewrite brings the bar back to lettering the desk.
   updatePermalink();
 }
+
+/* ══ the register ════════════════════════════════════════════════════════ */
+
+/**
+ * The schedule of schemes: what this design could be built to, and what you
+ * kept.
+ *
+ * Two instruments in one section, because they answer the two halves of the
+ * same question. A **standard** is somebody else's specification laid over your
+ * building — it moves the controls it has an opinion about and leaves the rest
+ * of the drawing alone, which is what makes "what would it take to build this
+ * to Passivhaus" a question you can ask of the thing you have already drawn
+ * rather than a different building you have to go and draw. A **kept scheme**
+ * is an idea of your own, held as its permalink so that saving and sharing are
+ * the same act, and restored whole.
+ *
+ * Nothing here is remembered state. Whether the desk is built to a standard is
+ * measured off `params` every time the desk moves, exactly the way the
+ * axonometric is measured off the vertices — press Apply and then nudge a wall
+ * resistance, and the conformance falls away by itself, because there was
+ * never a flag to go stale.
+ */
+
+const SCHEME_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+/**
+ * The shelf's storage, probed with a real write.
+ *
+ * Merely reading `localStorage` is not enough of a test: a browser with site
+ * data switched off, and Safari in private browsing, hand over an object that
+ * looks perfectly serviceable and throws on the first `setItem`. Finding that
+ * out at the moment somebody presses Save is finding it out one press too
+ * late, so the probe happens here and the register says up front that it
+ * cannot keep anything.
+ */
+const shelfStore = (() => {
+  const probe = '__shoebox_probe__';
+  try {
+    window.localStorage.setItem(probe, '1');
+    window.localStorage.removeItem(probe);
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+})();
+
+const shelf = new Shelf(shelfStore);
+let kept = []; // the shelf as last read
+let shelfNote = null; // why it could not be read, when it could not
+// What the last run measured, in the terms the targets are written in. Read
+// once at the solve rather than off the ESO at draw time, for the same reason
+// the bundle's identity is captured before the await: the register re-letters
+// on every gesture, and re-reading 8,760 points to do it would make a drag
+// stutter for a number that cannot have changed.
+let lastOutcome = null;
+
+/** Every distinct temperature the shipped criteria count exceedances above. */
+const OVERHEAT_THRESHOLDS = Object.freeze([
+  ...new Set(
+    PRESETS.flatMap((p) => p.targets).filter((t) => t.metric === 'overheat').map((t) => t.above),
+  ),
+]);
+
+function readShelf() {
+  if (!shelfStore) {
+    kept = [];
+    shelfNote =
+      'This browser is not letting the page keep anything, so no scheme can be saved here. ' +
+      'The scheme link still works — copy it and paste it back.';
+    return;
+  }
+  try {
+    kept = shelf.list();
+    shelfNote = null;
+  } catch (error) {
+    // A shelf that cannot be read is not an empty shelf, and drawing it as one
+    // would tell the reader they had never saved anything. It is refused
+    // whole, with the reason standing where the schemes would have been.
+    kept = [];
+    shelfNote = `${error.message}. Nothing has been deleted — this page is simply not going to guess at it.`;
+  }
+}
+
+/** The first unused letter, so a scheme has a name before it is asked for one. */
+function nextSchemeName() {
+  const taken = new Set(kept.map((s) => s.name));
+  for (const letter of SCHEME_LETTERS) {
+    const name = `Scheme ${letter}`;
+    if (!taken.has(name)) return name;
+  }
+  return `Scheme ${kept.length + 1}`;
+}
+
+/**
+ * Everything the last run measured that a criterion might ask about.
+ *
+ * The demand intensities and the two temperature extremes come from the same
+ * readers the study uses, so a target and a study curve of the same quantity
+ * cannot disagree about what it is.
+ */
+function readOutcome(eso) {
+  const overheat = new Map();
+  for (const above of OVERHEAT_THRESHOLDS) overheat.set(above, readOverheat(eso, above));
+  return {
+    ...(readDemand(eso, geometryFacts(model).floor) ?? {}),
+    ...(readExtremes(eso) ?? {}),
+    overheat,
+  };
+}
+
+/** The reading one target asks for, or null when the run does not carry it. */
+function targetReading(target) {
+  if (!lastOutcome) return null;
+  const value =
+    target.metric === 'overheat'
+      ? (lastOutcome.overheat?.get(target.above) ?? null)
+      : (lastOutcome[target.metric] ?? null);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Why a target has no reading behind it — named, never left blank.
+ *
+ * An em dash on its own says a number is missing; it does not say what to do
+ * about it, and every one of these has something to do about it. A criterion
+ * about a year cannot be answered by two design days, and a demand intensity
+ * cannot be answered by a zone nobody is conditioning.
+ */
+function targetAbsence(target) {
+  if (!lastRun) return 'nothing solved yet';
+  if (!lastRun.annual) return 'attach a weather file — this is a year’s number';
+  if (target.metric !== 'overheat' && !modelState?.get('system')?.engaged) {
+    return 'patch System in — a free-running zone has no demand to meter';
+  }
+  return 'not carried by this run';
+}
+
+/** What the desk is reading right now, in the form a kept scheme stores. */
+function measureNow() {
+  if (!lastRun) return new Measure();
+  return new Measure({
+    annual: lastRun.annual,
+    hours: lastRun.hours,
+    uses: bill ? bill.lines.map((l) => l.use.id) : null,
+    // The code, not the `Currency`. A kept scheme goes through `JSON.stringify`
+    // into the browser's storage and comes back without identities, so the
+    // comparison rule has to be restated on data that survives the trip.
+    currency: bill?.currency?.code ?? null,
+    metered: bill?.total('metered') ?? null,
+    cost: bill?.total('cost') ?? null,
+    carbon: bill?.total('carbon') ?? null,
+    eui: lastOutcome?.eui ?? null,
+    tedi: lastOutcome?.tedi ?? null,
+    cedi: lastOutcome?.cedi ?? null,
+    low: lastOutcome?.low ?? null,
+    high: lastOutcome?.high ?? null,
+  });
+}
+
+/* ── applying a standard ──────────────────────────────────────────────── */
+
+/**
+ * Lay a preset over the desk, and say exactly what it did.
+ *
+ * The same shape as `revert`, and for the same reason: several controls move
+ * at once, so the desk is written in one breath and re-applied to the model
+ * once, rather than pumping a run per key. Solo comes off, because a soloed
+ * desk is a diagnostic and a specification is a design — and because
+ * `patching()` under solo would swallow the channels the preset just asked for.
+ */
+function applyStandard(preset) {
+  const before = { ...params };
+  const soloWas = solo;
+  const next = applyPreset(params, bypass, preset);
+
+  beginGesture();
+  Object.assign(params, next.params);
+  Object.assign(bypass, next.bypass);
+  solo = null;
+  if (desk) desk.solo = null;
+  for (const sync of Object.values(syncSlider)) sync();
+  desk?.sync();
+  applyGeometry();
+  reprice();
+  endGesture();
+  desk?.settle();
+
+  // Said before the pump, not after. A solve narrates itself into the same
+  // line and will overwrite this within a design day's 50 ms, which is
+  // correct — the run is the newer news — but writing it afterwards would
+  // have the two racing, and on a manual desk with nothing to solve the
+  // sentence would never appear at all.
+  const moved = preset.specs.filter((s) => before[s.key] !== s.value).length;
+  const patched = preset.engages.length + preset.bypasses.length;
+  statusEl.className = 'status';
+  statusEl.textContent = preset.specs.length
+    ? `${preset.name} laid over the desk — ${moved} control${moved === 1 ? '' : 's'} moved` +
+      `${patched ? ` and ${patched} channel${patched === 1 ? '' : 's'} patched` : ''}. ` +
+      `${LEFT_ALONE.join(', ')} are as you left them.` +
+      (soloWas ? ' Solo came off, so the whole desk is in the path again.' : '')
+    : `${preset.name} sets no control — it states an outcome. Its targets are read below.`;
+  syncStandards();
+  if (autoOn()) pump();
+}
+
+/* ── keeping and restoring ────────────────────────────────────────────── */
+
+function saveScheme() {
+  const scheme = new Scheme({
+    id: crypto.randomUUID?.() ?? `s${Date.now()}`,
+    name: nextSchemeName(),
+    // The scheme is stored exactly as the address bar carries it, `patching()`
+    // and all, so a scheme kept under solo reproduces the soloed building —
+    // the one place the raw patch bay and what actually reaches the IDF differ.
+    hash: schemeHash() || 'v1',
+    savedAt: Date.now(),
+    station: $('t-location').textContent,
+    label: shapeLabel(params),
+    measure: measureNow(),
+  });
+  try {
+    kept = shelf.add(scheme);
+    shelfNote = null;
+    statusEl.className = 'status';
+    statusEl.textContent = scheme.measure.solved
+      ? `Kept as ${scheme.name}, with what it was reading. Rename it in the schedule below.`
+      : `Kept as ${scheme.name}. Nothing had been solved, so it carries its shape and no readings.`;
+  } catch (error) {
+    statusEl.className = 'status bad';
+    statusEl.textContent = `${scheme.name} could not be kept: ${error.message}.`;
+  }
+  renderShelf();
+}
+
+const sameStation = (a, b) =>
+  (a?.wmo ?? null) === (b?.wmo ?? null) && (a?.window ?? null) === (b?.window ?? null);
+
+/**
+ * Put a kept scheme back on the desk.
+ *
+ * Two paths, and which one is taken is decided by the weather, not by
+ * convenience. A scheme that names the station already attached is applied in
+ * place, instantly, exactly as `revert` applies the issued drawing. A scheme
+ * that names a *different* station is a different climate — a different year,
+ * different design conditions, a different tariff and a different grid — and
+ * that is a boot, not a gesture. It goes through the link, which is the one
+ * path a whole scheme is honoured by, refusals and all: if the archive cannot
+ * be fetched, the reader gets the sentence that already exists for exactly
+ * that failure rather than a second, thinner copy of it written here.
+ */
+function restoreScheme(scheme) {
+  let state;
+  try {
+    state = decodeState(scheme.hash);
+  } catch (error) {
+    statusEl.className = 'status bad';
+    statusEl.textContent =
+      `${scheme.name} could not be read back — ${error.message}. It is still on the shelf; ` +
+      'copy its link out before deleting it.';
+    return;
+  }
+
+  if (!sameStation(state.station, stationToken())) {
+    statusEl.className = 'status';
+    statusEl.textContent = `Restoring ${scheme.name}, which names another station — reloading to fetch its weather…`;
+    history.replaceState(null, '', `#${scheme.hash}`);
+    location.reload();
+    return;
+  }
+
+  beginGesture();
+  Object.assign(params, state.params);
+  Object.assign(bypass, state.bypass);
+  // The hash encodes `patching()` rather than the patch bay, so what comes
+  // back is the building as it was heard. Solo has already been baked into
+  // that map and must not be applied on top of it a second time.
+  solo = null;
+  if (desk) desk.solo = null;
+  for (const sync of Object.values(syncSlider)) sync();
+  desk?.sync();
+  applyGeometry();
+  reprice();
+  endGesture();
+  desk?.settle();
+
+  statusEl.className = 'status';
+  statusEl.textContent = `${scheme.name} restored — ${scheme.label ?? 'the whole desk'}.`;
+  syncStandards();
+  if (autoOn()) pump();
+}
+
+function forgetScheme(scheme) {
+  try {
+    kept = shelf.remove(scheme.id);
+    statusEl.className = 'status';
+    statusEl.textContent = `${scheme.name} deleted from the shelf.`;
+  } catch (error) {
+    statusEl.className = 'status bad';
+    statusEl.textContent = `${scheme.name} could not be deleted: ${error.message}.`;
+  }
+  renderShelf();
+}
+
+/* ── drawing the register ─────────────────────────────────────────────── */
+
+const elem = (tag, className, text) => {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+};
+
+/** A head row, so the register's tables are set like the two schedules above. */
+const tableHead = (labels) => {
+  const thead = document.createElement('thead');
+  const tr = thead.insertRow();
+  for (const [label, span] of labels.map((l) => (Array.isArray(l) ? l : [l, 1]))) {
+    const th = document.createElement('th');
+    th.textContent = label;
+    if (span > 1) th.colSpan = span;
+    tr.append(th);
+  }
+  return thead;
+};
+
+const linkButton = (text, onClick) => {
+  const b = elem('button', 'link', text);
+  b.type = 'button';
+  b.addEventListener('click', onClick);
+  return b;
+};
+
+// Built once and then only re-lettered: the specification of a standard is a
+// published document and does not move, so rebuilding five cards of it on
+// every drag frame would be work done to produce the same nodes again.
+const standardCards = new Map();
+
+function buildStandards() {
+  const host = $('standards');
+  host.textContent = '';
+  standardCards.clear();
+
+  for (const preset of PRESETS) {
+    const card = elem('article', `standard ${preset.kind}`);
+
+    const head = elem('div', 'standard-head');
+    const title = elem('div', 'standard-title');
+    title.append(elem('h3', null, preset.name));
+    title.append(
+      elem(
+        'p',
+        'standard-cite',
+        preset.kind === 'standard'
+          ? `${preset.issuer} · ${preset.source}`
+          : 'This sheet’s own arrangement — not a published standard',
+      ),
+    );
+    head.append(title, linkButton(preset.specs.length ? 'Apply' : 'Read only', () => applyStandard(preset)));
+    if (!preset.specs.length) head.lastChild.disabled = true;
+    card.append(head, elem('p', 'standard-blurb', preset.blurb));
+
+    // What it currently is, against what it asks for. Re-lettered by
+    // `syncStandards`; built empty so there is exactly one code path that
+    // writes it and no first-draw special case.
+    const state = elem('p', 'standard-state');
+    card.append(state);
+
+    let clauses = null;
+    if (preset.specs.length || preset.engages.length || preset.bypasses.length) {
+      const fold = elem('details', 'standard-fold');
+      fold.append(elem('summary', null, 'What it sets, and where each number comes from'));
+      clauses = elem('table', 'clauses');
+      fold.append(clauses);
+      card.append(fold);
+    }
+
+    const targets = elem('table', 'targets');
+    if (preset.targets.length) card.append(elem('p', 'standard-sub', 'What it asks of the finished building'), targets);
+
+    if (preset.unjudged.length) {
+      const fold = elem('details', 'standard-fold');
+      fold.append(
+        elem('summary', null, `What this sheet cannot judge (${preset.unjudged.length})`),
+      );
+      const list = elem('dl', 'unjudged');
+      for (const item of preset.unjudged) {
+        list.append(elem('dt', null, item.criterion), elem('dd', null, item.why));
+      }
+      fold.append(list);
+      if (preset.caveat) fold.append(elem('p', 'standard-caveat', preset.caveat));
+      card.append(fold);
+    }
+
+    host.append(card);
+    standardCards.set(preset.id, { preset, state, clauses, targets });
+  }
+}
+
+const f1c = (v) => v.toFixed(1);
+
+/**
+ * Re-letter every standard from the desk and from the last run.
+ *
+ * Called wherever the desk moves and wherever a run lands, because those are
+ * the only two things it reads. Cheap by construction: the cards already
+ * exist, and only the conformance sentence, the clause table and the target
+ * table are written.
+ */
+function syncStandards() {
+  for (const { preset, state, clauses, targets } of standardCards.values()) {
+    const c = conformance(params, bypass, preset);
+    if (c.built === null) {
+      state.textContent = 'Sets nothing. Everything it has to say is in the targets below.';
+      state.className = 'standard-state';
+    } else if (c.built) {
+      state.textContent = `The desk is built to this specification — all ${c.clauses.length} clauses hold.`;
+      state.className = 'standard-state met';
+    } else {
+      const first = c.adrift[0];
+      state.textContent =
+        `${c.adrift.length} of ${c.clauses.length} clauses adrift` +
+        ` — ${first.label} is ${first.has} where it asks for ${first.wants}` +
+        (c.adrift.length > 1 ? `, and ${c.adrift.length - 1} more.` : '.');
+      state.className = 'standard-state';
+    }
+
+    if (clauses) {
+      clauses.textContent = '';
+      clauses.append(tableHead(['Clause', 'Asks for', 'Currently']));
+      const body = document.createElement('tbody');
+      for (const clause of c.clauses) {
+        const tr = body.insertRow();
+        if (!clause.met) tr.className = 'adrift';
+        const head = tr.insertCell();
+        head.append(clause.label);
+        if (clause.spec?.why) head.append(elem('i', 'why', clause.spec.why));
+        cell(tr, clause.wants, null, 'Asks for');
+        // Only when it differs: a column repeating the value beside itself on
+        // every row is noise, and the rows that matter are the ones that do not
+        // agree.
+        cell(tr, clause.met ? '' : clause.has, 'delta', 'Currently');
+      }
+      clauses.append(body);
+    }
+
+    targets.textContent = '';
+    if (!preset.targets.length) continue;
+    targets.append(tableHead(['Criterion', 'Asks for', 'Reads', 'Margin', '']));
+    const body = document.createElement('tbody');
+    for (const target of preset.targets) {
+      const tr = body.insertRow();
+      const head = tr.insertCell();
+      head.append(target.label);
+      if (target.note) head.append(elem('i', 'why', target.note));
+      cell(tr, target.limit == null ? target.asks : `≤ ${target.limit}`, 'asks', 'Asks for');
+      const value = targetReading(target);
+      // The unit rides on the folded label, because the unit column itself is
+      // dropped at that width: `46.6` on a line of its own says nothing.
+      const read = cell(tr, value == null ? '—' : f1c(value), null, `Reads, ${target.unit}`);
+      if (value == null) read.className = 'void';
+      const margin = tr.insertCell();
+      margin.className = 'delta';
+      margin.dataset.label = 'Margin';
+      if (value == null) {
+        margin.textContent = targetAbsence(target);
+        margin.classList.add('absent');
+      } else if (target.limit != null) {
+        const over = value - target.limit;
+        // One small redline mark on the divergence, and nothing at all on the
+        // rows that clear — the accent marks "look here", it does not grade.
+        margin.textContent = over > 0 ? `over by ${f1c(over)}` : `under by ${f1c(-over)}`;
+        if (over > 0) margin.classList.add('over');
+      }
+      const unit = tr.insertCell();
+      unit.className = 'unit';
+      unit.textContent = target.unit;
+    }
+    targets.append(body);
+  }
+}
+
+/*
+ * Four columns, and the currency is printed rather than symbolised.
+ *
+ * A kept scheme stores the currency's *code*, not the `Currency` that knows
+ * how to letter it, because nothing with an identity survives a trip through
+ * the browser's storage. That turns out to be the right presentation anyway:
+ * two schemes kept in two countries sit in one table, and `$4,200` against
+ * `$5,100` would look like a comparison when one of them is Canadian.
+ */
+const SHELF_COLUMNS = Object.freeze([
+  { label: 'Energy', field: 'eui', unit: 'kWh/m²·yr', fmt: (v) => v.toFixed(1) },
+  { label: 'Heating', field: 'tedi', unit: 'kWh/m²·yr', fmt: (v) => v.toFixed(1) },
+  { label: 'Cost', field: 'cost', unit: '', fmt: (v, m) => `${group(v, 0)} ${m.currency ?? ''}`.trim() },
+  { label: 'Carbon', field: 'carbon', unit: 'kgCO₂e', fmt: (v) => group(v, 0) },
+]);
+
+function renderShelf() {
+  const note = $('shelf-note');
+  note.textContent = shelfNote ?? '';
+  note.hidden = !shelfNote;
+
+  const table = $('shelf-table');
+  table.textContent = '';
+  $('shelf-count').textContent = shelfNote
+    ? ''
+    : `${kept.length} of ${SHELF_LIMIT} kept`;
+
+  if (!kept.length) {
+    table.hidden = true;
+    $('shelf-empty').hidden = Boolean(shelfNote);
+    return;
+  }
+  table.hidden = false;
+  $('shelf-empty').hidden = true;
+
+  const here = measureNow();
+
+  // Every measured column carries a delta cell beside it, so its head spans
+  // both — the same arrangement the results schedule makes when it has a
+  // baseline to difference against.
+  table.append(tableHead(['Scheme', ...SHELF_COLUMNS.map((c) => [c.label, 2]), '']));
+
+  const body = document.createElement('tbody');
+  for (const scheme of kept) {
+    const tr = body.insertRow();
+    const head = tr.insertCell();
+
+    // The name is an input rather than text, because a scheme is named after
+    // it is kept, not before: saving is one press in the middle of working,
+    // and being asked to think of a name at that moment is the friction that
+    // stops anybody keeping anything.
+    const name = document.createElement('input');
+    Object.assign(name, { type: 'text', className: 'scheme-name', value: scheme.name });
+    name.setAttribute('aria-label', `Name of ${scheme.name}`);
+    name.addEventListener('change', () => {
+      const next = name.value.trim();
+      if (!next || next === scheme.name) {
+        name.value = scheme.name;
+        return;
+      }
+      try {
+        kept = shelf.rename(scheme.id, next);
+      } catch (error) {
+        statusEl.className = 'status bad';
+        statusEl.textContent = `That rename could not be kept: ${error.message}.`;
+      }
+      renderShelf();
+    });
+    head.append(name);
+
+    const sub = elem('i', 'scheme-sub');
+    const when = new Date(scheme.savedAt);
+    sub.textContent = [
+      scheme.label,
+      scheme.station,
+      scheme.measure.solved
+        ? `${scheme.measure.annual ? 'annual' : 'design day'} · ${scheme.measure.hours.toLocaleString('en-US')} h`
+        : 'never solved',
+      Number.isFinite(when.getTime()) ? when.toLocaleDateString('en-CA') : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    head.append(sub);
+
+    // Differenced only against a run of the same kind, in the same currency,
+    // over the same end uses. Same refusal the bill makes: a saving that is
+    // really an absence is worse than no column at all.
+    const like = scheme.measure.comparableWith(here);
+    for (const column of SHELF_COLUMNS) {
+      const value = scheme.measure[column.field];
+      const td = tr.insertCell();
+      td.textContent = Number.isFinite(value) ? column.fmt(value, scheme.measure) : '—';
+      td.dataset.label = column.unit ? `${column.label}, ${column.unit}` : column.label;
+      if (!Number.isFinite(value)) td.className = 'void';
+      const d = tr.insertCell();
+      d.className = 'delta';
+      d.dataset.label = `Δ ${column.label.toLowerCase()}`;
+      const mine = here[column.field];
+      // Formatted on both sides before differencing, the same rule the
+      // schedule and the bill follow: a change too small to move the printed
+      // figure is not a reading, and `+0` on every row buries the ones that moved.
+      if (
+        like &&
+        Number.isFinite(value) &&
+        Number.isFinite(mine) &&
+        column.fmt(value, scheme.measure) !== column.fmt(mine, here)
+      ) {
+        const diff = mine - value;
+        d.textContent = `${diff > 0 ? '+' : '−'}${column.fmt(Math.abs(diff), here)}`;
+        d.title = `the sheet, against ${scheme.name}`;
+      }
+    }
+
+    const actions = tr.insertCell();
+    actions.className = 'scheme-actions';
+    actions.append(
+      linkButton('Restore', () => restoreScheme(scheme)),
+      linkButton('Delete', () => forgetScheme(scheme)),
+    );
+  }
+  table.append(body);
+
+  const foot = $('shelf-foot');
+  foot.textContent = '';
+  foot.append(
+    document.createTextNode(
+      here.solved
+        ? 'Δ reads the sheet against the kept scheme, and appears only where the two are ' +
+          'like for like — the same kind of run, the same currency, the same end uses.'
+        : 'Nothing is solved, so there is nothing to difference the kept schemes against yet.',
+    ),
+  );
+}
+
+function renderRegister() {
+  syncStandards();
+  renderShelf();
+}
+
+$('save-scheme').addEventListener('click', saveScheme);
+
+readShelf();
+buildStandards();
+renderRegister();
 
 /* ══ the run ═════════════════════════════════════════════════════════════ */
 
@@ -2791,9 +3456,15 @@ async function solve() {
     },
   };
   bill = billFrom(lastRun);
+  // What the criteria on the register ask about, read once here rather than
+  // off the ESO whenever a card is re-lettered. The register re-letters on
+  // every gesture, and walking 8,760 points to answer a question that cannot
+  // have changed would put a stutter in every drag.
+  lastOutcome = readOutcome(eso);
   syncPin();
   renderBill();
   syncDownload();
+  renderRegister();
 
   desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt);
 
@@ -2990,6 +3661,34 @@ function readDemand(eso, floorArea) {
         ? null
         : [...kwh.values()].reduce((a, b) => a + b, 0) / floorArea,
   };
+}
+
+/**
+ * How much of the year the zone spent above a temperature.
+ *
+ * The form every comfort criterion worth having is written in: not a peak,
+ * which one freak afternoon can set, but a frequency — Passivhaus asks for no
+ * more than a tenth of the year above 25 °C, and CIBSE and the adaptive
+ * standards all count exceedances the same way. Read over the billed
+ * environments only, by the bill's own rule: the sizing days exist to be more
+ * extreme than the year they precede, and counting them in would have two
+ * deliberately punishing days set the frequency for eight thousand ordinary
+ * ones. Without a year there is nothing to be a frequency *of*, and the
+ * register says so rather than dividing by 48.
+ */
+function readOverheat(eso, above) {
+  const zr = zoneRuns(eso);
+  const year = zr ? zr.runs.filter((r) => r.kind === null) : [];
+  if (!year.length) return null;
+  let over = 0;
+  let all = 0;
+  for (const r of year) {
+    for (let i = r.start; i <= r.end; i += 1) {
+      all += 1;
+      if (zr.points[i].value > above) over += 1;
+    }
+  }
+  return all ? (over / all) * 100 : null;
 }
 
 /**
