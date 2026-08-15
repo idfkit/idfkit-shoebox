@@ -1893,8 +1893,10 @@ const endGesture = () => {
   // never per frame, the same rule the gesture ghosts follow.
   updatePermalink();
   // The study pool held its dispatch while the hand was down — real cores go
-  // to the drag's own solves — so the release is what hands them back.
+  // to the drag's own solves — so the release is what hands them back, and it
+  // is also when every study the gesture left behind re-queues itself.
   studyScheduler?.drain();
+  refreshStudies();
 };
 
 /* ══ controls ════════════════════════════════════════════════════════════ */
@@ -1935,8 +1937,18 @@ function syncAuto() {
 
 autoBox.addEventListener('change', () => {
   syncAuto();
-  if (autoOn()) pump();
-  else markStale();
+  if (autoOn()) {
+    pump();
+    // Switching auto back on catches the studies up the way it catches the
+    // sheet up: whatever went stale while solving by hand re-queues now.
+    refreshStudies();
+  } else {
+    markStale();
+    // Background healing is exactly what this toggle governs, so the refresh
+    // backlog goes with it — but a study the reader asked for by name keeps
+    // running, the way the sheet keeps the result it already has.
+    studyScheduler?.cancelWhere((job) => job.origin === 'refresh', 'shed');
+  }
 });
 
 /**
@@ -3010,9 +3022,58 @@ function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES } = {}) {
       points,
       order: sampleOrder(points, snapshot[key]),
       origin,
+      asked: n,
     }),
     { front },
   );
+}
+
+/**
+ * Re-queue every study the desk has moved out from under.
+ *
+ * Called from `endGesture` — the one point all four gesture paths already
+ * share — and from the auto-solve toggle, so curves heal themselves under
+ * the same switch that governs the sheet's own re-solving. The first pass is
+ * coarse: eleven points redraw every curve in half the runs, and the idle
+ * densify below fills each back to twenty-one from the cache. Checked here
+ * and not left to the button gate: `syncSweepGate` only disables buttons,
+ * and this path never clicks one — during a link attach the desk carries
+ * `sizingPeriods=No` with no year, and every sample would fatal on zero
+ * environments.
+ */
+function refreshStudies() {
+  if (!studyScheduler || !autoOn() || linkAttachPending) return;
+  // Most recently swept first — the map holds insertion order and a finished
+  // study re-sets its key — so the curves the reader touched last heal first.
+  for (const [key, study] of [...studies].reverse()) {
+    const rest = restShapeKey(key);
+    if (study.restShape === rest) continue; // still true of this desk
+    if (studyScheduler.has(key)) continue; // already re-sweeping
+    if (studyStops.get(key) === rest) continue; // stopped, and the desk has not moved since
+    studyStops.delete(key); // the desk moved past the Stop; it lapses
+    enqueueStudy(key, { origin: 'refresh', n: COARSE_SAMPLES });
+  }
+}
+
+/**
+ * Fill coarse curves back to full resolution, one study per idle pass.
+ *
+ * The coarse grid is a strict subset of the full one, so the eleven solved
+ * points return from the cache and a densify costs exactly the ten new runs.
+ * One study at a time keeps the pool shallow enough that a fresh gesture is
+ * never far behind a backlog it has to invalidate.
+ */
+function densifyStudies() {
+  if (!studyScheduler || !autoOn() || gesture || linkAttachPending) return;
+  for (const [key, study] of [...studies].reverse()) {
+    if (!study.coarse) continue;
+    const rest = restShapeKey(key);
+    if (study.restShape !== rest) continue; // stale — refresh owns it, not densify
+    if (studyScheduler.has(key)) continue;
+    if (studyStops.get(key) === rest) continue;
+    enqueueStudy(key, { origin: 'refresh', n: SWEEP_SAMPLES });
+    return;
+  }
 }
 
 /** A fresh object per call, so the console's identity check redraws the card. */
@@ -3041,8 +3102,9 @@ function restoreStudyCard(key) {
  * narration or a refusal.
  */
 function syncStudyStatus(finalLine = null) {
-  if (pumping || statusEl.classList.contains('bad')) return;
   const p = studyScheduler.progress();
+  studiesStopBtn.hidden = p.jobs === 0;
+  if (pumping || statusEl.classList.contains('bad')) return;
   if (p.jobs > 0) {
     statusEl.className = 'status';
     statusEl.textContent =
@@ -3055,9 +3117,27 @@ function syncStudyStatus(finalLine = null) {
   }
 }
 
+// The impatience lever: one click sheds every queued study. Samples already
+// on an engine cannot be stopped — they finish within the one they hold and
+// land into nothing — so the desk feels stopped at once and the pool is free
+// within a sample's time. Each shed key is suppressed like a per-study Stop,
+// so the next idle pass does not quietly restart the work; the next desk
+// move lapses the suppression and the studies refresh as usual.
+const studiesStopBtn = $('studies-stop');
+studiesStopBtn.addEventListener('click', () => {
+  studyScheduler?.cancelWhere(() => true, 'shed');
+  if (!pumping) {
+    statusEl.className = 'status';
+    statusEl.textContent = 'Studies set aside — they refresh when the desk next moves.';
+  }
+});
+
 function onStudyUpdate(job, event) {
   if (event === 'idle') {
     syncStudyStatus();
+    // Densify in idle time, not now: the queue just drained, and the reader
+    // may be reaching for a control this instant.
+    (window.requestIdleCallback ?? ((fn) => setTimeout(fn, 300)))(() => densifyStudies());
     return;
   }
   const key = job.key;
@@ -3075,6 +3155,9 @@ function onStudyUpdate(job, event) {
       annual: job.annual,
       metric: job.metric,
       curve: job.curve,
+      // A coarse first pass is a real study, drawn honestly at eleven points;
+      // the flag is what tells the idle densify it is worth finishing.
+      coarse: job.asked === COARSE_SAMPLES,
     };
     studies.set(key, study);
     desk.setStudyProgress(key, null);
@@ -3094,6 +3177,9 @@ function onStudyUpdate(job, event) {
     // The study the key already had — still stored, still true — gets its
     // card back rather than reappearing on the next unrelated gesture.
     restoreStudyCard(key);
+    // A global Set-aside suppresses each key the way a per-study Stop does,
+    // or the next idle densify would quietly restart the work just shed.
+    if (job.cancelled === 'shed') studyStops.set(key, restShapeKey(key));
     if (job.cancelled === 'stopped') syncStudyStatus(`Study of ${said} set aside.`);
     else syncStudyStatus();
   }

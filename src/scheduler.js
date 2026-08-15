@@ -28,17 +28,19 @@
  *                                runs dry
  */
 
-export function makeStudyJob({ key, snapshot, patch, annual, metric, restShape, points, order, origin }) {
+export function makeStudyJob({ key, snapshot, patch, epw = null, annual, metric, restShape, points, order, origin, asked }) {
   return {
     key,
     snapshot,
     patch,
+    epw,
     annual,
     metric,
     restShape,
     points,
     order,
     origin, // 'manual' | 'refresh'
+    asked, // the sample count requested — the coarse pass is later densified
     curve: new Array(points.length),
     started: new Set(),
     done: 0,
