@@ -605,10 +605,18 @@ export function mountConsole({
     // is pinned to. Everything else about the card assumes that desk.
     const desk = el('span', 'study-desk', `of ${study.label}`);
     desk.title = `Swept with the rest of the desk at ${study.label}`;
-    const clear = el('button', 'link', 'Clear');
-    clear.type = 'button';
-    clear.addEventListener('click', () => onStudyClear?.(key));
-    head.append(desk, clear);
+    head.append(desk);
+    // A curve still landing counts its samples where Clear will stand once it
+    // is done: clearing a card the scheduler is mid-way through redrawing
+    // would be a race dressed as a button.
+    if (study.progress) {
+      head.append(el('span', 'study-wait', `Solving ${study.progress.done} / ${study.progress.total}`));
+    } else {
+      const clear = el('button', 'link', 'Clear');
+      clear.type = 'button';
+      clear.addEventListener('click', () => onStudyClear?.(key));
+      head.append(clear);
+    }
     card.append(head);
 
     const W = 240;
@@ -922,11 +930,14 @@ export function mountConsole({
         btn.classList.add('on');
         btn.title = 'Set this study aside';
       }
+      // Before the first point lands there is nothing to draw, so a bare wait
+      // card holds the space. Once a partial curve is up, the curve card
+      // carries its own counter and must not be knocked down to a blank one —
+      // the card only ever gets more drawn, never less.
       let have = cards.get(key);
-      if (have?.kind !== 'wait') {
+      if (!have) {
         const row = rows.get(key);
         if (!row) throw new Error(`no control row to count the study of ${key} under`);
-        have?.node.remove();
         const node = el('div', 'study-card');
         const head = el('div', 'study-head');
         const wait = el('span', 'study-wait');
@@ -936,7 +947,7 @@ export function mountConsole({
         row.after(node);
         cards.set(key, have);
       }
-      have.wait.textContent = `Solving ${progress.done} / ${progress.total}`;
+      if (have.kind === 'wait') have.wait.textContent = `Solving ${progress.done} / ${progress.total}`;
     },
 
     /** Whether a study can be asked for, with the reason lettered when not. */
