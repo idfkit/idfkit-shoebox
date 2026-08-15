@@ -3,9 +3,11 @@ import { CHANNELS } from './controls.js';
 /**
  * The model console: a recall sheet for the zone heat balance.
  *
- * Fourteen channel strips in signal order, every control visible at once, no
+ * Sixteen channel strips in signal order, every control visible at once, no
  * tabs and no accordions -- the whole point of a desk is that you can read the
- * state of every path without opening anything.
+ * state of every path without opening anything. The one exception is the index
+ * sheet below, which a screen too narrow to lay the desk out forces and which
+ * is built to give up as little of that as it can.
  *
  * Two ideas do most of the work here. A control is drawn as a ruled
  * calibration face with a penciled tick and a ghost of where it stood when you
@@ -69,6 +71,68 @@ export function mountConsole({ host, params, bypass, onChange, onPatch, onSolo, 
   for (const channel of CHANNELS) stripHost.append(buildStrip(channel));
   host.append(stripHost, railHost);
 
+  /* ── the index sheet ─────────────────────────────────────────────────────
+   *
+   * Below the stylesheet's breakpoint the desk stops being a column beside the
+   * drawing and becomes a page of its own, where sixteen strips laid end to end
+   * is about ten screens of scrolling with nothing in them to say which one you
+   * are in. So the strips fold to a line each and the console becomes its own
+   * index: number, name, reading and patch state, in signal order, on one
+   * screen. A drawing set answers exactly this question with an index sheet.
+   *
+   * It bends the desk's own rule -- that every path is readable without opening
+   * anything, which is why the selectors are segmented rules and not dropdowns
+   * -- as little as it can. The folded row still carries the two things you
+   * read: what that path is contributing, and whether it is in the model. The
+   * fold hides only the controls. Reading stays free; working a control costs a
+   * tap, which on a phone it already cost in scrolling.
+   */
+
+  // Which of the two presentations the stylesheet has chosen. The breakpoint is
+  // declared once, in the media query, and read back here as a flag rather than
+  // repeated as a `matchMedia` string -- a media query and its JavaScript twin
+  // that disagree is a bug that exists at exactly one window width, which is
+  // the width nobody tests at.
+  const indexMode = () => getComputedStyle(stripHost).getPropertyValue('--index').trim() === '1';
+
+  let indexing = null; // null until the first read, so the first apply always runs
+  let opened = null; // the one strip unfolded, while indexing
+
+  function refold() {
+    for (const channel of CHANNELS) {
+      const here = strips.get(channel.id);
+      const shown = !indexing || opened === channel.id;
+      // `hidden` rather than a class, so a folded strip's controls leave the
+      // tab order and the accessibility tree with it. A reader tabbing through
+      // the index should meet sixteen rows, not sixteen rows and ninety
+      // controls they cannot see.
+      here.fold.hidden = !shown;
+      here.strip.classList.toggle('open', Boolean(indexing) && shown);
+      here.toggle.disabled = !indexing;
+      if (indexing) {
+        here.toggle.setAttribute('aria-expanded', String(shown));
+        here.toggle.setAttribute('aria-controls', here.fold.id);
+      } else {
+        here.toggle.removeAttribute('aria-expanded');
+        here.toggle.removeAttribute('aria-controls');
+      }
+    }
+  }
+
+  function relayout() {
+    const on = indexMode();
+    if (on === indexing) return;
+    indexing = on;
+    stripHost.classList.toggle('index', on);
+    // Arriving at the index closes everything, because the list is the point of
+    // it; leaving it opens everything, which is the desk as it was.
+    opened = null;
+    refold();
+  }
+
+  relayout();
+  window.addEventListener('resize', relayout);
+
   /* ── the strips ──────────────────────────────────────────────────────── */
 
   function buildStrip(channel) {
@@ -76,9 +140,42 @@ export function mountConsole({ host, params, bypass, onChange, onPatch, onSolo, 
     strip.dataset.channel = channel.id;
 
     const head = el('header', 'strip-head');
-    head.append(el('span', 'strip-no', channel.index), el('h3', null, channel.name));
-    const term = el('span', 'strip-term', channel.term);
-    head.append(term);
+
+    // The heading wraps the disclosure button rather than sitting inside it: a
+    // button's content model is phrasing, and an `h3` is not. Everything the
+    // folded row has to read lives inside the button, so the whole line is one
+    // tap target rather than a chevron you have to hit.
+    const title = el('h3', 'strip-title');
+    const toggle = el('button', 'strip-toggle');
+    toggle.type = 'button';
+    const read = el('b', 'strip-read');
+    const mark = el('i', 'strip-mark');
+    // A channel with no "off" has no arming to report, so its cell is left
+    // blank rather than drawn as a marker that is permanently lit. Blank is not
+    // an em dash: there is no figure missing here, there is no figure.
+    if (channel.bypassable) mark.classList.add('armed');
+    toggle.append(
+      el('span', 'strip-no', channel.index),
+      el('span', 'strip-name', channel.name),
+      el('span', 'strip-term', channel.term),
+      read,
+      mark,
+      el('i', 'strip-chev'),
+    );
+    title.append(toggle);
+    head.append(title);
+
+    toggle.addEventListener('click', () => {
+      if (!indexing) return;
+      // The row you tapped must not move out from under your thumb while a
+      // strip somewhere above it closes. Measure where this head sits, let the
+      // folds change, and put it back where it was.
+      const before = head.getBoundingClientRect().top;
+      opened = opened === channel.id ? null : channel.id;
+      refold();
+      const after = head.getBoundingClientRect().top;
+      if (after !== before) window.scrollBy(0, after - before);
+    });
 
     let patch = null;
     let soloBtn = null;
@@ -100,20 +197,27 @@ export function mountConsole({ host, params, bypass, onChange, onPatch, onSolo, 
     }
     strip.append(head);
 
-    strip.append(el('p', 'strip-blurb', channel.blurb));
-
+    // A refusal is not a detail of the strip's body, it is the strip's current
+    // state, so it sits outside the fold and stays readable with the strip
+    // closed. A channel you cannot patch in is worth saying on the index, not
+    // one tap further in.
     const note = el('p', 'strip-blocked');
     note.hidden = true;
     strip.append(note);
 
+    const fold = el('div', 'strip-fold');
+    fold.id = `strip-fold-${channel.id}`;
+    fold.append(el('p', 'strip-blurb', channel.blurb));
+
     const body = el('div', 'strip-body');
     for (const control of channel.controls) body.append(buildControl(control));
-    strip.append(body);
+    fold.append(body);
 
     const meter = buildMeter(channel);
-    if (meter) strip.append(meter.node);
+    if (meter) fold.append(meter.node);
+    strip.append(fold);
 
-    strips.set(channel.id, { strip, note, patch, solo: soloBtn, meter, body });
+    strips.set(channel.id, { strip, note, patch, solo: soloBtn, meter, body, toggle, read, fold });
     return strip;
   }
 
@@ -624,16 +728,23 @@ export function mountConsole({ host, params, bypass, onChange, onPatch, onSolo, 
 
       for (const channel of CHANNELS) {
         const here = strips.get(channel.id);
+        // The folded row carries the same figure its meter does, because that
+        // reading is half of what the index is for. A channel with no meter
+        // leaves the cell blank: there is no figure missing, there is no
+        // figure, and an em dash would claim otherwise.
         if (!here.meter) continue;
         if (channel.meter.derived) {
-          const reading = derived?.get(channel.id);
-          here.meter.value.textContent = reading ?? '—';
+          const reading = derived?.get(channel.id) ?? '—';
+          here.meter.value.textContent = reading;
+          here.read.textContent = reading;
           here.meter.bar.hidden = true;
           continue;
         }
         here.meter.bar.hidden = false;
         const w = readings.get(channel.id);
-        here.meter.value.textContent = watts(w);
+        const lettered = watts(w);
+        here.meter.value.textContent = lettered;
+        here.read.textContent = lettered;
         const has = Number.isFinite(w);
         here.meter.fill.hidden = !has;
         if (!has) continue;
