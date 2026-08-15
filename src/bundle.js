@@ -198,9 +198,10 @@ function manifest(run, list) {
   const files = [...list.map((m) => [m.name, m.note]), ['MANIFEST.txt', 'this file']];
   const filePad = Math.max(...files.map(([k]) => k.length));
 
-  const reproduce = run.epw
-    ? `  energyplus -w ${epwFile} model.idf`
-    : '  energyplus model.idf';
+  // Branched on the member list itself, not on `run.epw`: the list is the one
+  // authority on what the bundle holds, and consulting the raw run here would
+  // let the two drift into a reproduce line naming a file that is not inside.
+  const reproduce = epwFile ? `  energyplus -w ${epwFile} model.idf` : '  energyplus model.idf';
 
   // The other reproduction path: the same scheme, re-solved live on the page
   // that made this bundle. Stated only when the caller captured it — a missing

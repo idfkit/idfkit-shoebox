@@ -46,6 +46,16 @@ import {
 export const LINK_VERSION = 'v1';
 
 /**
+ * Whether a fragment is scheme-shaped at all — a version token first, alone or
+ * followed by pairs. Lives here beside the token it must agree with: the
+ * `hashchange` listener consults this to decide between reloading into the
+ * boot decode and leaving an ordinary in-page anchor to scroll, and a copy of
+ * the grammar kept elsewhere would quietly stop matching the first time the
+ * token's form evolved.
+ */
+export const isSchemeFragment = (raw) => /^v\d+(&|$)/.test(raw);
+
+/**
  * What an omitted key meant, per version. Today one entry; a changed default
  * adds the outgoing table here under the old version before the new one ships.
  */

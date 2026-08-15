@@ -240,14 +240,24 @@ export function mountConsole({
       const idle = control.needs ? !control.needs(params) : false;
       row.classList.toggle('idle', idle);
       // While its own sweep runs the button is a Stop and stays live whatever
-      // the gate says; the gate and the idle state govern only the asking.
+      // the gate says; the gate, the patch bay and the idle state govern only
+      // the asking. A control on a channel that is out of the path would
+      // sweep twenty-one byte-identical models — the flat line the priced
+      // exclusion exists to prevent, bought at full engine price.
       if (studyBtn && !studyBtn.dataset.running) {
-        studyBtn.disabled = !sweepGate.ok || idle;
-        studyBtn.title = !sweepGate.ok
+        const out = !engaged.has(channel.id);
+        const disabled = !sweepGate.ok || out || idle;
+        const title = !sweepGate.ok
           ? sweepGate.reason
-          : idle
-            ? 'Set, but not reaching the model — there is nothing to sweep.'
-            : 'Sweep this control across its face: the desk solved at a score of positions, drawn as a curve.';
+          : out
+            ? 'This path is out of the model — patch it in to sweep it.'
+            : idle
+              ? 'Set, but not reaching the model — there is nothing to sweep.'
+              : 'Sweep this control across its face: the desk solved at a score of positions, drawn as a curve.';
+        // Written only on change: this redraw runs for every scale on every
+        // synced frame of a drag, and attribute writes are never free.
+        if (studyBtn.disabled !== disabled) studyBtn.disabled = disabled;
+        if (studyBtn.title !== title) studyBtn.title = title;
       }
       // Dragging the swept control just walks the study's tick along its curve.
       cards.get(control.key)?.syncTick?.();
@@ -604,10 +614,12 @@ export function mountConsole({
     const W = 240;
     const H = 64;
     const energy = study.metric === 'energy';
-    // Which pens the metric takes. Temperatures are the signed pair the design
-    // system reserves for degrees; the demand intensities keep it — TEDI is
-    // heat asked into the zone, CEDI heat asked out — and the EUI, an unsigned
-    // magnitude like every energy total on the sheet, is graphite.
+    // Which pens the metric takes. Temperatures are the signed pair outright.
+    // TEDI and CEDI keep it deliberately: they are the year's heat asked into
+    // and out of the zone — the rail's signed watts integrated, not a price
+    // or an emission — so warm-in / cold-out encodes exactly the sign it does
+    // everywhere else on the desk. The EUI, a directionless total like every
+    // other energy figure on the sheet, is graphite.
     const series = energy
       ? [
           { sel: (p) => p.eui, pen: 'var(--ink)', name: 'EUI', said: 'building EUI' },
@@ -876,9 +888,13 @@ export function mountConsole({
       have?.node.remove();
       cards.delete(key);
       if (!study) return;
+      const row = rows.get(key);
+      // A throw, not a skip: a card registered but hung nowhere would be a
+      // sweep that reports "Study drawn" over a console showing nothing.
+      if (!row) throw new Error(`no control row to hang the study of ${key} on`);
       const made = studyCard(key, study);
       made.node.classList.toggle('stale', stale);
-      rows.get(key)?.after(made.node);
+      row.after(made.node);
       cards.set(key, made);
     },
 
@@ -908,6 +924,8 @@ export function mountConsole({
       }
       let have = cards.get(key);
       if (have?.kind !== 'wait') {
+        const row = rows.get(key);
+        if (!row) throw new Error(`no control row to count the study of ${key} under`);
         have?.node.remove();
         const node = el('div', 'study-card');
         const head = el('div', 'study-head');
@@ -915,7 +933,7 @@ export function mountConsole({
         head.append(el('span', 'study-tag', 'Study'), wait);
         node.append(head);
         have = { node, kind: 'wait', wait };
-        rows.get(key)?.after(node);
+        row.after(node);
         cards.set(key, have);
       }
       have.wait.textContent = `Solving ${progress.done} / ${progress.total}`;

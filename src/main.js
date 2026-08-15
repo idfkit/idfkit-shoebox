@@ -25,7 +25,7 @@ import {
 import { mountConsole } from './console.js';
 import { samplePoints } from './study.js';
 import { runBundle } from './bundle.js';
-import { END_USES, GROUPS, computeBill, meterTotal } from './bill.js';
+import { END_USES, GROUPS, J_TO_KWH, computeBill, meterTotal } from './bill.js';
 import { assume, isRate, placeName, resolveRates } from './rates.js';
 import {
   climateDescription,
@@ -39,7 +39,7 @@ import {
   siteRegion,
   weatherFor,
 } from './weather.js';
-import { decodeState, encodeState } from './permalink.js';
+import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
 
 const ENERGYPLUS_VERSION = '26.1.0';
 
@@ -1457,11 +1457,18 @@ function patching() {
 // could only ever produce the numbers already on the sheet.
 const PRICED_KEYS = new Set(CHANNELS.filter((c) => c.prices).flatMap((c) => c.keys()));
 
-const shapeKey = (p) =>
+// One builder for both keys below, because they must stay byte-compatible:
+// staleness is a string comparison, and two hand-kept copies of "the shape
+// that reaches the IDF" would drift the first time either gained a component.
+const deskKey = (p, patch, omit = null) =>
   JSON.stringify([
-    Object.fromEntries(Object.entries(p).filter(([key]) => !PRICED_KEYS.has(key))),
-    patching(),
+    Object.fromEntries(
+      Object.entries(p).filter(([key]) => !PRICED_KEYS.has(key) && key !== omit),
+    ),
+    patch,
   ]);
+
+const shapeKey = (p) => deskKey(p, patching());
 
 const shapeLabel = (p) =>
   `${p.width.toFixed(2)} × ${p.depth.toFixed(2)} × ${p.height.toFixed(2)} m · ` +
@@ -1475,11 +1482,7 @@ const shapeLabel = (p) =>
  * Moving anything else puts the curve on a desk that no longer exists, which
  * is the one thing that makes it stale.
  */
-const restShapeKey = (key, p = params, patch = patching()) =>
-  JSON.stringify([
-    Object.fromEntries(Object.entries(p).filter(([k]) => !PRICED_KEYS.has(k) && k !== key)),
-    patch,
-  ]);
+const restShapeKey = (key, p = params, patch = patching()) => deskKey(p, patch, key);
 
 function syncStudies() {
   for (const [key, study] of studies) {
@@ -1518,10 +1521,15 @@ function markStale() {
  * console's strips both come through it, which is what keeps them agreeing.
  */
 function applyGeometry() {
-  // Everything that re-applies the desk to the model comes through here, and
-  // every one of those events makes a study's remaining samples describe a
-  // desk that no longer exists — so this is the one place a sweep is cancelled.
-  if (sweep) sweep.cancelled = true;
+  // Everything that re-applies the desk to the model comes through here, so
+  // this is where a sweep in flight is cancelled — but only when the change
+  // reaches what it is sweeping. Its rest-shape excludes priced keys and the
+  // swept key itself, so a tariff turned mid-study, or the swept control
+  // nudged along its own curve, costs nothing; a sweep still queued behind
+  // the pump has no snapshot yet and is simply set aside.
+  if (sweep && (!sweep.restShape || sweep.restShape !== restShapeKey(sweep.key))) {
+    sweep.cancelled = true;
+  }
   modelState = applyModel(model, params, patching());
   SURFACES = surfaceGeometry(model);
   WINDOWS = windowGeometry(model);
@@ -1549,6 +1557,7 @@ function applyGeometry() {
 
   desk?.setState(modelState);
   syncStudies();
+  syncRunSub();
   // A reading survives until the next solve supersedes it, the way the plate's
   // curve does — except on a channel that has just gone out of the path, where
   // the last number it produced would now be describing a path that is no
@@ -1682,6 +1691,36 @@ let lastAt = null; // the instant the desk's meters are reading
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 /**
+ * The hours the next run will solve, read off the desk — the sizing days when
+ * they are kept, plus the run period's own months when a year is attached.
+ * One computation, because the Run strip's meter, the title block and the
+ * attach sentence all quote it, and three hand-kept copies of "8,760" would
+ * go quietly wrong the first time a run period covered less than the year.
+ */
+function runHours() {
+  const [a, b] =
+    params.beginMonth <= params.endMonth
+      ? [params.beginMonth, params.endMonth]
+      : [params.endMonth, params.beginMonth];
+  const year = DAYS_IN_MONTH.slice(a - 1, b).reduce((total, d) => total + d, 0) * 24;
+  return (params.sizingPeriods === 'Yes' ? 48 : 0) + (annual() ? year : 0);
+}
+
+/**
+ * The title block's run sub-line, from the same reading. Re-lettered on every
+ * `applyGeometry` because the Run strip can flip the sizing days or move the
+ * run period long after the attach wrote this line, and a sheet claiming
+ * 8,760 hours over a document solving 8,808 is the drift the read-back rule
+ * exists to prevent.
+ */
+function syncRunSub() {
+  if (!annual()) return;
+  $('t-run-sub').textContent = `${
+    params.sizingPeriods === 'Yes' ? 'Weather file and sizing days' : 'Weather file'
+  }, ${runHours().toLocaleString('en-US')} hours`;
+}
+
+/**
  * The readings that need no simulation.
  *
  * Four strips describe something true about the model rather than something
@@ -1690,14 +1729,7 @@ const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
  * between runs.
  */
 function derivedReadings(facts) {
-  const months = () => {
-    const [a, b] = params.beginMonth <= params.endMonth
-      ? [params.beginMonth, params.endMonth]
-      : [params.endMonth, params.beginMonth];
-    return DAYS_IN_MONTH.slice(a - 1, b).reduce((total, d) => total + d, 0) * 24;
-  };
-  const hours =
-    (params.sizingPeriods === 'Yes' ? 48 : 0) + (annual() ? months() : 0);
+  const hours = runHours();
 
   return new Map([
     ['massing', Number.isFinite(facts.compactness) ? `${facts.compactness.toFixed(3)} m⁻¹` : '—'],
@@ -1924,13 +1956,21 @@ autoBox.addEventListener('change', () => {
  *
  * A study sweeps whatever run the sheet would solve — a score of design-day
  * solves inside a couple of seconds, or a score of annual runs in about
- * twenty, which the per-run counter makes worth the wait. The one thing that
- * bars it is having no engine yet.
+ * twenty, which the per-run counter makes worth the wait. Two things bar it:
+ * no engine yet, and a link's station still in flight — that window carries
+ * the link's `sizingPeriods=No` with no year attached, a desk whose every
+ * sample would fatal on zero environments seconds before it would have swept
+ * fine. The console boots with the gate closed, so nothing is callable before
+ * this module reaches the state the gate reads.
  */
 function syncSweepGate() {
-  desk?.setSweepEnabled(engineReady, 'The engine is still arriving.');
+  desk?.setSweepEnabled(
+    engineReady && !linkAttachPending,
+    engineReady
+      ? 'The linked weather station is still being fetched.'
+      : 'The engine is still arriving.',
+  );
 }
-syncSweepGate();
 
 /* ── picking a weather location ──────────────────────────────────────────
  *
@@ -2217,6 +2257,13 @@ async function choose(row, pick, sizing = 'No') {
     )
   );
 
+  // A sweep in flight was sampling the outgoing climate — its captured EPW
+  // against design days the next line replaces. Cancelled by hand, because
+  // when `sizingPeriods` does not change hands the `commit` below never
+  // reaches `applyGeometry`, and a curve mixing two cities must not survive
+  // to be drawn under the new title block.
+  if (sweep) sweep.cancelled = true;
+
   // The whole climate arrives together: the year on the EPW, the design days
   // and the location on the DDY. Denver's come out, this station's go in.
   epwText = files.epw;
@@ -2276,16 +2323,23 @@ async function choose(row, pick, sizing = 'No') {
   // with the document. It also means auto-solve picks the change up, so the
   // year starts solving on the release rather than waiting to be asked.
   commit('sizingPeriods', sizing, true);
+  // When the setting already stood where the link or the last station left
+  // it, that commit moved nothing and its pump found nothing to solve — yet
+  // the climate above genuinely changed, and the station is deliberately not
+  // part of the shape key. Force the solve the sentence below promises.
+  if (autoOn() && shapeKey(params) === solvedShape) {
+    forced = true;
+    pump();
+  }
 
-  const kept = sizing === 'Yes';
+  const hours = runHours().toLocaleString('en-US');
   set('t-run', 'Annual');
-  $('t-run-sub').textContent = kept
-    ? 'Weather file and sizing days, 8,808 hours'
-    : 'Weather file, 8,760 hours';
+  syncRunSub();
   statusEl.className = 'status';
-  statusEl.textContent = kept
-    ? `${siteName(picked)} attached, design conditions and all — the run covers 8,808 hours, sizing days included.`
-    : `${siteName(picked)} attached, design conditions and all — the run covers all 8,760 hours, with the sizing days skipped.`;
+  statusEl.textContent =
+    sizing === 'Yes'
+      ? `${siteName(picked)} attached, design conditions and all — the run covers ${hours} hours, sizing days included.`
+      : `${siteName(picked)} attached, design conditions and all — the run covers ${hours} hours, with the sizing days skipped.`;
   syncAuto();
   markStale();
   return true;
@@ -2335,15 +2389,22 @@ const schemeUrl = (p = params) => {
 window.addEventListener('hashchange', () => {
   const raw = location.hash.slice(1);
   if (raw === schemeHash()) return; // the desk is already showing this scheme
-  if (raw === '' || /^v\d+(&|$)/.test(raw)) location.reload();
+  if (raw === '' || isSchemeFragment(raw)) location.reload();
 });
+
+// False until the boot decode has read the fragment. The share button and the
+// controls are live markup from the first paint, minutes before a cold cache
+// finishes the engine download — and a click or a drag in that window would
+// rewrite the address from the default desk, destroying the very link the
+// decode is about to honour.
+let booted = false;
 
 /** Re-letter the address bar from the desk. Called wherever a gesture ends. */
 function updatePermalink() {
-  // While a link's station is still being fetched, the address keeps the
-  // claim it arrived with: rewriting it from `stationToken()` mid-fetch would
-  // strip the `stn` pair off the very link being honoured.
-  if (linkAttachPending) return;
+  // While the fragment is unread, or a link's station is still being fetched,
+  // the address keeps the claim it arrived with: rewriting it mid-honour
+  // would strip the scheme off the very link being opened.
+  if (!booted || linkAttachPending) return;
   const hash = schemeHash();
   // `replaceState` rather than assigning `location.hash`: a drag session is
   // one address, not a browser-history entry per release.
@@ -2362,6 +2423,7 @@ function updatePermalink() {
 let refusalNote = null;
 function refuseLink(message) {
   linkAttachPending = false;
+  syncSweepGate();
   stopAuto();
   revert();
   clearResults();
@@ -2390,6 +2452,7 @@ async function attachFromLink(linked) {
   // work outranks a link that failed to finish.
   const untouched = JSON.stringify([params, patching()]);
   linkAttachPending = true;
+  syncSweepGate();
   statusEl.className = 'status';
   statusEl.textContent = `Fetching the linked weather ${named}…`;
   try {
@@ -2439,6 +2502,7 @@ async function attachFromLink(linked) {
     }
   } finally {
     linkAttachPending = false;
+    syncSweepGate();
   }
   // The attach held the address still; now that the station is real, one
   // rewrite brings the bar back to lettering the desk.
@@ -2501,6 +2565,8 @@ if (location.hash.length > 1) {
     linkError = error;
   }
 }
+// The fragment has been read; gestures may letter the address bar from here.
+booted = true;
 
 buildSliders();
 // The desk starts closed. The static markup already is the closed state --
@@ -2697,23 +2763,21 @@ async function solve() {
     // engine wrote — left out rather than faked.
     bundle: {
       idf,
-      epw: capture.epw,
       html: result.html ?? null,
       log: result.consoleOutput?.length ? result.consoleOutput.join('\n') : null,
       version: ENERGYPLUS_VERSION,
-      annual: capture.annual,
       hours: nn,
-      weatherStem: capture.weatherStem,
-      location: capture.location,
       exitCode: result.exitCode,
       severe,
       warnings,
       seconds,
-      // The scheme that produced this run, as a link — captured with the
-      // shape, for the same reason `idf` is held: a slider nudged since the
-      // solve must not have the manifest citing a scheme that never produced
-      // these results.
-      permalink: capture.permalink,
+      // The run's identity — epw, annual, weatherStem, location and the
+      // permalink of the scheme that produced it — spread whole from the
+      // snapshot taken before the await, for the same reason `idf` is held: a
+      // field-by-field copy is one more list to forget a field in, and a
+      // slider nudged since the solve must not have the manifest citing a
+      // scheme that never produced these results.
+      ...capture,
     },
   };
   bill = billFrom(lastRun);
@@ -2834,6 +2898,28 @@ runBtn.addEventListener('click', () => {
 });
 
 /**
+ * The zone series with its environment runs — the one prelude both readers
+ * below share, so "which hours count" cannot drift between them. Returns null
+ * when the run carried no hourly zone temperature at all.
+ */
+function zoneRuns(eso) {
+  const points = hourly(eso, /Zone Mean Air Temperature/i);
+  if (!points.length) return null;
+  return { points, runs: environmentRuns(points, eso.environments ?? []) };
+}
+
+// One pass over the run's index range, no copies: an annual environment is
+// 8,760 points, and slicing plus spreading it as arguments — twenty-one times
+// a sweep — is allocation and stack pressure for a number a loop reads flat.
+function overRun(points, r, better) {
+  let best = points[r.start].value;
+  for (let i = r.start + 1; i <= r.end; i += 1) {
+    if (better(points[i].value, best)) best = points[i].value;
+  }
+  return best;
+}
+
+/**
  * The two extremes of hourly zone temperature, read over the billed
  * environments by the bill's own rule: with a year in the run its extremes are
  * the reading, and sizing days kept on the Run strip stay out of it — their
@@ -2842,22 +2928,21 @@ runBtn.addEventListener('click', () => {
  * day the high, never each other's.
  */
 function readExtremes(eso) {
-  const zonePts = hourly(eso, /Zone Mean Air Temperature/i);
-  if (!zonePts.length) return null;
-  const zone = zonePts.map((p) => p.value);
-  const runs = environmentRuns(zonePts, eso.environments ?? []);
-  const over = (r, fn) => fn(...zone.slice(r.start, r.end + 1));
-  const year = runs.filter((r) => r.kind === null);
+  const zr = zoneRuns(eso);
+  if (!zr) return null;
+  const lowOf = (r) => overRun(zr.points, r, (a, b) => a < b);
+  const highOf = (r) => overRun(zr.points, r, (a, b) => a > b);
+  const year = zr.runs.filter((r) => r.kind === null);
   if (year.length) {
     return {
-      low: Math.min(...year.map((r) => over(r, Math.min))),
-      high: Math.max(...year.map((r) => over(r, Math.max))),
+      low: Math.min(...year.map(lowOf)),
+      high: Math.max(...year.map(highOf)),
     };
   }
-  const w = runs.find((r) => r.kind === 'Winter design day');
-  const s = runs.find((r) => r.kind === 'Summer design day');
+  const w = zr.runs.find((r) => r.kind === 'Winter design day');
+  const s = zr.runs.find((r) => r.kind === 'Summer design day');
   if (!w && !s) return null;
-  return { low: w ? over(w, Math.min) : null, high: s ? over(s, Math.max) : null };
+  return { low: w ? lowOf(w) : null, high: s ? highOf(s) : null };
 }
 
 /**
@@ -2874,9 +2959,8 @@ function readExtremes(eso) {
  */
 function readDemand(eso, floorArea) {
   if (!(floorArea > 0)) return null;
-  const zonePts = hourly(eso, /Zone Mean Air Temperature/i);
-  if (!zonePts.length) return null;
-  const year = environmentRuns(zonePts, eso.environments ?? []).filter((r) => r.kind === null);
+  const zr = zoneRuns(eso);
+  const year = zr ? zr.runs.filter((r) => r.kind === null) : [];
   if (!year.length) return null;
   const billed = new Set(year.map((r) => r.key));
 
@@ -2884,7 +2968,7 @@ function readDemand(eso, floorArea) {
   for (const use of END_USES) {
     if (use.group !== 'building') continue;
     const joules = meterTotal(eso, use.meter, billed);
-    if (joules != null) kwh.set(use.id, joules / 3_600_000);
+    if (joules != null) kwh.set(use.id, joules * J_TO_KWH);
   }
   const heating = kwh.get('heating') ?? null;
   const cooling = kwh.get('cooling') ?? null;
@@ -2918,7 +3002,8 @@ function readDemand(eso, floorArea) {
  * whatever shape the desk moved to.
  */
 async function sweepRun(key) {
-  // The button is its own Stop: asked for the study already in flight, end it.
+  // The button is its own Stop: asked for the study already in flight — or
+  // still waiting its turn — end it.
   if (sweep?.key === key) {
     sweep.cancelled = 'stopped';
     return;
@@ -2926,12 +3011,22 @@ async function sweepRun(key) {
   if (sweep) sweep.cancelled = 'stopped';
   const { control } = controlFor(key);
 
-  // A loop, not an if: between a waiter resolving and this frame resuming,
-  // another holder may have taken the engine.
-  while (pumping) await engineIdle();
-  pumping = true;
+  // Registered before the wait for the engine, not after: a sweep queued
+  // behind a slow annual pump must be reachable by Stop and by gestures, or
+  // every click in that window would quietly enqueue one more full sweep
+  // with no way to call any of them off.
   const me = { key, cancelled: false };
   sweep = me;
+  // A loop, not an if: between a waiter resolving and this frame resuming,
+  // another holder may have taken the engine.
+  while (pumping) {
+    await engineIdle();
+    if (me.cancelled) {
+      if (sweep === me) sweep = null;
+      return;
+    }
+  }
+  pumping = true;
   quiet = true;
   runBtn.disabled = true;
   runBtn.textContent = 'Solving';
@@ -2942,6 +3037,9 @@ async function sweepRun(key) {
   const snapshot = { ...params };
   const patch = patching();
   const epw = epwText ?? null;
+  // Held on the sweep itself, so `applyGeometry` can ask whether a change
+  // actually reached what is being swept before cancelling.
+  me.restShape = restShapeKey(key, snapshot, patch);
   const samples = samplePoints(control, snapshot[key]);
   const curve = [];
   const said = control.label.toLowerCase();
@@ -2990,9 +3088,8 @@ async function sweepRun(key) {
     }
 
     studies.set(key, {
-      key,
       label: shapeLabel(snapshot),
-      restShape: restShapeKey(key, snapshot, patch),
+      restShape: me.restShape,
       annual: Boolean(epw),
       metric,
       curve,
@@ -3002,6 +3099,10 @@ async function sweepRun(key) {
     statusEl.textContent = `Study drawn — ${curve.length} ${kind} runs across ${said}.`;
   } finally {
     desk.setStudyProgress(key, null);
+    // A stopped or failed re-sweep took its wait card with it; the study the
+    // key already had — still stored, still true — gets its card back rather
+    // than reappearing on the next unrelated gesture.
+    syncStudies();
     if (me.cancelled) {
       statusEl.className = 'status';
       statusEl.textContent =
@@ -3014,12 +3115,20 @@ async function sweepRun(key) {
     // pump follows to overwrite it.
     applyModel(model, params, patching());
     quiet = false;
-    sweep = null;
+    if (sweep === me) sweep = null; // a queued successor may already stand here
     releaseEngine();
     runBtn.disabled = false;
     runBtn.textContent = 'Run again';
     plateEl.classList.remove('solving');
     markStale();
+    // The same rule as the pump's tail: a link refused while this sweep held
+    // the engine had its reason overwritten by the per-run status lines, and
+    // the refusal outranks them once the engine settles.
+    if (refusalNote) {
+      statusEl.className = 'status bad';
+      statusEl.textContent = refusalNote;
+      refusalNote = null;
+    }
     // A desk moved mid-sweep catches up exactly once; one that held still
     // solves nothing.
     if (forced || (autoOn() && shapeKey(params) !== solvedShape)) pump();
@@ -3037,6 +3146,15 @@ if (linkError) {
   refuseLink(`This link could not be read — ${linkError.message} — so the sheet is at its defaults.`);
 } else if (linked?.station) {
   attachFromLink(linked);
+} else if (params.sizingPeriods === 'No' && !epwText) {
+  // A shared station link with its `stn` pair trimmed off still carries the
+  // station's `sizingPeriods=No`. That desk holds no environments at all, and
+  // pumping it would end in an engine fatal blamed on nothing — stop instead,
+  // and name the actual gap.
+  stopAuto();
+  statusEl.className = 'status bad';
+  statusEl.textContent =
+    'This scheme skips the sizing days but attaches no weather, so there is nothing to solve. Switch Design days back on in the Run strip, or pick a station.';
 } else if (autoOn()) {
   pump();
 }
