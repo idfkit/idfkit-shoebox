@@ -43,7 +43,8 @@
         --warm: #b4552a; /* 32 °C, the summer design condition */
 
         --vellum: #f1ede4; /* the trace sheet the console is drawn on */
-        --desk: 436px; /* the console's column */
+        --desk: 436px; /* the console at its narrowest: one column of strips */
+        --card: 320px; /* the least width a strip column will take before the desk folds one away */
 
         --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
         --cond: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", system-ui, sans-serif;
@@ -1185,9 +1186,11 @@
 
       /* ── the model console ──────────────────────────────────────────
          A second sheet laid on the same board, not a dialog floating over
-         one. It takes a column of its own and pushes the drawing left,
-         which is the honest cost of having every control on the desk at
-         once: the desk needs the width, so the window does too. */
+         one. It takes the width the sheet leaves over and pushes the
+         drawing left, which is the honest cost of having every control on
+         the desk at once: the desk needs the width, so the window does
+         too. Whatever it is given beyond one column of strips is spent on
+         more columns, never banked as margin — see `.strip-grid`. */
 
       /* The tab that opens the desk. Shaped like the auto-solve toggle it
          stands beside, without the square marker — that marker means "armed",
@@ -1212,16 +1215,21 @@
       .deskbtn:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
       .deskbtn[aria-expanded="true"] { border-color: var(--rule-firm); background: var(--vellum); }
 
+      /* The board is a flex row already; opening the desk seats a second item
+         in it. The sheet keeps its 1080px and the desk takes everything left
+         over, because spare board is worth more as console columns than as
+         margin. A grid track pair was the wrong tool here: free space in a
+         grid is handed to every unfinished track evenly, so the desk's growth
+         came half out of the drawing's width on exactly the mid-sized windows
+         that had none to spare. Flex lets the sheet hold its measure and
+         spends the whole surplus on the desk. */
       body.desk-open {
-        display: grid;
-        grid-template-columns: minmax(12px, 1fr) minmax(0, 1080px) var(--desk) minmax(12px, 1fr);
-        align-items: start;
-        gap: 0;
+        align-items: flex-start;
         padding-right: 0;
       }
       body.desk-open .sheet {
-        grid-column: 2;
-        justify-self: stretch;
+        flex: 0 1 1080px;
+        min-width: 0;
       }
 
       .desk {
@@ -1238,8 +1246,8 @@
         margin-left: -1px;
       }
       body.desk-open .desk {
-        grid-column: 3;
         display: flex;
+        flex: 1 0 var(--desk);
       }
 
       .desk-head {
@@ -1269,6 +1277,9 @@
       .desk-sub {
         grid-column: 1 / -1;
         margin: 7px 0 0;
+        /* A measure, not the panel width: on a five-column desk the head is
+           pushing 2,000px and a sentence set across all of it is unreadable. */
+        max-width: 62ch;
         font: 400 11.5px/1.5 var(--sans);
         color: var(--ink-3);
       }
@@ -1285,7 +1296,35 @@
          twin that disagree is a bug that exists at exactly one window width. */
       .strips { --index: 0; overflow-y: auto; flex: 1; min-height: 0; }
 
-      .strip { border-bottom: 1px solid var(--rule); padding: 14px 18px 16px; }
+      /* The desk's width is whatever the window had left after the sheet, so
+         the strips lie on as many ruled columns as that width will carry: the
+         one column a laptop always had, up to five across a wide monitor.
+         Columns rather than a grid of rows, for two reasons. The sixteen
+         channels keep reading in signal order — down one column and on to the
+         head of the next, the way a drawing index reads — and the strips'
+         heights differ by a factor of four, which a row-aligned grid turns
+         into ragged whitespace and a balanced column set packs. Five is the
+         ceiling because sixteen strips over five columns is already the desk
+         laid as flat as it goes; past that the columns widen instead. The
+         rule between columns is the same hairline the strips rule between
+         themselves, and the 1px gap leaves the strips' own 18px side padding
+         as the gutter on each side of it.
+
+         This lives on a wrapper inside `.strips`, not on `.strips` itself:
+         the desk fixes that element's height for scrolling, and a multicol
+         box with a fixed height lays its overflow out as new columns to the
+         side — a desk that scrolled horizontally. The wrapper keeps its
+         natural height, so the columns balance to the content and overflow
+         stays vertical. */
+      .strip-grid {
+        column-width: var(--card);
+        column-count: 5;
+        column-gap: 1px;
+        column-rule: 1px solid var(--rule);
+      }
+
+      /* A strip is one instrument, so it never splits over a column break. */
+      .strip { border-bottom: 1px solid var(--rule); padding: 14px 18px 16px; break-inside: avoid; }
       .strip:last-child { border-bottom: 0; }
       /* Out of the path: still legible, still settable, plainly not in the
          model. This is what a non-photo-blue pencil would have said. */
@@ -1759,7 +1798,9 @@
          divider is cut in the panel's own surface so it reads as a gap. */
       .rail-seg { position: absolute; top: 0; bottom: 0; box-shadow: 1px 0 0 0 var(--vellum), -1px 0 0 0 var(--vellum); }
       .rail-zero { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--ink); }
-      .rail-key { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px 16px; }
+      /* On a one-column desk this is the two columns it always was; on a wide
+         one the five terms take a single line under the full-width track. */
+      .rail-key { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 2px 16px; }
       .rail-item { display: flex; align-items: baseline; gap: 6px; font: 400 10px/1.6 var(--mono); }
       .rail-swatch {
         width: 8px; height: 8px;
@@ -1778,6 +1819,20 @@
       .desk-sub em { font-style: normal; color: var(--ink-2); }
       .rail-note, .rail-empty {
         margin: 9px 0 0;
+        /* A measure, for the same reason `.desk-sub` carries one: the rail is
+           the desk's full width whatever the column count, so these notes —
+           two full sentences, at their longest — were setting as a single
+           line 780px wide at two columns and 2,700px at five. The track above
+           is meant to be read edge to edge; the sentence under it is not.
+
+           62ch resolves to 390.6px against IBM Plex Sans at this size, which
+           is fractionally under the 399px the rail gives a note on the
+           one-column desk. Checked with the real font rather than the
+           fallback, because a cap that bit down there would be this line
+           quietly reflowing a layout it was never meant to touch: all three
+           of these notes set to two lines at 399px and still do at 391px, so
+           the narrow desk is left exactly as it was. */
+        max-width: 62ch;
         font: 400 10.5px/1.45 var(--sans);
         color: var(--ink-ghost);
       }
@@ -1809,9 +1864,7 @@
         .disclaimers { grid-template-columns: 1fr; gap: 12px; }
         /* No width left to take a column of, so the desk goes below the sheet
            and gives up its sticky rail. */
-        body.desk-open { grid-template-columns: 1fr; padding-right: 12px; }
-        body.desk-open .sheet,
-        body.desk-open .desk { grid-column: auto; }
+        body.desk-open { display: block; padding-right: 12px; }
         .desk {
           position: static;
           max-height: none;
@@ -1823,6 +1876,9 @@
            This is the one place the breakpoint is declared; the console reads
            the flag back rather than knowing the number. */
         .strips { --index: 1; overflow-y: visible; }
+        /* The index is one list read top to bottom; columns would cut it in
+           half and put channels 09–16 beside 01–08 instead of after them. */
+        .strip-grid { column-width: auto; column-count: auto; }
         /* "Widen the window" is advice a phone cannot take, and down here the
            narrow layout is a presentation rather than a squeeze. */
         body.desk-open .desk-widen { display: none; }

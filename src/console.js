@@ -74,9 +74,16 @@ export function mountConsole({
   let sweepGate = { ok: false, reason: 'The engine is still arriving.' };
 
   const stripHost = el('div', 'strips');
+  // The ruled column set the strips lie on, one element inside the scroller
+  // rather than the scroller itself: the desk fixes `stripHost`'s height so it
+  // can scroll, and a multicol box with a fixed height lays its overflow out
+  // as extra columns to the side. The wrapper keeps its natural height, so the
+  // columns balance to the content and the overflow stays vertical.
+  const stripGrid = el('div', 'strip-grid');
   const railHost = el('div', 'rail');
 
-  for (const channel of CHANNELS) stripHost.append(buildStrip(channel));
+  for (const channel of CHANNELS) stripGrid.append(buildStrip(channel));
+  stripHost.append(stripGrid);
   host.append(stripHost, railHost);
 
   /* ── the index sheet ─────────────────────────────────────────────────────

@@ -253,19 +253,33 @@ declined. Always bind `pointercancel` alongside `pointerup`.
 
 ## Layout
 
-The console is a real grid column, not an overlay:
+The console is a real flex item beside the sheet, not an overlay. The sheet
+holds its measure and the desk takes everything the window has left, never less
+than one column of strips:
 
 ```css
-body.desk-open {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--desk); /* --desk: 436px */
-  gap: 24px;
-  padding-right: 0;
-}
+body.desk-open .sheet { flex: 0 1 1080px; min-width: 0; }
+body.desk-open .desk { flex: 1 0 var(--desk); } /* --desk: 436px */
 ```
 
-It is `position: sticky` with its own scroll, and its master readout is pinned
-at the foot with `flex: none` so it stays visible while the strips scroll. Below
+Flex rather than a grid track pair on purpose: a grid hands free space to every
+unfinished track evenly, so the desk's growth would come half out of the
+drawing's width on exactly the mid-sized windows that have none to spare.
+
+Inside it the strips lie on a balanced multicolumn set — `column-width:
+var(--card)` with `column-count: 5` as the ceiling — so a laptop reads the
+single column it always did and a wide monitor reads two to five ruled columns
+of cards. Columns rather than a grid of rows: the channels keep reading in
+signal order down each column the way a drawing index reads, and strips of
+unequal height pack instead of leaving the ragged whitespace row alignment
+would. `break-inside: avoid` keeps each strip whole, the `column-rule` is the
+same hairline the strips rule between themselves, and the multicol styling
+lives on a natural-height wrapper inside the scroller — a multicol box whose
+height is fixed lays its overflow out as new columns to the side.
+
+The desk is `position: sticky` with its own scroll, and its master readout is
+pinned at the foot with `flex: none` so it stays visible while the strips
+scroll — whatever the column count, the rail is the desk's footer. Below
 `780px` it stops being a column, stacks under the sheet, gives up the sticky
 foot, and folds to the index sheet below.
 
