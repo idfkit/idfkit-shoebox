@@ -481,6 +481,12 @@
         color: var(--ink-3);
       }
       .status.bad { color: var(--redline); }
+      /* The one Stop for the whole study queue, beside the sentence that
+         counts it. Baseline-aligned with the status line and absent — not
+         merely disabled — when nothing is draining. */
+      .status-row { display: flex; align-items: baseline; gap: 14px; }
+      .status-row .status { flex: 1; }
+      .status-row .link { flex: none; margin-top: 12px; font-size: 10.5px; }
 
       /* ── the plate ──────────────────────────────────────────────── */
 
@@ -1984,7 +1990,10 @@
               <span class="toggle-sub" id="desk-count">Every control on the desk</span>
             </button>
           </div>
-          <p class="status" id="status"></p>
+          <div class="status-row">
+            <p class="status" id="status"></p>
+            <button type="button" class="link" id="studies-stop" hidden>Set studies aside</button>
+          </div>
 
           <figure class="plate" id="plate">
             <div class="plate-body">

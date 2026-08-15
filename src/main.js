@@ -1,4 +1,4 @@
-import { createEnergyPlus, findVariables, getTimeSeries } from '@idfkit/engine';
+import { createEnergyPlus } from '@idfkit/engine';
 import { httpSource, SchemaBundle, writeIdf } from '@idfkit/core';
 import {
   applyModel,
@@ -23,9 +23,11 @@ import {
   controlFor,
 } from './controls.js';
 import { mountConsole } from './console.js';
-import { samplePoints } from './study.js';
+import { COARSE_SAMPLES, SWEEP_SAMPLES, samplePoints, sampleOrder } from './study.js';
+import { createEnginePool, poolLimit } from './pool.js';
+import { createStudyScheduler, makeStudyJob } from './scheduler.js';
 import { runBundle } from './bundle.js';
-import { END_USES, GROUPS, J_TO_KWH, computeBill, meterTotal } from './bill.js';
+import { END_USES, GROUPS, computeBill, meterTotal } from './bill.js';
 import { assume, isRate, placeName, resolveRates } from './rates.js';
 import {
   climateDescription,
@@ -40,10 +42,9 @@ import {
   weatherFor,
 } from './weather.js';
 import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
+import { MONTHS, environmentRuns, hourly, readDemand, readExtremes } from './readings.js';
 
 const ENERGYPLUS_VERSION = '26.1.0';
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const $ = (id) => document.getElementById(id);
 const runBtn = $('run');
@@ -672,33 +673,11 @@ let resizeTimer;
 
 /* ══ reading the results ═════════════════════════════════════════════════ */
 
-function hourly(eso, pattern) {
-  const v = findVariables(eso, pattern).find((x) => x.reportFrequency === 'hourly');
-  return v ? getTimeSeries(eso, v.id)?.data ?? [] : [];
-}
-
 const stats = (v) => {
   const min = Math.min(...v);
   const max = Math.max(...v);
   return { min, max, mean: v.reduce((a, b) => a + b, 0) / v.length, swing: max - min };
 };
-
-// Each EnergyPlus environment is its own weather story. A design-day run holds
-// two of them, and averaging across the pair would be nonsense — the winter and
-// summer days share nothing. Everything below is computed per environment.
-function environmentRuns(points, environments) {
-  const runs = [];
-  points.forEach((p, i) => {
-    const key = p.timestamp.environmentIndex;
-    if (!runs.length || runs.at(-1).key !== key) runs.push({ key, start: i, end: i, first: p.timestamp });
-    else runs.at(-1).end = i;
-  });
-  return runs.map((r, i) => {
-    const title = environments[i]?.title ?? '';
-    const kind = /htg/i.test(title) ? 'Winter design day' : /clg/i.test(title) ? 'Summer design day' : null;
-    return { ...r, kind, label: kind ? `${kind} · ${r.first.day} ${MONTHS[r.first.month - 1]}` : 'Annual run period' };
-  });
-}
 
 /**
  * Design days become one labelled band each; a year long enough to crowd them
@@ -1427,8 +1406,12 @@ const syncSlider = {}; // key -> redraw that slider from `params`
 let solvedShape = null; // the shape the visible results were solved for
 let lastMean = null; // zone mean of the last run, for the axonometric tint
 let modelState = null; // which channels the model says are in the path
-let sweep = null; // the study in flight: { key, cancelled }, or null
+let studyScheduler = null; // built with the engine pool once the engine section runs
 const studies = new Map(); // parameter key -> the study drawn under that control
+// A Stop is a decision about this desk, not about this instant: the key stays
+// out of automatic refresh until the rest of the desk moves again, at which
+// point the stopped curve is stale history like any other.
+const studyStops = new Map(); // key -> the rest-shape the Stop was issued under
 
 /**
  * Solo, as the desk applies it: one channel in, every other bypassable one out.
@@ -1486,6 +1469,10 @@ const restShapeKey = (key, p = params, patch = patching()) => deskKey(p, patch, 
 
 function syncStudies() {
   for (const [key, study] of studies) {
+    // A key being re-swept is the scheduler's to draw: this runs per drag
+    // frame off the stored map, and repainting the finished old curve over an
+    // in-flight partial would flicker the card backwards mid-drain.
+    if (studyScheduler?.has(key)) continue;
     desk?.setStudy(key, study, { stale: study.restShape !== restShapeKey(key) });
   }
 }
@@ -1522,14 +1509,12 @@ function markStale() {
  */
 function applyGeometry() {
   // Everything that re-applies the desk to the model comes through here, so
-  // this is where a sweep in flight is cancelled — but only when the change
-  // reaches what it is sweeping. Its rest-shape excludes priced keys and the
-  // swept key itself, so a tariff turned mid-study, or the swept control
-  // nudged along its own curve, costs nothing; a sweep still queued behind
-  // the pump has no snapshot yet and is simply set aside.
-  if (sweep && (!sweep.restShape || sweep.restShape !== restShapeKey(sweep.key))) {
-    sweep.cancelled = true;
-  }
+  // this is where studies in flight are cancelled — but only the ones the
+  // change actually reaches. A job's rest-shape excludes priced keys and its
+  // own swept key, so a tariff turned mid-study, or the swept control nudged
+  // along its own curve, costs nothing. Samples already on an engine cannot
+  // be stopped; they land into the cancelled job and are dropped.
+  studyScheduler?.cancelWhere((job) => job.restShape !== restShapeKey(job.key), 'moved');
   modelState = applyModel(model, params, patching());
   SURFACES = surfaceGeometry(model);
   WINDOWS = windowGeometry(model);
@@ -1863,7 +1848,7 @@ desk = mountConsole({
     if (autoOn()) pump();
   },
   onReset: () => revert(),
-  onStudy: (key) => sweepRun(key),
+  onStudy: (key) => studyRun(key),
   onStudyClear(key) {
     studies.delete(key);
     desk.setStudy(key, null);
@@ -1917,6 +1902,11 @@ const endGesture = () => {
   // The address bar is a reading like any other: it updates when you let go,
   // never per frame, the same rule the gesture ghosts follow.
   updatePermalink();
+  // The study pool held its dispatch while the hand was down — real cores go
+  // to the drag's own solves — so the release is what hands them back, and it
+  // is also when every study the gesture left behind re-queues itself.
+  studyScheduler?.drain();
+  refreshStudies();
 };
 
 /* ══ controls ════════════════════════════════════════════════════════════ */
@@ -1957,8 +1947,18 @@ function syncAuto() {
 
 autoBox.addEventListener('change', () => {
   syncAuto();
-  if (autoOn()) pump();
-  else markStale();
+  if (autoOn()) {
+    pump();
+    // Switching auto back on catches the studies up the way it catches the
+    // sheet up: whatever went stale while solving by hand re-queues now.
+    refreshStudies();
+  } else {
+    markStale();
+    // Background healing is exactly what this toggle governs, so the refresh
+    // backlog goes with it — but a study the reader asked for by name keeps
+    // running, the way the sheet keeps the result it already has.
+    studyScheduler?.cancelWhere((job) => job.origin === 'refresh', 'shed');
+  }
 });
 
 /**
@@ -2267,12 +2267,16 @@ async function choose(row, pick, sizing = 'No') {
     )
   );
 
-  // A sweep in flight was sampling the outgoing climate — its captured EPW
-  // against design days the next line replaces. Cancelled by hand, because
+  // Studies in flight were sampling the outgoing climate — their captured
+  // EPWs against design days the next line replaces. Cleared by hand, because
   // when `sizingPeriods` does not change hands the `commit` below never
   // reaches `applyGeometry`, and a curve mixing two cities must not survive
-  // to be drawn under the new title block.
-  if (sweep) sweep.cancelled = true;
+  // to be drawn under the new title block. The sample cache goes with them:
+  // sample shapes deliberately carry no climate, so cached points solved
+  // under the old one would answer for the new. Stops lapse too — they were
+  // decisions about desks swept under the departed weather.
+  studyScheduler?.clearAll();
+  studyStops.clear();
 
   // The whole climate arrives together: the year on the EPW, the design days
   // and the location on the DDY. Denver's come out, this station's go in.
@@ -2840,7 +2844,9 @@ async function solve() {
 /* ══ the scheduler ═══════════════════════════════════════════════════════ */
 
 // The engine rejects a second `run()` while one is in flight, so nothing else
-// may call `solve` — everything goes through this one loop.
+// may call `solve` — everything goes through this one loop. The studies no
+// longer share this engine: they run on their own pool, so the live sheet
+// never queues behind a curve and this guard is a plain boolean again.
 //
 // Latest wins. Whatever the sliders are showing when the engine comes free is
 // what gets solved; every shape the drag passed through on the way is skipped
@@ -2851,17 +2857,6 @@ let pumping = false;
 let forced = false;
 let runCount = 0;
 const plateEl = $('plate');
-
-// A sweep shares the engine with the pump, so `pumping` is the one mutex and
-// the sweep is its second holder. Whoever holds it releases through here, so
-// the other can take its turn instead of returning at the guard and being lost.
-const engineWaiters = [];
-const engineIdle = () =>
-  pumping ? new Promise((resolve) => engineWaiters.push(resolve)) : Promise.resolve();
-const releaseEngine = () => {
-  pumping = false;
-  while (engineWaiters.length) engineWaiters.shift()();
-};
 
 async function pump() {
   if (pumping) return;
@@ -2878,7 +2873,7 @@ async function pump() {
       await solve();
     }
   } finally {
-    releaseEngine();
+    pumping = false;
     runBtn.disabled = false;
     runBtn.textContent = 'Run again';
     plateEl.classList.remove('solving');
@@ -2907,243 +2902,313 @@ runBtn.addEventListener('click', () => {
   pump();
 });
 
-/**
- * The zone series with its environment runs — the one prelude both readers
- * below share, so "which hours count" cannot drift between them. Returns null
- * when the run carried no hourly zone temperature at all.
- */
-function zoneRuns(eso) {
-  const points = hourly(eso, /Zone Mean Air Temperature/i);
-  if (!points.length) return null;
-  return { points, runs: environmentRuns(points, eso.environments ?? []) };
-}
+/* ══ the studies ═════════════════════════════════════════════════════════ */
 
-// One pass over the run's index range, no copies: an annual environment is
-// 8,760 points, and slicing plus spreading it as arguments — twenty-one times
-// a sweep — is allocation and stack pressure for a number a loop reads flat.
-function overRun(points, r, better) {
-  let best = points[r.start].value;
-  for (let i = r.start + 1; i <= r.end; i += 1) {
-    if (better(points[i].value, best)) best = points[i].value;
-  }
-  return best;
-}
-
-/**
- * The two extremes of hourly zone temperature, read over the billed
- * environments by the bill's own rule: with a year in the run its extremes are
- * the reading, and sizing days kept on the Run strip stay out of it — their
- * whole point is to be more extreme than the year they precede. Without one,
- * the design days are themselves: the winter day owns the low and the summer
- * day the high, never each other's.
- */
-function readExtremes(eso) {
-  const zr = zoneRuns(eso);
-  if (!zr) return null;
-  const lowOf = (r) => overRun(zr.points, r, (a, b) => a < b);
-  const highOf = (r) => overRun(zr.points, r, (a, b) => a > b);
-  const year = zr.runs.filter((r) => r.kind === null);
-  if (year.length) {
-    return {
-      low: Math.min(...year.map(lowOf)),
-      high: Math.max(...year.map(highOf)),
-    };
-  }
-  const w = zr.runs.find((r) => r.kind === 'Winter design day');
-  const s = zr.runs.find((r) => r.kind === 'Summer design day');
-  if (!w && !s) return null;
-  return { low: w ? lowOf(w) : null, high: s ? highOf(s) : null };
-}
-
-/**
- * The demand intensities, for a desk with ideal loads in the path and a year
- * to read them over.
+/*
+ * A drag is authorship; a study is a question. The desk as it stands is
+ * solved at each sample of one key — the run the sheet would solve, design
+ * days or the attached year — and only the metric numbers are kept from each
+ * run. Live `params` are never touched: every sample is an overlay handed to
+ * `applyModel`, so the sliders, the axonometric, the plate and the address
+ * bar hold still while the pool tries a score of buildings the reader never
+ * chose.
  *
- * Ideal loads meter as `DistrictHeatingWater` and `DistrictCooling` — heat
- * delivered at a notional 100 % — which is exactly what a demand intensity
- * means: TEDI and CEDI are the envelope's ask, before any plant, so the
- * priced channels stay out of this the way they stay out of `shapeKey`. The
- * EUI sums the bill's building section only, by the bill's own benchmark
- * rule, and refuses to print at all when heating or cooling is missing — a
- * total quietly short its largest term would read as a finding.
+ * The samples run on their own pool of engines, so the pump never waits and
+ * a single sweep fans out across every instance. The one shared mutable is
+ * the document itself, and `buildSample` below is the whole discipline: the
+ * overlay is applied, written and restored in one synchronous breath, so no
+ * await ever sees the document describing anything but the live desk —
+ * idempotence is what makes the restore a restore rather than a guess, and
+ * the Node harness asserts it byte for byte.
+ *
+ * The reader's hand outranks the study: `applyGeometry` cancels the jobs a
+ * change reaches, partial curves are discarded rather than drawn, and
+ * samples already on an engine land into nothing.
  */
-function readDemand(eso, floorArea) {
-  if (!(floorArea > 0)) return null;
-  const zr = zoneRuns(eso);
-  const year = zr ? zr.runs.filter((r) => r.kind === null) : [];
-  if (!year.length) return null;
-  const billed = new Set(year.map((r) => r.key));
 
-  const kwh = new Map();
-  for (const use of END_USES) {
-    if (use.group !== 'building') continue;
-    const joules = meterTotal(eso, use.meter, billed);
-    if (joules != null) kwh.set(use.id, joules * J_TO_KWH);
-  }
-  const heating = kwh.get('heating') ?? null;
-  const cooling = kwh.get('cooling') ?? null;
-  return {
-    tedi: heating == null ? null : heating / floorArea,
-    cedi: cooling == null ? null : cooling / floorArea,
-    eui:
-      heating == null || cooling == null
-        ? null
-        : [...kwh.values()].reduce((a, b) => a + b, 0) / floorArea,
-  };
-}
+const studyCapacity = poolLimit({
+  cores: navigator.hardwareConcurrency ?? 4,
+  deviceMemoryGB: navigator.deviceMemory ?? null,
+});
+
+const studyPool = createEnginePool({
+  // Born silent: no console, no progress. The pump's engine narrates the
+  // sheet; a background sample writing the status line five times a second
+  // would make the one number worth reading impossible to read.
+  createEngine: () => createEnergyPlus({ assetBaseUrl: `${import.meta.env.BASE_URL}energyplus` }),
+  limit: studyCapacity,
+});
 
 /**
- * Sweep one control across its face and draw what every position would do.
- *
- * A drag is authorship; this is a question. The desk as it stands is solved at
- * each sample of one key — the run the sheet would solve, design days or the
- * attached year — and only the zone's two temperature extremes are kept from
- * each run. Live `params` are never touched: every sample is an overlay
- * handed to `applyModel`, so the sliders, the axonometric, the plate and the
- * address bar hold still while the engine tries twenty-one buildings the
- * reader never chose. The one shared mutable is the document itself, and the
- * `finally` re-applies the live desk to it unconditionally — idempotence is
- * what makes that a restore rather than a guess, and the Node harness asserts
- * it.
- *
- * The reader's hand outranks the study: `applyGeometry` cancels a sweep in
- * flight, the partial curve is discarded rather than drawn (half a study reads
- * as data), and the engine is handed back to the pump, which catches up with
- * whatever shape the desk moved to.
+ * Overlay one sample onto the shared document, write it, and put the live
+ * desk back — synchronously, which is the entire point. The pump's `solve`
+ * reads this same document; the only reason they can share it is that
+ * neither ever yields to the other while it is in overlay state.
  */
-async function sweepRun(key) {
-  // The button is its own Stop: asked for the study already in flight — or
-  // still waiting its turn — end it.
-  if (sweep?.key === key) {
-    sweep.cancelled = 'stopped';
+function buildSample(job, value) {
+  try {
+    // `setAnnual` lives outside `applyModel`, so it is bracketed here both
+    // ways: forgetting the restore half would leave the pump solving design
+    // days as a year, or a fatal run of no environments at all.
+    setAnnual(model, job.annual);
+    applyModel(model, { ...job.snapshot, [job.key]: value }, job.patch, { reporting: job.metric });
+    // Each sample's intensity divides by that sample's own floor, which the
+    // swept key may itself be moving — the same live read the bill takes.
+    const floorArea = job.metric === 'energy' ? geometryFacts(model).floor : null;
+    return { idf: writeIdf(model), epw: job.epw, floorArea };
+  } finally {
+    applyModel(model, params, patching());
+    setAnnual(model, annual());
+  }
+}
+
+studyScheduler = createStudyScheduler({
+  // The cache key is the sample's whole desk — the overlay's shape key —
+  // plus the metric and the run kind, so a lean design-day sample can never
+  // answer for an annual one or for the sheet's own solve. The station is
+  // deliberately absent, which is why a station change clears the cache.
+  keyOf: (job, value) =>
+    JSON.stringify([deskKey({ ...job.snapshot, [job.key]: value }, job.patch), job.metric, job.annual]),
+  buildSample,
+  runSample: async ({ idf, epw }) => {
+    const result = await studyPool.run({ idf, epw });
+    // The counter counts engine runs, so cache hits — honestly — do not turn it.
+    runCount += 1;
+    $('runs').textContent = String(runCount);
+    return result;
+  },
+  readPoint: (job, result, built) =>
+    result.eso
+      ? job.metric === 'energy'
+        ? readDemand(result.eso, built.floorArea)
+        : readExtremes(result.eso)
+      : null,
+  paused: () => gesture,
+  capacity: () => studyCapacity,
+  onUpdate: onStudyUpdate,
+});
+
+/**
+ * The Study button. Its own Stop when the key is already queued or running —
+ * and a Stop is remembered against this desk, so automatic refresh does not
+ * resurrect the study on the next release.
+ */
+function studyRun(key) {
+  if (!studyScheduler) return;
+  if (studyScheduler.has(key)) {
+    studyStops.set(key, restShapeKey(key));
+    studyScheduler.cancel(key, 'stopped');
     return;
   }
-  if (sweep) sweep.cancelled = 'stopped';
+  studyStops.delete(key);
+  // Ahead of any refresh backlog: the reader asked for this one by name.
+  enqueueStudy(key, { origin: 'manual', front: true });
+}
+
+/** Queue one study of the desk as it stands right now. */
+function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES } = {}) {
   const { control } = controlFor(key);
-
-  // Registered before the wait for the engine, not after: a sweep queued
-  // behind a slow annual pump must be reachable by Stop and by gestures, or
-  // every click in that window would quietly enqueue one more full sweep
-  // with no way to call any of them off.
-  const me = { key, cancelled: false };
-  sweep = me;
-  // A loop, not an if: between a waiter resolving and this frame resuming,
-  // another holder may have taken the engine.
-  while (pumping) {
-    await engineIdle();
-    if (me.cancelled) {
-      if (sweep === me) sweep = null;
-      return;
-    }
-  }
-  pumping = true;
-  quiet = true;
-  runBtn.disabled = true;
-  runBtn.textContent = 'Solving';
-  plateEl.classList.add('solving');
-
-  // The desk this study describes, read in one breath — the same capture rule
-  // the solve follows, for the same reason: params keep moving under an await.
+  // The desk this study describes, read in one breath — the same capture
+  // rule the solve follows, for the same reason: params keep moving between
+  // samples, and every sample of a job must describe the same desk.
   const snapshot = { ...params };
   const patch = patching();
   const epw = epwText ?? null;
-  // Held on the sweep itself, so `applyGeometry` can ask whether a change
-  // actually reached what is being swept before cancelling.
-  me.restShape = restShapeKey(key, snapshot, patch);
-  const samples = samplePoints(control, snapshot[key]);
-  const curve = [];
-  const said = control.label.toLowerCase();
-  const kind = epw ? 'annual' : 'design-day';
   // What each run is read for. Free-running, the zone's two extremes are the
   // design quantities. With ideal loads in the path and a year to bill, the
   // extremes flatten at the setpoints and the demand the system pays to hold
   // them there is the reading — TEDI, CEDI and the building EUI.
-  const metric =
-    epw && channelState(snapshot, patch).get('system').engaged ? 'energy' : 'extremes';
-  // The overlay never touches this switch, so it is thrown once, the way each
-  // solve throws it, and the run kind matches the epw captured above.
-  setAnnual(model, Boolean(epw));
-
-  try {
-    for (const [i, value] of samples.entries()) {
-      if (me.cancelled) return;
-      applyModel(model, { ...snapshot, [key]: value }, patch);
-      const idf = writeIdf(model);
-      // Each sample's intensity divides by that sample's own floor, which the
-      // swept key may itself be moving — the same live read the bill takes.
-      const floorArea = metric === 'energy' ? geometryFacts(model).floor : null;
-      statusEl.className = 'status';
-      statusEl.textContent = `Study of ${said} — ${kind} run ${i + 1} of ${samples.length}.`;
-      desk.setStudyProgress(key, { done: i + 1, total: samples.length });
-
-      // A sample that fails is a gap in the curve, never a substituted value.
-      let point = null;
-      try {
-        const result = await ep.run({ idf, epw });
-        const eso = result.success ? result.eso : null;
-        if (eso) point = metric === 'energy' ? readDemand(eso, floorArea) : readExtremes(eso);
-      } catch {
-        // The engine refused the sample outright; same gap.
-      }
-      if (me.cancelled) return;
-      runCount += 1;
-      $('runs').textContent = String(runCount);
-      curve.push({ value, ...(point ?? {}) });
-    }
-
-    if (!curve.some((p) => (p.low ?? p.high ?? p.tedi ?? p.cedi ?? p.eui) != null)) {
-      statusEl.className = 'status bad';
-      statusEl.textContent = `The study of ${said} could not be drawn: every sample failed to solve.`;
-      return;
-    }
-
-    studies.set(key, {
-      label: shapeLabel(snapshot),
-      restShape: me.restShape,
+  const metric = epw && channelState(snapshot, patch).get('system').engaged ? 'energy' : 'extremes';
+  const points = samplePoints(control, snapshot[key], n);
+  studyScheduler.enqueue(
+    makeStudyJob({
+      key,
+      snapshot,
+      patch,
+      epw,
       annual: Boolean(epw),
       metric,
-      curve,
-    });
-    desk.setStudy(key, studies.get(key), { stale: false });
-    statusEl.className = 'status';
-    statusEl.textContent = `Study drawn — ${curve.length} ${kind} runs across ${said}.`;
-  } finally {
-    desk.setStudyProgress(key, null);
-    // A stopped or failed re-sweep took its wait card with it; the study the
-    // key already had — still stored, still true — gets its card back rather
-    // than reappearing on the next unrelated gesture.
-    syncStudies();
-    if (me.cancelled) {
-      statusEl.className = 'status';
-      statusEl.textContent =
-        me.cancelled === 'stopped'
-          ? `Study of ${said} set aside.`
-          : `Study of ${said} set aside — the desk moved.`;
-    }
-    // Unconditionally, whatever interleaving got us here: the document leaves
-    // this function describing the live desk, even in manual mode where no
-    // pump follows to overwrite it.
-    applyModel(model, params, patching());
-    quiet = false;
-    if (sweep === me) sweep = null; // a queued successor may already stand here
-    releaseEngine();
-    runBtn.disabled = false;
-    runBtn.textContent = 'Run again';
-    plateEl.classList.remove('solving');
-    markStale();
-    // The same rule as the pump's tail: a link refused while this sweep held
-    // the engine had its reason overwritten by the per-run status lines, and
-    // the refusal outranks them once the engine settles.
-    if (refusalNote) {
-      statusEl.className = 'status bad';
-      statusEl.textContent = refusalNote;
-      refusalNote = null;
-    }
-    // A desk moved mid-sweep catches up exactly once; one that held still
-    // solves nothing.
-    if (forced || (autoOn() && shapeKey(params) !== solvedShape)) pump();
+      restShape: restShapeKey(key, snapshot, patch),
+      points,
+      order: sampleOrder(points, snapshot[key]),
+      origin,
+      asked: n,
+    }),
+    { front },
+  );
+}
+
+/**
+ * Re-queue every study the desk has moved out from under.
+ *
+ * Called from `endGesture` — the one point all four gesture paths already
+ * share — and from the auto-solve toggle, so curves heal themselves under
+ * the same switch that governs the sheet's own re-solving. The first pass is
+ * coarse: eleven points redraw every curve in half the runs, and the idle
+ * densify below fills each back to twenty-one from the cache. Checked here
+ * and not left to the button gate: `syncSweepGate` only disables buttons,
+ * and this path never clicks one — during a link attach the desk carries
+ * `sizingPeriods=No` with no year, and every sample would fatal on zero
+ * environments.
+ */
+function refreshStudies() {
+  if (!studyScheduler || !autoOn() || linkAttachPending) return;
+  // Most recently swept first — the map holds insertion order and a finished
+  // study re-sets its key — so the curves the reader touched last heal first.
+  for (const [key, study] of [...studies].reverse()) {
+    const rest = restShapeKey(key);
+    if (study.restShape === rest) continue; // still true of this desk
+    if (studyScheduler.has(key)) continue; // already re-sweeping
+    if (studyStops.get(key) === rest) continue; // stopped, and the desk has not moved since
+    studyStops.delete(key); // the desk moved past the Stop; it lapses
+    enqueueStudy(key, { origin: 'refresh', n: COARSE_SAMPLES });
   }
 }
+
+/**
+ * Fill coarse curves back to full resolution, one study per idle pass.
+ *
+ * The coarse grid is a strict subset of the full one, so the eleven solved
+ * points return from the cache and a densify costs exactly the ten new runs.
+ * One study at a time keeps the pool shallow enough that a fresh gesture is
+ * never far behind a backlog it has to invalidate.
+ */
+function densifyStudies() {
+  if (!studyScheduler || !autoOn() || gesture || linkAttachPending) return;
+  for (const [key, study] of [...studies].reverse()) {
+    if (!study.coarse) continue;
+    const rest = restShapeKey(key);
+    if (study.restShape !== rest) continue; // stale — refresh owns it, not densify
+    if (studyScheduler.has(key)) continue;
+    if (studyStops.get(key) === rest) continue;
+    enqueueStudy(key, { origin: 'refresh', n: SWEEP_SAMPLES });
+    return;
+  }
+}
+
+/** A fresh object per call, so the console's identity check redraws the card. */
+const partialStudy = (job) => ({
+  label: shapeLabel(job.snapshot),
+  restShape: job.restShape,
+  annual: job.annual,
+  metric: job.metric,
+  // Samples still in flight are simply absent, so the silhouette spans them
+  // and sharpens as they land; a sample that failed stays in the curve with
+  // no metrics and draws as a gap, never a substituted value.
+  curve: job.curve.filter(Boolean),
+  progress: { done: job.done, total: job.total },
+});
+
+/** The stored card back on the console after a cancel or a failure. */
+function restoreStudyCard(key) {
+  const prior = studies.get(key);
+  if (prior) desk.setStudy(key, prior, { stale: prior.restShape !== restShapeKey(key) });
+  else desk.setStudy(key, null);
+}
+
+/**
+ * One quiet line for the drain — but only for a study the reader asked for.
+ *
+ * The status line reports what was last asked for, and a background refresh
+ * is housekeeping rather than a request: left free to write, it replaced the
+ * sheet's own "8,760 hours solved locally in 11.38 s" with a sample counter a
+ * moment after the run it describes landed, which loses the one number the
+ * reader was waiting on. Refreshes narrate on the cards instead, each with
+ * its own count, and the Set-aside button appearing is the global sign that
+ * the pool is busy. The same rule as the pump's tail keeps a refusal on top
+ * of both.
+ */
+function syncStudyStatus(finalLine = null, { quietly = false } = {}) {
+  const p = studyScheduler.progress();
+  studiesStopBtn.hidden = p.jobs === 0;
+  if (pumping || quietly || statusEl.classList.contains('bad')) return;
+  if (p.manual > 0) {
+    statusEl.className = 'status';
+    statusEl.textContent = `Study — ${p.done} of ${p.total} samples solved.`;
+  } else if (p.jobs === 0 && finalLine) {
+    statusEl.className = 'status';
+    statusEl.textContent = finalLine;
+  }
+}
+
+// The impatience lever: one click sheds every queued study. Samples already
+// on an engine cannot be stopped — they finish within the one they hold and
+// land into nothing — so the desk feels stopped at once and the pool is free
+// within a sample's time. Each shed key is suppressed like a per-study Stop,
+// so the next idle pass does not quietly restart the work; the next desk
+// move lapses the suppression and the studies refresh as usual.
+const studiesStopBtn = $('studies-stop');
+studiesStopBtn.addEventListener('click', () => {
+  studyScheduler?.cancelWhere(() => true, 'shed');
+  if (!pumping) {
+    statusEl.className = 'status';
+    statusEl.textContent = 'Studies set aside — they refresh when the desk next moves.';
+  }
+});
+
+function onStudyUpdate(job, event) {
+  if (event === 'idle') {
+    syncStudyStatus();
+    // Densify in idle time, not now: the queue just drained, and the reader
+    // may be reaching for a control this instant.
+    (window.requestIdleCallback ?? ((fn) => setTimeout(fn, 300)))(() => densifyStudies());
+    return;
+  }
+  const key = job.key;
+  const said = controlFor(key).control.label.toLowerCase();
+  const kind = job.annual ? 'annual' : 'design-day';
+
+  if (event === 'point') {
+    desk.setStudy(key, partialStudy(job), { stale: false });
+    desk.setStudyProgress(key, { done: job.done, total: job.total });
+    syncStudyStatus();
+  } else if (event === 'done') {
+    const study = {
+      label: shapeLabel(job.snapshot),
+      restShape: job.restShape,
+      annual: job.annual,
+      metric: job.metric,
+      curve: job.curve,
+      // A coarse first pass is a real study, drawn honestly at eleven points;
+      // the flag is what tells the idle densify it is worth finishing.
+      coarse: job.asked === COARSE_SAMPLES,
+    };
+    studies.set(key, study);
+    desk.setStudyProgress(key, null);
+    // Stale already, when the desk moved while the curve was landing — drawn
+    // dimmed rather than fresh, so the card never claims a desk it missed.
+    desk.setStudy(key, study, { stale: study.restShape !== restShapeKey(key) });
+    // A curve the reader asked for says so when it lands; one that healed
+    // itself in the background just appears, which is the whole point of it.
+    syncStudyStatus(`Study drawn — ${job.total} ${kind} runs across ${said}.`, {
+      quietly: job.origin !== 'manual',
+    });
+  } else if (event === 'failed') {
+    desk.setStudyProgress(key, null);
+    restoreStudyCard(key);
+    // A failure is worth saying whichever way the study was asked for — it is
+    // the one study outcome that leaves nothing drawn to speak for itself.
+    if (!pumping) {
+      statusEl.className = 'status bad';
+      statusEl.textContent = `The study of ${said} could not be drawn: every sample failed to solve.`;
+    }
+  } else if (event === 'cancelled') {
+    desk.setStudyProgress(key, null);
+    // The study the key already had — still stored, still true — gets its
+    // card back rather than reappearing on the next unrelated gesture.
+    restoreStudyCard(key);
+    // A global Set-aside suppresses each key the way a per-study Stop does,
+    // or the next idle densify would quietly restart the work just shed.
+    if (job.cancelled === 'shed') studyStops.set(key, restShapeKey(key));
+    if (job.cancelled === 'stopped') syncStudyStatus(`Study of ${said} set aside.`);
+    else syncStudyStatus();
+  }
+}
+
+// The first instance compiled ahead of the first click, in idle time: the
+// binary is an HTTP-cache hit off the pump's download, so this trades a few
+// idle milliseconds for the first study starting on a warm engine.
+(window.requestIdleCallback ?? ((fn) => setTimeout(fn, 1500)))(() => studyPool.prewarm());
 
 // The verdict on a link the page was opened with, now that boot has finished
 // writing the status line. A refusal stops auto-solve, so no pump starts and
