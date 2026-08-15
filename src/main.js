@@ -22,6 +22,7 @@ import {
   controlFor,
 } from './controls.js';
 import { mountConsole } from './console.js';
+import { samplePoints } from './study.js';
 import { runBundle } from './bundle.js';
 import { END_USES, GROUPS, computeBill, meterTotal } from './bill.js';
 import { assume, isRate, placeName, resolveRates } from './rates.js';
@@ -1425,6 +1426,8 @@ const syncSlider = {}; // key -> redraw that slider from `params`
 let solvedShape = null; // the shape the visible results were solved for
 let lastMean = null; // zone mean of the last run, for the axonometric tint
 let modelState = null; // which channels the model says are in the path
+let sweep = null; // the study in flight: { key, cancelled }, or null
+const studies = new Map(); // parameter key -> the study drawn under that control
 
 /**
  * Solo, as the desk applies it: one channel in, every other bypassable one out.
@@ -1463,6 +1466,26 @@ const shapeLabel = (p) =>
   `${p.width.toFixed(2)} × ${p.depth.toFixed(2)} × ${p.height.toFixed(2)} m · ` +
   `${((p.wwrN + p.wwrE + p.wwrS + p.wwrW) * 25).toFixed(0)} % mean WWR`;
 
+/**
+ * The shape of everything except one control: what a study is a study of.
+ *
+ * A study holds the rest of the desk still and moves one key, so moving that
+ * key afterwards just walks the redline tick along a curve that is still true.
+ * Moving anything else puts the curve on a desk that no longer exists, which
+ * is the one thing that makes it stale.
+ */
+const restShapeKey = (key, p = params, patch = patching()) =>
+  JSON.stringify([
+    Object.fromEntries(Object.entries(p).filter(([k]) => !PRICED_KEYS.has(k) && k !== key)),
+    patch,
+  ]);
+
+function syncStudies() {
+  for (const [key, study] of studies) {
+    desk?.setStudy(key, study, { stale: study.restShape !== restShapeKey(key) });
+  }
+}
+
 // Results describe a shape. Once the shape moves, they describe a building that
 // is no longer on the sheet, so say so rather than letting them sit there.
 //
@@ -1494,6 +1517,10 @@ function markStale() {
  * console's strips both come through it, which is what keeps them agreeing.
  */
 function applyGeometry() {
+  // Everything that re-applies the desk to the model comes through here, and
+  // every one of those events makes a study's remaining samples describe a
+  // desk that no longer exists — so this is the one place a sweep is cancelled.
+  if (sweep) sweep.cancelled = true;
   modelState = applyModel(model, params, patching());
   SURFACES = surfaceGeometry(model);
   WINDOWS = windowGeometry(model);
@@ -1520,6 +1547,7 @@ function applyGeometry() {
       : 'None';
 
   desk?.setState(modelState);
+  syncStudies();
   // A reading survives until the next solve supersedes it, the way the plate's
   // curve does — except on a channel that has just gone out of the path, where
   // the last number it produced would now be describing a path that is no
@@ -1792,6 +1820,11 @@ desk = mountConsole({
     if (autoOn()) pump();
   },
   onReset: () => revert(),
+  onStudy: (key) => sweepRun(key),
+  onStudyClear(key) {
+    studies.delete(key);
+    desk.setStudy(key, null);
+  },
 });
 
 function openDesk(open) {
@@ -1884,6 +1917,24 @@ autoBox.addEventListener('change', () => {
   if (autoOn()) pump();
   else markStale();
 });
+
+/**
+ * Whether a study can be taken at all, with the reason when it cannot.
+ *
+ * A study is a score of design-day solves, which fit inside a sentence of
+ * patience. With a year attached each sample would be a full annual run and
+ * the score of them a couple of minutes of engine — so the buttons go dark and
+ * say why, rather than quietly sweeping a different run than the sheet shows.
+ */
+function syncSweepGate() {
+  desk?.setSweepEnabled(
+    engineReady && !annual(),
+    !engineReady
+      ? 'The engine is still arriving.'
+      : 'A study sweeps the design days. With a year attached, each of its samples would be a full annual run.',
+  );
+}
+syncSweepGate();
 
 /* ── picking a weather location ──────────────────────────────────────────
  *
@@ -2206,6 +2257,13 @@ async function choose(row, pick, sizing = 'No') {
   // button stayed lettered live over a cleared `lastRun` and clicking it did
   // nothing at all — the exact silent control the design refuses.
   syncDownload();
+  // The studies go the way the pin does, and for the same reason: they were
+  // swept under the old climate, and a curve of Denver design days under a
+  // Singapore titleblock would be a lie told in graphite. Further sweeps are
+  // gated off, with the reason on the buttons.
+  studies.clear();
+  desk?.clearStudies();
+  syncSweepGate();
 
   // With a real year attached the sizing days stop earning their place. They
   // are 48 hours of the most extreme weather in the file, run ahead of 8,760
@@ -2474,6 +2532,7 @@ engineReady = true;
 runBtn.disabled = false;
 runBtn.textContent = 'Run simulation';
 syncAuto();
+syncSweepGate();
 statusEl.textContent = 'Engine compiled and resident. Nothing further is downloaded.';
 
 /**
@@ -2724,6 +2783,17 @@ let forced = false;
 let runCount = 0;
 const plateEl = $('plate');
 
+// A sweep shares the engine with the pump, so `pumping` is the one mutex and
+// the sweep is its second holder. Whoever holds it releases through here, so
+// the other can take its turn instead of returning at the guard and being lost.
+const engineWaiters = [];
+const engineIdle = () =>
+  pumping ? new Promise((resolve) => engineWaiters.push(resolve)) : Promise.resolve();
+const releaseEngine = () => {
+  pumping = false;
+  while (engineWaiters.length) engineWaiters.shift()();
+};
+
 async function pump() {
   if (pumping) return;
   pumping = true;
@@ -2739,7 +2809,7 @@ async function pump() {
       await solve();
     }
   } finally {
-    pumping = false;
+    releaseEngine();
     runBtn.disabled = false;
     runBtn.textContent = 'Run again';
     plateEl.classList.remove('solving');
@@ -2767,6 +2837,127 @@ runBtn.addEventListener('click', () => {
   forced = true;
   pump();
 });
+
+/**
+ * Sweep one control across its face and draw what every position would do.
+ *
+ * A drag is authorship; this is a question. The desk as it stands is solved at
+ * each sample of one key — winter design day and summer design day, nothing
+ * else — and only the zone's two extremes are kept from each run. Live
+ * `params` are never touched: every sample is an overlay handed to
+ * `applyModel`, so the sliders, the axonometric, the plate and the address bar
+ * hold still while the engine tries twenty-one buildings the reader never
+ * chose. The one shared mutable is the document itself, and the `finally`
+ * re-applies the live desk to it unconditionally — idempotence is what makes
+ * that a restore rather than a guess, and the Node harness asserts it.
+ *
+ * The reader's hand outranks the study: `applyGeometry` cancels a sweep in
+ * flight, the partial curve is discarded rather than drawn (half a study reads
+ * as data), and the engine is handed back to the pump, which catches up with
+ * whatever shape the desk moved to.
+ */
+async function sweepRun(key) {
+  // The button is its own Stop: asked for the study already in flight, end it.
+  if (sweep?.key === key) {
+    sweep.cancelled = 'stopped';
+    return;
+  }
+  if (sweep) sweep.cancelled = 'stopped';
+  const { control } = controlFor(key);
+  if (annual()) throw new Error(`a study of ${control.label} cannot sweep an attached year`);
+
+  // A loop, not an if: between a waiter resolving and this frame resuming,
+  // another holder may have taken the engine.
+  while (pumping) await engineIdle();
+  pumping = true;
+  const me = { key, cancelled: false };
+  sweep = me;
+  quiet = true;
+  runBtn.disabled = true;
+  runBtn.textContent = 'Solving';
+  plateEl.classList.add('solving');
+
+  // The desk this study describes, read in one breath — the same capture rule
+  // the solve follows, for the same reason: params keep moving under an await.
+  const snapshot = { ...params };
+  const patch = patching();
+  const samples = samplePoints(control, snapshot[key]);
+  const curve = [];
+  const said = control.label.toLowerCase();
+
+  try {
+    for (const [i, value] of samples.entries()) {
+      if (me.cancelled) return;
+      applyModel(model, { ...snapshot, [key]: value }, patch);
+      const idf = writeIdf(model);
+      statusEl.className = 'status';
+      statusEl.textContent = `Study of ${said} — design-day run ${i + 1} of ${samples.length}.`;
+      desk.setStudyProgress(key, { done: i + 1, total: samples.length });
+
+      // A sample that fails is a gap in the curve, never a substituted value.
+      let winter = null;
+      let summer = null;
+      try {
+        const result = await ep.run({ idf, epw: null });
+        const eso = result.success ? result.eso : null;
+        const zonePts = eso ? hourly(eso, /Zone Mean Air Temperature/i) : [];
+        if (zonePts.length) {
+          const zone = zonePts.map((p) => p.value);
+          const runs = environmentRuns(zonePts, eso.environments ?? []);
+          const w = runs.find((r) => r.kind === 'Winter design day');
+          const s = runs.find((r) => r.kind === 'Summer design day');
+          if (w) winter = Math.min(...zone.slice(w.start, w.end + 1));
+          if (s) summer = Math.max(...zone.slice(s.start, s.end + 1));
+        }
+      } catch {
+        // The engine refused the sample outright; same gap.
+      }
+      if (me.cancelled) return;
+      runCount += 1;
+      $('runs').textContent = String(runCount);
+      curve.push({ value, winter, summer });
+    }
+
+    if (!curve.some((p) => p.winter != null || p.summer != null)) {
+      statusEl.className = 'status bad';
+      statusEl.textContent = `The study of ${said} could not be drawn: every sample failed to solve.`;
+      return;
+    }
+
+    studies.set(key, {
+      key,
+      label: shapeLabel(snapshot),
+      restShape: restShapeKey(key, snapshot, patch),
+      curve,
+    });
+    desk.setStudy(key, studies.get(key), { stale: false });
+    statusEl.className = 'status';
+    statusEl.textContent = `Study drawn — ${curve.length} design-day runs across ${said}.`;
+  } finally {
+    desk.setStudyProgress(key, null);
+    if (me.cancelled) {
+      statusEl.className = 'status';
+      statusEl.textContent =
+        me.cancelled === 'stopped'
+          ? `Study of ${said} set aside.`
+          : `Study of ${said} set aside — the desk moved.`;
+    }
+    // Unconditionally, whatever interleaving got us here: the document leaves
+    // this function describing the live desk, even in manual mode where no
+    // pump follows to overwrite it.
+    applyModel(model, params, patching());
+    quiet = false;
+    sweep = null;
+    releaseEngine();
+    runBtn.disabled = false;
+    runBtn.textContent = 'Run again';
+    plateEl.classList.remove('solving');
+    markStale();
+    // A desk moved mid-sweep catches up exactly once; one that held still
+    // solves nothing.
+    if (forced || (autoOn() && shapeKey(params) !== solvedShape)) pump();
+  }
+}
 
 // The verdict on a link the page was opened with, now that boot has finished
 // writing the status line. A refusal stops auto-solve, so no pump starts and

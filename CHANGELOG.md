@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Parameter studies. Every scale on the console now carries a quiet **Study**
+  action that sweeps that one control across its full range — about twenty
+  design-day solves, a second or two of engine — and draws the response as a
+  small curve under the control: the summer design day's peak zone temperature
+  in the warm pen, the winter day's low in the cold one, with a redline tick
+  standing where the control stands now. The desk itself never moves during a
+  sweep: the model ends byte-identical to where it started, the address bar and
+  every readout hold still, and any real gesture cancels the sweep instantly.
+  A study names the desk it was swept against and dims once any *other* control
+  moves; dragging the swept control just walks the tick along a curve that is
+  still true. Studies are disabled, with the reason stated, while a weather
+  file is attached — each sample would be a full annual run — and on priced
+  channels, whose controls never reach the engine. A failed sample is drawn as
+  a gap in the curve, never an invented point.
+
 - Shareable scheme links. The address bar now carries the whole desk — every
   control off its default, the patch state, and the attached TMYx station with
   its exact year window — as a readable URL fragment

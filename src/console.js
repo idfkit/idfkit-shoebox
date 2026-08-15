@@ -1,4 +1,4 @@
-import { CHANNELS } from './controls.js';
+import { CHANNELS, controlFor } from './controls.js';
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -55,13 +55,21 @@ function watts(w) {
  * never keeps its own copy, so the sheet's five sliders and the console's
  * scales cannot drift apart. Every gesture goes back out through `onChange`.
  */
-export function mountConsole({ host, params, bypass, onChange, onPatch, onSolo, onReset }) {
+export function mountConsole({
+  host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear,
+}) {
   const strips = new Map(); // channel id -> { redraw(), meter, patch, solo }
   const faces = new Map(); // parameter key -> redraw for that control
+  const rows = new Map(); // parameter key -> the control's row, for study cards
+  const cards = new Map(); // parameter key -> { node, kind, study, syncTick }
+  const studyButtons = new Map(); // parameter key -> that scale's Study button
   let solo = null;
   let reading = null; // the instant every meter on the desk is reading at
   let engaged = new Set(); // which channels the model says are in the path
   let ghost = {}; // where each control stood when the current gesture began
+  // Whether a study can be taken at all, and the sentence for when it cannot.
+  // Off until the caller says otherwise: the engine is not resident at mount.
+  let sweepGate = { ok: false, reason: 'The engine is still arriving.' };
 
   const stripHost = el('div', 'strips');
   const railHost = el('div', 'rail');
@@ -107,7 +115,7 @@ export function mountConsole({ host, params, bypass, onChange, onPatch, onSolo, 
     strip.append(note);
 
     const body = el('div', 'strip-body');
-    for (const control of channel.controls) body.append(buildControl(control));
+    for (const control of channel.controls) body.append(buildControl(control, channel));
     strip.append(body);
 
     const meter = buildMeter(channel);
@@ -154,8 +162,8 @@ export function mountConsole({ host, params, bypass, onChange, onPatch, onSolo, 
 
   /* ── controls ────────────────────────────────────────────────────────── */
 
-  function buildControl(control) {
-    if (control.kind === 'scale') return buildScale(control);
+  function buildControl(control, channel) {
+    if (control.kind === 'scale') return buildScale(control, channel);
     if (control.kind === 'selector') return buildSelector(control);
     if (control.kind === 'bearing') return buildBearing(control);
     if (control.kind === 'facade') return buildFacade(control);
@@ -171,14 +179,29 @@ export function mountConsole({ host, params, bypass, onChange, onPatch, onSolo, 
    * what you actually look at. Reimplementing all of that on a div would have
    * cost the arrow keys, which are the only way to set one of these precisely.
    */
-  function buildScale(control) {
+  function buildScale(control, channel) {
     const row = el('div', 'ctl ctl-scale');
     const head = el('div', 'ctl-head');
     const label = el('label', null, control.label);
     label.htmlFor = `k-${control.key}`;
     const value = el('output', 'ctl-value');
     value.htmlFor = `k-${control.key}`;
-    head.append(label, value);
+
+    // The question every scale can be asked: what would the rest of your face
+    // do? Not on a priced channel — nothing it owns reaches the engine, so a
+    // sweep of it could only redraw the numbers already on the sheet.
+    let studyBtn = null;
+    if (!channel?.prices) {
+      studyBtn = el('button', 'study', 'Study');
+      studyBtn.type = 'button';
+      studyBtn.setAttribute(
+        'aria-label',
+        `Study ${control.label}: sweep from ${control.format(control.min)} to ${control.format(control.max)}`,
+      );
+      studyBtn.addEventListener('click', () => onStudy?.(control.key));
+      studyButtons.set(control.key, studyBtn);
+    }
+    head.append(label, ...(studyBtn ? [studyBtn] : []), value);
 
     const face = el('div', 'face');
     const ruling = el('i', 'face-rule');
@@ -214,9 +237,23 @@ export function mountConsole({ host, params, bypass, onChange, onPatch, onSolo, 
       const show = was != null && was !== v;
       ghostTick.hidden = !show;
       if (show) ghostTick.style.left = `${clamp(control.fraction(was), 0, 1) * 100}%`;
-      row.classList.toggle('idle', control.needs ? !control.needs(params) : false);
+      const idle = control.needs ? !control.needs(params) : false;
+      row.classList.toggle('idle', idle);
+      // While its own sweep runs the button is a Stop and stays live whatever
+      // the gate says; the gate and the idle state govern only the asking.
+      if (studyBtn && !studyBtn.dataset.running) {
+        studyBtn.disabled = !sweepGate.ok || idle;
+        studyBtn.title = !sweepGate.ok
+          ? sweepGate.reason
+          : idle
+            ? 'Set, but not reaching the model — there is nothing to sweep.'
+            : 'Sweep this control across its face: a score of design-day runs, drawn as a curve.';
+      }
+      // Dragging the swept control just walks the study's tick along its curve.
+      cards.get(control.key)?.syncTick?.();
     };
     faces.set(control.key, redraw);
+    rows.set(control.key, row);
     return row;
   }
 
@@ -532,6 +569,149 @@ export function mountConsole({ host, params, bypass, onChange, onPatch, onSolo, 
     return row;
   }
 
+  /* ── studies ─────────────────────────────────────────────────────────── */
+
+  /**
+   * The curve a sweep drew, under the control it swept.
+   *
+   * The x axis is `control.fraction` — the same 0..1 the face tick above it
+   * uses — so the curve and the calibration face are one axis, stacked. Two
+   * pens, both legitimately signed degrees on the drawing: the summer design
+   * day's peak in the warm one, the winter day's low in the cold one. A sample
+   * that failed is a gap in the line, never a point invented across it. The
+   * redline stands where the control stands now, and moving the control just
+   * walks it along the curve; on a conditioned desk both lines run flat at the
+   * setpoints, which is not a failure of the study but its finding — the
+   * system holds the zone flat wherever this control goes.
+   */
+  function studyCard(key, study) {
+    const { control } = controlFor(key);
+    const card = el('div', 'study-card');
+    const head = el('div', 'study-head');
+    head.append(el('span', 'study-tag', 'Study'));
+    // Which desk this curve was swept against, the way the bill names what it
+    // is pinned to. Everything else about the card assumes that desk.
+    const desk = el('span', 'study-desk', `of ${study.label}`);
+    desk.title = `Swept with the rest of the desk at ${study.label}`;
+    const clear = el('button', 'link', 'Clear');
+    clear.type = 'button';
+    clear.addEventListener('click', () => onStudyClear?.(key));
+    head.append(desk, clear);
+    card.append(head);
+
+    const W = 240;
+    const H = 64;
+    // The right gutter holds the curves' end labels; six mono characters of
+    // "−18.7°" need the full 33 units or the degree sign falls off the card.
+    const plot = { x: 2, w: 200, top: 6, bottom: 42 };
+
+    const winters = study.curve.filter((p) => p.winter != null);
+    const summers = study.curve.filter((p) => p.summer != null);
+    const vals = [...winters.map((p) => p.winter), ...summers.map((p) => p.summer)];
+    const lo = Math.min(...vals);
+    const hi = Math.max(...vals);
+    const span = hi - lo || 1;
+    const [dMin, dMax] = [lo - span * 0.08, hi + span * 0.08];
+    const y = (v) => plot.bottom - ((v - dMin) / (dMax - dMin)) * (plot.bottom - plot.top);
+    const x = (v) => plot.x + clamp(control.fraction(v), 0, 1) * plot.w;
+
+    const range = (arr) => `${Math.min(...arr).toFixed(1)} to ${Math.max(...arr).toFixed(1)}`;
+    const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' });
+    root.setAttribute(
+      'aria-label',
+      `Study of ${control.label} from ${control.format(control.min)} to ${control.format(control.max)}: ` +
+        (summers.length
+          ? `summer design-day peak ${range(summers.map((p) => p.summer))} °C`
+          : 'no summer readings') +
+        '; ' +
+        (winters.length
+          ? `winter design-day low ${range(winters.map((p) => p.winter))} °C.`
+          : 'no winter readings.'),
+    );
+
+    root.append(
+      svg('line', {
+        x1: plot.x, y1: plot.bottom + 0.5, x2: plot.x + plot.w, y2: plot.bottom + 0.5,
+        stroke: 'var(--rule-firm)', 'stroke-width': 1, 'shape-rendering': 'crispEdges',
+      }),
+    );
+
+    const segments = (sel) => {
+      const segs = [];
+      let run = [];
+      for (const p of study.curve) {
+        const v = sel(p);
+        if (v == null) {
+          if (run.length) segs.push(run);
+          run = [];
+        } else {
+          run.push([x(p.value), y(v)]);
+        }
+      }
+      if (run.length) segs.push(run);
+      return segs;
+    };
+    const draw = (sel, pen) => {
+      for (const seg of segments(sel)) {
+        // A run of one — a lone survivor between failures — still gets marked.
+        if (seg.length === 1) {
+          root.append(svg('circle', { cx: seg[0][0].toFixed(2), cy: seg[0][1].toFixed(2), r: 1.2, fill: pen }));
+        } else {
+          root.append(
+            svg('polyline', {
+              points: seg.map(([px, py]) => `${px.toFixed(2)},${py.toFixed(2)}`).join(' '),
+              fill: 'none', stroke: pen, 'stroke-width': 1.1, 'stroke-linejoin': 'round',
+            }),
+          );
+        }
+      }
+    };
+    draw((p) => p.summer, 'var(--warm)');
+    draw((p) => p.winter, 'var(--cold)');
+
+    // The curves' right-hand ends lettered directly in the gutter, the plate's
+    // own move, settled apart when the two converge.
+    const labels = [];
+    if (summers.length) labels.push({ v: summers[summers.length - 1].summer, pen: 'var(--warm)' });
+    if (winters.length) labels.push({ v: winters[winters.length - 1].winter, pen: 'var(--cold)' });
+    for (const l of labels) l.y = clamp(y(l.v) + 2.5, plot.top + 5, plot.bottom);
+    labels.sort((a, b) => a.y - b.y);
+    if (labels.length === 2 && labels[1].y - labels[0].y < 9) labels[1].y = labels[0].y + 9;
+    for (const l of labels) {
+      const t = svg('text', {
+        x: plot.x + plot.w + 5, y: l.y, fill: l.pen,
+        'font-family': 'var(--mono)', 'font-size': 7.5,
+      });
+      t.textContent = `${l.v.toFixed(1)}°`;
+      root.append(t);
+    }
+
+    const foot = (text, fx, anchor) => {
+      const t = svg('text', {
+        x: fx, y: 56, 'text-anchor': anchor, fill: 'var(--ink-ghost)',
+        'font-family': 'var(--mono)', 'font-size': 7.5,
+      });
+      t.textContent = text;
+      root.append(t);
+    };
+    foot(control.format(control.min), plot.x, 'start');
+    foot(control.format(control.max), plot.x + plot.w, 'end');
+
+    const tick = svg('line', {
+      y1: plot.top - 2, y2: plot.bottom + 2, stroke: 'var(--redline)', 'stroke-width': 1,
+    });
+    root.append(tick);
+    const syncTick = () => {
+      const tx = x(params[key]).toFixed(2);
+      tick.setAttribute('x1', tx);
+      tick.setAttribute('x2', tx);
+    };
+    syncTick();
+
+    card.append(root);
+    return { node: card, kind: 'card', study, syncTick };
+  }
+
   /* ── meters ──────────────────────────────────────────────────────────── */
 
   function buildMeter(channel) {
@@ -644,6 +824,79 @@ export function mountConsole({ host, params, bypass, onChange, onPatch, onSolo, 
       }
 
       drawRail(readings);
+    },
+
+    /**
+     * Draw, restyle or remove the study card under one control.
+     *
+     * Re-called on every `applyGeometry`, so the same study object restyles in
+     * place rather than rebuilding — staleness moves per drag frame, the card
+     * itself only when a sweep lands or clears.
+     */
+    setStudy(key, study, { stale = false } = {}) {
+      const have = cards.get(key);
+      if (study && have?.study === study) {
+        have.node.classList.toggle('stale', stale);
+        return;
+      }
+      have?.node.remove();
+      cards.delete(key);
+      if (!study) return;
+      const made = studyCard(key, study);
+      made.node.classList.toggle('stale', stale);
+      rows.get(key)?.after(made.node);
+      cards.set(key, made);
+    },
+
+    /** The sweep in flight: its button reads Stop, its card counts the runs. */
+    setStudyProgress(key, progress) {
+      const btn = studyButtons.get(key);
+      if (!progress) {
+        if (btn) {
+          delete btn.dataset.running;
+          btn.textContent = 'Study';
+          btn.classList.remove('on');
+        }
+        const have = cards.get(key);
+        if (have?.kind === 'wait') {
+          have.node.remove();
+          cards.delete(key);
+        }
+        api.sync(key);
+        return;
+      }
+      if (btn) {
+        btn.dataset.running = '1';
+        btn.disabled = false;
+        btn.textContent = 'Stop';
+        btn.classList.add('on');
+        btn.title = 'Set this study aside';
+      }
+      let have = cards.get(key);
+      if (have?.kind !== 'wait') {
+        have?.node.remove();
+        const node = el('div', 'study-card');
+        const head = el('div', 'study-head');
+        const wait = el('span', 'study-wait');
+        head.append(el('span', 'study-tag', 'Study'), wait);
+        node.append(head);
+        have = { node, kind: 'wait', wait };
+        rows.get(key)?.after(node);
+        cards.set(key, have);
+      }
+      have.wait.textContent = `Solving ${progress.done} / ${progress.total}`;
+    },
+
+    /** Whether a study can be asked for, with the reason lettered when not. */
+    setSweepEnabled(ok, reason) {
+      sweepGate = { ok, reason };
+      api.sync();
+    },
+
+    /** The studies go with the climate they were swept under. */
+    clearStudies() {
+      for (const { node } of cards.values()) node.remove();
+      cards.clear();
     },
   };
 

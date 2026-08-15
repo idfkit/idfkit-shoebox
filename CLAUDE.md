@@ -175,6 +175,19 @@ change nothing.
 Auto-solve has two cadences: a design day (48 h, ~50 ms) re-solves continuously
 during a drag; a weather file (8,760 h, ~0.7 s) re-solves once on release.
 
+A **study** (`sweepRun`, with `samplePoints` in `src/study.js`) is the mutex's
+second holder: it takes `pumping`, solves ~21 design-day overlays of one key,
+and releases through `releaseEngine`, after which the pump catches up once if
+the desk moved. A sweep never touches live `params` — each sample is
+`applyModel(model, { ...snapshot, [key]: v }, patch)` and the `finally`
+re-applies the live desk, which idempotence makes a byte-exact restore (the
+throwaway harness asserts this at every sample). `applyGeometry` is the one
+cancel point: anything that re-applies the desk to the model sets the sweep's
+`cancelled` flag, the partial curve is discarded, and staleness afterwards is
+`restShapeKey` — the shape minus the swept key, so moving the swept control
+itself only walks the study's tick. Studies are gated off under an attached
+year and on priced channels, with the reason on the button.
+
 ### The permalink (src/permalink.js)
 
 The URL fragment carries the desk — params off their defaults, patch state,
