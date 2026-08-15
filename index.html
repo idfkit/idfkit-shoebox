@@ -1422,6 +1422,62 @@
       /* Set, but not reaching the model in the current configuration. */
       .ctl.idle { opacity: 0.4; }
 
+      /* ── the study: one control swept across its face ─────────────── */
+
+      /* Every scale carries the offer, so it has to whisper: ghost ink, no
+         border, sharpening to the markup pen only under the pointer. A chip
+         per control would put sixty little boxes on the desk. */
+      .ctl-head label { margin-right: auto; }
+      .study {
+        all: unset;
+        font: 500 9px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-ghost);
+        cursor: pointer;
+        border-bottom: 1px solid transparent;
+      }
+      /* Carries the same guard the patch buttons two rules up carry, and for
+         the same reason: `button:hover:not(:disabled)` is one element more
+         specific than `.study:hover`, so it painted the background solid
+         redline under exactly the same pointer that turns the label redline —
+         the word "Study" vanished into its own hover state. */
+      .ctl-head button.study:hover { background: transparent; color: var(--redline); border-bottom-color: var(--redline); }
+      .study:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+      .study:disabled { color: var(--ink-ghost); opacity: 0.35; cursor: default; border-bottom-color: transparent; }
+      .study.on { color: var(--ink); border-bottom-color: var(--rule-firm); }
+
+      .study-card { margin-top: 2px; }
+      .study-head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 3px;
+      }
+      .study-tag {
+        font: 500 9px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+      /* Which desk the curve was swept against; the card's one long string. */
+      .study-desk {
+        flex: 1;
+        min-width: 0;
+        font: 400 9px/1.3 var(--mono);
+        color: var(--ink-ghost);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .study-head .link { font-size: 9px; flex: none; }
+      .study-card svg { display: block; width: 100%; }
+      .study-wait {
+        font: 400 10px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink-3);
+      }
+
       /* A ruled calibration face with a penciled tick. The range input is
          real and transparent on top of it: it carries the keyboard and the
          ARIA, the drawing below carries the reading. */

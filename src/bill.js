@@ -234,7 +234,9 @@ export function meterMonths(eso, name, environments = null) {
 
 /* ══ the bill ════════════════════════════════════════════════════════════ */
 
-const J_TO_KWH = 1 / 3_600_000;
+// Exported because the study's demand intensities read the same meters; two
+// hand-typed conversions would be one more place for a factor to go stale.
+export const J_TO_KWH = 1 / 3_600_000;
 
 /**
  * One priced line.
