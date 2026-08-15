@@ -1661,13 +1661,19 @@
       .strips.index .strip { padding: 0 18px; }
       .strips.index .strip-head { margin: 0; flex-wrap: wrap; }
       .strips.index .strip-title { flex: 1 0 100%; }
-      /* 12px above and below puts the row at 37px. That is under the usual
-         44px thumb, and it is the trade this sheet exists to make: at 44 the
-         sixteen channels no longer fit on one screen, and a row you have to
-         scroll to find is worse than a row that is slightly tight to hit —
-         it spans the full width of the sheet, which is the other half of a
-         target. */
-      .strips.index .strip-toggle { padding: 12px 0; cursor: pointer; }
+      /* A fixed 36px, not padding around whatever the row happens to hold.
+         The cells change as a strip opens — the term chip arrives, the reading
+         and the marker leave — and the chip is 18.5px against the name's 12px,
+         so a row sized by its contents grew on opening and `align-items:
+         center` walked the heading 3.25px down the page and back up again on
+         closing. Height first, contents second, and the name sits still.
+
+         36px is under the usual 44px thumb, which is the trade this sheet
+         exists to make: at 44 the sixteen channels no longer fit on one
+         screen, and a row you have to scroll to find is worse than a row that
+         is slightly tight to hit — it spans the full width of the sheet, which
+         is the other half of a target. */
+      .strips.index .strip-toggle { min-height: 36px; padding: 0; cursor: pointer; }
       .strips.index .strip-toggle:hover .strip-chev { border-color: var(--redline); }
       .strips.index .strip-read {
         font: 400 11px/1 var(--mono);
@@ -1692,7 +1698,10 @@
          their own and only on the strip that is open. */
       .strips.index .strip:not(.open) .patch,
       .strips.index .strip:not(.open) .solo { display: none; }
-      .strips.index .strip.open .strip-toggle { padding-bottom: 6px; }
+      /* Open, the head wraps and the patch buttons take a line of their own,
+         set off by the head's own row gap rather than by padding on the row
+         above them — padding there would be height, and the row's height is
+         what has to stay put. */
       .strips.index .strip.open .strip-head { margin-bottom: 11px; }
       .strips.index .strip-fold { padding-bottom: 16px; }
       .strips.index .strip-blocked { margin-bottom: 12px; }
