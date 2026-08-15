@@ -741,6 +741,47 @@ export function conformance(params, bypass, preset) {
   };
 }
 
+/**
+ * The one line of a standard that is furthest from being met, for a desk that
+ * has chosen to chase it.
+ *
+ * The scoreboard shows every criterion of every standard at once, which is the
+ * right thing to read *after* a run and the wrong thing to watch *during* a
+ * drag: a dozen rows a screen away cannot answer "is what I am doing right now
+ * helping". So a chased standard is reduced to its single worst line, drawn up
+ * beside the drawing where the hand is.
+ *
+ * Ranked by the **ratio** to the limit rather than the raw difference, which is
+ * the only ranking that survives criteria of different sizes: LETI's energy
+ * line is 55 kWh/m²·yr and Passivhaus's heating line is 15, so being 3 over
+ * means something very different against each, while being 20 % over means the
+ * same thing against both.
+ *
+ * `readingFor` is injected rather than imported so this module stays free of
+ * the run: the harness hands it a plain lookup, the sheet hands it the real
+ * reader. Returns null when not one line of the standard has a reading behind
+ * it — an absence for the caller to explain, never a verdict of its own.
+ */
+export function chaseVerdict(preset, readingFor) {
+  const lines = preset.targets
+    .filter((target) => target.limit != null)
+    .map((target) => ({ target, value: readingFor(target) }))
+    .filter((line) => Number.isFinite(line.value));
+  if (!lines.length) return null;
+  const ratio = (line) => line.value / line.target.limit;
+  const worst = lines.reduce((a, b) => (ratio(b) > ratio(a) ? b : a));
+  return {
+    target: worst.target,
+    value: worst.value,
+    over: worst.value - worst.target.limit,
+    clears: lines.filter((line) => line.value <= line.target.limit).length,
+    read: lines.length,
+    // How many the standard states in total, so a verdict drawn from three
+    // lines out of five cannot read as a verdict on the standard.
+    stated: preset.targets.filter((target) => target.limit != null).length,
+  };
+}
+
 /* ══ schemes you kept ════════════════════════════════════════════════════ */
 
 /**

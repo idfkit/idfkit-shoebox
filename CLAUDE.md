@@ -329,6 +329,24 @@ the conformance by itself, because there was never a flag to go stale.
   requests, signed positive into the zone. Watch this one in practice: a desk
   can clear the Passivhaus *demand* at 8.6 kWh/m²·yr and miss its *load* at
   13.9 W/m², which is the whole argument for reading both.
+- **The chase pin is the one thing here that *is* remembered — explicitly.**
+  Chasing a standard reduces it to its single worst line, drawn up beside the
+  drawing with a ghost of where that margin stood when the gesture began,
+  because a dozen scoreboard rows a screen away cannot answer "is what my hand
+  is doing right now helping". It is the bill's pin in another column: a
+  comparison the reader chose and can unchoose, making no claim about the
+  building, so it does not violate the no-remembered-standard rule that
+  conformance obeys. It stays out of the permalink for the same reason `pinned`
+  does — it is how the desk is being read, not what it is.
+- **The worst line is ranked by ratio, not by difference.** LETI's energy line
+  is 55 kWh/m²·yr and Passivhaus's heating line is 15, so 3 over means something
+  different against each while 20 % over means the same against both.
+  `chaseVerdict` takes its reader injected, so the harness drives the ranking
+  with a plain lookup.
+- **The chase ghost follows the bill's rule, not the plate's.** It is *not*
+  cleared on gesture end: an annual margin does not move until the release solve
+  lands, so clearing it there would mean the cadence where the numbers matter
+  most never showed a ghost at all. It stands until the next gesture replaces it.
 - **`refuses()` moved into `controls.js`.** Both the link codec and the preset
   declarations hand a control a bare value, and the rules for what a control can
   hold belong with the declaration. `permalink.js` reads it rather than

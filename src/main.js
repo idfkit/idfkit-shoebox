@@ -58,7 +58,9 @@ import {
   Scheme,
   SHELF_LIMIT,
   Shelf,
+  PRESET_BY_ID,
   applyPreset,
+  chaseVerdict,
   conformance,
 } from './schemes.js';
 
@@ -875,6 +877,21 @@ let bill = null;
 let pinned = null; // { bill, label } — a scheme held to be measured against
 let billGhost = null; // the bill as it stood when this gesture began
 let billBasis = BILL_COLUMNS[1]; // cost, because that is the argument that gets had
+
+/*
+ * The standard being chased, by preset id, and its worst line as it stood when
+ * this gesture began.
+ *
+ * Kept here beside the bill's pin because it is the same kind of thing: a
+ * comparison the reader *chose*, held until they unchoose it. That is what
+ * separates it from conformance, which is measured off the controls and never
+ * remembered — chasing a standard makes no claim about the building, it only
+ * says which of the scoreboard's dozen lines is worth watching while the hand
+ * is down. It stays out of the permalink for the same reason the pin does: it
+ * is how this desk is being read, not what it is.
+ */
+let chased = null;
+let chaseGhost = null;
 /**
  * The run the bill is a reading of, held whole so a tariff can be turned
  * without asking the engine for anything.
@@ -1525,7 +1542,7 @@ function markStale() {
   // kept schemes' deltas are readings of the last run, and once the shape has
   // moved they describe a building that is no longer on the sheet — the same
   // thing the plate and the bill are saying by going pale.
-  for (const el of [$('score'), $('shelf-table')]) el.classList.toggle('stale', show);
+  for (const el of [$('score'), $('shelf-table'), $('chase')]) el.classList.toggle('stale', show);
   if (!show) return;
   // A sheet that is about to solve itself does not need telling to go and press
   // something — it needs to say what it is waiting for.
@@ -1930,6 +1947,10 @@ function beginGesture({ priced = false } = {}) {
   // Money gets the same treatment the plate gives temperature: a figure that
   // changes with no record of what it changed from is a flicker, not a reading.
   billGhost = bill;
+  // And so does the chased line, which is the whole of its use: watching a
+  // margin close as you drag insulation is the reading, and a margin with no
+  // record of where it started is just a number that keeps changing.
+  chaseGhost = chaseNow();
   // A priced control cannot move the plate or the results schedule, so it must
   // not letter them with a baseline it did not shift.
   if (priced || !solvedColumns || !solvedParams) return;
@@ -1940,6 +1961,13 @@ function beginGesture({ priced = false } = {}) {
 
 const endGesture = () => {
   gesture = false;
+  // The chase ghost is deliberately *not* cleared here, which is the bill's
+  // rule rather than the plate's. The plate re-draws continuously, so its ghost
+  // has done its work by the time you let go; a margin on an attached year does
+  // not move until the release solve lands, so clearing it here would mean the
+  // annual cadence — the one where the numbers matter most — never showed a
+  // ghost at all. It stands until the next gesture takes hold and replaces it.
+  renderChase();
   // The address bar is a reading like any other: it updates when you let go,
   // never per frame, the same rule the gesture ghosts follow.
   updatePermalink();
@@ -3089,7 +3117,29 @@ function renderScore() {
     head.className = 'score-head';
     const th = head.insertCell();
     th.colSpan = 5;
-    th.textContent = preset.name;
+    // The name and its marker ride on an inner row rather than on the cell
+    // itself: a `display: flex` table cell stops being a table cell, and the
+    // colSpan that makes this a full-width subhead is quietly ignored.
+    const bar = elem('div', 'score-bar');
+    bar.append(elem('span', null, preset.name));
+    th.append(bar);
+    // The same armed square the run ledger, the auto-solve toggle and the
+    // console's patch buttons use, meaning the same thing a fourth time: this
+    // step is armed. Chasing is exactly the bill's pin in another column —
+    // one chosen thing held up to be watched — so it is the same control.
+    const chase = elem('button', 'pin pin-sm');
+    chase.type = 'button';
+    chase.setAttribute('aria-pressed', String(chased === preset.id));
+    chase.append(elem('i', 'mark'), elem('span', null, chased === preset.id ? 'Chasing' : 'Chase'));
+    chase.addEventListener('click', () => {
+      chased = chased === preset.id ? null : preset.id;
+      // A fresh chase has no gesture behind it, so it starts without a ghost
+      // rather than inheriting the one the last chased standard left.
+      chaseGhost = gesture ? chaseNow() : null;
+      renderScore();
+      renderChase();
+    });
+    bar.append(chase);
     for (const target of preset.targets) {
       const tr = body.insertRow();
       const label = tr.insertCell();
@@ -3120,6 +3170,106 @@ function renderScore() {
     }
   }
   table.append(body);
+  // The board and the chased line are two drawings of one set of readings, so
+  // they are lettered in one pass and cannot come to disagree about a margin.
+  renderChase();
+}
+
+/* ── chasing one standard ─────────────────────────────────────────────── */
+
+/** The chased standard's worst line right now, or null if none is chased. */
+function chaseNow() {
+  const preset = chased ? PRESET_BY_ID[chased] : null;
+  return preset ? chaseVerdict(preset, targetReading) : null;
+}
+
+/** A figure in the finding line's own type, redlined when it is the divergence. */
+const mark = (text, hot = false) =>
+  Object.assign(document.createElement('span'), {
+    className: hot ? 'q hot' : 'q',
+    textContent: text,
+  });
+
+/**
+ * The chased standard, lettered up beside the drawing.
+ *
+ * The scoreboard is where a run is read; this is where a *gesture* is read. It
+ * carries one line and one number — the worst of the standard's criteria, as a
+ * ratio, so a dozen rows a screen away collapse into the single question
+ * "is what my hand is doing right now helping" — with a ghost of where that
+ * number stood when the gesture began.
+ *
+ * It says how many of the standard's lines it is speaking for, always. A
+ * verdict drawn from the two criteria a design day can answer must not be
+ * mistaken for a verdict on a standard that states four.
+ */
+function renderChase() {
+  const host = $('chase');
+  const preset = chased ? PRESET_BY_ID[chased] : null;
+  host.hidden = !preset;
+  host.textContent = '';
+  if (!preset) return;
+
+  host.append(mark(preset.name), ' — ');
+  const now = chaseNow();
+
+  if (!now) {
+    // Absence with a reason, never a bare em dash: every one of these has
+    // something the reader can go and do about it.
+    const first = preset.targets.find((t) => t.limit != null) ?? preset.targets[0];
+    // A colon rather than a full stop: the absence reasons are fragments that
+    // open lowercase ("patch System in — …"), because the scoreboard sets them
+    // in a margin cell where a capital would look like a heading.
+    host.append(`no line of it reads yet: ${targetAbsence(first)}.`);
+    return;
+  }
+
+  // The label is set exactly as declared, never case-folded to fit a sentence:
+  // lowercasing turns "Hours above 25 °C" into "25 °c", which is the bill pin's
+  // tracked-capitals bug in another costume — a unit is not prose and does not
+  // take the sentence's case. So the sentence is built around the label rather
+  // than the label bent to fit the sentence.
+  const against = `reads ${f1c(now.value)} against ${now.target.limit}`;
+  const tally =
+    now.read === 1
+      ? now.clears
+        ? ' Its one readable line clears.'
+        : ''
+      : ` ${now.clears} of its ${now.read} readable lines clear.`;
+
+  if (now.over > 0) {
+    host.append(
+      mark(now.target.label),
+      ` ${against}, over by `,
+      mark(f1c(now.over), true),
+      ` ${now.target.unit}.`,
+      tally,
+    );
+  } else {
+    host.append(
+      'every readable line clears. The closest, ',
+      mark(now.target.label),
+      `, ${against} — under by `,
+      mark(f1c(-now.over)),
+      ` ${now.target.unit}.`,
+    );
+  }
+
+  // What the verdict is not speaking for. The scoreboard says this row by row;
+  // up here, where it is compressed to one sentence, the count has to carry it.
+  if (now.read < now.stated) {
+    host.append(elem('i', 'chase-part', ` ${now.stated - now.read} of its lines cannot be read on this run.`));
+  }
+
+  // The ghost: where this stood when the hand went down. Compared at display
+  // precision, so a change too small to move the printed figure says nothing.
+  if (chaseGhost && f1c(chaseGhost.over) !== f1c(now.over)) {
+    const was = chaseGhost.over > 0 ? `over by ${f1c(chaseGhost.over)}` : `under by ${f1c(-chaseGhost.over)}`;
+    const same = chaseGhost.target.id === now.target.id;
+    host.append(
+      elem('i', 'chase-ghost', same ? ` was ${was}` : ` was ${chaseGhost.target.label.toLowerCase()}, ${was}`),
+    );
+  }
 }
 
 /*

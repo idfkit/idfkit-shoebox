@@ -708,6 +708,33 @@
         color: var(--ink-2);
         max-width: 62ch;
       }
+      /* The chased line. Set a step down from the finding above it, because it
+         is a running readout rather than a conclusion — the finding says what
+         this building does, this says how far the thing you are dragging is
+         from somebody's published number. It borrows the finding's `.q` marks
+         so a figure reads the same wherever it is set on this sheet. */
+      .chase {
+        margin: 10px 0 0;
+        max-width: 68ch;
+        font: 400 13px/1.6 var(--sans);
+        color: var(--ink-3);
+      }
+      .chase[hidden] { display: none; }
+      .chase .q {
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+        font-weight: 500;
+        color: var(--ink-2);
+      }
+      /* One redline mark, on the divergence, exactly as on the board below. */
+      .chase .q.hot { color: var(--redline); }
+      .chase-ghost,
+      .chase-part {
+        font-style: normal;
+        color: var(--ink-ghost);
+      }
+      .chase-ghost { font-family: var(--mono); }
+
       .finding em { font-style: normal; color: var(--ink); }
       .finding .q {
         font-family: var(--mono);
@@ -1154,6 +1181,33 @@
         text-align: left;
       }
       .register tr.score-head:first-child td { border-top: 0; padding-top: 10px; }
+      /* The subhead carries the standard's name and its Chase marker on one
+         baseline. The marker is the `.pin` component at a size that sits in a
+         table row rather than over a section heading. */
+      /* `width: auto` explicitly: the criterion rows' first column is set to
+         44 % through an id selector, and a subhead cell is a first child too —
+         so without this the name and its marker are laid out inside 44 % of
+         the board and the name wraps to two lines beside a squeezed button. */
+      .register #score tr.score-head td { width: auto; }
+      .score-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      /* `min-width` and `min-height` are given back explicitly. The bare
+         `button` rule at the top of this sheet sets a 168 × 46 minimum for the
+         page's one real button, and `.pin` never resets it — the bill's pin is
+         that size on purpose. In a table subhead it is twice the row. */
+      .pin-sm {
+        min-width: 0;
+        min-height: 0;
+        padding: 4px 9px;
+        gap: 7px;
+        font-size: 9px;
+        letter-spacing: 0.1em;
+      }
+      .pin-sm .mark { width: 8px; height: 8px; }
 
       /* ── the register of presets, on the console head ───────────── */
 
@@ -2511,6 +2565,11 @@
           </figure>
 
           <p class="finding" id="finding"></p>
+          <!-- The chased standard's worst line, up beside the drawing where
+               the hand is. The scoreboard below reads a run; this reads a
+               gesture, and carries a ghost of where the margin stood when you
+               took hold. Armed from the board's own Chase marker. -->
+          <p class="chase" id="chase" hidden></p>
 
           <section class="schedule">
             <p class="eyebrow">Results schedule<span class="base" id="baseline-note"></span></p>

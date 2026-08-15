@@ -60,6 +60,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   half it can answer would read as a certification, and a one-zone shoebox with
   ideal loads is not one.
 
+- **Chasing a standard.** Any standard on the scoreboard can be armed with the
+  same square marker the run ledger and the console's patch buttons use, which
+  reduces it to its single worst line and letters that up beside the drawing —
+  *Peak heating load reads 14.8 against 10, over by 4.8 W/m²* — with a ghost of
+  where the margin stood when you took hold. The scoreboard reads a run; this
+  reads a gesture, so the answer to "is what I am dragging right now helping"
+  is under the hand rather than a screen away. The worst line is chosen by
+  ratio rather than raw difference, since being 3 over means one thing against
+  a limit of 15 and another against 55, and the line always says how many of
+  the standard's criteria it is speaking for — a verdict from the two a design
+  day can answer must not read as a verdict on a standard that states four.
+  Chasing is the bill's pin in another column: chosen, visible, unchoosable,
+  and making no claim about the building, so conformance stays the measured
+  thing it was.
+
 - **Kept schemes.** *Save this scheme* joins the run bundle and the scheme link
   in the run log, and keeps the whole desk — stored as the very fragment the
   link button copies, so keeping and sharing are one format and a scheme kept
