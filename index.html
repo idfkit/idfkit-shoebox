@@ -1820,10 +1820,18 @@
       .rail-note, .rail-empty {
         margin: 9px 0 0;
         /* A measure, for the same reason `.desk-sub` carries one: the rail is
-           the desk's full width whatever the column count, and the longest of
-           these notes is a two-sentence paragraph that would otherwise set as
-           one 900px line across a multi-column desk. The track above it is
-           meant to be read edge to edge; the sentence under it is not. */
+           the desk's full width whatever the column count, so these notes —
+           two full sentences, at their longest — were setting as a single
+           line 780px wide at two columns and 2,700px at five. The track above
+           is meant to be read edge to edge; the sentence under it is not.
+
+           62ch resolves to 390.6px against IBM Plex Sans at this size, which
+           is fractionally under the 399px the rail gives a note on the
+           one-column desk. Checked with the real font rather than the
+           fallback, because a cap that bit down there would be this line
+           quietly reflowing a layout it was never meant to touch: all three
+           of these notes set to two lines at 399px and still do at 391px, so
+           the narrow desk is left exactly as it was. */
         max-width: 62ch;
         font: 400 10.5px/1.45 var(--sans);
         color: var(--ink-ghost);
