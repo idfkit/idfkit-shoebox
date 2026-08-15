@@ -1163,6 +1163,11 @@
         flex-wrap: wrap;
         align-items: flex-start;
         gap: 8px 26px;
+        /* The register's two arrangements below are chosen by the brief's own
+           width, asked with a container query rather than a viewport guess:
+           the head's width is a negotiation between the sheet and the window,
+           and only the brief knows what it was actually dealt. */
+        container-type: inline-size;
       }
       /* The sub keeps a readable measure and no more; the register takes the
          head's surplus, because on a wide desk the surplus is worth more as
@@ -1319,6 +1324,22 @@
         color: var(--ink-ghost);
       }
 
+      /* The clause build-up is the longest thing on the console — Passivhaus
+         runs to ten specs, each with a sentence of arithmetic under it — and
+         opened in full it would shove the strips a screen down. So the list
+         scrolls inside a capped well: the fold answers "what does it set",
+         the scroll answers "all of it", and the desk head keeps its height. */
+      .preset .clauses {
+        max-height: min(300px, 44vh);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+        /* The last row's missing rule reads as "the list ends here", which a
+           scroll well must not say while there is more below the fold line. */
+        border-bottom: 1px solid var(--rule-soft);
+      }
+      .preset .clauses tr:last-child { border-bottom: 0; }
+
       .preset-fold { margin-top: 13px; }
       .preset-fold > summary {
         font: 500 9.5px/1.3 var(--cond);
@@ -1360,6 +1381,27 @@
         border-radius: var(--r);
         font: 400 10.5px/1.5 var(--sans);
         color: var(--ink-3);
+      }
+
+      /* On a head wide enough to seat them, the presets run left to right —
+         five ruled columns on one shelf, each opening downward in place —
+         because a multi-column desk's head is pushing 2,000px, and five
+         stacked rows there spend the vertical space the strips want to save
+         horizontal space the head has in surplus. The columns share the
+         hairline the stacked rows ruled between themselves, turned upright. */
+      @container (min-width: 1280px) {
+        .presets { max-width: none; }
+        #presets { display: flex; align-items: stretch; }
+        .preset { flex: 1 1 0; min-width: 0; }
+        .preset + .preset { border-top: 0; border-left: 1px solid var(--rule-soft); }
+        /* The folded line becomes a column head: name above, reading below,
+           the way a strip letters its label over its meter. */
+        .preset > summary { display: block; padding: 9px 14px 8px 2px; }
+        .preset + .preset > summary { padding-left: 14px; }
+        .preset > summary::before { display: inline-block; width: auto; margin-right: 7px; }
+        .preset-state { display: block; margin: 4px 0 0 calc(1ch + 7px); }
+        .preset-body { padding: 2px 14px 13px calc(1ch + 7px); }
+        .preset + .preset .preset-body { padding-left: calc(1ch + 7px + 12px); }
       }
 
       /* ── the shelf ──────────────────────────────────────────────── */
