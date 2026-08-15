@@ -136,7 +136,11 @@ Things that cost real debugging:
   `computeBill` is handed only the environments being billed.
 - **The stock example's 5.25 kW of grounds lighting is 23 MWh a year**, against
   the building's 18. Undivided it swamps every envelope decision, so the schedule
-  is sectioned and the per-m² intensity is of the building alone.
+  is sectioned and the per-m² intensity is of the building alone. It now lives
+  behind the bypassable Grounds strip (off by default) rather than silently in
+  the baseline — as do the stock file's other demonstration loads: the matched
+  ±352 W `OtherEquipment` test pair and the `.mtr`-only meters are gone
+  entirely, since nothing read either.
 - **Per-m² is only drawn on an annual run.** Every published benchmark is annual,
   and 0.3 kgCO₂e/m² over two design days has no use but to be mistaken for one.
 - Rates come from six dated open datasets, generated into `src/rates.data.js` by

@@ -98,12 +98,13 @@ export class EndUse {
     this.needs = needs;
     // Which subtotal this falls under. A priced schedule is sectioned, and the
     // section here is the one an energy statement uses: what the building does,
-    // then what the site does around it. It is not presentation. The stock
-    // example hangs 5.25 kW of astronomical-clock grounds lighting off this
-    // model, which is 23 MWh a year against the building's 18 -- left in one
-    // undivided total it would swamp every envelope decision on the desk and
-    // the sheet would report that the way to save carbon here is to turn off
-    // the car park. True, and useless. Sectioned, both facts survive.
+    // then what the site does around it. It is not presentation. The Grounds
+    // strip's 5.25 kW of astronomical-clock lighting -- inherited from the
+    // stock example, now engaged by choice -- is 23 MWh a year against the
+    // building's 18: left in one undivided total it would swamp every envelope
+    // decision on the desk and the sheet would report that the way to save
+    // carbon here is to turn off the car park. True, and useless. Sectioned,
+    // both facts survive.
     this.group = group;
     // Delivered heat or coolth, which has to go through the plant before it is
     // a fuel. The others are already at the meter.
@@ -136,7 +137,7 @@ export const END_USES = Object.freeze([
   new EndUse({ id: 'cooling', label: 'Cooling', meter: 'Cooling:DistrictCooling', needs: 'system', plant: true }),
   new EndUse({ id: 'lighting', label: 'Interior lighting', meter: 'InteriorLights:Electricity', needs: 'gains' }),
   new EndUse({ id: 'equipment', label: 'Equipment', meter: 'InteriorEquipment:Electricity', needs: 'gains' }),
-  new EndUse({ id: 'exterior', label: 'Grounds lighting', meter: 'ExteriorLights:Electricity', group: 'site' }),
+  new EndUse({ id: 'exterior', label: 'Grounds lighting', meter: 'ExteriorLights:Electricity', needs: 'grounds', group: 'site' }),
 ]);
 
 /** The sections of the schedule, in the order they are billed. */

@@ -58,6 +58,11 @@ export const isSchemeFragment = (raw) => /^v\d+(&|$)/.test(raw);
 /**
  * What an omitted key meant, per version. Today one entry; a changed default
  * adds the outgoing table here under the old version before the new one ships.
+ *
+ * The Grounds channel moved the stock example's grounds lighting out of the
+ * baseline without a bump: that would ordinarily be a v2 with a migration
+ * engaging the strip on old links, but it shipped before any link existed in
+ * the wild, so v1 simply means the desk as it stands.
  */
 const DEFAULTS_BY_VERSION = Object.freeze({ v1: DEFAULT_PARAMETERS });
 

@@ -1754,6 +1754,16 @@ function derivedReadings(facts) {
         return heat ? `${heat.metered.toFixed(0)} kWh ${heat.fuel.label.toLowerCase()}` : '—';
       })(),
     ],
+    // What the site bought around the building. Same rule as the plant's
+    // reading: it is a meter reading, so it is an em dash until a run has put
+    // one in hand.
+    [
+      'grounds',
+      (() => {
+        const ext = bill?.lines.find((l) => l.use.id === 'exterior');
+        return ext ? `${ext.metered.toFixed(0)} kWh` : '—';
+      })(),
+    ],
     // This one is true before any run at all: it describes the place, not the
     // building, and the place is known as soon as a station is picked.
     [
