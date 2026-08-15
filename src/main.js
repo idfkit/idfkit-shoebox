@@ -29,6 +29,7 @@ import {
   climateDescription,
   climateZone,
   degreeDays,
+  flavorWindow,
   here,
   nearestSites,
   searchSites,
@@ -36,6 +37,7 @@ import {
   siteRegion,
   weatherFor,
 } from './weather.js';
+import { decodeState, encodeState } from './permalink.js';
 
 const ENERGYPLUS_VERSION = '26.1.0';
 
@@ -1356,6 +1358,38 @@ downloadBtn.addEventListener('click', async () => {
 
 syncDownload();
 
+/* ── copying the scheme ────────────────────────────────────────────────────
+ *
+ * The other reproduction path: the bundle re-runs this run in a local
+ * EnergyPlus, the link re-solves this scheme here. Unlike the download it is
+ * never disabled — the scheme is the desk, not the results, and it exists
+ * from the first frame whether the engine has run or not. The receiving page
+ * does its own solving.
+ */
+const shareBtn = $('share');
+let shareTimer;
+
+shareBtn.addEventListener('click', async () => {
+  // The bar re-letters on gesture end, but a keyboard user can land here from
+  // the middle of one; one write before reading it back costs nothing and can
+  // never copy a stale address.
+  updatePermalink();
+  try {
+    await navigator.clipboard.writeText(location.href);
+  } catch {
+    // The clipboard can be withheld; the address bar cannot. The same link is
+    // sitting there, and saying so beats failing quietly.
+    statusEl.className = 'status bad';
+    statusEl.textContent = 'The link could not be copied here — it is the address in the address bar.';
+    return;
+  }
+  shareBtn.textContent = 'Copied';
+  clearTimeout(shareTimer);
+  shareTimer = setTimeout(() => {
+    shareBtn.textContent = 'Copy scheme link';
+  }, 1500);
+});
+
 const set = (id, text, cls) => {
   const el = $(id);
   el.textContent = text;
@@ -1799,6 +1833,9 @@ function beginGesture({ priced = false } = {}) {
 
 const endGesture = () => {
   gesture = false;
+  // The address bar is a reading like any other: it updates when you let go,
+  // never per frame, the same rule the gesture ghosts follow.
+  updatePermalink();
 };
 
 /* ══ controls ════════════════════════════════════════════════════════════ */
@@ -2089,15 +2126,18 @@ async function choose(row, pick) {
     statusEl.textContent = message;
   };
 
+  // Three outcomes, told apart for the permalink boot: true is attached, false
+  // is refused (and `refuse` has already said why), null is superseded by a
+  // later choice and calls for nothing at all.
   let files;
   try {
     files = await weatherFor(picked, signal);
   } catch (error) {
-    if (signal.aborted) return;
+    if (signal.aborted) return null;
     refuse(`${siteName(picked)} could not be fetched: ${error.message}`);
-    return;
+    return false;
   }
-  if (signal.aborted) return;
+  if (signal.aborted) return null;
 
   // The design conditions are not optional and there is nothing to fall back
   // to: keeping the previous city's design days under this city's name is the
@@ -2110,7 +2150,7 @@ async function choose(row, pick) {
     conditions = designConditionsFrom(files.ddy, schema);
   } catch (error) {
     refuse(`${siteName(picked)} cannot be used: ${error.message}`);
-    return;
+    return false;
   }
 
   const zone = document.createElement('span');
@@ -2178,6 +2218,106 @@ async function choose(row, pick) {
   statusEl.textContent = `${siteName(picked)} attached, design conditions and all — the run covers all 8,760 hours, with the sizing days skipped.`;
   syncAuto();
   markStale();
+  return true;
+}
+
+/* ══ the permalink ═══════════════════════════════════════════════════════ */
+
+/**
+ * The attached station as the link carries it, or null while the sheet still
+ * has the Denver design days it shipped with. The stock `station` seed holds
+ * only a tariff region and no archive, which is what `url` distinguishes.
+ */
+const stationToken = () =>
+  station?.url ? { wmo: String(station.wmo), window: flavorWindow(station) } : null;
+
+/**
+ * A link pasted into a tab already on this page is a same-document navigation:
+ * the browser moves the hash and loads nothing, which would leave the address
+ * claiming a scheme the desk is not showing. Reloading routes it back through
+ * the one path a link is honoured by — the boot decode, refusals included.
+ * Gestures never trip this: `replaceState` fires no `hashchange`.
+ */
+window.addEventListener('hashchange', () => location.reload());
+
+/** Re-letter the address bar from the desk. Called wherever a gesture ends. */
+function updatePermalink() {
+  const hash = encodeState({ params, bypass, station: stationToken() });
+  // `replaceState` rather than assigning `location.hash`: a drag session is
+  // one address, not a browser-history entry per release.
+  history.replaceState(null, '', hash ? `#${hash}` : location.pathname + location.search);
+}
+
+/** The absolute link for a given parameter set — the run bundle's manifest. */
+const schemeUrl = (p) => {
+  const hash = encodeState({ params: p, bypass: patching(), station: stationToken() });
+  return `${location.origin}${location.pathname}${hash ? `#${hash}` : ''}`;
+};
+
+/**
+ * Refuse a link whole: back to the issued drawing, hash struck, and the reason
+ * left standing in the status line. Auto-solve is stopped for the same reason
+ * a fatal stops it — a solve completing half a second later would overwrite
+ * the one sentence that says what happened to the link.
+ */
+function refuseLink(message) {
+  Object.assign(params, DEFAULT_PARAMETERS);
+  Object.assign(bypass, DEFAULT_BYPASS);
+  for (const sync of Object.values(syncSlider)) sync();
+  desk?.sync();
+  applyGeometry();
+  history.replaceState(null, '', location.pathname + location.search);
+  stopAuto();
+  statusEl.className = 'status bad';
+  statusEl.textContent = message;
+}
+
+/**
+ * Attach the station a link names, through the same `choose` path the picker
+ * uses. The lookup is by WMO number against the live index, then by TMYx
+ * window within the site — either missing refuses the link whole, because the
+ * design conditions are not optional and there is nothing to fall back to.
+ */
+async function attachFromLink(linked) {
+  const { wmo, window: win } = linked.station;
+  const named = `station ${wmo}${win ? ` (TMYx ${win})` : ''}`;
+  statusEl.className = 'status';
+  statusEl.textContent = `Fetching the linked weather ${named}…`;
+  let row;
+  let pick;
+  try {
+    const rows = await searchSites(wmo, 8);
+    row = rows.find((r) => String(r.station.wmo) === wmo);
+    pick = row?.flavors.find((f) => flavorWindow(f.station) === win);
+  } catch (error) {
+    refuseLink(
+      `The linked ${named} could not be looked up: ${error.message}. The sheet is at its defaults.`,
+    );
+    return;
+  }
+  if (!pick) {
+    refuseLink(
+      `This link names ${named}, which is not in the station index. The sheet is at its defaults.`,
+    );
+    return;
+  }
+  // Where the desk stood when the fetch began. If it still stands there when a
+  // refusal comes back, the whole link is set aside; if the reader has already
+  // started working, their scheme outranks a link that failed to finish.
+  const untouched = shapeKey(params);
+  const took = await choose(row, pick);
+  if (took === false) {
+    if (shapeKey(params) === untouched) {
+      refuseLink(
+        `The linked ${named} could not be attached, so the whole link was set aside and the sheet is at its defaults.`,
+      );
+    }
+    return;
+  }
+  // `choose` skips the sizing days the moment a year is attached, which is
+  // right for a hand pick and wrong for a link that explicitly kept them; the
+  // link's own value is restored through the same one path to the model.
+  if (took === true) commit('sizingPeriods', linked.params.sizingPeriods, true);
 }
 
 /* ══ the run ═════════════════════════════════════════════════════════════ */
@@ -2217,6 +2357,26 @@ const model = buildModel(schema);
 // Everything the drawing asserts is now read back off the model, so the sheet
 // cannot describe a building the engine did not simulate.
 DATUMS = designDayDatums(model);
+
+// The address bar may be carrying a scheme. It is read here, before the
+// sliders are built and the sheet first drawn, so a linked desk appears as
+// itself rather than snapping over from the defaults — but a failure is only
+// noted: the engine section below still writes the status line, so the
+// refusal is delivered once boot has finished saying things, where it can
+// stand and be read.
+let linked = null;
+let linkError = null;
+if (location.hash.length > 1) {
+  try {
+    linked = decodeState(location.hash.slice(1));
+    Object.assign(params, linked.params);
+    Object.assign(bypass, linked.bypass);
+    desk?.sync();
+  } catch (error) {
+    linkError = error;
+  }
+}
+
 buildSliders();
 // The desk is the point of the page, so it is open on arrival. It costs a
 // column, which is the honest price of having every control to hand.
@@ -2411,6 +2571,11 @@ async function solve() {
       severe,
       warnings,
       seconds,
+      // The scheme that produced this run, as a link — the snapshot rather
+      // than live params, for the same reason `idf` is held: a slider nudged
+      // since the solve must not have the manifest citing a scheme that never
+      // produced these results.
+      permalink: schemeUrl(snapshot),
     },
   };
   bill = billFrom(lastRun);
@@ -2506,5 +2671,16 @@ runBtn.addEventListener('click', () => {
   forced = true;
   pump();
 });
+
+// The verdict on a link the page was opened with, now that boot has finished
+// writing the status line. A refusal stops auto-solve, so the pump below never
+// starts and the reason stays readable; a station attach runs alongside the
+// first design-day solve and re-solves annually when it lands, exactly as a
+// hand pick does.
+if (linkError) {
+  refuseLink(`This link could not be read — ${linkError.message} — so the sheet is at its defaults.`);
+} else if (linked?.station) {
+  attachFromLink(linked);
+}
 
 if (autoOn()) pump();

@@ -163,6 +163,36 @@ corsproxy.io and corsfix now return 403 without a paid plan, `test.cors.workers.
 rate-limited, and `cors.eu.org`, `thingproxy` and `whateverorigin` are dead. Plan
 on a proxy you control.
 
+## Sharing a scheme
+
+The address bar carries the desk. Every control off its default, the patch
+state and the attached station are written into the URL fragment on each
+gesture release, so the address is always a link to exactly what is on the
+sheet:
+
+```
+https://shoebox.idfkit.com/#v1&width=20&wwrS=0.35&heatSet=21&in=system&stn=725650&win=2007-2021
+```
+
+**Copy scheme link** in the run ledger puts it on the clipboard; opening it
+rebuilds the desk and solves it fresh. The fragment stays readable on purpose —
+`wwrS=0.35` in an address says what the argument is about — and it is
+delta-encoded, so a near-default scheme is a short link and the default desk is
+the bare address. The station is named by WMO number and TMYx window, because
+onebuilding publishes each site under several 15-year samples that disagree by
+up to 9 % on degree days, and a link has to reproduce the year that was argued
+over, not a sibling of it.
+
+The leading `v1` pins what an omitted key meant when the link was minted.
+Adding a control never breaks an old link — the new key just takes its
+default — while renaming one or changing a default requires a version bump and
+a migration step in `src/permalink.js`. A link that cannot be honoured — an
+unknown key, a value out of range, a station whose archive or DDY cannot be
+fetched — is refused whole, with the reason in the status line and the sheet at
+its defaults, rather than half-loaded. The run bundle's manifest cites the
+link too, so the download reproduces the run locally and the link re-solves it
+live.
+
 ## Authoring the model
 
 `src/model.js` builds the model through `@idfkit/core` rather than holding IDF

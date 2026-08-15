@@ -172,6 +172,13 @@ function manifest(run) {
     ? `  energyplus -w ${epwFile} model.idf`
     : '  energyplus model.idf';
 
+  // The other reproduction path: the same scheme, re-solved live on the page
+  // that made this bundle. Stated only when the caller captured it — a missing
+  // link is left out rather than fabricated, like the missing EPW above.
+  const live = run.permalink
+    ? `\n  Or open the same scheme live, re-solved in the browser:\n  ${run.permalink}\n`
+    : '';
+
   return (
     `idfkit shoebox — simulation bundle\n` +
     `\n` +
@@ -189,7 +196,8 @@ function manifest(run) {
     `To reproduce\n` +
     `  Install EnergyPlus ${run.version}, then from this folder run:\n` +
     reproduce +
-    `\n`
+    `\n` +
+    live
   );
 }
 

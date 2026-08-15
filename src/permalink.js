@@ -1,0 +1,205 @@
+/**
+ * The scheme, as a URL fragment.
+ *
+ * The whole desk is deterministic — `params`, the patch state and the chosen
+ * station fully decide the IDF, the run and the bill — so a link that carries
+ * those three reproduces the sheet anywhere. This module is the codec and
+ * nothing else: no DOM, no `window`, no imports beyond the control
+ * declarations, so it can be exercised from Node exactly the way `model.js`
+ * is.
+ *
+ * The fragment, not the query string, because the fragment never leaves the
+ * browser: it cannot vary CloudFront's cache key, cannot leak schemes into a
+ * server log, and survives a preview's `/42/` base untouched. Within it,
+ * `URLSearchParams` syntax — `v1&width=20&wwrS=0.35&stn=725650` — because the
+ * browser ships the codec for it and every escaping bug that a hand-rolled
+ * `key:value` grammar would eventually meet is already handled.
+ *
+ * Only differences from the defaults are written. That keeps the link short
+ * enough to read — `wwrS=0.35` in an address bar says what the argument is
+ * about, the way the rate build-up on the bill shows its arithmetic — but it
+ * makes the defaults part of the encoding: an omitted key means "the default
+ * *as of this version*". Hence the version token in front, and the contract
+ * that goes with it:
+ *
+ *   - Adding a control costs nothing. Old links simply omit the new key and
+ *     take its default, and new channels ship bypassed, so an old link keeps
+ *     producing the building it always did.
+ *   - Changing a default, renaming a key, or narrowing a range means bumping
+ *     `LINK_VERSION`, freezing the outgoing defaults into `DEFAULTS_BY_VERSION`
+ *     and writing one step in `MIGRATIONS` to carry old links forward — the
+ *     same arrangement EnergyPlus uses for the IDF itself.
+ *   - A link that cannot be carried forward is refused whole, naming what
+ *     failed. Loading half a scheme would be the half-loaded-city failure the
+ *     weather picker exists to refuse, in a new costume.
+ */
+
+import {
+  ALL_KEYS,
+  CHANNELS,
+  CHANNEL_BY_ID,
+  DEFAULT_PARAMETERS,
+  DEFAULT_BYPASS,
+  controlFor,
+} from './controls.js';
+
+export const LINK_VERSION = 'v1';
+
+/**
+ * What an omitted key meant, per version. Today one entry; a changed default
+ * adds the outgoing table here under the old version before the new one ships.
+ */
+const DEFAULTS_BY_VERSION = Object.freeze({ v1: DEFAULT_PARAMETERS });
+
+/**
+ * One step per version bump, `(pairs) => ({ to, pairs })`, rewriting old
+ * vocabulary into the next version's under the version it lands on. Empty
+ * until a key actually churns; the structure exists
+ * from day one because retrofitting it after unversioned links are in the wild
+ * is the expensive path — there would be no way left to tell which defaults an
+ * omission meant.
+ */
+const MIGRATIONS = Object.freeze({});
+
+/**
+ * Keys that are not parameters: the patch lists and the station. Declared
+ * next to an assertion rather than a comment, so a future control key cannot
+ * quietly collide with one — `controlFor` would route the collision to a
+ * parameter and the link would mean two things at once.
+ */
+const RESERVED = Object.freeze(['in', 'out', 'stn', 'win']);
+for (const key of RESERVED) {
+  if (ALL_KEYS.includes(key)) {
+    throw new Error(`the reserved link key "${key}" collides with a control parameter`);
+  }
+}
+
+/**
+ * Encode the desk. Returns the fragment without its leading `#`, or an empty
+ * string when the desk is at its defaults with no station attached — a default
+ * desk needs no link, and stripping the hash entirely is what lets the bare
+ * address stay the canonical way to reach it.
+ *
+ * `station` is `{ wmo, window }` for an attached TMYx station or null. The
+ * window matters: onebuilding publishes the same site under several 15-year
+ * samples that disagree by up to 9 % on degree days, so a link that named only
+ * the site would reproduce a different year than the one argued over.
+ */
+export function encodeState({ params, bypass, station = null }) {
+  const pairs = new URLSearchParams();
+  for (const key of ALL_KEYS) {
+    // `String` rather than a display format: the display rounds, and a link
+    // must hand back the exact value, not the nearest printable one.
+    if (params[key] !== DEFAULT_PARAMETERS[key]) pairs.append(key, String(params[key]));
+  }
+  for (const channel of CHANNELS) {
+    if (!channel.bypassable || bypass[channel.id] === DEFAULT_BYPASS[channel.id]) continue;
+    pairs.append(bypass[channel.id] ? 'out' : 'in', channel.id);
+  }
+  if (station) {
+    pairs.append('stn', String(station.wmo));
+    if (station.window) pairs.append('win', station.window);
+  }
+  const body = pairs.toString();
+  return body ? `${LINK_VERSION}&${body}` : '';
+}
+
+/** One value, read through the control that owns its key. Throws, never clamps. */
+function readValue(key, raw) {
+  const { control, side } = controlFor(key); // throws naming an unowned key
+  const kind = side ? 'facade' : control.kind;
+  if (control.kind === 'selector') {
+    // Matched as text because the URL carries text: `timestep=4` has to find
+    // the numeric option 4, and the option's own value — number or string — is
+    // what goes onto `params`.
+    const option = control.options.find((o) => String(o.value) === raw);
+    if (!option) throw new Error(`"${raw}" is not an option of ${key}`);
+    return option.value;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value)) throw new Error(`"${raw}" is not a number for ${key}`);
+  // Range, not step alignment: several defaults (a wall R of 2.290965) do not
+  // sit on their own step grid, so alignment would refuse values the desk
+  // itself produces.
+  const [min, max] =
+    kind === 'scale' || kind === 'facade'
+      ? [control.min, control.max]
+      : control.kind === 'bearing'
+        ? [0, 360]
+        : [0, 24]; // a profile key is an hour of the day
+  if (value < min || value > max) {
+    throw new Error(`${key} is ${raw}, outside its ${min}–${max} range`);
+  }
+  return value;
+}
+
+/**
+ * Decode a fragment (without its `#`) back into a full parameter set, a full
+ * bypass map, and the station reference if the link carries one.
+ *
+ * All-or-nothing: every pair is validated through the control declarations
+ * before anything is returned, and the first offense throws naming itself.
+ * The caller gets a scheme it can apply wholesale or a reason to refuse the
+ * link wholesale — never a mixture.
+ */
+export function decodeState(raw) {
+  const cut = raw.indexOf('&');
+  const version = cut === -1 ? raw : raw.slice(0, cut);
+  if (!(version in DEFAULTS_BY_VERSION)) {
+    throw new Error(`"${version || '(empty)'}" is not a link version this page knows`);
+  }
+  let pairs = new URLSearchParams(cut === -1 ? '' : raw.slice(cut + 1));
+  // Walk the ledger from the link's version to the current one. A version in
+  // the defaults table with no path forward is a programming error worth
+  // throwing on, not a link problem.
+  for (let at = version; at !== LINK_VERSION; ) {
+    const step = MIGRATIONS[at];
+    if (!step) throw new Error(`no migration is written from link version "${at}"`);
+    ({ to: at, pairs } = step(pairs));
+  }
+
+  const params = { ...DEFAULT_PARAMETERS };
+  const bypass = { ...DEFAULT_BYPASS };
+
+  // Tracked by name rather than by whether the assignment moved anything: a
+  // channel that defaults to bypassed makes `out=` a no-op, and a conflict
+  // hidden behind a no-op is still two claims about one patch bay.
+  const patched = new Set();
+  for (const [list, off] of [
+    [pairs.getAll('out'), true],
+    [pairs.getAll('in'), false],
+  ]) {
+    for (const id of list) {
+      const channel = CHANNEL_BY_ID[id];
+      if (!channel?.bypassable) throw new Error(`no bypassable channel is called "${id}"`);
+      if (patched.has(id)) throw new Error(`the channel "${id}" is patched two ways at once`);
+      patched.add(id);
+      bypass[id] = off;
+    }
+  }
+
+  let station = null;
+  const wmo = pairs.get('stn');
+  const win = pairs.get('win');
+  if (win !== null && wmo === null) {
+    throw new Error('a TMYx window ("win") with no station ("stn") to apply it to');
+  }
+  if (wmo !== null) {
+    if (!/^\d{3,8}$/.test(wmo)) throw new Error(`"${wmo}" is not a WMO station number`);
+    if (win !== null && !/^\d{4}-\d{4}$/.test(win)) {
+      throw new Error(`"${win}" is not a TMYx window like 2007-2021`);
+    }
+    station = { wmo, window: win };
+  }
+
+  for (const key of new Set(pairs.keys())) {
+    if (RESERVED.includes(key)) continue;
+    const values = pairs.getAll(key);
+    // A repeated key is two claims about one control. Either could be meant,
+    // so neither is taken.
+    if (values.length > 1) throw new Error(`${key} is given ${values.length} times`);
+    params[key] = readValue(key, values[0]);
+  }
+
+  return { params, bypass, station };
+}

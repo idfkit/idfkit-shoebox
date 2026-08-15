@@ -175,6 +175,36 @@ change nothing.
 Auto-solve has two cadences: a design day (48 h, ~50 ms) re-solves continuously
 during a drag; a weather file (8,760 h, ~0.7 s) re-solves once on release.
 
+### The permalink (src/permalink.js)
+
+The URL fragment carries the desk — params off their defaults, patch state,
+station by WMO and TMYx window — rewritten by `endGesture`, so the address bar
+updates when you let go and never during a drag. The codec is DOM-free and
+validated the same way `model.js` is: a throwaway Node script asserting exact
+round-trip of every key and refusal of every malformed input class.
+
+- **Delta encoding makes the defaults part of the format.** An omitted key
+  means "the default *as of that version*". Adding a control is free (old
+  links take the new default, and new channels ship bypassed). Changing a
+  default, renaming a key, or narrowing a range means bumping `LINK_VERSION`,
+  freezing the outgoing defaults into `DEFAULTS_BY_VERSION`, and writing one
+  `MIGRATIONS` step — the IDF version-transition arrangement, in miniature.
+- **Links are refused whole, never half-loaded.** `decodeState` validates every
+  pair through the control declarations before returning anything, and a
+  station that cannot be fetched at boot refuses the entire link back to
+  defaults with the reason in the status line. Auto-solve is stopped on
+  refusal so the next solve cannot overwrite the sentence saying why.
+- **Reserved keys** (`in`, `out`, `stn`, `win`) are asserted against
+  `ALL_KEYS` at module load, so a future control key cannot collide with one.
+- **A pasted link is a same-document navigation** — the browser moves the hash
+  and loads nothing — so a `hashchange` listener reloads the page into the
+  boot decode. Gestures never trip it: `replaceState` fires no `hashchange`.
+- **The station attach reuses `choose`**, which skips sizing days the moment a
+  year lands; the link's own `sizingPeriods` is committed back afterwards so a
+  link that kept them reproduces faithfully (8,808 hours, not 8,760).
+- The run bundle's manifest cites the permalink of the *snapshot* that was
+  solved, not live params, for the same reason it holds the exact IDF text.
+
 ### The balance rail
 
 The console's signature. Five channel meters are terms of the zone *air* heat
