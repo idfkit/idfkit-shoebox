@@ -575,16 +575,16 @@ export function mountConsole({
    * The curve a sweep drew, under the control it swept.
    *
    * The x axis is `control.fraction` — the same 0..1 the face tick above it
-   * uses — so the curve and the calibration face are one axis, stacked. Two
-   * pens, both legitimately signed degrees on the drawing: the highest hour of
-   * zone temperature in the warm one, the lowest in the cold one — the summer
-   * and winter design days' extremes on a design-day desk, the year's under an
-   * attached weather file. A sample that failed is a gap in the line, never a
-   * point invented across it. The redline stands where the control stands now,
-   * and moving the control just walks it along the curve; on a conditioned
-   * desk both lines run flat at the setpoints, which is not a failure of the
-   * study but its finding — the system holds the zone flat wherever this
-   * control goes.
+   * uses — so the curve and the calibration face are one axis, stacked. What
+   * the y axis reads is the study's `metric`: zone temperature extremes on a
+   * free-running desk (the design days' own, or the year's), or the demand
+   * intensities once ideal loads are in the path with a year to bill — where
+   * the extremes would only letter the setpoints, the demand the system pays
+   * to hold them is the curve worth drawing. A sample that failed is a gap in
+   * the line, never a point invented across it. The redline stands where the
+   * control stands now, and moving the control just walks it along the curve;
+   * on a conditioned design-day desk the temperature lines still run flat at
+   * the setpoints, which is not a failure of the study but its finding.
    */
   function studyCard(key, study) {
     const { control } = controlFor(key);
@@ -603,13 +603,34 @@ export function mountConsole({
 
     const W = 240;
     const H = 64;
-    // The right gutter holds the curves' end labels; six mono characters of
-    // "−18.7°" need the full 33 units or the degree sign falls off the card.
-    const plot = { x: 2, w: 200, top: 6, bottom: 42 };
+    const energy = study.metric === 'energy';
+    // Which pens the metric takes. Temperatures are the signed pair the design
+    // system reserves for degrees; the demand intensities keep it — TEDI is
+    // heat asked into the zone, CEDI heat asked out — and the EUI, an unsigned
+    // magnitude like every energy total on the sheet, is graphite.
+    const series = energy
+      ? [
+          { sel: (p) => p.eui, pen: 'var(--ink)', name: 'EUI', said: 'building EUI' },
+          { sel: (p) => p.tedi, pen: 'var(--warm)', name: 'TEDI', said: 'heating demand TEDI' },
+          { sel: (p) => p.cedi, pen: 'var(--cold)', name: 'CEDI', said: 'cooling demand CEDI' },
+        ]
+      : [
+          {
+            sel: (p) => p.high,
+            pen: 'var(--warm)',
+            said: study.annual ? 'annual peak' : 'summer design-day peak',
+          },
+          {
+            sel: (p) => p.low,
+            pen: 'var(--cold)',
+            said: study.annual ? 'annual low' : 'winter design-day low',
+          },
+        ];
+    // The right gutter holds the curves' end labels: six mono characters of
+    // "−18.7°" in one mode, "TEDI 142" in the other, which needs the wider cut.
+    const plot = { x: 2, w: energy ? 190 : 200, top: 6, bottom: 42 };
 
-    const lows = study.curve.filter((p) => p.low != null);
-    const highs = study.curve.filter((p) => p.high != null);
-    const vals = [...lows.map((p) => p.low), ...highs.map((p) => p.high)];
+    const vals = series.flatMap((s) => study.curve.map(s.sel).filter((v) => v != null));
     const lo = Math.min(...vals);
     const hi = Math.max(...vals);
     const span = hi - lo || 1;
@@ -618,16 +639,18 @@ export function mountConsole({
     const x = (v) => plot.x + clamp(control.fraction(v), 0, 1) * plot.w;
 
     const range = (arr) => `${Math.min(...arr).toFixed(1)} to ${Math.max(...arr).toFixed(1)}`;
-    const [peakOf, lowOf] = study.annual
-      ? ['annual peak', 'annual low']
-      : ['summer design-day peak', 'winter design-day low'];
+    const unit = energy ? 'kWh per square metre a year' : '°C';
     const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' });
     root.setAttribute(
       'aria-label',
       `Study of ${control.label} from ${control.format(control.min)} to ${control.format(control.max)}: ` +
-        (highs.length ? `${peakOf} ${range(highs.map((p) => p.high))} °C` : 'no peak readings') +
-        '; ' +
-        (lows.length ? `${lowOf} ${range(lows.map((p) => p.low))} °C.` : 'no low readings.'),
+        series
+          .map((s) => {
+            const found = study.curve.map(s.sel).filter((v) => v != null);
+            return found.length ? `${s.said} ${range(found)} ${unit}` : `no ${s.said} readings`;
+          })
+          .join('; ') +
+        '.',
     );
 
     root.append(
@@ -667,29 +690,37 @@ export function mountConsole({
         }
       }
     };
-    draw((p) => p.high, 'var(--warm)');
-    draw((p) => p.low, 'var(--cold)');
+    for (const s of series) draw(s.sel, s.pen);
 
     // The curves' right-hand ends lettered directly in the gutter, the plate's
-    // own move, settled apart when the two converge.
+    // own move, settled top to bottom against a minimum gap when they converge.
     const labels = [];
-    if (highs.length) labels.push({ v: highs[highs.length - 1].high, pen: 'var(--warm)' });
-    if (lows.length) labels.push({ v: lows[lows.length - 1].low, pen: 'var(--cold)' });
-    for (const l of labels) l.y = clamp(y(l.v) + 2.5, plot.top + 5, plot.bottom);
+    for (const s of series) {
+      const found = study.curve.filter((p) => s.sel(p) != null);
+      if (!found.length) continue;
+      const v = s.sel(found[found.length - 1]);
+      labels.push({
+        text: energy ? `${s.name} ${v.toFixed(v >= 100 ? 0 : 1)}` : `${v.toFixed(1)}°`,
+        pen: s.pen,
+        y: clamp(y(v) + 2.5, plot.top + 5, plot.bottom),
+      });
+    }
     labels.sort((a, b) => a.y - b.y);
-    if (labels.length === 2 && labels[1].y - labels[0].y < 9) labels[1].y = labels[0].y + 9;
+    for (const [i, l] of labels.entries()) {
+      if (i > 0) l.y = Math.max(l.y, labels[i - 1].y + 9);
+    }
     for (const l of labels) {
       const t = svg('text', {
         x: plot.x + plot.w + 5, y: l.y, fill: l.pen,
         'font-family': 'var(--mono)', 'font-size': 7.5,
       });
-      t.textContent = `${l.v.toFixed(1)}°`;
+      t.textContent = l.text;
       root.append(t);
     }
 
-    const foot = (text, fx, anchor) => {
+    const foot = (text, fx, anchor, pen = 'var(--ink-ghost)') => {
       const t = svg('text', {
-        x: fx, y: 56, 'text-anchor': anchor, fill: 'var(--ink-ghost)',
+        x: fx, y: 56, 'text-anchor': anchor, fill: pen,
         'font-family': 'var(--mono)', 'font-size': 7.5,
       });
       t.textContent = text;
@@ -697,6 +728,8 @@ export function mountConsole({
     };
     foot(control.format(control.min), plot.x, 'start');
     foot(control.format(control.max), plot.x + plot.w, 'end');
+    // The intensities need their unit stated; degrees carry their own sign.
+    if (energy) foot('kWh/m²·a', plot.x + plot.w / 2, 'middle');
 
     const tick = svg('line', {
       y1: plot.top - 2, y2: plot.bottom + 2, stroke: 'var(--redline)', 'stroke-width': 1,

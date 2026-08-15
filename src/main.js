@@ -3,6 +3,7 @@ import { httpSource, SchemaBundle, writeIdf } from '@idfkit/core';
 import {
   applyModel,
   buildModel,
+  channelState,
   designConditionsFrom,
   designDayDatums,
   geometryFacts,
@@ -2833,6 +2834,71 @@ runBtn.addEventListener('click', () => {
 });
 
 /**
+ * The two extremes of hourly zone temperature, read over the billed
+ * environments by the bill's own rule: with a year in the run its extremes are
+ * the reading, and sizing days kept on the Run strip stay out of it — their
+ * whole point is to be more extreme than the year they precede. Without one,
+ * the design days are themselves: the winter day owns the low and the summer
+ * day the high, never each other's.
+ */
+function readExtremes(eso) {
+  const zonePts = hourly(eso, /Zone Mean Air Temperature/i);
+  if (!zonePts.length) return null;
+  const zone = zonePts.map((p) => p.value);
+  const runs = environmentRuns(zonePts, eso.environments ?? []);
+  const over = (r, fn) => fn(...zone.slice(r.start, r.end + 1));
+  const year = runs.filter((r) => r.kind === null);
+  if (year.length) {
+    return {
+      low: Math.min(...year.map((r) => over(r, Math.min))),
+      high: Math.max(...year.map((r) => over(r, Math.max))),
+    };
+  }
+  const w = runs.find((r) => r.kind === 'Winter design day');
+  const s = runs.find((r) => r.kind === 'Summer design day');
+  if (!w && !s) return null;
+  return { low: w ? over(w, Math.min) : null, high: s ? over(s, Math.max) : null };
+}
+
+/**
+ * The demand intensities, for a desk with ideal loads in the path and a year
+ * to read them over.
+ *
+ * Ideal loads meter as `DistrictHeatingWater` and `DistrictCooling` — heat
+ * delivered at a notional 100 % — which is exactly what a demand intensity
+ * means: TEDI and CEDI are the envelope's ask, before any plant, so the
+ * priced channels stay out of this the way they stay out of `shapeKey`. The
+ * EUI sums the bill's building section only, by the bill's own benchmark
+ * rule, and refuses to print at all when heating or cooling is missing — a
+ * total quietly short its largest term would read as a finding.
+ */
+function readDemand(eso, floorArea) {
+  if (!(floorArea > 0)) return null;
+  const zonePts = hourly(eso, /Zone Mean Air Temperature/i);
+  if (!zonePts.length) return null;
+  const year = environmentRuns(zonePts, eso.environments ?? []).filter((r) => r.kind === null);
+  if (!year.length) return null;
+  const billed = new Set(year.map((r) => r.key));
+
+  const kwh = new Map();
+  for (const use of END_USES) {
+    if (use.group !== 'building') continue;
+    const joules = meterTotal(eso, use.meter, billed);
+    if (joules != null) kwh.set(use.id, joules / 3_600_000);
+  }
+  const heating = kwh.get('heating') ?? null;
+  const cooling = kwh.get('cooling') ?? null;
+  return {
+    tedi: heating == null ? null : heating / floorArea,
+    cedi: cooling == null ? null : cooling / floorArea,
+    eui:
+      heating == null || cooling == null
+        ? null
+        : [...kwh.values()].reduce((a, b) => a + b, 0) / floorArea,
+  };
+}
+
+/**
  * Sweep one control across its face and draw what every position would do.
  *
  * A drag is authorship; this is a question. The desk as it stands is solved at
@@ -2880,6 +2946,12 @@ async function sweepRun(key) {
   const curve = [];
   const said = control.label.toLowerCase();
   const kind = epw ? 'annual' : 'design-day';
+  // What each run is read for. Free-running, the zone's two extremes are the
+  // design quantities. With ideal loads in the path and a year to bill, the
+  // extremes flatten at the setpoints and the demand the system pays to hold
+  // them there is the reading — TEDI, CEDI and the building EUI.
+  const metric =
+    epw && channelState(snapshot, patch).get('system').engaged ? 'energy' : 'extremes';
   // The overlay never touches this switch, so it is thrown once, the way each
   // solve throws it, and the run kind matches the epw captured above.
   setAnnual(model, Boolean(epw));
@@ -2889,48 +2961,29 @@ async function sweepRun(key) {
       if (me.cancelled) return;
       applyModel(model, { ...snapshot, [key]: value }, patch);
       const idf = writeIdf(model);
+      // Each sample's intensity divides by that sample's own floor, which the
+      // swept key may itself be moving — the same live read the bill takes.
+      const floorArea = metric === 'energy' ? geometryFacts(model).floor : null;
       statusEl.className = 'status';
       statusEl.textContent = `Study of ${said} — ${kind} run ${i + 1} of ${samples.length}.`;
       desk.setStudyProgress(key, { done: i + 1, total: samples.length });
 
       // A sample that fails is a gap in the curve, never a substituted value.
-      let low = null;
-      let high = null;
+      let point = null;
       try {
         const result = await ep.run({ idf, epw });
         const eso = result.success ? result.eso : null;
-        const zonePts = eso ? hourly(eso, /Zone Mean Air Temperature/i) : [];
-        if (zonePts.length) {
-          const zone = zonePts.map((p) => p.value);
-          const runs = environmentRuns(zonePts, eso.environments ?? []);
-          const over = (r, fn) => fn(...zone.slice(r.start, r.end + 1));
-          // The billed environments, by the bill's own rule: with a year in
-          // the run its extremes are the reading, and sizing days kept on the
-          // Run strip stay out of it — their whole point is to be more extreme
-          // than the year they precede. Without one, the design days are
-          // themselves: the winter day owns the low and the summer day the
-          // high, never each other's.
-          const year = runs.filter((r) => r.kind === null);
-          if (year.length) {
-            low = Math.min(...year.map((r) => over(r, Math.min)));
-            high = Math.max(...year.map((r) => over(r, Math.max)));
-          } else {
-            const w = runs.find((r) => r.kind === 'Winter design day');
-            const s = runs.find((r) => r.kind === 'Summer design day');
-            if (w) low = over(w, Math.min);
-            if (s) high = over(s, Math.max);
-          }
-        }
+        if (eso) point = metric === 'energy' ? readDemand(eso, floorArea) : readExtremes(eso);
       } catch {
         // The engine refused the sample outright; same gap.
       }
       if (me.cancelled) return;
       runCount += 1;
       $('runs').textContent = String(runCount);
-      curve.push({ value, low, high });
+      curve.push({ value, ...(point ?? {}) });
     }
 
-    if (!curve.some((p) => p.low != null || p.high != null)) {
+    if (!curve.some((p) => (p.low ?? p.high ?? p.tedi ?? p.cedi ?? p.eui) != null)) {
       statusEl.className = 'status bad';
       statusEl.textContent = `The study of ${said} could not be drawn: every sample failed to solve.`;
       return;
@@ -2941,6 +2994,7 @@ async function sweepRun(key) {
       label: shapeLabel(snapshot),
       restShape: restShapeKey(key, snapshot, patch),
       annual: Boolean(epw),
+      metric,
       curve,
     });
     desk.setStudy(key, studies.get(key), { stale: false });

@@ -13,10 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   action that sweeps that one control across its full range — about twenty
   solves of whatever run the sheet would make, a second or two of engine on the
   design days, twenty seconds or so counted out per run on an attached year —
-  and draws the response as a small curve under the control: the highest hour
-  of zone temperature in the warm pen and the lowest in the cold one (the
-  summer and winter design days' extremes, or the year's, sizing days
-  excluded), with a redline tick standing where the control stands now. The
+  and draws the response as a small curve under the control, with a redline
+  tick standing where the control stands now. What the curve reads depends on
+  the desk: free-running, the highest hour of zone temperature in the warm pen
+  and the lowest in the cold one (the summer and winter design days' extremes,
+  or the year's, sizing days excluded); with ideal loads in the path and a
+  year attached, the demand intensities instead — TEDI in the warm pen, CEDI
+  in the cold, and the building EUI in graphite, in kWh/m²·a of the bill's
+  building section, delivered demand before any plant. The
   desk itself never moves during a sweep: the model ends byte-identical to
   where it started, the address bar and every readout hold still, and any real
   gesture cancels the sweep instantly. A study names the desk it was swept

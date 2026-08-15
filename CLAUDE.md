@@ -182,7 +182,10 @@ the sheet would solve, design days or the attached year — and releases through
 sample keeps two numbers off the hourly zone mean air temperature: the high in
 the warm pen and the low in the cold one, read over the billed environments
 (the year when there is one, so kept sizing days stay out; otherwise the
-winter day owns the low and the summer day the high). A sweep never touches
+winter day owns the low and the summer day the high). With System engaged and
+a year attached the reading is `readDemand` instead — TEDI, CEDI and building
+EUI off the meters through `meterTotal`, by the bill's building-section
+intensity rule, each sample divided by its own floor area. A sweep never touches
 live `params` — each sample is `applyModel(model, { ...snapshot, [key]: v },
 patch)` and the `finally` re-applies the live desk, which idempotence makes a
 byte-exact restore (the throwaway harness asserts this at every sample).
