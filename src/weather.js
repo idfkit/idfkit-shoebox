@@ -61,8 +61,14 @@ export const stationIndex = () => (indexPromise ??= loadStationIndex(INDEX_URL))
  * 3,083 HDD18, a 9% spread, so which one you run changes the answer. The picker
  * therefore groups them under the site and makes you choose.
  */
+// The one copy of onebuilding's archive-name grammar. `flavor` and
+// `flavorWindow` both read it, and when they carried a regex each, a change to
+// the convention would have updated one and left the picker's labels and the
+// permalink's `win` token disagreeing about the same file.
+const TMYX_WINDOW = /_TMYx(?:\.(\d{4})-(\d{4}))?\.zip$/;
+
 function flavor(station) {
-  const match = station.url.match(/_TMYx(?:\.(\d{4})-(\d{4}))?\.zip$/);
+  const match = station.url.match(TMYX_WINDOW);
   if (!match) return { label: 'TMYx', rank: -1 };
   // The bare file carries no window in its name; it sorts last, after the
   // dated ones, because a named period is the more answerable choice.
@@ -72,13 +78,12 @@ function flavor(station) {
 
 /**
  * The flavour's window in the plain form a permalink carries: `2007-2021`, or
- * null for the bare undated `_TMYx` archive. Kept beside `flavor` because both
- * read the same filename convention, and a link that named only the site would
- * reproduce a different year than the one argued over — the five samples of
- * one site disagree by up to 9 % on degree days.
+ * null for the bare undated `_TMYx` archive. A link that named only the site
+ * would reproduce a different year than the one argued over — the five
+ * samples of one site disagree by up to 9 % on degree days.
  */
 export const flavorWindow = (station) => {
-  const match = station.url.match(/_TMYx(?:\.(\d{4})-(\d{4}))?\.zip$/);
+  const match = station.url.match(TMYX_WINDOW);
   return match?.[1] ? `${match[1]}-${match[2]}` : null;
 };
 
