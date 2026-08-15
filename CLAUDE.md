@@ -261,12 +261,17 @@ measures the vertices — so nudging a wall a second after pressing Apply drops
 the conformance by itself, because there was never a flag to go stale.
 
 - **A specification and a target are different things**, and the split is drawn
-  on the sheet. `Spec` sets a control; `Target` states a number the finished
-  building has to reach and is read off the run. LETI is the pure case — no
-  specs at all, two targets — and having it in the list is what keeps the
-  distinction visible for the others. `conformance().built` is `null` for such a
-  preset, not `true`: "conforms to a specification with no clauses in it" is the
-  emptiest true statement available.
+  in the layout itself. `Spec` sets a control, so the standards fold to compact
+  accordions on the console head, beside the controls they set — closed, each is
+  a name and a conformance chip. `Target` states a number the finished building
+  has to reach and is read off the run, so every standard's targets sit on one
+  scoreboard on the sheet (`renderScore`), under the results — all standards at
+  once, because there is no "applied standard" to filter by, and one run read
+  against every published line is the game the board affords. LETI is the pure
+  case — no specs at all, two targets — and having it in the list is what keeps
+  the distinction visible for the others. `conformance().built` is `null` for
+  such a preset, not `true`: "conforms to a specification with no clauses in it"
+  is the emptiest true statement available.
 - **`Spec.why` carries the arithmetic**, because almost no published figure is
   in the units an IDF field wants. An assembly U-value becomes a construction
   resistance by taking the ISO 6946 surface films off it (the Fabric strip

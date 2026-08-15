@@ -9,8 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- A schedule of schemes, below the bill. Two instruments in one section, kept
-  deliberately apart. **Standards** are laid *over* the drawing rather than in
+- A register of standards, split the way the code splits them. The
+  specifications live on the **console head** — five compact accordions beside
+  the "Sixteen channels" paragraph, each folded to a name and a live
+  conformance chip. **Standards** are laid *over* the drawing rather than in
   place of it: applying Passivhaus Classic writes the ten controls it has an
   opinion about — insulation derived from its U-values with the surface films
   taken off, a window at U 0.80 with the g ≥ 0.5 its own inequality demands, an
@@ -21,20 +23,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already on the sheet. Every number carries the arithmetic that produced it,
   the way the bill's rates do. Whether the desk still meets a specification is
   **measured off the controls** each time they move rather than remembered:
-  nudge a wall and the conformance falls away by itself, naming the clause that
+  nudge a wall and the chip falls adrift by itself, naming the clause that
   drifted. Alongside Passivhaus sit EnerPHit, LETI's commercial office targets —
   which set no control at all, and are in the list precisely to show that a
   specification and a target are different things — and two of this sheet's own
   partis, a shaded free-running heavyweight and an all-glass office plate,
   labelled as the sheet's own rather than borrowing anybody's authority.
-  Criteria are read against the run as *asks for · reads · margin*, with one
-  redline mark on a miss and none at all on a pass; a criterion whose limit PHI
-  sets per building prints its reading with no verdict, and one the run cannot
-  answer says what to do about it instead of standing as an em dash. Each
-  standard also lists what this sheet **cannot** judge — the blower door, the
-  primary energy, the thermal bridges, the peak heating load — because a panel
-  showing only the half it can answer would read as a certification, and a
-  one-zone shoebox with ideal loads is not one.
+
+- The targets became a **scoreboard on the sheet**, under the results they are
+  read from — every standard's criteria against the one run, all at once, since
+  nothing is remembered and there is no "applied standard" to filter by: one
+  solved year, every published line it would clear or miss. Criteria read as
+  *asks for · reads · margin*, with one redline mark on a miss and none at all
+  on a pass; a criterion whose limit PHI sets per building prints its reading
+  with no verdict, and one the run cannot answer says what to do about it
+  instead of standing as an em dash. Each standard's accordion also lists what
+  this sheet **cannot** judge — the blower door, the primary energy, the
+  thermal bridges, the peak heating load — because a panel showing only the
+  half it can answer would read as a certification, and a one-zone shoebox with
+  ideal loads is not one.
 
 - **Kept schemes.** *Save this scheme* joins the run bundle and the scheme link
   in the run log, and keeps the whole desk — stored as the very fragment the

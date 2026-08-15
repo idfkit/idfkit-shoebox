@@ -1525,14 +1525,12 @@ function markStale() {
   const show = stale && !continuous();
   for (const el of [$('trace'), $('finding'), $('schedule'), $('bill')]) el.classList.toggle('stale', show);
   // The register is half live and half not, so it is dimmed by the half. The
-  // conformance sentences are measurements of the desk as it stands and are
-  // true the instant a control moves; the target readings and the kept
-  // schemes' deltas are readings of the last run, and once the shape has moved
-  // they describe a building that is no longer on the sheet — the same thing
-  // the plate and the bill are saying by going pale.
-  for (const el of document.querySelectorAll('.register .targets, #shelf-table')) {
-    el.classList.toggle('stale', show);
-  }
+  // conformance chips on the console are measurements of the desk as it
+  // stands and are true the instant a control moves; the scoreboard and the
+  // kept schemes' deltas are readings of the last run, and once the shape has
+  // moved they describe a building that is no longer on the sheet — the same
+  // thing the plate and the bill are saying by going pale.
+  for (const el of [$('score'), $('shelf-table')]) el.classList.toggle('stale', show);
   if (!show) return;
   // A sheet that is about to solve itself does not need telling to go and press
   // something — it needs to say what it is waiting for.
@@ -2758,7 +2756,7 @@ function applyStandard(preset) {
       `${patched ? ` and ${patched} channel${patched === 1 ? '' : 's'} patched` : ''}. ` +
       `${LEFT_ALONE.join(', ')} are as you left them.` +
       (soloWas ? ' Solo came off, so the whole desk is in the path again.' : '')
-    : `${preset.name} sets no control — it states an outcome. Its targets are read below.`;
+    : `${preset.name} sets no control — it states an outcome. Its targets are on the scoreboard.`;
   syncStandards();
   if (autoOn()) pump();
 }
@@ -2891,54 +2889,81 @@ const linkButton = (text, onClick) => {
 };
 
 // Built once and then only re-lettered: the specification of a standard is a
-// published document and does not move, so rebuilding five cards of it on
-// every drag frame would be work done to produce the same nodes again.
+// published document and does not move, so rebuilding five accordions of it
+// on every drag frame would be work done to produce the same nodes again.
 const standardCards = new Map();
 
+/**
+ * The console half of the split: the specifications, folded to a line each on
+ * the desk head, beside the paragraph that introduces the strips.
+ *
+ * A `Spec` sets controls and the controls are on the console, so this is where
+ * the setting half lives — folded, each standard is its name and a conformance
+ * reading, in the index sheet's own discipline: closed a row reads, open it is
+ * worked. The `Target`s are deliberately *not* here. A target is read off the
+ * run, so it is scored on the sheet beside the results (`renderScore`), and
+ * the accordion carries one line saying so rather than a second copy of the
+ * scoreboard that would have to be kept agreeing with the first.
+ */
 function buildStandards() {
-  const host = $('standards');
+  const host = $('presets');
   host.textContent = '';
   standardCards.clear();
 
   for (const preset of PRESETS) {
-    const card = elem('article', `standard ${preset.kind}`);
+    const card = elem('details', `preset ${preset.kind}`);
 
-    const head = elem('div', 'standard-head');
-    const title = elem('div', 'standard-title');
-    title.append(elem('h3', null, preset.name));
-    title.append(
+    const summary = elem('summary');
+    summary.append(elem('span', null, preset.name));
+    // The folded line's reading. Conformance, not a selection: it is measured
+    // off the controls by `syncStandards` every time the desk moves.
+    const chip = elem('span', 'preset-state');
+    summary.append(chip);
+    card.append(summary);
+
+    const body = elem('div', 'preset-body');
+    body.append(
       elem(
         'p',
-        'standard-cite',
+        'preset-cite',
         preset.kind === 'standard'
           ? `${preset.issuer} · ${preset.source}`
           : 'This sheet’s own arrangement — not a published standard',
       ),
     );
-    head.append(title, linkButton(preset.specs.length ? 'Apply' : 'Read only', () => applyStandard(preset)));
-    if (!preset.specs.length) head.lastChild.disabled = true;
-    card.append(head, elem('p', 'standard-blurb', preset.blurb));
+    body.append(elem('p', 'preset-blurb', preset.blurb));
 
     // What it currently is, against what it asks for. Re-lettered by
     // `syncStandards`; built empty so there is exactly one code path that
     // writes it and no first-draw special case.
-    const state = elem('p', 'standard-state');
-    card.append(state);
+    const verdict = elem('p', 'preset-verdict');
+    body.append(verdict);
 
     let clauses = null;
     if (preset.specs.length || preset.engages.length || preset.bypasses.length) {
-      const fold = elem('details', 'standard-fold');
+      const apply = elem('p', 'preset-apply');
+      apply.append(linkButton('Apply to the desk', () => applyStandard(preset)));
+      body.append(apply);
+      const fold = elem('details', 'preset-fold');
       fold.append(elem('summary', null, 'What it sets, and where each number comes from'));
       clauses = elem('table', 'clauses');
       fold.append(clauses);
-      card.append(fold);
+      body.append(fold);
     }
 
-    const targets = elem('table', 'targets');
-    if (preset.targets.length) card.append(elem('p', 'standard-sub', 'What it asks of the finished building'), targets);
+    if (preset.targets.length) {
+      body.append(
+        elem(
+          'p',
+          'presets-note',
+          `Its ${preset.targets.length === 1 ? 'target is' : `${preset.targets.length} targets are`} ` +
+            'scored on the sheet, under the results they are read from.',
+        ),
+      );
+    }
 
     if (preset.unjudged.length) {
-      const fold = elem('details', 'standard-fold');
+      const fold = elem('details', 'preset-fold');
       fold.append(
         elem('summary', null, `What this sheet cannot judge (${preset.unjudged.length})`),
       );
@@ -2947,41 +2972,53 @@ function buildStandards() {
         list.append(elem('dt', null, item.criterion), elem('dd', null, item.why));
       }
       fold.append(list);
-      if (preset.caveat) fold.append(elem('p', 'standard-caveat', preset.caveat));
-      card.append(fold);
+      if (preset.caveat) fold.append(elem('p', 'preset-caveat', preset.caveat));
+      body.append(fold);
+    } else if (preset.caveat) {
+      // A parti has nothing unjudged — it makes no claims — but its caveat is
+      // the label saying so, and a caveat only shown inside a fold that does
+      // not exist is a caveat never shown.
+      body.append(elem('p', 'preset-caveat', preset.caveat));
     }
 
+    card.append(body);
     host.append(card);
-    standardCards.set(preset.id, { preset, state, clauses, targets });
+    standardCards.set(preset.id, { preset, chip, verdict, clauses });
   }
 }
 
 const f1c = (v) => v.toFixed(1);
 
 /**
- * Re-letter every standard from the desk and from the last run.
+ * Re-letter every standard from the desk, and the scoreboard from the run.
  *
  * Called wherever the desk moves and wherever a run lands, because those are
- * the only two things it reads. Cheap by construction: the cards already
- * exist, and only the conformance sentence, the clause table and the target
- * table are written.
+ * the only two things either half reads. Cheap by construction: the accordions
+ * already exist, and only the chip, the verdict sentence, the clause tables
+ * and the one score table are written.
  */
 function syncStandards() {
-  for (const { preset, state, clauses, targets } of standardCards.values()) {
+  for (const { preset, chip, verdict, clauses } of standardCards.values()) {
     const c = conformance(params, bypass, preset);
     if (c.built === null) {
-      state.textContent = 'Sets nothing. Everything it has to say is in the targets below.';
-      state.className = 'standard-state';
+      chip.textContent = 'targets only';
+      chip.className = 'preset-state';
+      verdict.textContent = 'Sets nothing. Everything it has to say is on the scoreboard.';
+      verdict.className = 'preset-verdict';
     } else if (c.built) {
-      state.textContent = `The desk is built to this specification — all ${c.clauses.length} clauses hold.`;
-      state.className = 'standard-state met';
+      chip.textContent = 'built to it';
+      chip.className = 'preset-state met';
+      verdict.textContent = `The desk is built to this specification — all ${c.clauses.length} clauses hold.`;
+      verdict.className = 'preset-verdict met';
     } else {
+      chip.textContent = `${c.adrift.length} of ${c.clauses.length} adrift`;
+      chip.className = 'preset-state';
       const first = c.adrift[0];
-      state.textContent =
+      verdict.textContent =
         `${c.adrift.length} of ${c.clauses.length} clauses adrift` +
         ` — ${first.label} is ${first.has} where it asks for ${first.wants}` +
         (c.adrift.length > 1 ? `, and ${c.adrift.length - 1} more.` : '.');
-      state.className = 'standard-state';
+      verdict.className = 'preset-verdict';
     }
 
     if (clauses) {
@@ -3002,16 +3039,39 @@ function syncStandards() {
       }
       clauses.append(body);
     }
+  }
+  renderScore();
+}
 
-    targets.textContent = '';
+/**
+ * The sheet half of the split: every standard's targets on one scoreboard,
+ * under the results they are read from.
+ *
+ * All of them at once, not the applied one's — there is no "applied one",
+ * nothing is remembered — because the game the board affords is exactly that:
+ * one run, every line it would clear or miss, Passivhaus's fifteen and
+ * EnerPHit's twenty-five and LETI's fifty-five read off the same year. The
+ * margin column is where the design gets pushed.
+ */
+function renderScore() {
+  const table = $('score');
+  table.textContent = '';
+  table.append(tableHead(['Criterion', 'Asks for', 'Reads', 'Margin', '']));
+  const body = document.createElement('tbody');
+  for (const preset of PRESETS) {
     if (!preset.targets.length) continue;
-    targets.append(tableHead(['Criterion', 'Asks for', 'Reads', 'Margin', '']));
-    const body = document.createElement('tbody');
+    // The standard's name as a subhead row rather than repeated per line, the
+    // way a drawing schedule sections its rows.
+    const head = body.insertRow();
+    head.className = 'score-head';
+    const th = head.insertCell();
+    th.colSpan = 5;
+    th.textContent = preset.name;
     for (const target of preset.targets) {
       const tr = body.insertRow();
-      const head = tr.insertCell();
-      head.append(target.label);
-      if (target.note) head.append(elem('i', 'why', target.note));
+      const label = tr.insertCell();
+      label.append(target.label);
+      if (target.note) label.append(elem('i', 'why', target.note));
       cell(tr, target.limit == null ? target.asks : `≤ ${target.limit}`, 'asks', 'Asks for');
       const value = targetReading(target);
       // The unit rides on the folded label, because the unit column itself is
@@ -3035,8 +3095,8 @@ function syncStandards() {
       unit.className = 'unit';
       unit.textContent = target.unit;
     }
-    targets.append(body);
   }
+  table.append(body);
 }
 
 /*
