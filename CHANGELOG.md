@@ -11,18 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Parameter studies. Every scale on the console now carries a quiet **Study**
   action that sweeps that one control across its full range — about twenty
-  design-day solves, a second or two of engine — and draws the response as a
-  small curve under the control: the summer design day's peak zone temperature
-  in the warm pen, the winter day's low in the cold one, with a redline tick
-  standing where the control stands now. The desk itself never moves during a
-  sweep: the model ends byte-identical to where it started, the address bar and
-  every readout hold still, and any real gesture cancels the sweep instantly.
-  A study names the desk it was swept against and dims once any *other* control
-  moves; dragging the swept control just walks the tick along a curve that is
-  still true. Studies are disabled, with the reason stated, while a weather
-  file is attached — each sample would be a full annual run — and on priced
-  channels, whose controls never reach the engine. A failed sample is drawn as
-  a gap in the curve, never an invented point.
+  solves of whatever run the sheet would make, a second or two of engine on the
+  design days, twenty seconds or so counted out per run on an attached year —
+  and draws the response as a small curve under the control: the highest hour
+  of zone temperature in the warm pen and the lowest in the cold one (the
+  summer and winter design days' extremes, or the year's, sizing days
+  excluded), with a redline tick standing where the control stands now. The
+  desk itself never moves during a sweep: the model ends byte-identical to
+  where it started, the address bar and every readout hold still, and any real
+  gesture cancels the sweep instantly. A study names the desk it was swept
+  against and dims once any *other* control moves; dragging the swept control
+  just walks the tick along a curve that is still true. Studies are cleared by
+  a station change (they were swept under the old climate) and absent on
+  priced channels, whose controls never reach the engine. A failed sample is
+  drawn as a gap in the curve, never an invented point.
 
 - Shareable scheme links. The address bar now carries the whole desk — every
   control off its default, the patch state, and the attached TMYx station with

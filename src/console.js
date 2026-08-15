@@ -247,7 +247,7 @@ export function mountConsole({
           ? sweepGate.reason
           : idle
             ? 'Set, but not reaching the model — there is nothing to sweep.'
-            : 'Sweep this control across its face: a score of design-day runs, drawn as a curve.';
+            : 'Sweep this control across its face: the desk solved at a score of positions, drawn as a curve.';
       }
       // Dragging the swept control just walks the study's tick along its curve.
       cards.get(control.key)?.syncTick?.();
@@ -576,13 +576,15 @@ export function mountConsole({
    *
    * The x axis is `control.fraction` — the same 0..1 the face tick above it
    * uses — so the curve and the calibration face are one axis, stacked. Two
-   * pens, both legitimately signed degrees on the drawing: the summer design
-   * day's peak in the warm one, the winter day's low in the cold one. A sample
-   * that failed is a gap in the line, never a point invented across it. The
-   * redline stands where the control stands now, and moving the control just
-   * walks it along the curve; on a conditioned desk both lines run flat at the
-   * setpoints, which is not a failure of the study but its finding — the
-   * system holds the zone flat wherever this control goes.
+   * pens, both legitimately signed degrees on the drawing: the highest hour of
+   * zone temperature in the warm one, the lowest in the cold one — the summer
+   * and winter design days' extremes on a design-day desk, the year's under an
+   * attached weather file. A sample that failed is a gap in the line, never a
+   * point invented across it. The redline stands where the control stands now,
+   * and moving the control just walks it along the curve; on a conditioned
+   * desk both lines run flat at the setpoints, which is not a failure of the
+   * study but its finding — the system holds the zone flat wherever this
+   * control goes.
    */
   function studyCard(key, study) {
     const { control } = controlFor(key);
@@ -605,9 +607,9 @@ export function mountConsole({
     // "−18.7°" need the full 33 units or the degree sign falls off the card.
     const plot = { x: 2, w: 200, top: 6, bottom: 42 };
 
-    const winters = study.curve.filter((p) => p.winter != null);
-    const summers = study.curve.filter((p) => p.summer != null);
-    const vals = [...winters.map((p) => p.winter), ...summers.map((p) => p.summer)];
+    const lows = study.curve.filter((p) => p.low != null);
+    const highs = study.curve.filter((p) => p.high != null);
+    const vals = [...lows.map((p) => p.low), ...highs.map((p) => p.high)];
     const lo = Math.min(...vals);
     const hi = Math.max(...vals);
     const span = hi - lo || 1;
@@ -616,17 +618,16 @@ export function mountConsole({
     const x = (v) => plot.x + clamp(control.fraction(v), 0, 1) * plot.w;
 
     const range = (arr) => `${Math.min(...arr).toFixed(1)} to ${Math.max(...arr).toFixed(1)}`;
+    const [peakOf, lowOf] = study.annual
+      ? ['annual peak', 'annual low']
+      : ['summer design-day peak', 'winter design-day low'];
     const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' });
     root.setAttribute(
       'aria-label',
       `Study of ${control.label} from ${control.format(control.min)} to ${control.format(control.max)}: ` +
-        (summers.length
-          ? `summer design-day peak ${range(summers.map((p) => p.summer))} °C`
-          : 'no summer readings') +
+        (highs.length ? `${peakOf} ${range(highs.map((p) => p.high))} °C` : 'no peak readings') +
         '; ' +
-        (winters.length
-          ? `winter design-day low ${range(winters.map((p) => p.winter))} °C.`
-          : 'no winter readings.'),
+        (lows.length ? `${lowOf} ${range(lows.map((p) => p.low))} °C.` : 'no low readings.'),
     );
 
     root.append(
@@ -638,17 +639,17 @@ export function mountConsole({
 
     const segments = (sel) => {
       const segs = [];
-      let run = [];
+      let seg = [];
       for (const p of study.curve) {
         const v = sel(p);
         if (v == null) {
-          if (run.length) segs.push(run);
-          run = [];
+          if (seg.length) segs.push(seg);
+          seg = [];
         } else {
-          run.push([x(p.value), y(v)]);
+          seg.push([x(p.value), y(v)]);
         }
       }
-      if (run.length) segs.push(run);
+      if (seg.length) segs.push(seg);
       return segs;
     };
     const draw = (sel, pen) => {
@@ -666,14 +667,14 @@ export function mountConsole({
         }
       }
     };
-    draw((p) => p.summer, 'var(--warm)');
-    draw((p) => p.winter, 'var(--cold)');
+    draw((p) => p.high, 'var(--warm)');
+    draw((p) => p.low, 'var(--cold)');
 
     // The curves' right-hand ends lettered directly in the gutter, the plate's
     // own move, settled apart when the two converge.
     const labels = [];
-    if (summers.length) labels.push({ v: summers[summers.length - 1].summer, pen: 'var(--warm)' });
-    if (winters.length) labels.push({ v: winters[winters.length - 1].winter, pen: 'var(--cold)' });
+    if (highs.length) labels.push({ v: highs[highs.length - 1].high, pen: 'var(--warm)' });
+    if (lows.length) labels.push({ v: lows[lows.length - 1].low, pen: 'var(--cold)' });
     for (const l of labels) l.y = clamp(y(l.v) + 2.5, plot.top + 5, plot.bottom);
     labels.sort((a, b) => a.y - b.y);
     if (labels.length === 2 && labels[1].y - labels[0].y < 9) labels[1].y = labels[0].y + 9;

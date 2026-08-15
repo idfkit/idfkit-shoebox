@@ -1921,18 +1921,13 @@ autoBox.addEventListener('change', () => {
 /**
  * Whether a study can be taken at all, with the reason when it cannot.
  *
- * A study is a score of design-day solves, which fit inside a sentence of
- * patience. With a year attached each sample would be a full annual run and
- * the score of them a couple of minutes of engine — so the buttons go dark and
- * say why, rather than quietly sweeping a different run than the sheet shows.
+ * A study sweeps whatever run the sheet would solve — a score of design-day
+ * solves inside a couple of seconds, or a score of annual runs in about
+ * twenty, which the per-run counter makes worth the wait. The one thing that
+ * bars it is having no engine yet.
  */
 function syncSweepGate() {
-  desk?.setSweepEnabled(
-    engineReady && !annual(),
-    !engineReady
-      ? 'The engine is still arriving.'
-      : 'A study sweeps the design days. With a year attached, each of its samples would be a full annual run.',
-  );
+  desk?.setSweepEnabled(engineReady, 'The engine is still arriving.');
 }
 syncSweepGate();
 
@@ -2259,11 +2254,10 @@ async function choose(row, pick, sizing = 'No') {
   syncDownload();
   // The studies go the way the pin does, and for the same reason: they were
   // swept under the old climate, and a curve of Denver design days under a
-  // Singapore titleblock would be a lie told in graphite. Further sweeps are
-  // gated off, with the reason on the buttons.
+  // Singapore titleblock would be a lie told in graphite. New sweeps read the
+  // new climate — a score of annual runs now, counted out on the strip.
   studies.clear();
   desk?.clearStudies();
-  syncSweepGate();
 
   // With a real year attached the sizing days stop earning their place. They
   // are 48 hours of the most extreme weather in the file, run ahead of 8,760
@@ -2842,14 +2836,15 @@ runBtn.addEventListener('click', () => {
  * Sweep one control across its face and draw what every position would do.
  *
  * A drag is authorship; this is a question. The desk as it stands is solved at
- * each sample of one key — winter design day and summer design day, nothing
- * else — and only the zone's two extremes are kept from each run. Live
- * `params` are never touched: every sample is an overlay handed to
- * `applyModel`, so the sliders, the axonometric, the plate and the address bar
- * hold still while the engine tries twenty-one buildings the reader never
- * chose. The one shared mutable is the document itself, and the `finally`
- * re-applies the live desk to it unconditionally — idempotence is what makes
- * that a restore rather than a guess, and the Node harness asserts it.
+ * each sample of one key — the run the sheet would solve, design days or the
+ * attached year — and only the zone's two temperature extremes are kept from
+ * each run. Live `params` are never touched: every sample is an overlay
+ * handed to `applyModel`, so the sliders, the axonometric, the plate and the
+ * address bar hold still while the engine tries twenty-one buildings the
+ * reader never chose. The one shared mutable is the document itself, and the
+ * `finally` re-applies the live desk to it unconditionally — idempotence is
+ * what makes that a restore rather than a guess, and the Node harness asserts
+ * it.
  *
  * The reader's hand outranks the study: `applyGeometry` cancels a sweep in
  * flight, the partial curve is discarded rather than drawn (half a study reads
@@ -2864,7 +2859,6 @@ async function sweepRun(key) {
   }
   if (sweep) sweep.cancelled = 'stopped';
   const { control } = controlFor(key);
-  if (annual()) throw new Error(`a study of ${control.label} cannot sweep an attached year`);
 
   // A loop, not an if: between a waiter resolving and this frame resuming,
   // another holder may have taken the engine.
@@ -2881,9 +2875,14 @@ async function sweepRun(key) {
   // the solve follows, for the same reason: params keep moving under an await.
   const snapshot = { ...params };
   const patch = patching();
+  const epw = epwText ?? null;
   const samples = samplePoints(control, snapshot[key]);
   const curve = [];
   const said = control.label.toLowerCase();
+  const kind = epw ? 'annual' : 'design-day';
+  // The overlay never touches this switch, so it is thrown once, the way each
+  // solve throws it, and the run kind matches the epw captured above.
+  setAnnual(model, Boolean(epw));
 
   try {
     for (const [i, value] of samples.entries()) {
@@ -2891,23 +2890,36 @@ async function sweepRun(key) {
       applyModel(model, { ...snapshot, [key]: value }, patch);
       const idf = writeIdf(model);
       statusEl.className = 'status';
-      statusEl.textContent = `Study of ${said} — design-day run ${i + 1} of ${samples.length}.`;
+      statusEl.textContent = `Study of ${said} — ${kind} run ${i + 1} of ${samples.length}.`;
       desk.setStudyProgress(key, { done: i + 1, total: samples.length });
 
       // A sample that fails is a gap in the curve, never a substituted value.
-      let winter = null;
-      let summer = null;
+      let low = null;
+      let high = null;
       try {
-        const result = await ep.run({ idf, epw: null });
+        const result = await ep.run({ idf, epw });
         const eso = result.success ? result.eso : null;
         const zonePts = eso ? hourly(eso, /Zone Mean Air Temperature/i) : [];
         if (zonePts.length) {
           const zone = zonePts.map((p) => p.value);
           const runs = environmentRuns(zonePts, eso.environments ?? []);
-          const w = runs.find((r) => r.kind === 'Winter design day');
-          const s = runs.find((r) => r.kind === 'Summer design day');
-          if (w) winter = Math.min(...zone.slice(w.start, w.end + 1));
-          if (s) summer = Math.max(...zone.slice(s.start, s.end + 1));
+          const over = (r, fn) => fn(...zone.slice(r.start, r.end + 1));
+          // The billed environments, by the bill's own rule: with a year in
+          // the run its extremes are the reading, and sizing days kept on the
+          // Run strip stay out of it — their whole point is to be more extreme
+          // than the year they precede. Without one, the design days are
+          // themselves: the winter day owns the low and the summer day the
+          // high, never each other's.
+          const year = runs.filter((r) => r.kind === null);
+          if (year.length) {
+            low = Math.min(...year.map((r) => over(r, Math.min)));
+            high = Math.max(...year.map((r) => over(r, Math.max)));
+          } else {
+            const w = runs.find((r) => r.kind === 'Winter design day');
+            const s = runs.find((r) => r.kind === 'Summer design day');
+            if (w) low = over(w, Math.min);
+            if (s) high = over(s, Math.max);
+          }
         }
       } catch {
         // The engine refused the sample outright; same gap.
@@ -2915,10 +2927,10 @@ async function sweepRun(key) {
       if (me.cancelled) return;
       runCount += 1;
       $('runs').textContent = String(runCount);
-      curve.push({ value, winter, summer });
+      curve.push({ value, low, high });
     }
 
-    if (!curve.some((p) => p.winter != null || p.summer != null)) {
+    if (!curve.some((p) => p.low != null || p.high != null)) {
       statusEl.className = 'status bad';
       statusEl.textContent = `The study of ${said} could not be drawn: every sample failed to solve.`;
       return;
@@ -2928,11 +2940,12 @@ async function sweepRun(key) {
       key,
       label: shapeLabel(snapshot),
       restShape: restShapeKey(key, snapshot, patch),
+      annual: Boolean(epw),
       curve,
     });
     desk.setStudy(key, studies.get(key), { stale: false });
     statusEl.className = 'status';
-    statusEl.textContent = `Study drawn — ${curve.length} design-day runs across ${said}.`;
+    statusEl.textContent = `Study drawn — ${curve.length} ${kind} runs across ${said}.`;
   } finally {
     desk.setStudyProgress(key, null);
     if (me.cancelled) {
