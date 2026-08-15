@@ -1819,6 +1819,12 @@
       .desk-sub em { font-style: normal; color: var(--ink-2); }
       .rail-note, .rail-empty {
         margin: 9px 0 0;
+        /* A measure, for the same reason `.desk-sub` carries one: the rail is
+           the desk's full width whatever the column count, and the longest of
+           these notes is a two-sentence paragraph that would otherwise set as
+           one 900px line across a multi-column desk. The track above it is
+           meant to be read edge to edge; the sentence under it is not. */
+        max-width: 62ch;
         font: 400 10.5px/1.45 var(--sans);
         color: var(--ink-ghost);
       }
