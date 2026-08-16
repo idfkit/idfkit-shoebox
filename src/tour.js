@@ -97,8 +97,9 @@ export const NOTES = Object.freeze([
     title: 'Carry the scheme away',
     body:
       'The scheme link re-solves this desk in any browser; the run bundle ' +
-      'carries the exact IDF this sheet solved, for a local EnergyPlus. ' +
-      'Both sit under the run log.',
+      'carries the exact IDF this sheet handed the engine, for a local ' +
+      'EnergyPlus — a run that failed included, which is when it is worth ' +
+      'the most. Both sit under the run log.',
     target: '.ledger-take',
     focus: '#share',
   }),
