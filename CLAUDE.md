@@ -242,6 +242,21 @@ change nothing.
 Auto-solve has two cadences: a design day (48 h, ~50 ms) re-solves continuously
 during a drag; a weather file (8,760 h, ~0.7 s) re-solves once on release.
 
+**A run in flight never blanks the sheet.** The four blocks a run letters —
+the plate, the finding, the results schedule and the bill (`resultPanels`) —
+stand with the previous run's numbers until the new ones replace them in
+place, dimmed by `markStale` if the desk has moved past them. Blanking them
+first, which the manual and annual paths used to do, moved the page under the
+reader: the finding is a paragraph and `.finding:empty` is `display: none`, so
+clearing it took three lines out of the flow and pulled everything below up
+the page for the length of the run, then dropped it back. The readings are
+taken down where they actually stop being true instead — `clearReadings` on
+each of `solve`'s failure exits, where no new result is coming. That is also
+why the clear is in two halves: a run that fatals has already written its own
+exit code and warning counts into the title block, and those are the only
+things on the sheet describing the failure, so only `clearResults` — a refused
+link, a run that never reached the engine — takes them with it.
+
 A **study** (`src/scheduler.js`, with `samplePoints`/`sampleOrder` in
 `src/study.js`) queues per *sample*, not per study, so one sweep fans out
 across the whole pool and a backlog of studies is just more samples in the same
