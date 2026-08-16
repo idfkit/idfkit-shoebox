@@ -21,6 +21,8 @@ import {
   DEFAULT_PARAMETERS,
   SHEET_KEYS,
   controlFor,
+  isWholeYear,
+  monthHours,
 } from './controls.js';
 import { mountConsole } from './console.js';
 import { mountTour } from './tour.js';
@@ -44,7 +46,19 @@ import {
 } from './weather.js';
 import { holidayList, parseEpwCalendar, parseEpwStartDay } from './epw.js';
 import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
-import { MONTHS, environmentRuns, hourly, readDemand, readExtremes } from './readings.js';
+import {
+  MONTHS,
+  NEUTRAL_C,
+  dayExtremeNear,
+  environmentRuns,
+  hourly,
+  pinAt,
+  readDemand,
+  readExtremes,
+  resolvePin,
+  stampText,
+  worstHour,
+} from './readings.js';
 
 const ENERGYPLUS_VERSION = '26.1.0';
 
@@ -139,8 +153,9 @@ function svg(tag, attrs = {}) {
 
 // The zone tinted by its own result. The scale is hinged at 20 °C — room
 // temperature, the only neutral point that means anything here — and runs out
-// to the two design conditions. Colour is degrees, never decoration.
-const NEUTRAL_C = 20;
+// to the two design conditions. Colour is degrees, never decoration. The hinge
+// is `readings.js`'s, because the reading hour is measured from the same point
+// and two copies of "neutral" would drift.
 function tint(celsius) {
   const cold = [61, 100, 120];
   const paper = [178, 170, 154];
@@ -622,6 +637,65 @@ function renderTrace() {
     );
   }
 
+  /*
+   * ── the reading hour
+   *
+   * The instant every meter on the desk is reading, drawn on the one picture
+   * that has an axis for it. Before this the hour was stated only in the rail's
+   * footer — ten-pixel mono at the foot of a desk you had to open first — which
+   * made the single most movable thing about the readings the least visible.
+   * The desk's own rule is that a path is readable without opening anything;
+   * the hour the paths are read at had better be too.
+   *
+   * The head is the same square the patch buttons and the rail's pin carry:
+   * filled `--redline` when the hour is held, a hairline outline when it is
+   * whichever hour this run happened to be worst at. One armed idiom, three
+   * places.
+   *
+   * Guarded on the series lengths agreeing, the way the ghost is: a station
+   * change redraws the plate with the new city's datums while the previous
+   * run's curve is still standing, and an index into a run that is no longer
+   * the one plotted would put the marker at an hour nobody is reading.
+   */
+  const reading = lastReadFrom?.points.length === n ? lastReadFrom : null;
+  if (reading) {
+    const mx = x(reading.at, n);
+    const held = Boolean(pinnedHour);
+    const ink = held ? 'var(--redline)' : 'var(--ink-ghost)';
+    const mark = svg('g', { 'pointer-events': 'none' });
+    mark.append(
+      svg('line', {
+        x1: mx, y1: PAD.t + 5, x2: mx, y2: PAD.t + inner.h,
+        stroke: ink, 'stroke-width': 1,
+        'stroke-dasharray': held ? null : '2 3',
+        'shape-rendering': 'crispEdges',
+      }),
+    );
+    mark.append(
+      svg('rect', {
+        x: mx - 3.5, y: PAD.t - 1, width: 7, height: 7,
+        fill: held ? 'var(--redline)' : 'none',
+        stroke: held ? 'var(--redline)' : 'var(--ink-ghost)', 'stroke-width': 1,
+      }),
+    );
+    // The point on the zone curve the desk is actually reading off.
+    mark.append(
+      svg('circle', { cx: mx, cy: y(plot.zone[reading.at]), r: 2.6, fill: ink }),
+    );
+    const title = svg('title');
+    title.textContent = `${held ? 'Held at' : 'Read at'} ${stampText(reading.points, reading.at)}`;
+    mark.append(title);
+    root.append(mark);
+    // The plate's description says what it is now showing, since the marker is
+    // part of the picture a reader who cannot see it is being told about.
+    root.setAttribute(
+      'aria-label',
+      `Zone mean air temperature against outdoor drybulb temperature. ` +
+        `The desk's meters are ${held ? 'held at' : 'reading at'} ` +
+        `${stampText(reading.points, reading.at)}.`,
+    );
+  }
+
   // ── direct labels in the right gutter beat a legend box
   const labels = [
     { text: 'Zone', y: y(plot.zone[n - 1]), fill: 'var(--redline)', opacity: 1 },
@@ -668,6 +742,38 @@ function renderTrace() {
     axis.append(t);
   }
   root.append(axis);
+
+  /*
+   * ── choosing the hour
+   *
+   * Point at the moment you want explained. The alternative was a date field
+   * on the rail, which is precise and asks the reader to type "14 February,
+   * 15:00" at a picture of 14 February that is already on the screen — and
+   * which invites February the 30th and hour 25 purely to meet a refusal
+   * message. The curve is the instrument; clicking it is reading back off the
+   * model in the same sense everything else here is.
+   *
+   * Snapping is decided by the axis's own resolution rather than by run kind,
+   * because the resolution is what the reader is actually up against and it
+   * moves with the window: an annual run at ten hours to the pixel cannot
+   * mean an hour, a design day at five pixels to the hour can.
+   */
+  if (reading) {
+    const hoursPerPixel = n / inner.w;
+    root.style.cursor = 'crosshair';
+    root.addEventListener('click', (event) => {
+      const box = root.getBoundingClientRect();
+      if (!box.width) return;
+      // The viewBox is `0 0 w H` against a width of 100 %, so a client pixel
+      // is `w / box.width` user units — read per click rather than cached,
+      // since the plate resizes with the window and the desk opening.
+      const px = (event.clientX - box.left) * (w / box.width);
+      const i = Math.round(((px - PAD.l) / inner.w) * (n - 1));
+      if (i < 0 || i > n - 1) return; // the gutters are not part of the field
+      pinFromPlate(i, hoursPerPixel > 1);
+    });
+  }
+
   host.append(root);
 }
 
@@ -685,12 +791,18 @@ const stats = (v) => {
  * Design days become one labelled band each; a year long enough to crowd them
  * gets month ticks instead.
  *
- * An annual run is both at once — two design days ahead of 8,760 hours — and
- * each environment is bucketed on its own, because running the month walk
- * across the whole axis would print the design days as two more months and set
- * their names against the year's January. Twenty-four hours out of 8,808 is far
- * too narrow a band to letter, so on a dense axis they keep their rule and give
- * up their label.
+ * An annual run is both at once — two design days ahead of a year — and each
+ * environment is bucketed on its own, because running the month walk across the
+ * whole axis would print the design days as two more months and set their names
+ * against the year's January.
+ *
+ * Whether a band is lettered is decided by how wide it lands, not by what kind
+ * of environment it came from. Twenty-four hours out of 8,808 is far too narrow
+ * a band to letter, so the design days keep their rule and give up their label;
+ * a run period of one month is half of a two-month axis and takes its name. A
+ * count-based rule got this wrong the moment a run period could be a single
+ * month: a desk set to January and July drew four bands and lettered none of
+ * them.
  */
 function axisSegments(points, runs) {
   if (runs.length > 1 && points.length <= 400) return runs;
@@ -703,10 +815,12 @@ function axisSegments(points, runs) {
     }
     return found;
   };
-  return runs.flatMap((run) => {
-    const found = months(run);
-    return found.length > 1 ? found : [{ ...run, label: runs.length > 1 ? '' : run.label }];
-  });
+  // Six per cent of the axis: below it a label sits over a band narrower than
+  // the label itself and reads as belonging to its neighbour.
+  const wide = (seg) => (seg.end - seg.start + 1) / points.length > 0.06;
+  return runs.flatMap((run) =>
+    months(run).map((seg) => (wide(seg) ? seg : { ...seg, label: '' })),
+  );
 }
 
 function metricsFor(zone, out, run, hasOutdoor) {
@@ -897,6 +1011,7 @@ function billFrom(run) {
     hours: run.hours,
     engaged: new Set([...(modelState ?? [])].filter(([, s]) => s.engaged).map(([id]) => id)),
     annual: run.annual,
+    months: run.months,
   });
 }
 
@@ -905,7 +1020,7 @@ function reprice() {
   if (!lastRun) return;
   bill = billFrom(lastRun);
   renderBill();
-  desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt);
+  desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt);
 }
 
 /**
@@ -937,9 +1052,18 @@ const cell = (row, text, className) => {
  * match for the plainer reason that subtracting euros from dollars is not
  * arithmetic. Same refusal the results schedule makes when its baseline
  * describes another set of environments.
+ *
+ * The period has to match for the same reason the schedule's does. A weather
+ * file stopped meaning a year the day the Run strip's calendar could leave
+ * months out, so a scheme pinned on twelve months and then read against a
+ * January-to-March run would head every row "Δ against …" and report a
+ * three-quarters saving that is nothing but a shorter run. Metered hours
+ * rather than months, because February and March are both one month and
+ * seventy-two hours apart.
  */
 function comparable(a, b) {
   if (!a || !b || a.currency !== b.currency) return false;
+  if (a.annual !== b.annual || a.hours !== b.hours) return false;
   const uses = (bill) => bill.lines.map((l) => l.use.id).join();
   return uses(a) === uses(b);
 }
@@ -978,9 +1102,14 @@ function renderBillHead(againstLabel) {
     : tariff.source.id === 'assumed'
       ? ' Priced at the rates assumed on the Tariff strip.'
       : ` Priced at the ${tariff.source.kind.toLowerCase()} published for ${placeName(site)}, never a residential one, and factored at its grid carbon intensity.`;
-  $('bill-lede').textContent = bill.annual
+  // Three periods, not two. A weather file no longer means a year: months can
+  // be taken out of the run, and a bill of ten of them has to say so, because
+  // the reader's next move is to compare the total with a year's.
+  $('bill-lede').textContent = bill.wholeYear
     ? `Metered across the ${group(bill.hours)}-hour run.${priced}`
-    : `These are the ${group(bill.hours)} hours of the sizing days — two conditions chosen for being extreme. They are a real bill for a real two days, and they are deliberately not multiplied up into a year; attach a weather file for one of those.${priced}`;
+    : bill.annual
+      ? `Metered across the ${group(bill.hours)} hours of the run — ${bill.months} of the year's twelve months, so this is a bill for those months and not for a year. Put the missing months back on the Run strip for one of those.${priced}`
+      : `These are the ${group(bill.hours)} hours of the sizing days — two conditions chosen for being extreme. They are a real bill for a real two days, and they are deliberately not multiplied up into a year; attach a weather file for one of those.${priced}`;
 }
 
 /**
@@ -1189,11 +1318,11 @@ function renderBillTable(against) {
       base: against ? BILL_COLUMNS.map((c) => against.total(c.field, section.id) ?? NaN) : null,
     });
 
-    // Per square metre only on a year. The figure exists to be held against a
-    // published benchmark, every one of which is annual, and 0.3 kgCO₂e/m²
-    // over two design days is a number whose only possible use is to be
-    // mistaken for one.
-    if (section.id === 'building' && bill.annual) {
+    // Per square metre only on a whole year. The figure exists to be held
+    // against a published benchmark, every one of which is annual, and 0.3
+    // kgCO₂e/m² over two design days — or 14 kWh/m² over a winter taken alone
+    // — is a number whose only possible use is to be mistaken for one.
+    if (section.id === 'building' && bill.wholeYear) {
       line(null, BILL_COLUMNS.map((c) => bill.intensity(c.field) ?? NaN), {
         className: 'sum',
         head: 'Per m² of floor, per year',
@@ -1390,6 +1519,19 @@ function clearResults() {
   // over a cleared plate would be describing a run the sheet no longer shows.
   bill = null;
   lastRun = null;
+  // The instant goes with them: it is an index into a run that is no longer
+  // on the sheet. The pin itself survives — it is a calendar stamp and a
+  // request, not a reading, so the next solve is asked for the same hour.
+  //
+  // The meters go with the instant, in the same breath. Every figure on the
+  // rail is a reading at one hour, so clearing the hour and leaving the watts
+  // would draw a whole closed heat balance with nothing above it saying when
+  // — which is the unfalsifiable rail the "Read at" line exists to prevent.
+  // It is visible whenever a non-live solve fails: `clearResults` runs, the
+  // engine fatals, and the next `applyGeometry` re-letters the strips.
+  lastReadFrom = null;
+  lastAt = null;
+  lastReadings = new Map();
   renderBill();
   syncPin();
   syncDownload();
@@ -1545,15 +1687,7 @@ function applyGeometry() {
   desk?.setState(modelState);
   syncStudies();
   syncRunSub();
-  // A reading survives until the next solve supersedes it, the way the plate's
-  // curve does — except on a channel that has just gone out of the path, where
-  // the last number it produced would now be describing a path that is no
-  // longer there.
-  desk?.setReadings(
-    new Map([...lastReadings].map(([id, w]) => [id, modelState.get(id)?.engaged ? w : null])),
-    derivedReadings(facts),
-    lastAt,
-  );
+  desk?.setReadings(engagedReadings(), derivedReadings(facts), lastAt);
   markStale();
 }
 
@@ -1680,24 +1814,57 @@ $('reset').addEventListener('click', () => revert(SHEET_KEYS));
 let desk = null;
 let lastReadings = new Map();
 let lastHours = null;
-let lastAt = null; // the instant the desk's meters are reading
+let lastAt = null; // the instant the desk's meters are reading, as the rail letters it
 
-const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+/**
+ * The readings as the desk is allowed to show them.
+ *
+ * A reading survives until the next solve supersedes it, the way the plate's
+ * curve does — except on a channel that has just gone out of the path, where
+ * the last number it produced would now be describing a path that is no
+ * longer there. Every route that re-letters the strips from the run already in
+ * hand goes through here rather than handing `lastReadings` straight over:
+ * turning a tariff and taking the reading pin both re-letter without solving,
+ * and either would otherwise give a channel patched out since the run its
+ * watts back, under a strip the drawing says is out of the document.
+ */
+function engagedReadings() {
+  return new Map([...lastReadings].map(([id, w]) => [id, modelState?.get(id)?.engaged ? w : null]));
+}
+
+/**
+ * The hour the reader has pinned, or null to read the worst one.
+ *
+ * The desk's own instant is an `argmax` over the zone temperature, so it is
+ * chosen by one signal and applied to all of them: a control with no optical
+ * effect can move the transmitted-solar reading, because it moved the hour.
+ * Worse, it is discontinuous — the annual low and the annual high sit close
+ * enough on a balanced climate that a slider can invert the ranking and take
+ * every meter on the rail from an August afternoon to a January night in one
+ * step. Both readings are true; the pair is not a comparison, and a console
+ * whose whole purpose is turning a control back and forth has to be able to
+ * hold its subject still.
+ *
+ * Deliberately not a parameter. It reaches no IDF object, so it must stay off
+ * `params` — anything there starts a run, and this one could only reproduce
+ * the numbers already in hand. Turning it re-letters from the ESO already
+ * held, the way a tariff re-letters the bill.
+ *
+ * `pinnedHour`, not `pinned`: the bill has held a pinned *scheme* since long
+ * before this, and the two are different instruments — one holds a whole bill
+ * to measure against, this one holds the instant the meters read at.
+ */
+let pinnedHour = null;
 
 /**
  * The hours the next run will solve, read off the desk — the sizing days when
- * they are kept, plus the run period's own months when a year is attached.
+ * they are kept, plus every month left in the run when a year is attached.
  * One computation, because the Run strip's meter, the title block and the
  * attach sentence all quote it, and three hand-kept copies of "8,760" would
  * go quietly wrong the first time a run period covered less than the year.
  */
 function runHours() {
-  const [a, b] =
-    params.beginMonth <= params.endMonth
-      ? [params.beginMonth, params.endMonth]
-      : [params.endMonth, params.beginMonth];
-  const year = DAYS_IN_MONTH.slice(a - 1, b).reduce((total, d) => total + d, 0) * 24;
-  return (params.sizingPeriods === 'Yes' ? 48 : 0) + (annual() ? year : 0);
+  return (params.sizingPeriods === 'Yes' ? 48 : 0) + (annual() ? monthHours(params.months) : 0);
 }
 
 /**
@@ -1709,6 +1876,12 @@ function runHours() {
  */
 function syncRunSub() {
   if (!annual()) return;
+  // "Annual" is a claim about the run, not about the weather file. The
+  // calendar can take months out of it, and the attach that first lettered
+  // this field happens once while the Run strip keeps moving — so the run type
+  // is re-read off the mask here, alongside the hours it already quotes,
+  // rather than left standing as whatever the attach said.
+  $('t-run').textContent = isWholeYear(params.months) ? 'Annual' : 'Run period';
   $('t-run-sub').textContent = `${
     params.sizingPeriods === 'Yes' ? 'Weather file and sizing days' : 'Weather file'
   }, ${runHours().toLocaleString('en-US')} hours`;
@@ -1774,6 +1947,117 @@ function derivedReadings(facts) {
 const exactly = (name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 
 /**
+ * Everything the instant is chosen from, kept so the pin can be turned without
+ * asking the engine for anything. The ESO is already held for the bill; this
+ * adds the zone series and its environments, which are parsed out of it once
+ * per solve rather than once per click.
+ */
+let lastReadFrom = null;
+
+/** An hour pin lettered without a run to look it up in — for saying what went missing. */
+const hourPinText = (pin) =>
+  `${String(pin.hour).padStart(2, '0')}:00, ${pin.day} ${MONTHS[pin.month - 1]}` +
+  (pin.kind === 'year' ? '' : ` on the ${pin.kind} design day`);
+
+/**
+ * Put the meters on one hour of a solved run: the pinned one if it is in
+ * there, the worst one otherwise.
+ *
+ * A pin that cannot be found is released rather than slid to the nearest hour,
+ * and the rail says which hour went missing. Sliding would be the substitution
+ * this codebase refuses everywhere else, and it would be the worst kind here:
+ * silently reading an hour nobody asked for, under a marker claiming the
+ * reading is held still.
+ */
+function readAt(points, runs, leadIndex, eso) {
+  let at = resolvePin(pinnedHour, points, runs);
+  let released = null;
+  if (pinnedHour && at == null) {
+    released = pinnedHour;
+    pinnedHour = null;
+  }
+  if (at == null) at = worstHour(points, runs[leadIndex]);
+  // Set after the pin has been resolved or released, so `at` is the hour that
+  // was actually read and the plate's marker cannot claim a different one.
+  lastReadFrom = { points, runs, leadIndex, eso, at };
+  const stamp = stampText(points, at);
+  lastAt = stamp
+    ? {
+        // The temperature off `points` rather than the plate's parallel array
+        // of bare values: the same number, and one series to be indexed by one
+        // instant is one fewer thing that can be sliced differently.
+        text: `${stamp} · zone ${points[at].value.toFixed(1)} °C`,
+        pinned: Boolean(pinnedHour),
+        released: released ? hourPinText(released) : null,
+      }
+    : null;
+  lastReadings = readMeters(eso, at);
+  // A released pin has to leave the address with it. Without this the bar goes
+  // on carrying `at=winter.1-1T5` for an hour the desk has already told the
+  // reader it could not find — the address claiming a scheme the sheet is not
+  // showing, which is the failure the `hashchange` reload exists to prevent,
+  // arriving by the one route that never touches the hash.
+  if (released) updatePermalink();
+}
+
+/**
+ * Take or release the pin, off the run already in hand.
+ *
+ * No solve: the hour is a way of reading a result, not a property of one, so
+ * this is the same move `reprice` makes for a tariff. The address bar follows,
+ * because a click is a whole gesture — there is no drag here to hold it still.
+ */
+function toggleHourPin() {
+  if (!lastReadFrom) return;
+  const { points, runs, leadIndex, eso } = lastReadFrom;
+  if (pinnedHour) pinnedHour = null;
+  else {
+    pinnedHour = pinAt(points, runs, worstHour(points, runs[leadIndex]));
+    if (!pinnedHour) return; // no stamp to pin; leave the desk exactly as it was
+  }
+  readAt(points, runs, leadIndex, eso);
+  reletterReading();
+}
+
+/**
+ * Take the hour a click on the plate named.
+ *
+ * Clicking the hour already being held releases it, so the plate can undo its
+ * own gesture: a reader who found the pin by pointing at the curve should not
+ * have to go and find the rail's button to let go of it again.
+ */
+function pinFromPlate(index, snap) {
+  if (!lastReadFrom) return;
+  const { points, runs, leadIndex, eso } = lastReadFrom;
+  const at = snap ? dayExtremeNear(points, runs, index) : index;
+  if (at == null) return;
+  const taken = pinAt(points, runs, at);
+  if (!taken) return;
+  const same =
+    pinnedHour &&
+    pinnedHour.kind === taken.kind &&
+    pinnedHour.month === taken.month &&
+    pinnedHour.day === taken.day &&
+    pinnedHour.hour === taken.hour;
+  pinnedHour = same ? null : taken;
+  readAt(points, runs, leadIndex, eso);
+  reletterReading();
+}
+
+/**
+ * Everything that reads the instant, re-lettered from the run already in hand.
+ *
+ * The desk's meters, the plate's marker and the address bar are three views of
+ * one hour, and a route that moved the hour without moving all three would put
+ * the marker on one instant while the strips reported another.
+ */
+function reletterReading() {
+  desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt);
+  renderTrace();
+  updatePermalink();
+}
+
+/**
  * What each channel was contributing at one instant.
  *
  * At one instant, and not averaged over the run, which was the first attempt
@@ -1782,7 +2066,9 @@ const exactly = (name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\
  * whole desk reads zero. A console meter shows level now, not the mean of the
  * song. So the desk reads at the hour the building is having the hardest time —
  * the one furthest from 20 °C, which is the hour the design is judged at, and
- * an instant where the balance genuinely closes.
+ * an instant where the balance genuinely closes. Unless the reader has pinned
+ * an hour, in which case it is that one: see `pinned` below for why a console
+ * that only ever picks its own instant cannot be used to compare two desks.
  *
  * A channel whose series the ESO did not carry reads null, not zero. Zero is a
  * measurement; this is the absence of one, and the strip letters it as an em
@@ -1813,20 +2099,6 @@ function readMeters(eso, at) {
   return readings;
 }
 
-/** The hour the building is having the hardest time, within one environment. */
-function worstHour(zone, run) {
-  let at = run.start;
-  let worst = -Infinity;
-  for (let i = run.start; i <= run.end; i += 1) {
-    const off = Math.abs(zone[i] - 20);
-    if (off > worst) {
-      worst = off;
-      at = i;
-    }
-  }
-  return at;
-}
-
 const deskPanel = $('desk');
 const deskButton = $('desk-open');
 
@@ -1841,6 +2113,7 @@ desk = mountConsole({
     if (params[key] !== value && !PRICED_KEYS.has(key)) tour?.note('drag');
     commit(key, value, done);
   },
+  onPin: toggleHourPin,
   onPatch(id, off) {
     tour?.note('patch');
     beginGesture();
@@ -2379,7 +2652,7 @@ async function choose(row, pick, sizing = 'No') {
   // With a real year attached the sizing days stop earning their place. They
   // are 48 hours of the most extreme weather in the file, run ahead of 8,760
   // hours of the actual one, and every reading downstream then has to be told
-  // which of the three environments it means -- the plate labels them, the
+  // which environment it means -- the plate labels them, the
   // meters had to be filtered to exclude them, and the bill would otherwise
   // carry them. Skipped by default once there is a year to run, and still
   // switchable on the Run strip for anyone sizing equipment. A permalink that
@@ -2402,7 +2675,9 @@ async function choose(row, pick, sizing = 'No') {
   }
 
   const hours = runHours().toLocaleString('en-US');
-  set('t-run', 'Annual');
+  // The run type goes on with the hours, out of `syncRunSub`, which reads both
+  // off the calendar: an attach onto a desk with months already taken out is
+  // not an annual run and must not be lettered as one.
   syncRunSub();
   statusEl.className = 'status';
   statusEl.textContent =
@@ -2442,7 +2717,7 @@ let linkAttachPending = false;
  * pre-solo patch state while the bundle's manifest carried the solo map.
  */
 const schemeHash = (p = params) =>
-  encodeState({ params: p, bypass: patching(), station: stationToken() });
+  encodeState({ params: p, bypass: patching(), station: stationToken(), pin: pinnedHour });
 
 /** The absolute form, for the clipboard and the run bundle's manifest. */
 const schemeUrl = (p = params) => {
@@ -2499,6 +2774,10 @@ function refuseLink(message) {
   syncSweepGate();
   stopAuto();
   revert();
+  // `revert` restores the parameters and the patch bay; the pinned hour is
+  // neither, so it has to be released by name or a refused link would leave
+  // its one surviving claim on the desk.
+  pinnedHour = null;
   clearResults();
   history.replaceState(null, '', location.pathname + location.search);
   statusEl.className = 'status bad';
@@ -2633,6 +2912,11 @@ if (location.hash.length > 1) {
     linked = decodeState(location.hash.slice(1));
     Object.assign(params, linked.params);
     Object.assign(bypass, linked.bypass);
+    // The pinned hour is taken here rather than after the first solve, because
+    // it has to be in force *for* that solve: honoured afterwards, the desk
+    // would letter its own worst hour first and jump to the link's, which is
+    // the flicker a link exists to avoid.
+    pinnedHour = linked.pin;
     desk?.sync();
   } catch (error) {
     linkError = error;
@@ -2690,6 +2974,13 @@ async function solve() {
   const capture = {
     epw: epwText ?? null,
     annual: Boolean(epwText),
+    // Which months the weather run covers, off the snapshot that is being
+    // solved. The manifest states the run in one line, and "Annual" over 4,344
+    // hours is the drift the whole capture-before-the-await exists to prevent.
+    // Named for the mask it holds, not for the months, because `lastRun.months`
+    // beside it is a count — the bill divides by it and the manifest spells it
+    // out, and one name over two shapes is a trap for whoever edits next.
+    monthMask: epwText ? snapshot.months : null,
     weatherStem:
       epwText && station?.url ? station.url.split('/').pop().replace(/\.zip$/i, '') : null,
     location: $('t-location').textContent,
@@ -2783,9 +3074,18 @@ async function solve() {
   const runs = environmentRuns(points, eso?.environments ?? []);
 
   plot = { zone, out, segments: axisSegments(points, runs) };
-  renderTrace();
 
-  const columns = runs.map((r) => ({ label: r.label, metrics: metricsFor(zone, out, r, hasOutdoor) }));
+  // `noun` rides along beside the column's label because the finding says the
+  // environment in a sentence and the label heads a column: "the winter design
+  // day's swing" against a column headed `Winter design day · 21 Dec`. It was
+  // cut out of the label with a string split until a run period could be
+  // called `Run period · Jan–Mar`, which lowercased into a sentence as
+  // "the jan–mar's".
+  const columns = runs.map((r) => ({
+    label: r.label,
+    noun: r.noun,
+    metrics: metricsFor(zone, out, r, hasOutdoor),
+  }));
   renderSchedule(columns, baseline?.columns);
   solvedColumns = columns;
   solvedParams = snapshot;
@@ -2803,12 +3103,12 @@ async function solve() {
   renderAxon(lastMean);
 
   lastHours = nn;
-  const at = worstHour(zone, runs[leadIndex]);
-  const stamp = points[at]?.timestamp;
-  lastAt = stamp
-    ? `${String(stamp.hour ?? 0).padStart(2, '0')}:00, ${stamp.day} ${MONTHS[stamp.month - 1]} · zone ${zone[at].toFixed(1)} °C`
-    : null;
-  lastReadings = readMeters(eso, at);
+  readAt(points, runs, leadIndex, eso);
+
+  // The plate is drawn after the hour is known, not before: it now carries the
+  // marker for that hour, and drawing it first would post a marker for the
+  // previous run's instant for the rest of this function.
+  renderTrace();
 
   // The end-use meters ride in on the same ESO -- `Output:Meter` writes to both
   // the .eso and the .mtr -- so the bill is priced off the run that is already
@@ -2818,11 +3118,19 @@ async function solve() {
   // without one there are just the sizing days, and those are billed as
   // themselves rather than passed off as a year.
   const billed = runs.some((r) => r.kind === null) ? runs.filter((r) => r.kind === null) : runs;
+  const weather = billed.some((r) => r.kind === null);
   lastRun = {
     eso,
     environments: new Set(billed.map((r) => r.key)),
     hours: billed.reduce((total, r) => total + (r.end - r.start + 1), 0),
-    annual: billed.some((r) => r.kind === null),
+    annual: weather,
+    // How much of the year the meters actually cover, counted off the run
+    // rather than off the Run strip, which may have moved since. Months can be
+    // taken out of the run, and a bill that divided ten of them by the floor
+    // area and headed the row "per year" would be handing an architect a
+    // number whose only use is to be held against an annual benchmark it
+    // cannot be compared with.
+    months: weather ? billed.reduce((total, r) => total + r.months, 0) : null,
     // Everything the download bundle needs, captured here rather than read back
     // off live state at click time: the inputs the engine ran and the report it
     // wrote, alongside the run facts the manifest states. `html` is the genuine
@@ -2874,7 +3182,7 @@ async function solve() {
   if (Number.isFinite(m.damping)) {
     finding.append(
       'With no heating or cooling anywhere in this model, the envelope alone takes the ',
-      lead.label.split(' · ')[0].toLowerCase(),
+      lead.noun,
       "'s ",
       q(f1(m.o.swing)),
       ' °C outdoor swing down to ',
@@ -3154,6 +3462,10 @@ const partialStudy = (job) => ({
   label: shapeLabel(job.snapshot),
   restShape: job.restShape,
   annual: job.annual,
+  // Whether the sweep's runs were a whole year of weather or a few months of
+  // one, which is what the card's own words turn on: the extremes of a run
+  // period that stops in May are not "the annual peak".
+  wholeYear: job.annual && isWholeYear(job.snapshot.months),
   metric: job.metric,
   // Samples still in flight are simply absent, so the silhouette spans them
   // and sharpens as they land; a sample that failed stays in the curve with
@@ -3219,7 +3531,11 @@ function onStudyUpdate(job, event) {
   }
   const key = job.key;
   const said = controlFor(key).control.label.toLowerCase();
-  const kind = job.annual ? 'annual' : 'design-day';
+  const kind = !job.annual
+    ? 'design-day'
+    : isWholeYear(job.snapshot.months)
+      ? 'annual'
+      : 'run-period';
 
   if (event === 'point') {
     desk.setStudy(key, partialStudy(job), { stale: false });
@@ -3230,6 +3546,7 @@ function onStudyUpdate(job, event) {
       label: shapeLabel(job.snapshot),
       restShape: job.restShape,
       annual: job.annual,
+      wholeYear: job.annual && isWholeYear(job.snapshot.months),
       metric: job.metric,
       curve: job.curve,
       // A coarse first pass is a real study, drawn honestly at eleven points;

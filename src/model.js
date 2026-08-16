@@ -1,5 +1,12 @@
 import { IDFDocument, parseIdf } from '@idfkit/core';
-import { CHANNELS, DEFAULT_BYPASS, DEFAULT_PARAMETERS, parseHolidays } from './controls.js';
+import {
+  CHANNELS,
+  DAYS_IN_MONTH,
+  DEFAULT_BYPASS,
+  DEFAULT_PARAMETERS,
+  monthSpans,
+  parseHolidays,
+} from './controls.js';
 import { END_USES } from './bill.js';
 
 /**
@@ -420,17 +427,9 @@ export function buildModel(schema, parameters = DEFAULT_PARAMETERS, bypass = DEF
     maximum_number_of_hvac_sizing_simulation_passes: 1,
   });
 
-  // `day_of_week_for_start_day` is deliberately absent. Pinned to Tuesday it
-  // overrode what the weather file says about itself — every TMYx declares
-  // `DATA PERIODS,1,1,Data,Sunday,1/ 1,12/31` — and put the whole run on an
-  // invented calendar, in which the third Monday of January fell on the 21st.
-  // Left empty, EnergyPlus takes the file's own start day and picks a real
-  // non-leap year to match it (2017 for a Sunday), so every date lands where it
-  // belongs and the weekend holiday rule is about a real weekend. The field is
-  // anchored to the run period's begin date, so leaving it empty is also what
-  // keeps a narrowed period aligned to the year rather than to its own first
-  // day: measured, a June-to-August run reports 1 June as a Thursday, which is
-  // what 1 June 2017 was.
+  // Replaced wholesale by `applyRun`, which writes one of these per group of
+  // months. It is here so the document is complete before the first apply, and
+  // it carries no `day_of_week_for_start_day` for the reason set out there.
   doc.add('RunPeriod', 'Run Period 1', {
     begin_month: 1,
     begin_day_of_month: 1,
@@ -1353,29 +1352,61 @@ function applySolver(doc, params) {
   building.temperature_convergence_tolerance_value = params.tempTol;
 }
 
-/** 16 — what actually gets simulated. */
+/**
+ * 16 — what actually gets simulated.
+ *
+ * One `RunPeriod` per unbroken group of months, which is how EnergyPlus is
+ * asked for a year with holes in it: the engine runs each as its own
+ * environment, the meters accumulate through all of them, and everything this
+ * sheet reads is already per environment. The objects are cleared and rewritten
+ * rather than edited in place, for the reason the reporting reconciler is:
+ * `applyModel` runs on every parameter change, so the count has to be free to
+ * fall as well as rise, and a differential update would leave last gesture's
+ * fourth period in the document when this one has three.
+ *
+ * A single all-year mask still writes exactly the `Run Period 1` the baseline
+ * document carried, so the default desk serialises byte for byte as it did.
+ */
 function applyRun(doc, params) {
-  // Cleared unconditionally and rewritten in list order, the discipline
-  // `syncReporting` uses: the sweep restores the live desk by re-applying, and
-  // a differential update would leave the document in a different order than
-  // the one it started in.
+  // Both types are cleared and rewritten whole. The special days are not tied
+  // to any one period — they are the calendar the whole run keeps — so they are
+  // written once, while the holiday *fields* belong to each period and are
+  // written on every one of them.
+  clear(doc, 'RunPeriod');
   clear(doc, 'RunPeriodControl:SpecialDays');
 
-  const period = must(doc, 'RunPeriod', 'Run Period 1');
-  const [from, to] = params.beginMonth <= params.endMonth
-    ? [params.beginMonth, params.endMonth]
-    : [params.endMonth, params.beginMonth];
-  period.begin_month = from;
-  period.begin_day_of_month = 1;
-  period.end_month = to;
-  period.end_day_of_month = DAYS_IN_MONTH[to - 1];
-  // The two holiday sources are independent fields, and the strip's three
-  // states are the three combinations that mean anything. `Listed` has to turn
-  // the file's days off, because where both are present the weather file's
-  // specification takes precedence and the listed days would lose silently.
-  period.use_weather_file_holidays_and_special_days = params.holidays === 'Yes' ? 'Yes' : 'No';
-  period.apply_weekend_holiday_rule = params.holidayRule;
-  period.use_weather_file_daylight_saving_period = params.dst;
+  monthSpans(params.months).forEach(({ from, to }, i) => {
+    doc.add('RunPeriod', `Run Period ${i + 1}`, {
+      begin_month: from,
+      begin_day_of_month: 1,
+      end_month: to,
+      end_day_of_month: DAYS_IN_MONTH[to - 1],
+      // `day_of_week_for_start_day` is deliberately absent. Pinned to Tuesday
+      // it overrode what the weather file says about itself — every TMYx
+      // declares `DATA PERIODS,1,1,Data,Sunday,1/ 1,12/31` — and put the run on
+      // an invented calendar, in which the third Monday of January fell on the
+      // 21st. Left empty, EnergyPlus takes the file's own start day and picks a
+      // real non-leap year to match it (2017 for a Sunday), so every date lands
+      // where it belongs and the weekend holiday rule is about a real weekend.
+      //
+      // It matters more here than it would have with one period. The field
+      // anchors to *this period's* begin date, so pinning it would start every
+      // span on the same weekday and put a January and a July on two different
+      // calendars. Empty, they share the year's: measured, a June-to-August
+      // period reports 1 June as a Thursday, which is what 1 June 2017 was.
+      //
+      // The two holiday sources are independent fields, and the strip's three
+      // states are the three combinations that mean anything. `Listed` has to
+      // turn the file's days off, because where both are present the weather
+      // file's specification takes precedence and the listed days would lose
+      // silently.
+      use_weather_file_holidays_and_special_days: params.holidays === 'Yes' ? 'Yes' : 'No',
+      use_weather_file_daylight_saving_period: params.dst,
+      apply_weekend_holiday_rule: params.holidayRule,
+      use_weather_file_rain_indicators: 'Yes',
+      use_weather_file_snow_indicators: 'Yes',
+    });
+  });
 
   if (params.holidays !== 'No') {
     for (const day of parseHolidays(params.holidayDays)) {
@@ -1392,8 +1423,6 @@ function applyRun(doc, params) {
 
   must(doc, 'SimulationControl').run_simulation_for_sizing_periods = params.sizingPeriods;
 }
-
-const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 /** Every type the reporting reconciler owns — no other author may add these. */
 const REPORTING_TYPES = [

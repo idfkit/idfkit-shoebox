@@ -38,8 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Attach a year and each entry is lettered with the day it actually falls on —
   `3 Mon in Jan · Mon 16 Jan` — and ticked there on the rule. Anything outside
   the run period is struck through and counted, because EnergyPlus drops such a
-  day without a word: measured on a June-to-August run carrying the November and
-  December holidays, which completed with no warnings at all. The lettered dates
+  day without a word: measured on a January-plus-June-to-August mask carrying all
+  eleven US federal holidays, which ran clean and simulated exactly the four that
+  fell inside it. The lettered dates
   are checked against the engine's own `Environment:Special Days` echo, entry by
   entry, so the strip cannot letter a calendar the run did not use.
 
@@ -69,6 +70,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a real non-leap year to match it, so weekends fall where weekends fall. It is
   one field, and it is the only difference between the default IDF before this
   change and after.
+
+  It matters more now that the year can be run in pieces. The field anchors to
+  each run period's own begin date, so pinned, a January and a June would both
+  start on a Tuesday and sit in two different calendars. Empty, they share one:
+  measured, January begins Sunday and June begins Thursday, which is 2017.
 
   This moves results. Every annual run's day-of-week alignment shifts by two
   days, so anything scheduled by weekday — the occupancy band's weekends, the
@@ -137,6 +143,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reproduced in a local EnergyPlus rather than taken on faith. A design-day run
   carries no weather file, and the manifest says so instead of shipping a
   fabricated one.
+
+### Changed
+
+- The run period is a year of months, not two sliders. **Run from** and **Run
+  to** on the Run strip are replaced by a twelve-cell calendar: tap a month to
+  take it in or out, sweep across several in one gesture, or walk the year with
+  the arrow keys and toggle from the keyboard. Months need not be consecutive —
+  each unbroken group is handed to EnergyPlus as its own `RunPeriod`, so
+  January and July can be solved without the spring between them, and the strip
+  says in the engine's own words how many run periods the mask makes. Below
+  400px the year folds to two rows of six rather than shrinking twelve cells
+  past reading. A run needs at least one month, and the last one standing says
+  so rather than quietly refusing.
+
+  The rest of the sheet follows the run: a solve can now hold several weather
+  environments, so the results schedule heads a column per run period with the
+  months it covers, the chart letters each period's month ticks, and the run
+  bundle's manifest names the periods instead of claiming "Annual". A weather
+  file is no longer taken to mean a year — a bill metered over four months says
+  so in its lede and draws no per-m² intensity, because every benchmark that
+  figure exists to be compared against is twelve months long.
+
+  Breaking, deliberately: the `beginMonth` and `endMonth` parameters are gone
+  rather than migrated, and a scheme link naming either is refused. Nothing has
+  been published yet, so there was no link to carry forward and no reason to
+  spend a link version on one. The run period rides in a link as
+  `months=001110000000`.
 
 ## [0.1.0] - 2026-08-14
 

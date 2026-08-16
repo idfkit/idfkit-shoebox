@@ -1,6 +1,6 @@
 import {
   CHANNELS,
-  MONTH_LABELS,
+  MONTHS,
   WEEKDAY_LABELS,
   controlFor,
   parseHolidays,
@@ -66,7 +66,7 @@ function watts(w) {
  * scales cannot drift apart. Every gesture goes back out through `onChange`.
  */
 export function mountConsole({
-  host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear,
+  host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear, onPin,
 }) {
   const strips = new Map(); // channel id -> { redraw(), meter, patch, solo }
   const faces = new Map(); // parameter key -> redraw for that control
@@ -75,7 +75,13 @@ export function mountConsole({
   const studyButtons = new Map(); // parameter key -> that scale's Study button
   const daysWidgets = new Map(); // parameter key -> that list's weather-file offer
   let solo = null;
-  let reading = null; // the instant every meter on the desk is reading at
+  // The instant every meter on the desk is reading at: `{ text, pinned,
+  // released }`, or null before anything has been solved.
+  let reading = null;
+  // The rail's pin, as of the last redraw. Held because the rail is rebuilt
+  // whole on every reading, so the node that took a click is never the node
+  // that has to take the focus back.
+  let whenButton = null;
   let engaged = new Set(); // which channels the model says are in the path
   let ghost = {}; // where each control stood when the current gesture began
   // Whether a study can be taken at all, and the sentence for when it cannot.
@@ -303,6 +309,7 @@ export function mountConsole({
     if (control.kind === 'bearing') return buildBearing(control);
     if (control.kind === 'facade') return buildFacade(control);
     if (control.kind === 'profile') return buildProfile(control);
+    if (control.kind === 'calendar') return buildCalendar(control);
     if (control.kind === 'days') return buildDays(control);
     throw new Error(`the console cannot draw a ${control.kind}`);
   }
@@ -716,6 +723,148 @@ export function mountConsole({
   }
 
   /**
+   * The year, as twelve months you take in and out of the run.
+   *
+   * Two calibration faces could only ever describe one unbroken span, so the
+   * question this control exists to answer — solve January and July, skip the
+   * spring — could not be asked at all. Twelve cells can be worked three ways,
+   * because the desk is read on three kinds of screen: tapped one at a time,
+   * swept in one gesture the way the occupancy band is swept, or walked with
+   * the arrow keys and toggled from the keyboard. The cells are real buttons on
+   * a grid rather than an SVG band for that last reason — the band has no
+   * keyboard at all, and a year is a set rather than a span, so there is
+   * nothing here for a range input to carry.
+   *
+   * The line under the grid says how many run periods the mask makes. That is
+   * not decoration: one group of months is one `RunPeriod`, two groups are two,
+   * and the count is the EnergyPlus fact a reader has to have in order to
+   * understand why the chart below grows another band.
+   */
+  function buildCalendar(control) {
+    const row = el('div', 'ctl ctl-calendar');
+    const head = el('div', 'ctl-head');
+    head.append(el('span', 'ctl-label', control.label));
+    const value = el('span', 'ctl-value');
+    head.append(value);
+    row.append(head);
+
+    const grid = el('div', 'months');
+    grid.setAttribute('role', 'group');
+    grid.setAttribute('aria-label', control.label);
+
+    const mask = () => params[control.key];
+    const set = (i, on) => {
+      const next = mask();
+      if (next[i] === (on ? '1' : '0')) return;
+      // The floor: a weather-file run with no months in it is a run period
+      // EnergyPlus refuses to start, so the last month standing cannot be
+      // taken out. The cell says so rather than doing nothing quietly.
+      if (!on && [...next].filter((c) => c === '1').length === 1) return;
+      markGesture(control.key);
+      onChange(control.key, `${next.slice(0, i)}${on ? '1' : '0'}${next.slice(i + 1)}`);
+    };
+
+    const cells = MONTHS.map((name, i) => {
+      const cell = el('button', 'month', name);
+      cell.type = 'button';
+      cell.setAttribute('role', 'checkbox');
+      cell.dataset.month = String(i);
+      cell.tabIndex = i === 0 ? 0 : -1;
+      // A pointer click is already handled on `pointerdown` below, where the
+      // sweep starts, and the gesture calls `preventDefault`. What still
+      // arrives here is activation that came from somewhere else: Enter and
+      // Space on the focused cell, and a screen reader's own activation. Both
+      // carry `detail === 0`, which is the one discriminator that does not
+      // need a flag or a timer to stay right.
+      cell.addEventListener('click', (event) => {
+        if (event.detail !== 0) return;
+        set(i, mask()[i] !== '1');
+        onChange(control.key, mask(), true);
+      });
+      cell.addEventListener('keydown', (event) => {
+        const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 1, ArrowUp: -1 }[event.key];
+        const to = step ? i + step : event.key === 'Home' ? 0 : event.key === 'End' ? 11 : null;
+        if (to === null || to < 0 || to > 11) return;
+        event.preventDefault();
+        focus(to);
+      });
+      grid.append(cell);
+      return cell;
+    });
+
+    // One tab stop for the whole year, the arrow keys inside it. Twelve stops
+    // in one control would bury the strips below it for anyone tabbing the
+    // desk.
+    function focus(i) {
+      for (const [at, cell] of cells.entries()) cell.tabIndex = at === i ? 0 : -1;
+      cells[i].focus();
+    }
+
+    // Sweeping paints one state rather than toggling each cell it crosses: the
+    // month you took hold of decides whether this gesture is adding months or
+    // removing them, and crossing back over a cell does not undo it. Toggling
+    // per cell makes a fast drag depend on how many times the pointer happened
+    // to cross a boundary.
+    let painting = null;
+    const monthAt = (event) => {
+      const found = document
+        .elementFromPoint(event.clientX, event.clientY)
+        ?.closest('.month');
+      // Capture keeps the events coming here after the pointer has left the
+      // grid entirely, which is what a sweep off the end of December looks
+      // like, so a point outside is nothing rather than an error.
+      return found && grid.contains(found) ? Number(found.dataset.month) : null;
+    };
+    drag(grid, {
+      onStart: (event) => {
+        const i = monthAt(event);
+        if (i === null) return;
+        painting = mask()[i] !== '1';
+        set(i, painting);
+      },
+      onMove: (event) => {
+        const i = monthAt(event);
+        if (i !== null && painting !== null) set(i, painting);
+      },
+      onEnd: () => {
+        painting = null;
+        onChange(control.key, mask(), true);
+      },
+    });
+
+    row.append(grid);
+    const periods = el('p', 'ctl-note months-periods');
+    row.append(periods);
+    if (control.note) row.append(el('p', 'ctl-note', control.note));
+
+    faces.set(control.key, () => {
+      const now = mask();
+      const was = ghost[control.key];
+      const only = [...now].filter((c) => c === '1').length === 1;
+      cells.forEach((cell, i) => {
+        const on = now[i] === '1';
+        cell.classList.toggle('on', on);
+        cell.setAttribute('aria-checked', String(on));
+        // Where this cell stood when the gesture began, drawn as the same
+        // ghost mark every other control on the desk draws: a sweep across
+        // half the year should leave a record of what it crossed.
+        cell.classList.toggle('moved', was != null && was[i] !== now[i]);
+        const locked = on && only;
+        cell.classList.toggle('locked', locked);
+        const why = locked
+          ? 'A run period needs at least one month — bring another in before taking this one out.'
+          : '';
+        // Written only on change, the same rule the scales' Study buttons
+        // follow: this redraws twelve cells on every settle.
+        if (cell.title !== why) cell.title = why;
+      });
+      value.textContent = control.format(now);
+      periods.textContent = control.periods(now);
+    });
+    return row;
+  }
+
+  /**
    * A list of days, over a year rule.
    *
    * The rule is not decoration. A fixed date knows where in the year it falls
@@ -792,12 +941,10 @@ export function mountConsole({
     // The weekday the run's year begins on, from the attached file, or null
     // while there is no file and therefore no calendar to letter against.
     let startWeekday = null;
-    const outside = (here) => {
-      const [from, to] = params.beginMonth <= params.endMonth
-        ? [params.beginMonth, params.endMonth]
-        : [params.endMonth, params.beginMonth];
-      return here.month < from || here.month > to;
-    };
+    // Against the month mask rather than a span: the run is a set of months
+    // now, not a range, so a holiday can fall in one of the gaps between two
+    // run periods and be dropped exactly as one before the first is.
+    const outside = (here) => params.months[here.month - 1] !== '1';
 
     const commitList = (days) => {
       markGesture(control.key);
@@ -886,7 +1033,7 @@ export function mountConsole({
           }));
         } else {
           rule.append(svg('circle', {
-            cx: MONTH_LABELS.indexOf(day.date.slice(-3)) * 20 + 10, cy: 9, r: 2,
+            cx: MONTHS.indexOf(day.date.slice(-3)) * 20 + 10, cy: 9, r: 2,
             fill: 'none', stroke: 'var(--ink-ghost)', 'stroke-width': 1,
           }));
         }
@@ -903,7 +1050,7 @@ export function mountConsole({
           // The whole point of following the weather file's calendar: an nth
           // weekday now has an answer, and it is lettered rather than left for
           // the error file to reveal.
-          const when = `${WEEKDAY_LABELS[here.weekday]} ${here.day} ${MONTH_LABELS[here.month - 1]}`;
+          const when = `${WEEKDAY_LABELS[here.weekday]} ${here.day} ${MONTHS[here.month - 1]}`;
           const mark = el('span', 'day-when', when);
           if (outside(here)) {
             ignored += 1;
@@ -929,7 +1076,7 @@ export function mountConsole({
       outsideNote.hidden = ignored === 0;
       outsideNote.textContent = ignored === 0
         ? ''
-        : `${ignored} of these fall outside the run period, from ${MONTH_LABELS[Math.min(params.beginMonth, params.endMonth) - 1]} to ${MONTH_LABELS[Math.max(params.beginMonth, params.endMonth) - 1]}, and the engine ignores them without saying so.`;
+        : `${ignored} of these fall in months the run does not cover, and the engine ignores them without saying so.`;
 
       row.classList.toggle('idle', control.needs ? !control.needs(params) : false);
     };
@@ -1007,12 +1154,24 @@ export function mountConsole({
           {
             sel: (p) => p.high,
             pen: 'var(--warm)',
-            said: study.annual ? 'annual peak' : 'summer design-day peak',
+            // Three periods, because a weather file no longer implies a year:
+            // the extremes of a run period with months taken out of it are the
+            // run period's, and calling them annual would be the card
+            // reporting a figure the run never held.
+            said: !study.annual
+              ? 'summer design-day peak'
+              : study.wholeYear
+                ? 'annual peak'
+                : 'run-period peak',
           },
           {
             sel: (p) => p.low,
             pen: 'var(--cold)',
-            said: study.annual ? 'annual low' : 'winter design-day low',
+            said: !study.annual
+              ? 'winter design-day low'
+              : study.wholeYear
+                ? 'annual low'
+                : 'run-period low',
           },
         ];
     // The right gutter holds the curves' end labels: six mono characters of
@@ -1028,7 +1187,15 @@ export function mountConsole({
     const x = (v) => plot.x + clamp(control.fraction(v), 0, 1) * plot.w;
 
     const range = (arr) => `${Math.min(...arr).toFixed(1)} to ${Math.max(...arr).toFixed(1)}`;
-    const unit = energy ? 'kWh per square metre a year' : '°C';
+    // "A year" only when the run was one. The intensities are the same
+    // arithmetic over whatever months are in the run, and every sample on the
+    // curve shares them, so the comparison holds — but the figure is not an
+    // annual one and the card must not say it is.
+    const unit = !energy
+      ? '°C'
+      : study.wholeYear
+        ? 'kWh per square metre a year'
+        : 'kWh per square metre over the run period';
     const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' });
     root.setAttribute(
       'aria-label',
@@ -1118,7 +1285,7 @@ export function mountConsole({
     foot(control.format(control.min), plot.x, 'start');
     foot(control.format(control.max), plot.x + plot.w, 'end');
     // The intensities need their unit stated; degrees carry their own sign.
-    if (energy) foot('kWh/m²·a', plot.x + plot.w / 2, 'middle');
+    if (energy) foot(study.wholeYear ? 'kWh/m²·a' : 'kWh/m² per run', plot.x + plot.w / 2, 'middle');
 
     const tick = svg('line', {
       y1: plot.top - 2, y2: plot.bottom + 2, stroke: 'var(--redline)', 'stroke-width': 1,
@@ -1379,6 +1546,52 @@ export function mountConsole({
   };
 
   /**
+   * The line that says which instant the desk is reading, and holds it.
+   *
+   * The marker is the desk's own armed idiom — filled `--redline` when the
+   * hour is held, a hairline outline when it is the run's own worst hour — so
+   * "pinned" reads the same way "patched in" and "pinned as scheme" already
+   * do. It labels the instant rather than sitting beside it, because what is
+   * being armed is that hour and no other.
+   */
+  function whenLine() {
+    const wrap = el('div', 'rail-when');
+    const button = el('button', 'pin pin-inline');
+    whenButton = button;
+    button.type = 'button';
+    button.setAttribute('aria-pressed', String(reading.pinned));
+    button.title = reading.pinned
+      ? 'Release the hour and read the worst one in each run again'
+      : 'Hold this hour, so the meters keep reading it as the desk changes';
+    button.append(el('i', 'mark'), el('span', null, `Read at ${reading.text}`));
+    button.addEventListener('click', () => {
+      onPin?.();
+      // Turning the pin re-letters the rail, and `drawRail` empties the host,
+      // so by the time this handler returns the button that was clicked is
+      // detached and the focus has fallen to the body. Every other control on
+      // the desk keeps its node across a redraw; this one is rebuilt, so it
+      // has to hand the focus on to its replacement or a reader working the
+      // desk from the keyboard loses their place on every press -- and the
+      // `aria-pressed` they just changed is never announced.
+      if (whenButton?.isConnected) whenButton.focus();
+    });
+    wrap.append(button);
+    // A pin that could not be found is released, and the reader is told which
+    // hour went missing -- a marker that quietly went dark would leave every
+    // number on the rail claiming to be held when it is not.
+    if (reading.released) {
+      wrap.append(
+        el(
+          'p',
+          'rail-note loose',
+          `${reading.released} is not in this run, so the pin was released and the meters are reading the worst hour again.`,
+        ),
+      );
+    }
+    return wrap;
+  }
+
+  /**
    * The master bus: the zone air heat balance, as one signed rail.
    *
    * Zero is at the centre. Terms adding heat to the zone air stack out to the
@@ -1398,8 +1611,12 @@ export function mountConsole({
     head.append(el('p', 'eyebrow', 'Zone air heat balance'));
     railHost.append(head);
     // Every meter on the desk is an instantaneous reading, so the rail has to
-    // say which instant, or the numbers are unfalsifiable.
-    if (reading) railHost.append(el('p', 'rail-when', `Read at ${reading}`));
+    // say which instant, or the numbers are unfalsifiable. And because that
+    // instant is chosen by the result — the hour furthest from 20 °C, which a
+    // control can move without touching the quantity being read — the line
+    // that states it is also where it is held still. One control, in the one
+    // place the reading hour is already named.
+    if (reading) railHost.append(whenLine());
 
     if (!terms.length) {
       railHost.append(el('p', 'rail-empty', 'No solved run to balance yet.'));

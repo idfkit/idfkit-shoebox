@@ -22,6 +22,8 @@
  * bookkeeping around bodies the browser compresses for us.
  */
 
+import { controlFor, isWholeYear } from './controls.js';
+
 const enc = new TextEncoder();
 
 /**
@@ -142,6 +144,23 @@ export async function zip(files, { date = new Date() } = {}) {
 const group = (n) => n.toLocaleString('en-US');
 
 /**
+ * What was simulated, in one line.
+ *
+ * A weather file stopped meaning "a year" the day the Run strip's calendar
+ * could leave months out of it, and this file exists to let someone reproduce
+ * the sheet's numbers in their own EnergyPlus — so the months are named, in
+ * the same words the console says them in. The phrasing comes from the control
+ * declaration rather than being written a second time here.
+ */
+function runLine(run) {
+  const hours = `${group(run.hours)} hours`;
+  if (!run.annual) return `Design days (${hours})`;
+  if (!run.monthMask || isWholeYear(run.monthMask)) return `Annual (${hours})`;
+  const { control } = controlFor('months');
+  return `${control.periods(run.monthMask).replace(/\.$/, '')} (${hours})`;
+}
+
+/**
  * The bundle's members, named once. `manifest()` letters its Files section and
  * `runBundle()` zips its bytes off this same list, because the first cut wrote
  * the list twice — a member added to one copy would have shipped in a ZIP
@@ -181,7 +200,7 @@ function manifest(run, list) {
   const epwFile = list.find((m) => m.name.endsWith('.epw'))?.name ?? null;
   const rows = [
     ['EnergyPlus', run.version],
-    ['Run', run.annual ? `Annual (${group(run.hours)} hours)` : `Design days (${group(run.hours)} hours)`],
+    ['Run', runLine(run)],
     [
       'Weather',
       epwFile ??
@@ -232,6 +251,17 @@ function manifest(run, list) {
   );
 }
 
+/**
+ * What the download calls the run, in one word.
+ *
+ * The same distinction the manifest's Run line makes, and made here for the
+ * same reason: a file sitting in a downloads folder called `…-annual.zip`
+ * holding four months of weather is a claim nobody is left in a position to
+ * check.
+ */
+const kind = (run) =>
+  !run.annual ? 'designday' : !run.monthMask || isWholeYear(run.monthMask) ? 'annual' : 'runperiod';
+
 /** A filesystem-safe stem from the run's location, for the download's name. */
 function slug(run) {
   const base = (run.location || 'run').replace(/,.*$/, '');
@@ -254,5 +284,5 @@ export async function runBundle(run) {
   files.push({ name: 'MANIFEST.txt', bytes: enc.encode(manifest({ ...run, date }, list)) });
 
   const blob = await zip(files, { date });
-  return { blob, filename: `shoebox-${slug(run)}-${run.annual ? 'annual' : 'designday'}.zip` };
+  return { blob, filename: `shoebox-${slug(run)}-${kind(run)}.zip` };
 }

@@ -148,9 +148,9 @@ listed beneath it, an entry field, and a row of ghost-ink stamps.
   in `--sans` and ellipsised at `min-width: 0`, the resolved day in ghost `--mono`
   — read off the run, not set — and a `×`. Editing is remove-and-re-add, so a row
   is a reading, not a form.
-- **What the engine will drop is struck through, and counted.** An entry outside
-  the run period is ignored by EnergyPlus in silence; the resolved date wears a
-  line through it and a `--redline` note says how many and why. Silence about a
+- **What the engine will drop is struck through, and counted.** An entry in a
+  month no run period covers is ignored by EnergyPlus in silence; the resolved
+  date wears a line through it and a `--redline` note says how many and why. Silence about a
   dropped input is the failure the sheet exists to prevent, whoever is being
   silent.
 - The entry field is `--inset` ground with a `1px --rule` border, like
@@ -186,6 +186,41 @@ and its subject on the sheet is circled with the dashed markup hairline
 (`.guided`), one region at a time. Folded, the notes are one row that still
 reads — the index sheet's rule; retired, they are gone. If a feature changes
 what a step points at or teaches, the note changes with it — see CLAUDE.md.
+
+### Inline pin (`.pin-inline`)
+
+The rail's reading hour is stated in one line of mono type, and that line is
+also the control that holds it. So the pin keeps the marker — the one part
+carrying the armed state, and the same square the patch buttons and the bill's
+pin use — and gives up the button chrome entirely: no inset, no border, no
+tracked capitals, the label set in the mono the instant was always lettered
+in. The marker labels the instant rather than sitting beside it, because what
+is being armed is that hour and no other.
+
+Reach for this shape wherever a reading is *also* a switch. A second full
+`.pin` button at the desk's foot would have made the rail's quietest line its
+loudest, and a separate control elsewhere would have separated the state from
+the sentence that states it.
+
+### The reading hour on the plate
+
+The armed square appears a third time, at the head of a vertical hairline on
+the trace, marking the instant every meter on the desk is reading. Filled
+`--redline` and solid when the reader holds that hour; `--ink-ghost` and
+dashed when it is merely the hour this run happened to be worst at. One idiom,
+three places — patch button, rail pin, plate marker — so "armed" is learned
+once.
+
+State that moves on its own belongs on the drawing, not only in the panel. The
+hour was first shown only in the desk's footer, which put the most movable
+thing about every reading behind a disclosure and two hundred tab stops. The
+plate already had the axis for it.
+
+The trace is a control as well as a picture: clicking it chooses the hour, with
+`cursor: crosshair` while there is a run to read. It keeps `role="img"` and an
+`aria-label` that states the current instant, which is honest but not
+sufficient — choosing an arbitrary hour is pointer-only until the trace takes
+arrow keys. Do not add a second pointer-only control here without closing that.
 
 ### Signed meter bar
 

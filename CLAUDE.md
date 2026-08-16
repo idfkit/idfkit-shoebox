@@ -67,10 +67,10 @@ controls.js  declares every control (typed classes) and groups them into Channel
 
 `src/controls.js` is the single source of truth. A control exists once, as a
 `Scale`, `Selector`, `Bearing`, `Facade` (four walls on one plan key), `Profile`
-(a 24 hour band) or `Days` (a list of dates), attached to a `Channel`. The
-console draws it, the model applies it, and the sheet's five dimension sliders
-look their specs up by key from the same place, so the two surfaces cannot
-drift.
+(a 24 hour band), `Calendar` (a twelve-month year) or `Days` (a list of dates),
+attached to a `Channel`. The console draws it, the model applies it, and the
+sheet's five dimension sliders look their specs up by key from the same place,
+so the two surfaces cannot drift.
 
 **To add a control:** declare it in `controls.js`, then write the field in that
 channel's applier in `model.js`. Do not add markup, defaults, or label strings
@@ -119,6 +119,35 @@ on).
   Meters stay Monthly whatever the profile; see the `parseMTR` note below.
 - **`must(doc, type, name)`** throws when an expected object is missing instead
   of quietly re-adding it. See "No silent fallbacks" below.
+- **`applyRun` writes one `RunPeriod` per unbroken group of months** in the
+  calendar mask, clearing and rewriting them all on every apply so the count
+  can fall as well as rise. Months that do not touch cannot be one run period,
+  and EnergyPlus is happy to be handed several — which is what lets a January
+  and a July be solved without the spring between them. December and January
+  are deliberately *not* joined into a wrapping period when the months between
+  them are out: the engine allows it, but it would run them as one environment
+  out of calendar order, and every reading here is lettered from the timestamps
+  that come back.
+
+### More than three environments
+
+A run used to be two design days and at most one year. It can now be two design
+days and up to six run periods, and everything that reads a run was already per
+environment (`environmentRuns` in `src/readings.js`), so what changed is the
+lettering rather than the arithmetic:
+
+- **Which months an environment covers is read off its timestamps**, never off
+  `params` — the desk may have moved since the solve. That is where the
+  schedule's column heads, the bill's month count and the chart's ticks all
+  come from.
+- **`noun` is kept apart from `label`.** The finding says an environment in a
+  sentence ("the run period's swing"); the schedule heads a column with it
+  (`Run period · Jan–Mar`). The noun used to be cut out of the label with a
+  string split, which produced "the jan–mar's" the moment a label carried
+  dates.
+- **The chart letters a band by how wide it lands**, not by what kind of
+  environment made it: a design day is 24 hours out of 8,808 and gives up its
+  label, a one-month run period is half of a two-month axis and keeps it.
 
 ### Channels that price rather than simulate
 
@@ -166,8 +195,13 @@ Things that cost real debugging:
   the baseline — as do the stock file's other demonstration loads: the matched
   ±352 W `OtherEquipment` test pair and the `.mtr`-only meters are gone
   entirely, since nothing read either.
-- **Per-m² is only drawn on an annual run.** Every published benchmark is annual,
+- **Per-m² is only drawn on a whole year.** Every published benchmark is annual,
   and 0.3 kgCO₂e/m² over two design days has no use but to be mistaken for one.
+  A weather file is not by itself a year: the Run strip's calendar can leave
+  months out, so `Bill.wholeYear` — twelve months of weather billed, counted
+  off the environments that came back rather than off live `params` — is what
+  gates the row, and a partial run says in the lede how much of the year it
+  covers.
 - Rates come from six dated open datasets, generated into `src/rates.data.js` by
   `scripts/build-rates.mjs` (run by hand; needs the network and a Python with
   `openpyxl` and `xlrd`). Coverage is **North America by state and province**
@@ -295,6 +329,10 @@ round-trip of every key and refusal of every malformed input class.
   default, renaming a key, or narrowing a range means bumping `LINK_VERSION`,
   freezing the outgoing defaults into `DEFAULTS_BY_VERSION`, and writing one
   `MIGRATIONS` step — the IDF version-transition arrangement, in miniature.
+  `MIGRATIONS` is still empty: the calendar renamed the run period's
+  `beginMonth` / `endMonth` pair to `months` and took the free pass the Grounds
+  channel took, because there were no links in the wild to carry forward. That
+  pass expires the moment one is shared.
 - **Links are refused whole, never half-loaded.** `decodeState` validates every
   pair through the control declarations before returning anything, and a
   station that cannot be fetched at boot refuses the entire link back to
@@ -358,6 +396,52 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   environment, not an average. A free-running zone returns to where it started,
   so every term averages to roughly nothing over a day and the whole desk reads
   zero.
+- **That instant is chosen by the result, so it moves — and the pin is what
+  holds it.** `worstHour` is an `argmax` over |T − 20| with two candidates half
+  a year apart, so it is not a continuous function of any control, and it is
+  chosen by one signal and then applied to all five meters. On Boston TMYx the
+  two candidates sit 0.6 K apart: a concrete slab reads at 31.4 °C on 3 August
+  (612 W of transmitted solar), and *only* changing the slab to lightweight
+  reads at 5.6 °C on 21 January (no sun at all), because the lighter slab costs
+  the winter night 3.6 K of coasting while adding 1.0 K to the summer peak and
+  the ranking inverts. The transmitted-solar series is byte-identical between
+  those two runs — 8,760 hours, max difference 0 W — so the whole apparent
+  change was the hour. Both readings are true; the pair is not a comparison.
+  `pinnedHour` in `main.js` holds the instant, and there are two controls for
+  it: the rail's `Read at …` line holds whatever hour the run chose, and the
+  **plate is clickable** to choose any other.
+- **The plate carries the marker, because the plate has the axis for it.** A
+  vertical hairline with the desk's armed square at its head and a dot on the
+  zone curve — filled `--redline` when held, a dashed `--ink-ghost` outline
+  when it is the run's own worst hour. The hour was previously stated only in
+  the rail's footer, which made the most movable thing about the readings the
+  least visible; the desk's rule is that a path reads without opening
+  anything, and the hour those paths are read at now does too. Guarded on
+  `lastReadFrom.points.length === plot.zone.length`, the way the gesture ghost
+  is, because a station change redraws the plate with new datums while the
+  previous run's curve still stands.
+- **A click on the plate snaps by the axis's resolution, not by run kind.**
+  `dayExtremeNear` takes the furthest-from-20 hour *within the clicked day*
+  when there is more than one hour to the pixel — an annual trace is 8,760
+  points across ~900 px, so a click can only honestly mean a day. A design day
+  is 48 points across the same width, where a click already names its hour and
+  snapping would leave the whole winter day reachable only at its coldest
+  hour. Clicking the held hour again releases it, so the plate can undo its own
+  gesture. `renderTrace` therefore runs **after** `readAt` in `solve` — drawn
+  first it would post the previous run's instant.
+- **The pin is a calendar stamp, not an index.** `{ kind, month, day, hour }`,
+  where kind is `year` / `winter` / `summer` — by environment *kind* because
+  the index is not a property of the desk (keeping the sizing days renumbers
+  the year from 0 to 2). `resolvePin` re-finds it in each new run; when it is
+  not there — a year pin in a design-day run, a design-day pin after a station
+  attach sets `sizingPeriods=No` — the pin is **released and the rail says
+  which hour went missing**, rather than sliding to the nearest one. It rides
+  the permalink as the reserved key `at=year.8-3T13`, separator a full stop
+  because `URLSearchParams` escapes `@`.
+- **Turning the pin runs nothing.** It reaches no IDF object, so it stays off
+  `params` (anything there starts a run) and re-letters from the ESO already
+  held, exactly as `reprice` does for a tariff. It is `pinnedHour`, not
+  `pinned` — the bill has held a pinned *scheme* since long before this.
 
 ## Invariants that fail quietly
 
@@ -386,9 +470,9 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   turns off the *file's* days and leaves the objects standing, which is why
   file-plus-list is a real state and not a contradiction. Special days are also
   never used with a `SizingPeriod:*` — a design-day desk has no calendar at all.
-  A special day falling outside a narrowed run period is silently ignored:
-  measured on a June–August run carrying the November and December holidays,
-  which completed with zero warnings.
+  A special day falling in a month no run period covers is silently ignored:
+  measured on a January-plus-June-to-August mask carrying all eleven US federal
+  holidays, which ran clean and simulated exactly the four that fell inside.
 - **`RunPeriod.day_of_week_for_start_day` must be left empty.** Pinned to
   Tuesday, as it was, it overrode what every weather file says about itself —
   TMYx declares `DATA PERIODS,1,1,Data,Sunday,1/ 1,12/31` — and put the run on
@@ -396,8 +480,10 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   Empty, EnergyPlus takes the file's start day and picks a real non-leap year to
   match (2017 for a Sunday), and every nth-weekday holiday lands where it really
   does. The field anchors to the *run period's* begin date, not to 1 January, so
-  leaving it empty is also what keeps a narrowed period aligned to the year: a
-  June-to-August run reports 1 June as a Thursday, which is what 1 June 2017 was.
+  leaving it empty is what keeps *every* period on one calendar — the field
+  anchors to each period's own begin date, so pinning it would start a January
+  and a June on the same weekday and put them in two different years. Empty,
+  measured: January begins Sunday and June begins Thursday, which is 2017.
   Setting `begin_year` explicitly works too, but a **leap** year silently runs
   365 days against a 365-day file and shifts every date after February — do not
   offer one.
