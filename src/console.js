@@ -836,7 +836,7 @@ export function mountConsole({
         const locked = on && only;
         cell.classList.toggle('locked', locked);
         const why = locked
-          ? 'A run needs at least one month — take another month in before taking this one out.'
+          ? 'A run period needs at least one month — bring another in before taking this one out.'
           : '';
         // Written only on change, the same rule the scales' Study buttons
         // follow: this redraws twelve cells on every settle.

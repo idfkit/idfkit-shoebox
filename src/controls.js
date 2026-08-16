@@ -1246,9 +1246,9 @@ export const CHANNELS = Object.freeze([
       new Calendar({
         key: 'months', label: 'Run months', value: FULL_YEAR,
         note:
-          'Only bites when a weather file is attached. Months need not touch — each unbroken ' +
-          'group is handed to the engine as its own run period, so a January and a July can be ' +
-          'solved without the spring between them.',
+          'Only reaches the model with a weather file attached; without one the run is the two ' +
+          'design days. Months need not touch — each unbroken group is written as its own run ' +
+          'period, so a January and a July can be solved without the spring between them.',
       }),
       new Selector({
         key: 'sizingPeriods', label: 'Design days', value: 'Yes',

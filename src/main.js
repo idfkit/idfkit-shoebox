@@ -1003,7 +1003,7 @@ function renderBillHead(againstLabel) {
   $('bill-lede').textContent = bill.wholeYear
     ? `Metered across the ${group(bill.hours)}-hour run.${priced}`
     : bill.annual
-      ? `Metered across the ${group(bill.hours)} hours of the run — ${bill.months} of the year's twelve months, so this is a bill for those months and not a year's. Take the rest of the year back into the run on the Run strip for one of those.${priced}`
+      ? `Metered across the ${group(bill.hours)} hours of the run — ${bill.months} of the year's twelve months, so this is a bill for those months and not for a year. Put the missing months back on the Run strip for one of those.${priced}`
       : `These are the ${group(bill.hours)} hours of the sizing days — two conditions chosen for being extreme. They are a real bill for a real two days, and they are deliberately not multiplied up into a year; attach a weather file for one of those.${priced}`;
 }
 
