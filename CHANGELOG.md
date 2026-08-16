@@ -35,17 +35,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unreachable. At *As weekend* no row is written and the IDF is byte for byte
   what it was.
 
-  Two things the arrangement cannot do, said here because the interface says
-  them too. **Easter is not expressible** — an IDF date field carries no year,
-  so Good Friday, Easter Monday, Ascension and Whit Monday cannot be written,
-  and neither can Victoria Day, which is the Monday *preceding* 25 May and so
-  is neither the third Monday nor the last. Each calendar therefore declares its
-  whole national list and states, on the offer and before you press it, which
-  days it is short and why: `DE 5/9`, `CA 8/10`. And **the run period's calendar
-  is a fiction**: it starts on a Tuesday and never asks the weather file, so a
-  fixed date lands on the right date and an arbitrary weekday, and an
-  nth-weekday date the reverse. The weekend holiday rule is offered anyway,
-  beside a note that says as much.
+  Attach a year and each entry is lettered with the day it actually falls on —
+  `3 Mon in Jan · Mon 16 Jan` — and ticked there on the rule. Anything outside
+  the run period is struck through and counted, because EnergyPlus drops such a
+  day without a word: measured on a June-to-August run carrying the November and
+  December holidays, which completed with no warnings at all. The lettered dates
+  are checked against the engine's own `Environment:Special Days` echo, entry by
+  entry, so the strip cannot letter a calendar the run did not use.
+
+  One thing the arrangement cannot do, said here because the interface says it
+  too. **Easter is not expressible** — an IDF date field carries no year, so Good
+  Friday, Easter Monday, Ascension and Whit Monday cannot be written, and neither
+  can Victoria Day, which is the Monday *preceding* 25 May and so is neither the
+  third Monday nor the last. Each calendar therefore declares its whole national
+  list and states, on the offer and before you press it, which days it is short
+  and why: `DE 5/9`, `CA 8/10`.
 
   Attaching a station now also reads the EPW's own
   `HOLIDAYS/DAYLIGHT SAVINGS` record — not to fill the list, but to say what is
@@ -55,9 +59,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it. The strip now states it. A file that does name days offers them as one
   more stamp.
 
-  No scheme link changes meaning: the new keys default to today's behaviour, the
-  existing `Yes` and `No` values are unchanged behind the new labels, and a
-  default desk still serialises to the same bytes.
+### Changed
+
+- **The run now follows the weather file's calendar.** `RunPeriod`'s day of week
+  for the start day had been pinned to Tuesday since the model was written,
+  which overrode what every weather file says about itself — TMYx declares
+  `DATA PERIODS,1,1,Data,Sunday,1/ 1,12/31` — and put every annual run on an
+  invented year. Left empty, EnergyPlus takes the file's own start day and picks
+  a real non-leap year to match it, so weekends fall where weekends fall. It is
+  one field, and it is the only difference between the default IDF before this
+  change and after.
+
+  This moves results. Every annual run's day-of-week alignment shifts by two
+  days, so anything scheduled by weekday — the occupancy band's weekends, the
+  setpoint setback — lands on different dates than it used to, and any figure
+  from a previous annual run is not comparable. Design-day runs are unaffected;
+  a run period is not simulated without a weather file.
+
+  It also makes the holidays true rather than approximately placed. Under the
+  old Tuesday, Martin Luther King Day resolved to 21 January, Memorial Day to
+  27 May and Thanksgiving to 28 November. Following the file they are 16 January,
+  29 May and 23 November — the real 2017 dates, which is the year EnergyPlus
+  picks for a Sunday start. And the weekend holiday rule finally does something
+  real: with it on, New Year gains Monday 2 January and Veterans Day moves from
+  Saturday the 11th to Monday the 13th, exactly as observed.
+
+### Removed
+
+- **A fifth weekday is no longer sayable.** `5 Fri in Dec` parsed happily and
+  would have stopped the engine dead in any year December had only four Fridays
+  — `** Severe ** SetSpecialDayDates: … not enough Nths`, a fatal error, not a
+  warning. The nth now runs 1 to 4, plus `Last`. Every month has at least 28
+  days, so those five always exist, which makes the grammar total: every list
+  that parses runs, under every calendar. Nothing in any published calendar was
+  a fifth weekday.
+
+- Two entries starting on the same date are refused. EnergyPlus states plainly
+  that it gives "no error message on duplicate days or overlapping days", so the
+  second would have disappeared into the first without a word.
 
 - Parameter studies. Every scale on the console now carries a quiet **Study**
   action that sweeps that one control across its full range — about twenty

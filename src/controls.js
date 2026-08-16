@@ -245,7 +245,24 @@ const MAX_NAME = 40;
 const NAME = /^[A-Za-z0-9 '.&-]+$/;
 
 const FIXED = /^(\d{1,2})\/(\d{1,2})$/;
-const NTH = /^([1-5]) ([A-Za-z]{3}) in ([A-Za-z]{3})$/;
+/**
+ * One to four, never five.
+ *
+ * Every month has at least 28 days, so a first, second, third and fourth of any
+ * weekday exist in every year, as does a last. A *fifth* exists only in some
+ * years, and when it does not EnergyPlus does not warn and carry on — it stops:
+ *
+ *     ** Severe ** SetSpecialDayDates: Special Day Date, Nth Day of Month,
+ *                  not enough Nths, for SpecialDay=IMPOSSIBLE DAY
+ *     EnergyPlus Terminated--Fatal Error Detected.
+ *
+ * measured on `5th Monday in December` against a year beginning Sunday. A
+ * grammar that can express a desk which fatals the engine is not a grammar this
+ * page should offer, and nothing in any published calendar is a fifth weekday.
+ * So the range is closed at four and the whole grammar is total: every list
+ * that parses runs, under every calendar.
+ */
+const NTH = /^([1-4]) ([A-Za-z]{3}) in ([A-Za-z]{3})$/;
 const LAST = /^Last ([A-Za-z]{3}) in ([A-Za-z]{3})$/;
 
 /**
@@ -308,6 +325,7 @@ export function parseHolidays(raw) {
 
   const days = [];
   const seen = new Set();
+  const dates = new Set();
   for (const record of raw.split(';')) {
     if (record.trim() === '') throw new Error('an empty entry in the holiday list (a stray ";")');
 
@@ -342,7 +360,14 @@ export function parseHolidays(raw) {
       }
     }
 
-    days.push(new Holiday({ date: readDate(date), duration, name }));
+    const canonical = readDate(date);
+    // Two entries on one date is a mistake the engine will not report: the
+    // schema says plainly that there is "no error message on duplicate days or
+    // overlapping days", so the second would simply vanish into the first.
+    if (dates.has(canonical)) throw new Error(`two holidays both start on ${canonical}`);
+    dates.add(canonical);
+
+    days.push(new Holiday({ date: canonical, duration, name }));
   }
 
   if (days.length > MAX_DAYS) {
@@ -374,7 +399,9 @@ function readDate(raw) {
   if (last) return `Last ${weekday(last[1], raw)} in ${month(last[2], raw)}`;
 
   if (/^\d+ /.test(raw)) {
-    throw new Error(`"${raw}" is not a date: the nth weekday runs 1 to 5, or "Last"`);
+    throw new Error(
+      `"${raw}" is not a date: the nth weekday runs 1 to 4, or "Last" — a fifth does not exist in every year, and EnergyPlus stops with a severe error in the years it does not`,
+    );
   }
   throw new Error(`"${raw}" is not a date: write 12/25, "4 Thu in Nov" or "Last Mon in May"`);
 }
@@ -396,6 +423,62 @@ function month(word, raw) {
   }
   return MONTHS[found];
 }
+
+/**
+ * Where a holiday actually falls, given the year the run will use.
+ *
+ * The run period's calendar is a real one: `day_of_week_for_start_day` is left
+ * empty, so EnergyPlus takes the weather file's own `DATA PERIODS` start day —
+ * Sunday, on every TMYx — and picks a real non-leap year to match, 2017 for a
+ * Sunday. A non-leap year is fully determined by the weekday its 1 January
+ * falls on, so that weekday is all this needs: no year is passed, because none
+ * is needed and naming one would invite the belief that the weather is that
+ * year's.
+ *
+ * Returns `{ month, day, weekday, doy, ends }`, 1-indexed month and day,
+ * `weekday` 0 for Sunday. `ends` is the last day the special day covers, which
+ * wraps past 31 December the way EnergyPlus wraps it.
+ */
+export function resolveHoliday(holiday, startWeekday) {
+  const doyOf = (month, day) => DAYS_IN_MONTH.slice(0, month - 1).reduce((n, d) => n + d, 0) + day;
+  const weekdayOf = (doy) => (startWeekday + doy - 1) % 7;
+
+  let month;
+  let day;
+  const fixed = holiday.date.match(FIXED);
+  if (fixed) {
+    [month, day] = [Number(fixed[1]), Number(fixed[2])];
+  } else {
+    const nth = holiday.date.match(NTH);
+    const last = holiday.date.match(LAST);
+    const want = WEEKDAYS.indexOf(nth ? nth[2] : last[1]);
+    month = MONTHS.indexOf(nth ? nth[3] : last[2]) + 1;
+    const firstWeekday = weekdayOf(doyOf(month, 1));
+    const first = 1 + ((want - firstWeekday + 7) % 7);
+    day = nth
+      ? first + 7 * (Number(nth[1]) - 1)
+      // The last one is the last occurrence at or before the month's end. Four
+      // always exist, so stepping back from `first + 28` cannot underflow.
+      : first + 7 * Math.floor((DAYS_IN_MONTH[month - 1] - first) / 7);
+  }
+
+  const doy = doyOf(month, day);
+  return {
+    month,
+    day,
+    doy,
+    weekday: weekdayOf(doy),
+    // A shutdown beginning 24 December runs into January, and EnergyPlus wraps
+    // it into the same simulated year rather than losing the tail. Measured:
+    // `12/24*9` flagged 24–31 December and 1 January as Holiday.
+    ends: ((doy + holiday.duration - 2) % 365) + 1,
+  };
+}
+
+/** `Sun` … `Sat`, for lettering a resolved day. */
+export const WEEKDAY_LABELS = WEEKDAYS;
+/** `Jan` … `Dec`, likewise. */
+export const MONTH_LABELS = MONTHS;
 
 /** The list as text, in the one spelling the parser reads back unchanged. */
 export function serializeHolidays(days) {
@@ -1594,7 +1677,7 @@ export const CHANNELS = Object.freeze([
         ],
         needs: (p) => p.holidays !== 'No' && p.holidayUse !== 'AsWeekend',
         note:
-          'The run period carries no year and starts on a Tuesday, so a fixed date lands on the right date and an arbitrary weekday.',
+          'Moves a holiday that lands on a weekend onto the adjacent weekday. The run follows the weather file’s own calendar, so the weekend it moves off is a real one.',
       }),
       new Selector({
         key: 'dst', label: 'Daylight saving', value: 'Yes',

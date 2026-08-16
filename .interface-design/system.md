@@ -137,15 +137,22 @@ A control holding a set of days is drawn as a 12-month rule with the entries
 listed beneath it, an entry field, and a row of ghost-ink stamps.
 
 - The rule is `240 × 26`, a `--rule-firm` baseline with a `--rule` hairline at
-  each month boundary. A date that knows where in the year it falls gets a `1px`
-  `--redline` tick at that point. A date that does *not* — an nth-weekday rule,
-  in a run period with no year — gets a hollow `--ink-ghost` circle at its
-  month's centre instead. Two marks, because they are two different kinds of
-  knowledge; ticking both at a guessed day would be the invention this sheet
-  exists not to make.
-- Rows are `auto 1fr auto`: the date in `--mono` tabular figures, the name in
-  `--sans` and ellipsised at `min-width: 0`, and a `×` in ghost ink. Editing is
-  remove-and-re-add, so a row is a reading, not a form.
+  each month boundary, and a `1px` `--redline` tick where each day falls.
+- **A rule that cannot be resolved is drawn differently from one that can.**
+  Once a weather file supplies the calendar, every entry — a fixed date and an
+  nth weekday alike — has a real place and is ticked there. Before one is
+  attached there is no calendar at all, so an nth weekday becomes a hollow
+  `--ink-ghost` circle at its month's centre instead of a tick at a guessed day.
+  Two marks, because they are two different kinds of knowledge.
+- Rows are `auto 1fr auto auto`: the date in `--mono` tabular figures, the name
+  in `--sans` and ellipsised at `min-width: 0`, the resolved day in ghost `--mono`
+  — read off the run, not set — and a `×`. Editing is remove-and-re-add, so a row
+  is a reading, not a form.
+- **What the engine will drop is struck through, and counted.** An entry outside
+  the run period is ignored by EnergyPlus in silence; the resolved date wears a
+  line through it and a `--redline` note says how many and why. Silence about a
+  dropped input is the failure the sheet exists to prevent, whoever is being
+  silent.
 - The entry field is `--inset` ground with a `1px --rule` border, like
   `.site-field`, and speaks **the same grammar the address bar speaks** — what
   you type is what a shared link carries, and a refusal is word for word the one

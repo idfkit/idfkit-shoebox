@@ -57,6 +57,28 @@ export function parseEpwCalendar(epw) {
   return { holidays, daylight };
 }
 
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/**
+ * The weekday the file's data begins on, 0 for Sunday, or null.
+ *
+ * From the `DATA PERIODS` record — `DATA PERIODS,1,1,Data,Sunday,1/ 1,12/31` on
+ * every TMYx. This is the calendar EnergyPlus runs on once `RunPeriod` stops
+ * overriding it, so it is also the calendar the desk has to letter its holidays
+ * against: a non-leap year is fully determined by the weekday its 1 January
+ * falls on, and this is that weekday.
+ *
+ * Null for a file whose record names a start day this does not recognise. The
+ * dates are then not lettered at all rather than lettered against a guess.
+ */
+export function parseEpwStartDay(epw) {
+  const line = epw.split(/\r?\n/, 12).find((row) => /^DATA PERIODS\s*,/i.test(row));
+  if (!line) return null;
+  const named = (line.split(',')[4] ?? '').trim().toLowerCase();
+  const found = WEEKDAYS.findIndex((d) => d.toLowerCase() === named);
+  return found === -1 ? null : found;
+}
+
 /**
  * A file's own holidays as a holiday list, ready to become the parameter.
  *

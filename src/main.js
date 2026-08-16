@@ -42,7 +42,7 @@ import {
   siteRegion,
   weatherFor,
 } from './weather.js';
-import { holidayList, parseEpwCalendar } from './epw.js';
+import { holidayList, parseEpwCalendar, parseEpwStartDay } from './epw.js';
 import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
 import { MONTHS, environmentRuns, hourly, readDemand, readExtremes } from './readings.js';
 
@@ -2336,7 +2336,7 @@ async function choose(row, pick, sizing = 'No') {
   // and the location on the DDY. Denver's come out, this station's go in.
   epwText = files.epw;
   setDesignConditions(model, conditions);
-  desk?.setWeatherHolidays(weatherHolidays(files.epw));
+  desk?.setWeatherHolidays(weatherHolidays(files.epw), parseEpwStartDay(files.epw));
 
   // The drawing follows the weather, and reads it off the model exactly as it
   // did for Denver: the datum lines from the design days, the co-ordinates from

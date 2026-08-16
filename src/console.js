@@ -1,4 +1,12 @@
-import { CHANNELS, controlFor, parseHolidays, serializeHolidays } from './controls.js';
+import {
+  CHANNELS,
+  MONTH_LABELS,
+  WEEKDAY_LABELS,
+  controlFor,
+  parseHolidays,
+  resolveHoliday,
+  serializeHolidays,
+} from './controls.js';
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -776,7 +784,20 @@ export function mountConsole({
     const fileNote = el('p', 'ctl-note');
     fileNote.hidden = true;
     row.append(fileNote);
+    const outsideNote = el('p', 'ctl-note out');
+    outsideNote.hidden = true;
+    row.append(outsideNote);
     if (control.note) row.append(el('p', 'ctl-note', control.note));
+
+    // The weekday the run's year begins on, from the attached file, or null
+    // while there is no file and therefore no calendar to letter against.
+    let startWeekday = null;
+    const outside = (here) => {
+      const [from, to] = params.beginMonth <= params.endMonth
+        ? [params.beginMonth, params.endMonth]
+        : [params.endMonth, params.beginMonth];
+      return here.month < from || here.month > to;
+    };
 
     const commitList = (days) => {
       markGesture(control.key);
@@ -822,6 +843,13 @@ export function mountConsole({
       const days = parseHolidays(params[control.key]);
       value.textContent = control.format(params[control.key]);
 
+      // Resolved against the run's real calendar when there is one. Without an
+      // attached file there is no calendar at all — the design days carry none
+      // — so the dates are left unresolved rather than shown against a guess.
+      const placed = startWeekday === null
+        ? null
+        : days.map((day) => resolveHoliday(day, startWeekday));
+
       rule.replaceChildren();
       rule.setAttribute(
         'aria-label',
@@ -836,28 +864,54 @@ export function mountConsole({
           stroke: 'var(--rule)', 'stroke-width': 0.5,
         }));
       }
-      for (const day of days) {
+      for (const [at, day] of days.entries()) {
+        const here = placed?.[at];
+        if (here) {
+          const x = (here.month - 1 + (here.day - 1) / DAYS_IN_MONTH[here.month - 1]) * 20;
+          rule.append(svg('line', {
+            x1: x, y1: 4, x2: x, y2: 16,
+            stroke: outside(here) ? 'var(--ink-ghost)' : 'var(--redline)', 'stroke-width': 1,
+          }));
+          continue;
+        }
+        // No calendar: a fixed date still knows where it falls, an nth weekday
+        // does not, and the two are drawn differently rather than one of them
+        // being invented.
         const fixed = day.date.match(/^(\d{1,2})\/(\d{1,2})$/);
         if (fixed) {
           const month = Number(fixed[1]) - 1;
-          const at = (month + (Number(fixed[2]) - 1) / DAYS_IN_MONTH[month]) * 20;
+          const x = (month + (Number(fixed[2]) - 1) / DAYS_IN_MONTH[month]) * 20;
           rule.append(svg('line', {
-            x1: at, y1: 4, x2: at, y2: 16, stroke: 'var(--redline)', 'stroke-width': 1,
+            x1: x, y1: 4, x2: x, y2: 16, stroke: 'var(--redline)', 'stroke-width': 1,
           }));
         } else {
-          const month = MONTH_ORDER.indexOf(day.date.slice(-3));
           rule.append(svg('circle', {
-            cx: month * 20 + 10, cy: 9, r: 2,
+            cx: MONTH_LABELS.indexOf(day.date.slice(-3)) * 20 + 10, cy: 9, r: 2,
             fill: 'none', stroke: 'var(--ink-ghost)', 'stroke-width': 1,
           }));
         }
       }
 
       list.replaceChildren();
+      let ignored = 0;
       for (const [at, day] of days.entries()) {
         const line = el('div', 'day');
         line.append(el('span', 'day-date', day.duration > 1 ? `${day.date} ×${day.duration}` : day.date));
         line.append(el('span', 'day-name', day.name));
+        const here = placed?.[at];
+        if (here) {
+          // The whole point of following the weather file's calendar: an nth
+          // weekday now has an answer, and it is lettered rather than left for
+          // the error file to reveal.
+          const when = `${WEEKDAY_LABELS[here.weekday]} ${here.day} ${MONTH_LABELS[here.month - 1]}`;
+          const mark = el('span', 'day-when', when);
+          if (outside(here)) {
+            ignored += 1;
+            mark.classList.add('out');
+            mark.title = 'Outside the run period, so the engine ignores it without saying so.';
+          }
+          line.append(mark);
+        }
         const drop = el('button', 'day-drop', '×');
         drop.type = 'button';
         drop.setAttribute('aria-label', `Remove ${day.name}`);
@@ -869,15 +923,29 @@ export function mountConsole({
         list.append(line);
       }
 
+      // EnergyPlus drops a special day outside the run period in silence —
+      // measured on a June-to-August run carrying the November and December
+      // holidays, which completed with no warnings at all. So the desk says it.
+      outsideNote.hidden = ignored === 0;
+      outsideNote.textContent = ignored === 0
+        ? ''
+        : `${ignored} of these fall outside the run period, from ${MONTH_LABELS[Math.min(params.beginMonth, params.endMonth) - 1]} to ${MONTH_LABELS[Math.max(params.beginMonth, params.endMonth) - 1]}, and the engine ignores them without saying so.`;
+
       row.classList.toggle('idle', control.needs ? !control.needs(params) : false);
     };
     faces.set(control.key, redraw);
 
-    daysWidgets.set(control.key, { fromFile, fileNote });
+    daysWidgets.set(control.key, {
+      fromFile,
+      fileNote,
+      setStartWeekday(weekday) {
+        startWeekday = weekday;
+        redraw();
+      },
+    });
     return row;
   }
 
-  const MONTH_ORDER = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
   /* ── studies ─────────────────────────────────────────────────────────── */
@@ -1127,8 +1195,9 @@ export function mountConsole({
      *   - a holiday list — the file's own days, offered as one more stamp
      *     beside the published calendars.
      */
-    setWeatherHolidays(days) {
+    setWeatherHolidays(days, startWeekday = null) {
       const offered = typeof days === 'string' && days !== '';
+      for (const widget of daysWidgets.values()) widget.setStartWeekday(startWeekday);
       for (const { fromFile, fileNote } of daysWidgets.values()) {
         fromFile.hidden = !offered;
         if (offered) {

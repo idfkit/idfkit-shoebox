@@ -389,15 +389,25 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   A special day falling outside a narrowed run period is silently ignored:
   measured on a June–August run carrying the November and December holidays,
   which completed with zero warnings.
-- **The run period carries no year.** `day_of_week_for_start_day` is pinned to
-  Tuesday (`model.js`) and nothing re-derives it from an attached file, so the
-  calendar is a fiction: a fixed date lands on the right date and an arbitrary
-  weekday, and an nth-weekday date the reverse — the third Monday of January
-  resolves to 21 January here. `apply_weekend_holiday_rule` therefore shifts
-  holidays off a weekend that is itself invented. Giving the run period a real
-  year would fix it and move every existing run's day alignment with it, which
-  makes it a `LINK_VERSION` question rather than a field edit. The Run strip
-  says so on the control rather than leaving it to be discovered.
+- **`RunPeriod.day_of_week_for_start_day` must be left empty.** Pinned to
+  Tuesday, as it was, it overrode what every weather file says about itself —
+  TMYx declares `DATA PERIODS,1,1,Data,Sunday,1/ 1,12/31` — and put the run on
+  an invented calendar in which the third Monday of January fell on the 21st.
+  Empty, EnergyPlus takes the file's start day and picks a real non-leap year to
+  match (2017 for a Sunday), and every nth-weekday holiday lands where it really
+  does. The field anchors to the *run period's* begin date, not to 1 January, so
+  leaving it empty is also what keeps a narrowed period aligned to the year: a
+  June-to-August run reports 1 June as a Thursday, which is what 1 June 2017 was.
+  Setting `begin_year` explicitly works too, but a **leap** year silently runs
+  365 days against a 365-day file and shifts every date after February — do not
+  offer one.
+- **A fifth weekday is fatal, not a warning.** `5th Monday in December` in a
+  year that has only four stops the engine dead —
+  `** Severe ** SetSpecialDayDates: … not enough Nths` — so the holiday grammar
+  is closed at four. Every month has 28 days, so a first through fourth and a
+  last exist in every year, which makes the grammar total: every list that
+  parses runs, under every calendar. `.harness` asserted that over all
+  7 × 12 × 7 × 5 combinations before it was believed.
 - **Every TMYx file names no holidays and no daylight saving period.** Measured:
   `HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0` on Denver 725650 and Berlin-Tegel 103820
   in the 2009–2023 window, and on all five EPWs shipped with EnergyPlus 26.1. So

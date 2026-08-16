@@ -1744,12 +1744,23 @@
       .days { display: flex; flex-direction: column; }
       .day {
         display: grid;
-        grid-template-columns: auto 1fr auto;
+        grid-template-columns: auto 1fr auto auto;
         align-items: baseline;
         gap: 8px;
         padding: 3px 0;
         border-bottom: 1px solid var(--rule-soft);
       }
+      /* Where the day actually falls, once a weather file has supplied a
+         calendar. Ghost ink because it is read off the run rather than set. */
+      .day-when {
+        font: 400 10px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink-ghost);
+        white-space: nowrap;
+      }
+      /* Outside the run period, so the engine will drop it without a word. */
+      .day-when.out { text-decoration: line-through; }
+      .ctl-note.out { color: var(--redline); }
       .day:last-child { border-bottom: 0; }
       .day-date {
         font: 400 10.5px/1.3 var(--mono);

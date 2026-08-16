@@ -420,12 +420,22 @@ export function buildModel(schema, parameters = DEFAULT_PARAMETERS, bypass = DEF
     maximum_number_of_hvac_sizing_simulation_passes: 1,
   });
 
+  // `day_of_week_for_start_day` is deliberately absent. Pinned to Tuesday it
+  // overrode what the weather file says about itself — every TMYx declares
+  // `DATA PERIODS,1,1,Data,Sunday,1/ 1,12/31` — and put the whole run on an
+  // invented calendar, in which the third Monday of January fell on the 21st.
+  // Left empty, EnergyPlus takes the file's own start day and picks a real
+  // non-leap year to match it (2017 for a Sunday), so every date lands where it
+  // belongs and the weekend holiday rule is about a real weekend. The field is
+  // anchored to the run period's begin date, so leaving it empty is also what
+  // keeps a narrowed period aligned to the year rather than to its own first
+  // day: measured, a June-to-August run reports 1 June as a Thursday, which is
+  // what 1 June 2017 was.
   doc.add('RunPeriod', 'Run Period 1', {
     begin_month: 1,
     begin_day_of_month: 1,
     end_month: 12,
     end_day_of_month: 31,
-    day_of_week_for_start_day: 'Tuesday',
     use_weather_file_holidays_and_special_days: 'Yes',
     use_weather_file_daylight_saving_period: 'Yes',
     apply_weekend_holiday_rule: 'No',
