@@ -312,12 +312,10 @@ round-trip of every key and refusal of every malformed input class.
   default, renaming a key, or narrowing a range means bumping `LINK_VERSION`,
   freezing the outgoing defaults into `DEFAULTS_BY_VERSION`, and writing one
   `MIGRATIONS` step — the IDF version-transition arrangement, in miniature.
-  There is one step so far, `v1` → `v2`: the run period's `beginMonth` /
-  `endMonth` pair became the calendar's `months` mask. Each older defaults
-  table is written as a difference from the one after it, not from
-  `DEFAULT_PARAMETERS`, so a later bump cannot silently restate what an
-  omission meant in an earlier version. A migration also refuses a key the old
-  version never had, rather than overwriting it with the one it mints.
+  `MIGRATIONS` is still empty: the calendar renamed the run period's
+  `beginMonth` / `endMonth` pair to `months` and took the free pass the Grounds
+  channel took, because there were no links in the wild to carry forward. That
+  pass expires the moment one is shared.
 - **Links are refused whole, never half-loaded.** `decodeState` validates every
   pair through the control declarations before returning anything, and a
   station that cannot be fetched at boot refuses the entire link back to

@@ -11,7 +11,7 @@
  * The fragment, not the query string, because the fragment never leaves the
  * browser: it cannot vary CloudFront's cache key, cannot leak schemes into a
  * server log, and survives a preview's `/42/` base untouched. Within it,
- * `URLSearchParams` syntax — `v2&width=20&wwrS=0.35&stn=725650` — because the
+ * `URLSearchParams` syntax — `v1&width=20&wwrS=0.35&stn=725650` — because the
  * browser ships the codec for it and every escaping bug that a hand-rolled
  * `key:value` grammar would eventually meet is already handled.
  *
@@ -44,7 +44,7 @@ import {
   isMonthMask,
 } from './controls.js';
 
-export const LINK_VERSION = 'v2';
+export const LINK_VERSION = 'v1';
 
 /**
  * Whether a fragment is scheme-shaped at all — a version token first, alone or
@@ -57,72 +57,29 @@ export const LINK_VERSION = 'v2';
 export const isSchemeFragment = (raw) => /^v\d+(&|$)/.test(raw);
 
 /**
- * What an omitted key meant, per version.
+ * What an omitted key meant, per version. Today one entry; a changed default
+ * adds the outgoing table here under the old version before the new one ships.
  *
- * Each older table is written as a difference from the one after it, in the
- * keys that version's bump actually changed, so the chain is the migration
- * ledger in table form and cannot drift: a future v3 freezes v2 the same way
- * and v1 keeps meaning what it meant, because it is defined against v2 rather
- * than against whatever the defaults have since become.
- *
- * The Grounds channel moved the stock example's grounds lighting out of the
- * baseline without a bump: that would ordinarily have been a version of its
- * own with a migration engaging the strip on old links, but it shipped before
- * any link existed in the wild, so v1 simply means the desk as it stood.
+ * Two changes have taken a free pass rather than a bump, on the same grounds
+ * both times: nothing was in the wild to carry forward. The Grounds channel
+ * moved the stock example's grounds lighting out of the baseline, and the Run
+ * strip's calendar replaced the run period's `beginMonth` / `endMonth` pair
+ * with a `months` mask — a rename, which ordinarily costs a version and a
+ * migration step. Neither had a link to break, so v1 simply means the desk as
+ * it stands. The next such change will not be so lucky, which is what the
+ * ledger below is for.
  */
-const V2_DEFAULTS = DEFAULT_PARAMETERS;
-// v1 held the run period as two month numbers on two calibration faces. v2
-// holds the same decision as one twelve-month mask, which can also describe a
-// year with holes in it.
-const { months: _mask, ...V1_REST } = V2_DEFAULTS;
-const V1_DEFAULTS = Object.freeze({ ...V1_REST, beginMonth: 1, endMonth: 12 });
-const DEFAULTS_BY_VERSION = Object.freeze({ v1: V1_DEFAULTS, v2: V2_DEFAULTS });
-
-/** A month number as v1 wrote one, or a refusal naming the offending pair. */
-function v1Month(pairs, key) {
-  const given = pairs.getAll(key);
-  // The same one-claim-per-key rule the decoder applies below, applied here
-  // because the migration is about to fold both keys into one and the
-  // duplicate would vanish with them.
-  if (given.length > 1) throw new Error(`${key} is given ${given.length} times`);
-  const raw = pairs.get(key);
-  if (raw === null) return V1_DEFAULTS[key];
-  if (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > 12) {
-    throw new Error(`${key} is "${raw}", which is not a month of the year`);
-  }
-  return Number(raw);
-}
+const DEFAULTS_BY_VERSION = Object.freeze({ v1: DEFAULT_PARAMETERS });
 
 /**
  * One step per version bump, `(pairs) => ({ to, pairs })`, rewriting old
- * vocabulary into the next version's under the version it lands on.
- *
- * v1 → v2 turns the run period's two months into the calendar mask. The span
- * is read low to high because that is what v1's applier did with a pair given
- * backwards, so a link that said `beginMonth=9&endMonth=3` reproduces the
- * March-to-September run it always solved rather than acquiring the two ends
- * of the year it looks like it asks for.
+ * vocabulary into the next version's under the version it lands on. Empty
+ * until a key actually churns with links in the wild; the structure exists
+ * from day one because retrofitting it after unversioned links are out there
+ * is the expensive path — there would be no way left to tell which defaults an
+ * omission meant.
  */
-const MIGRATIONS = Object.freeze({
-  v1: (pairs) => {
-    // A v1 link has no business carrying v2's key. Left alone it would be
-    // overwritten by the mask this step mints and the link would quietly load
-    // a desk it did not describe — the half-loaded scheme every refusal in
-    // this module exists to prevent.
-    if (pairs.has('months')) throw new Error('"months" is not a key link version v1 knew');
-    const [from, to] = [v1Month(pairs, 'beginMonth'), v1Month(pairs, 'endMonth')].sort(
-      (a, b) => a - b,
-    );
-    const next = new URLSearchParams(pairs);
-    next.delete('beginMonth');
-    next.delete('endMonth');
-    next.set(
-      'months',
-      Array.from({ length: 12 }, (_, i) => (i + 1 >= from && i + 1 <= to ? '1' : '0')).join(''),
-    );
-    return { to: 'v2', pairs: next };
-  },
-});
+const MIGRATIONS = Object.freeze({});
 
 /**
  * Keys that are not parameters: the patch lists and the station. Declared

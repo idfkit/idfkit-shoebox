@@ -171,7 +171,7 @@ gesture release, so the address is always a link to exactly what is on the
 sheet:
 
 ```
-https://shoebox.idfkit.com/#v2&width=20&wwrS=0.35&heatSet=21&in=system&stn=725650&win=2007-2021
+https://shoebox.idfkit.com/#v1&width=20&wwrS=0.35&heatSet=21&in=system&stn=725650&win=2007-2021
 ```
 
 **Copy scheme link** in the run ledger puts it on the clipboard; opening it
@@ -183,12 +183,10 @@ onebuilding publishes each site under several 15-year samples that disagree by
 up to 9 % on degree days, and a link has to reproduce the year that was argued
 over, not a sibling of it.
 
-The leading `v2` pins what an omitted key meant when the link was minted.
+The leading `v1` pins what an omitted key meant when the link was minted.
 Adding a control never breaks an old link — the new key just takes its
 default — while renaming one or changing a default requires a version bump and
-a migration step in `src/permalink.js`. There is one so far: `v1` held the run
-period as a pair of month numbers, and its links are carried forward into the
-twelve-month calendar mask (`months=001110000000`) that replaced them. A link that cannot be honoured — an
+a migration step in `src/permalink.js`. A link that cannot be honoured — an
 unknown key, a value out of range, a station whose archive or DDY cannot be
 fetched — is refused whole, with the reason in the status line and the sheet at
 its defaults, rather than half-loaded. The run bundle's manifest cites the

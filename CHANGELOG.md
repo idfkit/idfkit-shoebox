@@ -70,9 +70,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so in its lede and draws no per-m² intensity, because every benchmark that
   figure exists to be compared against is twelve months long.
 
-  Scheme links minted before this ship keep working: the link format is now
-  `v2`, and `v1`'s `beginMonth` / `endMonth` pair migrates to the calendar's
-  `months=001110000000` mask on load.
+  Breaking, deliberately: the `beginMonth` and `endMonth` parameters are gone
+  rather than migrated, and a scheme link naming either is refused. Nothing has
+  been published yet, so there was no link to carry forward and no reason to
+  spend a link version on one. The run period rides in a link as
+  `months=001110000000`.
 
 ## [0.1.0] - 2026-08-14
 
