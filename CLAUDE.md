@@ -66,8 +66,9 @@ controls.js  declares every control (typed classes) and groups them into Channel
 ```
 
 `src/controls.js` is the single source of truth. A control exists once, as a
-`Scale`, `Selector`, `Arm`, `Bearing`, `Facade` (four walls on one plan key) or
-`Profile` (a 24 hour band), attached to a `Channel`. The console draws it, the
+`Scale`, `Selector`, `Arm`, `Bearing`, `Facade` (four walls on one plan key),
+`Profile` (a 24 hour band) or `Calendar` (a twelve-month year), attached to a
+`Channel`. The console draws it, the
 model applies it, and the sheet's five dimension sliders look their specs up by
 key from the same place, so the two surfaces cannot drift.
 
@@ -101,6 +102,35 @@ on).
   Meters stay Monthly whatever the profile; see the `parseMTR` note below.
 - **`must(doc, type, name)`** throws when an expected object is missing instead
   of quietly re-adding it. See "No silent fallbacks" below.
+- **`applyRun` writes one `RunPeriod` per unbroken group of months** in the
+  calendar mask, clearing and rewriting them all on every apply so the count
+  can fall as well as rise. Months that do not touch cannot be one run period,
+  and EnergyPlus is happy to be handed several — which is what lets a January
+  and a July be solved without the spring between them. December and January
+  are deliberately *not* joined into a wrapping period when the months between
+  them are out: the engine allows it, but it would run them as one environment
+  out of calendar order, and every reading here is lettered from the timestamps
+  that come back.
+
+### More than three environments
+
+A run used to be two design days and at most one year. It can now be two design
+days and up to six run periods, and everything that reads a run was already per
+environment (`environmentRuns` in `src/readings.js`), so what changed is the
+lettering rather than the arithmetic:
+
+- **Which months an environment covers is read off its timestamps**, never off
+  `params` — the desk may have moved since the solve. That is where the
+  schedule's column heads, the bill's month count and the chart's ticks all
+  come from.
+- **`noun` is kept apart from `label`.** The finding says an environment in a
+  sentence ("the run period's swing"); the schedule heads a column with it
+  (`Run period · Jan–Mar`). The noun used to be cut out of the label with a
+  string split, which produced "the jan–mar's" the moment a label carried
+  dates.
+- **The chart letters a band by how wide it lands**, not by what kind of
+  environment made it: a design day is 24 hours out of 8,808 and gives up its
+  label, a one-month run period is half of a two-month axis and keeps it.
 
 ### Channels that price rather than simulate
 
@@ -148,8 +178,13 @@ Things that cost real debugging:
   the baseline — as do the stock file's other demonstration loads: the matched
   ±352 W `OtherEquipment` test pair and the `.mtr`-only meters are gone
   entirely, since nothing read either.
-- **Per-m² is only drawn on an annual run.** Every published benchmark is annual,
+- **Per-m² is only drawn on a whole year.** Every published benchmark is annual,
   and 0.3 kgCO₂e/m² over two design days has no use but to be mistaken for one.
+  A weather file is not by itself a year: the Run strip's calendar can leave
+  months out, so `Bill.wholeYear` — twelve months of weather billed, counted
+  off the environments that came back rather than off live `params` — is what
+  gates the row, and a partial run says in the lede how much of the year it
+  covers.
 - Rates come from six dated open datasets, generated into `src/rates.data.js` by
   `scripts/build-rates.mjs` (run by hand; needs the network and a Python with
   `openpyxl` and `xlrd`). Coverage is **North America by state and province**
@@ -277,6 +312,12 @@ round-trip of every key and refusal of every malformed input class.
   default, renaming a key, or narrowing a range means bumping `LINK_VERSION`,
   freezing the outgoing defaults into `DEFAULTS_BY_VERSION`, and writing one
   `MIGRATIONS` step — the IDF version-transition arrangement, in miniature.
+  There is one step so far, `v1` → `v2`: the run period's `beginMonth` /
+  `endMonth` pair became the calendar's `months` mask. Each older defaults
+  table is written as a difference from the one after it, not from
+  `DEFAULT_PARAMETERS`, so a later bump cannot silently restate what an
+  omission meant in an earlier version. A migration also refuses a key the old
+  version never had, rather than overwriting it with the one it mints.
 - **Links are refused whole, never half-loaded.** `decodeState` validates every
   pair through the control declarations before returning anything, and a
   station that cannot be fetched at boot refuses the entire link back to

@@ -1,5 +1,11 @@
 import { IDFDocument, parseIdf } from '@idfkit/core';
-import { CHANNELS, DEFAULT_BYPASS, DEFAULT_PARAMETERS } from './controls.js';
+import {
+  CHANNELS,
+  DAYS_IN_MONTH,
+  DEFAULT_BYPASS,
+  DEFAULT_PARAMETERS,
+  monthSpans,
+} from './controls.js';
 import { END_USES } from './bill.js';
 
 /**
@@ -1327,23 +1333,40 @@ function applySolver(doc, params) {
   building.temperature_convergence_tolerance_value = params.tempTol;
 }
 
-/** 16 — what actually gets simulated. */
+/**
+ * 16 — what actually gets simulated.
+ *
+ * One `RunPeriod` per unbroken group of months, which is how EnergyPlus is
+ * asked for a year with holes in it: the engine runs each as its own
+ * environment, the meters accumulate through all of them, and everything this
+ * sheet reads is already per environment. The objects are cleared and rewritten
+ * rather than edited in place, for the reason the reporting reconciler is:
+ * `applyModel` runs on every parameter change, so the count has to be free to
+ * fall as well as rise, and a differential update would leave last gesture's
+ * fourth period in the document when this one has three.
+ *
+ * A single all-year mask still writes exactly the `Run Period 1` the baseline
+ * document carried, so the default desk serialises byte for byte as it did.
+ */
 function applyRun(doc, params) {
-  const period = must(doc, 'RunPeriod', 'Run Period 1');
-  const [from, to] = params.beginMonth <= params.endMonth
-    ? [params.beginMonth, params.endMonth]
-    : [params.endMonth, params.beginMonth];
-  period.begin_month = from;
-  period.begin_day_of_month = 1;
-  period.end_month = to;
-  period.end_day_of_month = DAYS_IN_MONTH[to - 1];
-  period.use_weather_file_holidays_and_special_days = params.holidays;
-  period.use_weather_file_daylight_saving_period = params.dst;
+  clear(doc, 'RunPeriod');
+  monthSpans(params.months).forEach(({ from, to }, i) => {
+    doc.add('RunPeriod', `Run Period ${i + 1}`, {
+      begin_month: from,
+      begin_day_of_month: 1,
+      end_month: to,
+      end_day_of_month: DAYS_IN_MONTH[to - 1],
+      day_of_week_for_start_day: 'Tuesday',
+      use_weather_file_holidays_and_special_days: params.holidays,
+      use_weather_file_daylight_saving_period: params.dst,
+      apply_weekend_holiday_rule: 'No',
+      use_weather_file_rain_indicators: 'Yes',
+      use_weather_file_snow_indicators: 'Yes',
+    });
+  });
 
   must(doc, 'SimulationControl').run_simulation_for_sizing_periods = params.sizingPeriods;
 }
-
-const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 /** Every type the reporting reconciler owns — no other author may add these. */
 const REPORTING_TYPES = [

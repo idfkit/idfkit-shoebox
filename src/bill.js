@@ -271,12 +271,17 @@ export class BillLine {
  * reports the period it actually covers and says so in its own head.
  */
 export class Bill {
-  constructor({ lines, hours, floorArea, card, annual, partial }) {
+  constructor({ lines, hours, floorArea, card, annual, months, partial }) {
     this.lines = Object.freeze(lines);
     this.hours = hours;
     this.floorArea = floorArea;
     this.card = card;
     this.annual = annual;
+    // How many months of the year the meters cover, or null when there was no
+    // weather file behind them. A run period is whatever months were left in
+    // the run, so "annual" and "a year" stopped being the same claim the day
+    // the calendar could take June out.
+    this.months = months ?? null;
     // Some line could not be priced, so the totals are of what could be.
     this.partial = partial;
     Object.freeze(this);
@@ -304,6 +309,19 @@ export class Bill {
   intensity(field) {
     const t = this.total(field, 'building');
     return t == null || !(this.floorArea > 0) ? null : t / this.floorArea;
+  }
+
+  /**
+   * Whether the meters cover a year, which is the only period an intensity may
+   * be drawn for.
+   *
+   * `annual` says a weather file was behind the run; this says the run was a
+   * whole year of it. The two parted company when the Run strip's calendar
+   * gained the ability to leave months out, and every published benchmark the
+   * per-m² figure exists to be compared against is twelve months long.
+   */
+  get wholeYear() {
+    return this.annual && this.months === 12;
   }
 
   /** The lines of one section, in declaration order. */
@@ -367,7 +385,7 @@ export class Bill {
  * environment being billed; the caller does the reading, because which
  * environment counts is a question about the run rather than about the bill.
  */
-export function computeBill({ series, params, card, floorArea, hours, engaged, annual }) {
+export function computeBill({ series, params, card, floorArea, hours, engaged, annual, months }) {
   const lines = [];
   let partial = false;
 
@@ -402,5 +420,5 @@ export function computeBill({ series, params, card, floorArea, hours, engaged, a
     );
   }
 
-  return new Bill({ lines, hours, floorArea, card, annual, partial });
+  return new Bill({ lines, hours, floorArea, card, annual, months, partial });
 }

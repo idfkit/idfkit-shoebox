@@ -22,6 +22,8 @@
  * bookkeeping around bodies the browser compresses for us.
  */
 
+import { controlFor, isWholeYear } from './controls.js';
+
 const enc = new TextEncoder();
 
 /**
@@ -142,6 +144,23 @@ export async function zip(files, { date = new Date() } = {}) {
 const group = (n) => n.toLocaleString('en-US');
 
 /**
+ * What was simulated, in one line.
+ *
+ * A weather file stopped meaning "a year" the day the Run strip's calendar
+ * could leave months out of it, and this file exists to let someone reproduce
+ * the sheet's numbers in their own EnergyPlus — so the months are named, in
+ * the same words the console says them in. The phrasing comes from the control
+ * declaration rather than being written a second time here.
+ */
+function runLine(run) {
+  const hours = `${group(run.hours)} hours`;
+  if (!run.annual) return `Design days (${hours})`;
+  if (!run.months || isWholeYear(run.months)) return `Annual (${hours})`;
+  const { control } = controlFor('months');
+  return `${control.periods(run.months).replace(/\.$/, '')} (${hours})`;
+}
+
+/**
  * The bundle's members, named once. `manifest()` letters its Files section and
  * `runBundle()` zips its bytes off this same list, because the first cut wrote
  * the list twice — a member added to one copy would have shipped in a ZIP
@@ -181,7 +200,7 @@ function manifest(run, list) {
   const epwFile = list.find((m) => m.name.endsWith('.epw'))?.name ?? null;
   const rows = [
     ['EnergyPlus', run.version],
-    ['Run', run.annual ? `Annual (${group(run.hours)} hours)` : `Design days (${group(run.hours)} hours)`],
+    ['Run', runLine(run)],
     [
       'Weather',
       epwFile ??
