@@ -1844,8 +1844,11 @@
         color: var(--ink-ghost);
         white-space: nowrap;
       }
-      /* Outside the run period, so the engine will drop it without a word. */
+      /* Dropped whole by the run, so the engine will lose it without a word. */
       .day-when.out { text-decoration: line-through; }
+      /* Only partly inside: struck through would be a lie, so the row carries
+         the fraction and the redline says the reading is short of the list. */
+      .day-when.part { color: var(--redline); }
       .ctl-note.out { color: var(--redline); }
       .day:last-child { border-bottom: 0; }
       .day-date {

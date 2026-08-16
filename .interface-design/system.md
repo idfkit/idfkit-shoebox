@@ -150,9 +150,18 @@ listed beneath it, an entry field, and a row of ghost-ink stamps.
   is a reading, not a form.
 - **What the engine will drop is struck through, and counted.** An entry in a
   month no run period covers is ignored by EnergyPlus in silence; the resolved
-  date wears a line through it and a `--redline` note says how many and why. Silence about a
-  dropped input is the failure the sheet exists to prevent, whoever is being
-  silent.
+  date wears a line through it and a `--redline` note says how many and why.
+  Silence about a dropped input is the failure the sheet exists to prevent,
+  whoever is being silent.
+- **Count in the unit that reaches the engine, and count it as a set.** The
+  reading is days, not rows, because one row can be a nine-day shutdown — and
+  overlapping rows are unioned, because the engine marks a day once however many
+  entries claim it. A row only partly inside says so on its own line
+  (`Sun 24 Dec · 8 of 9`) in `--redline` rather than struck through, since a
+  strikethrough would be as wrong as silence. Where the unit cannot honestly be
+  days — before any calendar exists — the reading names the unit it *can* count
+  ("12 holidays"), so the later switch reads as a different measurement rather
+  than a jump in the same one.
 - The entry field is `--inset` ground with a `1px --rule` border, like
   `.site-field`, and speaks **the same grammar the address bar speaks** — what
   you type is what a shared link carries, and a refusal is word for word the one

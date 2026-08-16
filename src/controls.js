@@ -313,13 +313,20 @@ export class Days extends Control {
   }
 
   /**
-   * Days, not entries. A nine-day shutdown is one record and nine holidays, and
-   * nine is the number that reaches the model.
+   * Entries, not days — the honest reading with no calendar behind it.
+   *
+   * Days would be the better unit, and it is what the console prints the moment
+   * a weather file supplies a year. But it cannot be counted from the text
+   * alone: an nth weekday has no day of the year until the calendar is known,
+   * and overlapping spans have to be unioned before they can be totalled. So
+   * this counts what it can actually see, and names that unit so the change to
+   * days later reads as a different measurement rather than a jump in the same
+   * one.
    */
   format(v) {
-    const total = parseHolidays(v).reduce((days, day) => days + day.duration, 0);
-    if (total === 0) return 'None';
-    return `${total} day${total === 1 ? '' : 's'}`;
+    const entries = parseHolidays(v).length;
+    if (entries === 0) return 'None';
+    return `${entries} holiday${entries === 1 ? '' : 's'}`;
   }
 }
 
@@ -576,6 +583,66 @@ export function resolveHoliday(holiday, startWeekday) {
     // `12/24*9` flagged 24–31 December and 1 January as Holiday.
     ends: ((doy + holiday.duration - 2) % 365) + 1,
   };
+}
+
+/** Which month a day of the year falls in, 1-indexed. */
+function monthOfDoy(doy) {
+  let left = doy;
+  for (let m = 0; m < 12; m += 1) {
+    if (left <= DAYS_IN_MONTH[m]) return m + 1;
+    left -= DAYS_IN_MONTH[m];
+  }
+  return 12;
+}
+
+/**
+ * How many of a holiday's days the run actually simulates.
+ *
+ * Counted day by day rather than judged by the start date, because a special
+ * day is a *span*: a nine-day shutdown beginning 24 December reaches into
+ * January, and a run that keeps December but drops January simulates eight of
+ * its nine days. Measured — the engine flagged 24 to 31 December and stopped,
+ * with nothing in the error file to say two days had gone.
+ *
+ * That is the whole reason this counts days and not entries. EnergyPlus is
+ * silent about a special day it cannot place, whether it loses all of one or
+ * part of one, so the only honest reading is of what actually lands.
+ */
+export function coveredDays(holiday, startWeekday, mask) {
+  const { doy } = resolveHoliday(holiday, startWeekday);
+  let covered = 0;
+  for (let i = 0; i < holiday.duration; i += 1) {
+    // Wrapping at 365 the way the engine wraps it, back into the same year.
+    const day = ((doy - 1 + i) % 365) + 1;
+    if (mask[monthOfDoy(day) - 1] === '1') covered += 1;
+  }
+  return covered;
+}
+
+/**
+ * The whole list as days of the year — how many it names, and how many of those
+ * the run simulates.
+ *
+ * Sets, not sums, because holidays overlap and a day is a day. A nine-day
+ * shutdown from 24 December swallows Christmas and — wrapping — New Year, so
+ * eleven federal holidays plus that shutdown is eighteen days and not twenty.
+ * Summing the entries reported eleven days for a November-to-December run where
+ * the engine flagged ten, which is how this was found: the schema says outright
+ * that there is "no error message on duplicate days or overlapping days", so the
+ * engine simply marks each day once and says nothing about the arithmetic.
+ */
+export function runDays(holidays, startWeekday, mask) {
+  const listed = new Set();
+  const covered = new Set();
+  for (const holiday of holidays) {
+    const { doy } = resolveHoliday(holiday, startWeekday);
+    for (let i = 0; i < holiday.duration; i += 1) {
+      const day = ((doy - 1 + i) % 365) + 1;
+      listed.add(day);
+      if (mask[monthOfDoy(day) - 1] === '1') covered.add(day);
+    }
+  }
+  return { listed: listed.size, covered: covered.size };
 }
 
 /** `Sun` … `Sat`, for lettering a resolved day. The months are `MONTHS`. */

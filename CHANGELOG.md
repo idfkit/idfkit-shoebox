@@ -37,12 +37,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Attach a year and each entry is lettered with the day it actually falls on —
   `3 Mon in Jan · Mon 16 Jan` — and ticked there on the rule. Anything outside
-  the run period is struck through and counted, because EnergyPlus drops such a
-  day without a word: measured on a January-plus-June-to-August mask carrying all
-  eleven US federal holidays, which ran clean and simulated exactly the four that
-  fell inside it. The lettered dates
-  are checked against the engine's own `Environment:Special Days` echo, entry by
-  entry, so the strip cannot letter a calendar the run did not use.
+  the run is struck through and counted, because EnergyPlus drops such a day
+  without a word — and there is no reading of it anywhere else: the error file
+  is silent and the input echo lists every special day under every run period
+  whether it lands or not.
+
+  The reading is in **days, as a set**, because that is the unit that reaches the
+  engine. One row can be a nine-day shutdown, and a shutdown beginning 24
+  December is simulated up to the year end and then dropped, so a row can be
+  partly in — it says `Sun 24 Dec · 8 of 9` on its own line rather than being
+  struck through, which would be as wrong as saying nothing. Overlapping rows are
+  unioned: the same shutdown swallows Christmas and, wrapping past the year end,
+  New Year, so eleven federal holidays plus that shutdown is eighteen days and
+  not twenty. Before a weather file supplies a calendar none of that is
+  knowable, so the reading names what it can count — "12 holidays" — and becomes
+  days once there is a year to count them in.
+
+  All of it is checked against the engine rather than against itself: three runs,
+  read back off their own `Site Day Type Index` series, agree with the desk's
+  count exactly — 4, 9 and 10 days.
 
   One thing the arrangement cannot do, said here because the interface says it
   too. **Easter is not expressible** — an IDF date field carries no year, so Good

@@ -3,8 +3,10 @@ import {
   MONTHS,
   WEEKDAY_LABELS,
   controlFor,
+  coveredDays,
   parseHolidays,
   resolveHoliday,
+  runDays,
   serializeHolidays,
 } from './controls.js';
 
@@ -941,10 +943,15 @@ export function mountConsole({
     // The weekday the run's year begins on, from the attached file, or null
     // while there is no file and therefore no calendar to letter against.
     let startWeekday = null;
-    // Against the month mask rather than a span: the run is a set of months
-    // now, not a range, so a holiday can fall in one of the gaps between two
-    // run periods and be dropped exactly as one before the first is.
-    const outside = (here) => params.months[here.month - 1] !== '1';
+    // How much of one holiday the run actually simulates, in days.
+    //
+    // Not "is its start month in the mask": a special day is a span, so a
+    // shutdown beginning in a month the run keeps and ending in one it drops is
+    // partly simulated, and calling it wholly in would overstate what reaches
+    // the engine by exactly the days it loses. Against the mask rather than a
+    // range, too — the run is a set of months now, so a day can fall in a gap
+    // between two run periods as easily as before the first.
+    const reach = (day) => coveredDays(day, startWeekday, params.months);
 
     const commitList = (days) => {
       markGesture(control.key);
@@ -995,7 +1002,7 @@ export function mountConsole({
       // — so the dates are left unresolved rather than shown against a guess.
       const placed = startWeekday === null
         ? null
-        : days.map((day) => resolveHoliday(day, startWeekday));
+        : days.map((day) => ({ ...resolveHoliday(day, startWeekday), reaches: reach(day) }));
 
       rule.replaceChildren();
       rule.setAttribute(
@@ -1017,7 +1024,7 @@ export function mountConsole({
           const x = (here.month - 1 + (here.day - 1) / DAYS_IN_MONTH[here.month - 1]) * 20;
           rule.append(svg('line', {
             x1: x, y1: 4, x2: x, y2: 16,
-            stroke: outside(here) ? 'var(--ink-ghost)' : 'var(--redline)', 'stroke-width': 1,
+            stroke: here.reaches === 0 ? 'var(--ink-ghost)' : 'var(--redline)', 'stroke-width': 1,
           }));
           continue;
         }
@@ -1039,8 +1046,14 @@ export function mountConsole({
         }
       }
 
+      // In days, because a day is the unit that reaches the engine — and as a
+      // union rather than a sum, because holidays overlap and the engine marks
+      // a day once however many entries claim it.
+      const { listed, covered } = placed === null
+        ? { listed: 0, covered: 0 }
+        : runDays(days, startWeekday, params.months);
+
       list.replaceChildren();
-      let ignored = 0;
       for (const [at, day] of days.entries()) {
         const line = el('div', 'day');
         line.append(el('span', 'day-date', day.duration > 1 ? `${day.date} ×${day.duration}` : day.date));
@@ -1051,11 +1064,16 @@ export function mountConsole({
           // weekday now has an answer, and it is lettered rather than left for
           // the error file to reveal.
           const when = `${WEEKDAY_LABELS[here.weekday]} ${here.day} ${MONTHS[here.month - 1]}`;
-          const mark = el('span', 'day-when', when);
-          if (outside(here)) {
-            ignored += 1;
+          // A span that only partly lands says so on its own row: the count
+          // below cannot tell you *which* entry was cut short.
+          const part = here.reaches > 0 && here.reaches < day.duration;
+          const mark = el('span', 'day-when', part ? `${when} · ${here.reaches} of ${day.duration}` : when);
+          if (here.reaches === 0) {
             mark.classList.add('out');
-            mark.title = 'Outside the run period, so the engine ignores it without saying so.';
+            mark.title = 'In a month no run period covers, so the engine drops it without saying so.';
+          } else if (part) {
+            mark.classList.add('part');
+            mark.title = `${day.duration - here.reaches} of its ${day.duration} days run past the months this run covers, and the engine drops them without saying so.`;
           }
           line.append(mark);
         }
@@ -1070,13 +1088,27 @@ export function mountConsole({
         list.append(line);
       }
 
-      // EnergyPlus drops a special day outside the run period in silence —
-      // measured on a June-to-August run carrying the November and December
-      // holidays, which completed with no warnings at all. So the desk says it.
-      outsideNote.hidden = ignored === 0;
-      outsideNote.textContent = ignored === 0
+      // The reading is of what the engine gets rather than of what was typed,
+      // but only once there is a calendar to work it out against.
+      value.textContent = placed === null
+        ? control.format(params[control.key])
+        : covered === listed
+          ? `${listed} day${listed === 1 ? '' : 's'}`
+          : `${covered} of ${listed} days`;
+
+      // EnergyPlus drops a special day it cannot place in silence, whether it
+      // loses the whole of one or the tail of one. Measured both ways against
+      // 26.1: a January-plus-June-to-August mask carrying the eleven US federal
+      // holidays simulated four of them, and a November-to-December mask
+      // carrying a nine-day Christmas shutdown simulated eight of its days.
+      // Neither run put anything in the error file, and the input echo lists
+      // every special day under every run period whether it lands or not — so
+      // there is no reading of this anywhere but here.
+      const lost = listed - covered;
+      outsideNote.hidden = placed === null || lost === 0;
+      outsideNote.textContent = outsideNote.hidden
         ? ''
-        : `${ignored} of these fall in months the run does not cover, and the engine ignores them without saying so.`;
+        : `${lost} of the ${listed} days listed fall in months the run does not cover, and the engine drops them without saying so.`;
 
       row.classList.toggle('idle', control.needs ? !control.needs(params) : false);
     };
