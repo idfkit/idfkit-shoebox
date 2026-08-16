@@ -12,28 +12,68 @@
 
 import { findVariables, getTimeSeries } from '@idfkit/engine';
 import { END_USES, J_TO_KWH, meterTotal } from './bill.js';
+// The month names belong to the calendar control, which is the one place the
+// year is declared; re-exported here because every reader of a run letters its
+// timestamps with them and `main.js` has always taken them from this module.
+import { MONTHS } from './controls.js';
 
-export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export { MONTHS };
 
 export function hourly(eso, pattern) {
   const v = findVariables(eso, pattern).find((x) => x.reportFrequency === 'hourly');
   return v ? getTimeSeries(eso, v.id)?.data ?? [] : [];
 }
 
-// Each EnergyPlus environment is its own weather story. A design-day run holds
-// two of them, and averaging across the pair would be nonsense — the winter and
-// summer days share nothing. Everything below is computed per environment.
+/**
+ * Each EnergyPlus environment is its own weather story. A design-day run holds
+ * two of them, and averaging across the pair would be nonsense — the winter and
+ * summer days share nothing. Everything below is computed per environment.
+ *
+ * There can now be several weather-file environments in one run: months that do
+ * not touch are handed to the engine as separate run periods, so a desk set to
+ * January and July comes back as four environments rather than three. Which
+ * months each one covers is read off the timestamps that arrive rather than off
+ * the parameters that were set, by the sheet's own rule — the run is the record
+ * of what was solved, and the desk may have moved since.
+ *
+ * `noun` is the environment said in a sentence ("the run period's swing"),
+ * kept apart from `label`, which heads a column and carries the dates.
+ */
 export function environmentRuns(points, environments) {
   const runs = [];
   points.forEach((p, i) => {
     const key = p.timestamp.environmentIndex;
-    if (!runs.length || runs.at(-1).key !== key) runs.push({ key, start: i, end: i, first: p.timestamp });
-    else runs.at(-1).end = i;
+    if (!runs.length || runs.at(-1).key !== key) {
+      runs.push({ key, start: i, end: i, first: p.timestamp, last: p.timestamp });
+    } else {
+      Object.assign(runs.at(-1), { end: i, last: p.timestamp });
+    }
   });
   return runs.map((r, i) => {
     const title = environments[i]?.title ?? '';
     const kind = /htg/i.test(title) ? 'Winter design day' : /clg/i.test(title) ? 'Summer design day' : null;
-    return { ...r, kind, label: kind ? `${kind} · ${r.first.day} ${MONTHS[r.first.month - 1]}` : 'Annual run period' };
+    if (kind) {
+      return {
+        ...r,
+        kind,
+        months: 1,
+        noun: kind.toLowerCase(),
+        label: `${kind} · ${r.first.day} ${MONTHS[r.first.month - 1]}`,
+      };
+    }
+    const whole = r.first.month === 1 && r.last.month === 12;
+    const span =
+      r.first.month === r.last.month
+        ? MONTHS[r.first.month - 1]
+        : `${MONTHS[r.first.month - 1]}–${MONTHS[r.last.month - 1]}`;
+    return {
+      ...r,
+      kind: null,
+      // A run period is one unbroken group of months, so its span is its count.
+      months: r.last.month - r.first.month + 1,
+      noun: whole ? 'annual run period' : 'run period',
+      label: whole ? 'Annual run period' : `Run period · ${span}`,
+    };
   });
 }
 

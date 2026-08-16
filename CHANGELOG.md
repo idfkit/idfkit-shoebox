@@ -49,6 +49,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no weather file, and the manifest says so instead of shipping a
   fabricated one.
 
+### Changed
+
+- The run period is a year of months, not two sliders. **Run from** and **Run
+  to** on the Run strip are replaced by a twelve-cell calendar: tap a month to
+  take it in or out, sweep across several in one gesture, or walk the year with
+  the arrow keys and toggle from the keyboard. Months need not be consecutive —
+  each unbroken group is handed to EnergyPlus as its own `RunPeriod`, so
+  January and July can be solved without the spring between them, and the strip
+  says in the engine's own words how many run periods the mask makes. Below
+  400px the year folds to two rows of six rather than shrinking twelve cells
+  past reading. A run needs at least one month, and the last one standing says
+  so rather than quietly refusing.
+
+  The rest of the sheet follows the run: a solve can now hold several weather
+  environments, so the results schedule heads a column per run period with the
+  months it covers, the chart letters each period's month ticks, and the run
+  bundle's manifest names the periods instead of claiming "Annual". A weather
+  file is no longer taken to mean a year — a bill metered over four months says
+  so in its lede and draws no per-m² intensity, because every benchmark that
+  figure exists to be compared against is twelve months long.
+
+  Breaking, deliberately: the `beginMonth` and `endMonth` parameters are gone
+  rather than migrated, and a scheme link naming either is refused. Nothing has
+  been published yet, so there was no link to carry forward and no reason to
+  spend a link version on one. The run period rides in a link as
+  `months=001110000000`.
+
 ## [0.1.0] - 2026-08-14
 
 Initial public build of the shoebox: a one-page, client-side EnergyPlus demo
