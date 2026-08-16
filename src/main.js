@@ -50,6 +50,7 @@ import {
   MONTHS,
   NEUTRAL_C,
   dayExtremeNear,
+  demandOver,
   environmentRuns,
   hourly,
   pinAt,
@@ -837,17 +838,25 @@ function axisSegments(points, runs) {
   );
 }
 
-function metricsFor(zone, out, run, hasOutdoor) {
+function metricsFor(zone, out, run, hasOutdoor, demand = null) {
   const slice = (a) => a.slice(run.start, run.end + 1);
   const z = stats(slice(zone));
   const o = stats(slice(out));
   const damping = hasOutdoor && o.swing > 0.05 ? z.swing / o.swing : NaN;
   const lag = hasOutdoor ? slice(zone).indexOf(z.max) - slice(out).indexOf(o.max) : NaN;
-  return { z, o, damping, lag, hours: run.end - run.start + 1, hasOutdoor };
+  // `demand` is this environment's own meters, or null where there are none to
+  // read — a design day, or a desk with the System strip bypassed.
+  return { z, o, damping, lag, hours: run.end - run.start + 1, hasOutdoor, demand };
 }
 
 const f1 = (v) => v.toFixed(1);
 const or = (v, fmt) => (Number.isFinite(v) ? fmt(v) : '—');
+
+// A sentence counts in words. `applyRun` writes one run period per unbroken
+// group of months, and a twelve-month calendar cannot break into more than
+// six, so the list is closed at what the desk can actually produce; the index
+// starts at two because one run period is said by its own noun.
+const RUN_TALLY = Object.freeze(['', '', 'both', 'all three', 'all four', 'all five', 'all six']);
 
 // A schedule in the drawing sense: quantities down the side, environments
 // across the top, units in their own column.
@@ -865,6 +874,23 @@ const SCHEDULE_ROWS = [
   { label: 'Damping — zone swing ÷ outdoor swing', unit: '', group: true, at: (m) => m.damping, fmt: f2 },
   { label: 'Thermal lag — outdoor peak to zone peak', unit: 'h', at: (m) => m.lag, fmt: String },
   { label: 'Hours simulated', unit: 'h', at: (m) => m.hours, fmt: (v) => v.toLocaleString('en-US'), nodelta: true },
+  // The three the sweep draws, for the desk as it stands. A study answers
+  // "what would this control do to the demand"; without these rows the sheet
+  // could not answer "what is the demand", and the curve had no point on it
+  // the reader could check against the run in front of them. Same readers,
+  // same arithmetic — `demandOver` is what the sweep's `readDemand` is built
+  // from — so the tick under a study's redline and the figure in this column
+  // are the same number whenever the study was swept against this desk.
+  //
+  // Per environment, because that is what a column of this schedule is. The
+  // bill's per-m² row refuses to print on anything short of a whole year, and
+  // rightly: it stands under no head that says what period it covers. These
+  // do — a column is `Run period · Jan–Mar`, with its own hours a few rows up
+  // — so the period is lettered where the reader is already looking, and a
+  // partial year reads as itself rather than as nothing.
+  { label: 'Thermal energy demand intensity — TEDI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.tedi ?? NaN, fmt: f1 },
+  { label: 'Cooling energy demand intensity — CEDI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.cedi ?? NaN, fmt: f1 },
+  { label: 'Energy use intensity — EUI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.eui ?? NaN, fmt: f1 },
 ];
 
 /**
@@ -904,9 +930,22 @@ function renderSchedule(columns, baseColumns) {
   table.append(thead);
 
   const tbody = document.createElement('tbody');
-  for (const row of SCHEDULE_ROWS) {
+  // A demand row with nothing behind it anywhere is left out rather than drawn
+  // as a line of em dashes. The em-dash rule is for a reading that was asked
+  // for and did not arrive; the System strip bypassed is not a missing
+  // measurement but a building with no system in it, and three permanent
+  // blanks under every free-running run would be the schedule reporting the
+  // absence of a channel rather than the results of a run.
+  const rows = SCHEDULE_ROWS.filter(
+    (row) => !row.demand || cols.some((c) => c.metrics && Number.isFinite(row.at(c.metrics))),
+  );
+  // The block's rule sits above whichever of the three survived, since TEDI
+  // can be the one that is missing.
+  const opensDemand = rows.find((row) => row.demand);
+
+  for (const row of rows) {
     const tr = tbody.insertRow();
-    if (row.group) tr.className = 'group';
+    if (row.group || row === opensDemand) tr.className = 'group';
     const head = tr.insertCell();
     if (row.marker) {
       const key = document.createElement('i');
@@ -1548,7 +1587,18 @@ const set = (id, text, cls) => {
   if (cls !== undefined) el.className = cls;
 };
 
-function clearResults() {
+/**
+ * Take down everything the last run lettered: the plate's schedule, the
+ * sentence under it, the bill, the rail's meters and the instant they were
+ * read at.
+ *
+ * Kept apart from `clearResults` because a run that fails has already written
+ * its own exit code and error counts into the title block by the time it gives
+ * up, and those are the only things on the sheet that describe the failure.
+ * Blanking them with the readings would leave the reader a status line and
+ * nothing to check it against.
+ */
+function clearReadings() {
   renderSchedule(null);
   // The meters go with the results they were read from. A bill left standing
   // over a cleared plate would be describing a run the sheet no longer shows.
@@ -1574,11 +1624,21 @@ function clearResults() {
   renderBill();
   syncPin();
   syncDownload();
+  // The register reads the run too — the scoreboard's margins and the kept
+  // schemes' deltas both — so it is re-lettered with the rest of the readings
+  // rather than in `clearResults` below, which is now only the title block.
   renderRegister();
+  $('finding').textContent = '';
+}
+
+// The readings and the run that produced them. This is the whole sheet back to
+// having reported nothing, which is what a refused link and a run that never
+// reached the engine both leave behind.
+function clearResults() {
+  clearReadings();
   set('t-vars', '—');
   set('t-err', '—', '');
   set('t-exit', '—', '');
-  $('finding').textContent = '';
 }
 
 /* ══ dimensions ══════════════════════════════════════════════════════════ */
@@ -1661,6 +1721,18 @@ function syncStudies() {
   }
 }
 
+// The four blocks a run letters: the plate, the sentence under it, the results
+// schedule and the bill. They dim together and they are replaced together, so
+// the list is stated once rather than repeated at each site that handles them.
+// Everything that describes the last run and therefore goes pale when the desk
+// moves past it. The register contributes two of these and withholds a third:
+// the scoreboard's margins and the kept schemes' deltas are readings, so they
+// dim with the plate and the bill, while the console's conformance chips are
+// measurements of the desk as it stands and are true the instant a control
+// moves — dimming those would say the opposite of what they mean.
+const resultPanels = () =>
+  [$('trace'), $('finding'), $('schedule'), $('bill'), $('score'), $('shelf-table'), $('chase')];
+
 // Results describe a shape. Once the shape moves, they describe a building that
 // is no longer on the sheet, so say so rather than letting them sit there.
 //
@@ -1673,14 +1745,7 @@ function markStale() {
   // Continuous mode closes this gap within a frame or two, so dimming there
   // would be a strobe. On release-solving and by hand the gap is real.
   const show = stale && !continuous();
-  for (const el of [$('trace'), $('finding'), $('schedule'), $('bill')]) el.classList.toggle('stale', show);
-  // The register is half live and half not, so it is dimmed by the half. The
-  // conformance chips on the console are measurements of the desk as it
-  // stands and are true the instant a control moves; the scoreboard and the
-  // kept schemes' deltas are readings of the last run, and once the shape has
-  // moved they describe a building that is no longer on the sheet — the same
-  // thing the plate and the bill are saying by going pale.
-  for (const el of [$('score'), $('shelf-table'), $('chase')]) el.classList.toggle('stale', show);
+  for (const el of resultPanels()) el.classList.toggle('stale', show);
   if (!show) return;
   // A sheet that is about to solve itself does not need telling to go and press
   // something — it needs to say what it is waiting for.
@@ -3883,14 +3948,18 @@ async function solve() {
   quiet = live;
 
   clearLog();
-  for (const el of [$('trace'), $('finding'), $('schedule'), $('bill')]) el.classList.remove('stale');
-  // An auto-solve leaves the previous result standing until the new one lands.
-  // Blanking the plate every 0.7 s would be a strobe, and the old numbers are
-  // the only thing that makes the new ones mean anything.
-  if (!live) {
-    statusEl.className = 'status';
-    clearResults();
-  }
+  // Every solve leaves the previous result standing until the new one lands —
+  // dimmed by `markStale` if the desk has moved past it, and replaced in place
+  // when this run reports. Blanking the plate first was a strobe at 50 ms, and
+  // at 0.7 s it was worse than a strobe: the finding is a paragraph and
+  // `.finding:empty` is `display: none`, so clearing it collapsed three lines
+  // out of the flow and pulled the schedule, the bill and everything below
+  // them up the page for the length of the run, then dropped them back when
+  // the sentence returned. The reader loses their place in the sheet to be
+  // told nothing the status line was not already saying. The readings are
+  // taken down where they actually stop being true — on the failure exits
+  // below, where there is no new result coming to replace them.
+  if (!live) statusEl.className = 'status';
 
   const t0 = performance.now();
   // A ticking clock is worth watching at 8,760 hours and is a flicker at 48.
@@ -3915,6 +3984,10 @@ async function solve() {
   } catch (error) {
     solvedShape = shape;
     stopAuto();
+    // Nothing reached the engine, so nothing on the sheet is going to be
+    // replaced: the previous run's readings and its title block both come
+    // down, leaving the reason standing alone.
+    clearResults();
     statusEl.className = 'status bad';
     statusEl.textContent = `The run could not be attempted: ${error.message}`;
     return;
@@ -3941,6 +4014,13 @@ async function solve() {
     // A fatal is rarely about this one shape, so stop solving on every drag
     // frame and let the failure sit still long enough to be read.
     stopAuto();
+    // The readings only, not the title block: the exit code and the error
+    // counts written just above are this run's own account of how it died.
+    // The variable count is a reading off an ESO this run never got as far as
+    // producing, so it goes with them rather than standing as the previous
+    // run's number under a line saying this one was fatal.
+    clearReadings();
+    set('t-vars', '—');
     statusEl.className = 'status bad';
     statusEl.textContent = result.fatalError ?? `Engine exited with code ${result.exitCode}`;
     for (const entry of errs) log(`[${entry.severity}] ${entry.message}`);
@@ -3954,10 +4034,21 @@ async function solve() {
   const outPts = eso ? hourly(eso, /Site Outdoor Air Drybulb Temperature/i) : [];
   if (!zonePts.length) {
     stopAuto();
+    // The run stands — its variable count, exit code and warnings are all
+    // true of it — but nothing here can be lettered from it, so the previous
+    // run's readings go rather than sit under a sentence saying this one
+    // produced no temperature.
+    clearReadings();
     statusEl.className = 'status bad';
     statusEl.textContent = 'Run completed, but no hourly zone temperature was found in the ESO.';
     return;
   }
+
+  // From here the run letters every panel, so the dimming that said "these
+  // describe a shape the sheet has moved past" comes off in the same breath as
+  // the numbers that replace it — not at the top of the solve, where it would
+  // have shown the old result as current for the length of an annual run.
+  for (const el of resultPanels()) el.classList.remove('stale');
 
   const hasOutdoor = outPts.length > 0;
   const nn = hasOutdoor ? Math.min(zonePts.length, outPts.length) : zonePts.length;
@@ -3974,10 +4065,23 @@ async function solve() {
   // cut out of the label with a string split until a run period could be
   // called `Run period · Jan–Mar`, which lowercased into a sentence as
   // "the jan–mar's".
+  //
+  // The demand intensities divide by the floor the run was solved with, read
+  // off the document the same way the bill and every sweep sample read it. A
+  // design day gets none: twenty-four hours of a sizing condition is not a
+  // period anything is billed or benchmarked over, which is the same line the
+  // bill draws when it picks the environments it prices.
+  const floorArea = geometryFacts(model).floor;
   const columns = runs.map((r) => ({
     label: r.label,
     noun: r.noun,
-    metrics: metricsFor(zone, out, r, hasOutdoor),
+    metrics: metricsFor(
+      zone,
+      out,
+      r,
+      hasOutdoor,
+      r.kind === null ? demandOver(eso, new Set([r.key]), floorArea) : null,
+    ),
   }));
   renderSchedule(columns, baseline?.columns);
   solvedColumns = columns;
@@ -4078,7 +4182,40 @@ async function solve() {
   const finding = $('finding');
   finding.textContent = '';
   const m = lead.metrics;
-  if (Number.isFinite(m.damping)) {
+  // Whether an ideal unit was in the path, read off the run and not off the
+  // desk: these meters exist only when the System strip is engaged, and the
+  // controls may have moved since this run was started. The sentence below
+  // used to open "with no heating or cooling anywhere in this model"
+  // whatever the strip was doing, which was the sheet stating the opposite of
+  // what it had just simulated.
+  const conditioned = END_USES.some((u) => u.needs === 'system' && meterTotal(eso, u.meter) != null);
+  // The same reading the sweep takes at every sample, over the same billed
+  // environments, so the sentence, the schedule's columns and the tick under
+  // a study's redline are one number rather than three that ought to agree.
+  const demand = readDemand(eso, floorArea);
+  const billedRuns = runs.filter((r) => r.kind === null);
+
+  if (demand?.eui != null) {
+    finding.append(
+      'Holding the setpoints across ',
+      billedRuns.length === 1 ? `the ${billedRuns[0].noun}` : `${RUN_TALLY[billedRuns.length]} run periods`,
+      ' asks ',
+      q(f1(demand.tedi)),
+      ' kWh/m² of heat into the zone and ',
+      q(f1(demand.cedi)),
+      ' kWh/m² back out of it — ',
+      q(f1(demand.eui), true),
+      ' kWh/m² of building energy delivered in all, before any plant efficiency is applied to it below.',
+    );
+  } else if (conditioned) {
+    finding.append(
+      'An ideal unit holds the zone between ',
+      q(f1(m.z.min)),
+      ' °C and ',
+      q(f1(m.z.max), true),
+      ` °C over the ${lead.noun}. Demand intensities need a run period to read over — a sizing day is a condition, not a period — so attach a weather file and TEDI, CEDI and the building EUI join the schedule above.`,
+    );
+  } else if (Number.isFinite(m.damping)) {
     finding.append(
       'With no heating or cooling anywhere in this model, the envelope alone takes the ',
       lead.noun,
