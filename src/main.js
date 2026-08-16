@@ -1513,7 +1513,18 @@ const set = (id, text, cls) => {
   if (cls !== undefined) el.className = cls;
 };
 
-function clearResults() {
+/**
+ * Take down everything the last run lettered: the plate's schedule, the
+ * sentence under it, the bill, the rail's meters and the instant they were
+ * read at.
+ *
+ * Kept apart from `clearResults` because a run that fails has already written
+ * its own exit code and error counts into the title block by the time it gives
+ * up, and those are the only things on the sheet that describe the failure.
+ * Blanking them with the readings would leave the reader a status line and
+ * nothing to check it against.
+ */
+function clearReadings() {
   renderSchedule(null);
   // The meters go with the results they were read from. A bill left standing
   // over a cleared plate would be describing a run the sheet no longer shows.
@@ -1535,10 +1546,17 @@ function clearResults() {
   renderBill();
   syncPin();
   syncDownload();
+  $('finding').textContent = '';
+}
+
+// The readings and the run that produced them. This is the whole sheet back to
+// having reported nothing, which is what a refused link and a run that never
+// reached the engine both leave behind.
+function clearResults() {
+  clearReadings();
   set('t-vars', '—');
   set('t-err', '—', '');
   set('t-exit', '—', '');
-  $('finding').textContent = '';
 }
 
 /* ══ dimensions ══════════════════════════════════════════════════════════ */
@@ -1621,6 +1639,11 @@ function syncStudies() {
   }
 }
 
+// The four blocks a run letters: the plate, the sentence under it, the results
+// schedule and the bill. They dim together and they are replaced together, so
+// the list is stated once rather than repeated at each site that handles them.
+const resultPanels = () => [$('trace'), $('finding'), $('schedule'), $('bill')];
+
 // Results describe a shape. Once the shape moves, they describe a building that
 // is no longer on the sheet, so say so rather than letting them sit there.
 //
@@ -1633,7 +1656,7 @@ function markStale() {
   // Continuous mode closes this gap within a frame or two, so dimming there
   // would be a strobe. On release-solving and by hand the gap is real.
   const show = stale && !continuous();
-  for (const el of [$('trace'), $('finding'), $('schedule'), $('bill')]) el.classList.toggle('stale', show);
+  for (const el of resultPanels()) el.classList.toggle('stale', show);
   if (!show) return;
   // A sheet that is about to solve itself does not need telling to go and press
   // something — it needs to say what it is waiting for.
@@ -2990,14 +3013,18 @@ async function solve() {
   quiet = live;
 
   clearLog();
-  for (const el of [$('trace'), $('finding'), $('schedule'), $('bill')]) el.classList.remove('stale');
-  // An auto-solve leaves the previous result standing until the new one lands.
-  // Blanking the plate every 0.7 s would be a strobe, and the old numbers are
-  // the only thing that makes the new ones mean anything.
-  if (!live) {
-    statusEl.className = 'status';
-    clearResults();
-  }
+  // Every solve leaves the previous result standing until the new one lands —
+  // dimmed by `markStale` if the desk has moved past it, and replaced in place
+  // when this run reports. Blanking the plate first was a strobe at 50 ms, and
+  // at 0.7 s it was worse than a strobe: the finding is a paragraph and
+  // `.finding:empty` is `display: none`, so clearing it collapsed three lines
+  // out of the flow and pulled the schedule, the bill and everything below
+  // them up the page for the length of the run, then dropped them back when
+  // the sentence returned. The reader loses their place in the sheet to be
+  // told nothing the status line was not already saying. The readings are
+  // taken down where they actually stop being true — on the failure exits
+  // below, where there is no new result coming to replace them.
+  if (!live) statusEl.className = 'status';
 
   const t0 = performance.now();
   // A ticking clock is worth watching at 8,760 hours and is a flicker at 48.
@@ -3022,6 +3049,10 @@ async function solve() {
   } catch (error) {
     solvedShape = shape;
     stopAuto();
+    // Nothing reached the engine, so nothing on the sheet is going to be
+    // replaced: the previous run's readings and its title block both come
+    // down, leaving the reason standing alone.
+    clearResults();
     statusEl.className = 'status bad';
     statusEl.textContent = `The run could not be attempted: ${error.message}`;
     return;
@@ -3048,6 +3079,13 @@ async function solve() {
     // A fatal is rarely about this one shape, so stop solving on every drag
     // frame and let the failure sit still long enough to be read.
     stopAuto();
+    // The readings only, not the title block: the exit code and the error
+    // counts written just above are this run's own account of how it died.
+    // The variable count is a reading off an ESO this run never got as far as
+    // producing, so it goes with them rather than standing as the previous
+    // run's number under a line saying this one was fatal.
+    clearReadings();
+    set('t-vars', '—');
     statusEl.className = 'status bad';
     statusEl.textContent = result.fatalError ?? `Engine exited with code ${result.exitCode}`;
     for (const entry of errs) log(`[${entry.severity}] ${entry.message}`);
@@ -3061,10 +3099,21 @@ async function solve() {
   const outPts = eso ? hourly(eso, /Site Outdoor Air Drybulb Temperature/i) : [];
   if (!zonePts.length) {
     stopAuto();
+    // The run stands — its variable count, exit code and warnings are all
+    // true of it — but nothing here can be lettered from it, so the previous
+    // run's readings go rather than sit under a sentence saying this one
+    // produced no temperature.
+    clearReadings();
     statusEl.className = 'status bad';
     statusEl.textContent = 'Run completed, but no hourly zone temperature was found in the ESO.';
     return;
   }
+
+  // From here the run letters every panel, so the dimming that said "these
+  // describe a shape the sheet has moved past" comes off in the same breath as
+  // the numbers that replace it — not at the top of the solve, where it would
+  // have shown the old result as current for the length of an annual run.
+  for (const el of resultPanels()) el.classList.remove('stale');
 
   const hasOutdoor = outPts.length > 0;
   const nn = hasOutdoor ? Math.min(zonePts.length, outPts.length) : zonePts.length;
