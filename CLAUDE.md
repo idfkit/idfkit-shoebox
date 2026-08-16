@@ -314,6 +314,30 @@ next moves. Studies and the sample cache clear on a station change — sample
 shapes deliberately carry no climate — and studies are absent on priced
 channels.
 
+**Setting a study aside and clearing it are different acts**, and the desk has
+a global control for each. "Set studies aside" (status row) sheds the queue and
+suppresses each key like a per-study Stop, so the work does not restart until
+the desk moves; `clearAllStudies` — the desk head's **Clear *n* studies**,
+beside Revert all — takes the curves down for good, cancelling as `'cleared'`
+rather than `'shed'` because a study deleted from `studies` needs no
+suppression: `refreshStudies` and `densifyStudies` both walk that map. The two
+head links are the same gesture from opposite ends, which is why they sit
+together: Revert all puts every control back and leaves the curves to re-sweep
+themselves, Clear takes every curve down and touches neither `params` nor the
+document, so no solve follows it. The count is read off the console's own cards
+(`studyCount()`), not off `studies`: a sweep still landing has a card up before
+it has a curve to store. The sample cache is deliberately kept — those runs are
+still true of the desks they were solved for, so re-sweeping a cleared control
+costs nothing.
+
+Both buttons are declared at the head of the module with the study state rather
+than beside their listeners: `syncStudyControls` runs from the station attach,
+and a permalink carrying a station attaches during the boot awaits — before the
+studies section at the foot of `main.js` has been evaluated. That is the same
+hazard every `studyScheduler?.` in the upper half is spelled around, except
+that a `const` in its temporal dead zone has no such spelling and simply
+throws.
+
 ### The general notes (src/tour.js)
 
 The onboarding, drawn the way a drawing set carries it: a numbered block of
@@ -557,6 +581,15 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   key `*` took the ESO from 15 series to 173 and the annual run from 681 ms to
   2,984 ms, almost all of it after the simulation finished. Keep new output
   requests zone-level or site-level.
+- **`all: unset` defeats the `hidden` attribute.** It re-declares `display`, and
+  an author declaration beats the user agent's `[hidden] { display: none }`
+  outright, so `el.hidden = true` on a `.link` did nothing whatever. Measured in
+  Chromium on this page: `#studies-stop` rendered at all times, offering to set
+  aside studies that did not exist, for as long as that button has existed. The
+  stylesheet's other `[hidden]` twins — `.bill[hidden]`, `.strip-fold[hidden]`,
+  `.face-ghost[hidden]` and the rest — are each the same fix, and `.link[hidden]`
+  is now among them. Any new class that sets `display` (or unsets it) and is
+  toggled by the attribute needs its own.
 
 ## Conventions
 
