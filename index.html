@@ -865,8 +865,12 @@
         white-space: normal;
         width: 42%;
       }
+      /* The gap between a reading and its unit was the 46px doing the work,
+         which held only while every unit was two characters. `kWh/m²` fills
+         the column outright and stood flush against the figure, so the space
+         is declared rather than left over. */
       .schedule td.unit,
-      .bill td.unit { color: var(--ink-3); width: 46px; }
+      .bill td.unit { color: var(--ink-3); width: 46px; padding-left: 12px; }
       .schedule td.void,
       .bill td.void { color: var(--ink-ghost); }
       /* Change against the shape you took hold of. Set in the margin of its own

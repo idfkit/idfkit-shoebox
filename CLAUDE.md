@@ -201,7 +201,11 @@ Things that cost real debugging:
   months out, so `Bill.wholeYear` — twelve months of weather billed, counted
   off the environments that came back rather than off live `params` — is what
   gates the row, and a partial run says in the lede how much of the year it
-  covers.
+  covers. The results schedule's demand rows are the one exception and they
+  earn it structurally: a bill row stands under no head that says what period
+  it covers, whereas a schedule column *is* the period (`Run period · Jan–Mar`,
+  with its own hours a few rows up), so a partial year there reads as itself
+  rather than as nothing.
 - Rates come from six dated open datasets, generated into `src/rates.data.js` by
   `scripts/build-rates.mjs` (run by hand; needs the network and a Python with
   `openpyxl` and `xlrd`). Coverage is **North America by state and province**
@@ -269,6 +273,21 @@ and building EUI off the meters through `meterTotal`, by the bill's
 building-section intensity rule, each sample divided by its own floor area. The
 readers live in `src/readings.js`, DOM-free, so the harness calls the real
 ones.
+
+**The sheet reads the same three for the desk it is standing on.** A curve with
+no point on it the reader can check against the run in front of them is a
+comparison of hypotheticals, so the results schedule carries TEDI, CEDI and the
+building EUI as rows and the finding says them in a sentence — the sheet's own
+answer to the question a study asks of one control. `demandOver` is the shared
+arithmetic: the schedule reads it **per environment**, because that is what a
+column of that schedule is, and the finding reads `readDemand` over the billed
+environments, so the columns sum to the sentence. Two rules keep the rows
+honest: the meters' own presence is the gate (no `Heating:DistrictHeatingWater`
+in the ESO means the System strip was out, and the three rows are omitted rather
+than drawn as em dashes — a building with no system is not a missing
+measurement), and everything is read off the run rather than off live `params`,
+which is also what stopped the finding opening "with no heating or cooling
+anywhere in this model" over a run that had just simulated an ideal unit.
 
 A sweep never touches live `params`, and the one shared mutable is the model
 document: `buildSample` applies the overlay with the metric's lean reporting

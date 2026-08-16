@@ -1,5 +1,6 @@
 import {
   CHANNELS,
+  DAYS_IN_MONTH,
   MONTHS,
   WEEKDAY_LABELS,
   controlFor,
@@ -1124,8 +1125,6 @@ export function mountConsole({
     });
     return row;
   }
-
-  const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
   /* ── studies ─────────────────────────────────────────────────────────── */
 

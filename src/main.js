@@ -50,6 +50,7 @@ import {
   MONTHS,
   NEUTRAL_C,
   dayExtremeNear,
+  demandOver,
   environmentRuns,
   hourly,
   pinAt,
@@ -823,17 +824,25 @@ function axisSegments(points, runs) {
   );
 }
 
-function metricsFor(zone, out, run, hasOutdoor) {
+function metricsFor(zone, out, run, hasOutdoor, demand = null) {
   const slice = (a) => a.slice(run.start, run.end + 1);
   const z = stats(slice(zone));
   const o = stats(slice(out));
   const damping = hasOutdoor && o.swing > 0.05 ? z.swing / o.swing : NaN;
   const lag = hasOutdoor ? slice(zone).indexOf(z.max) - slice(out).indexOf(o.max) : NaN;
-  return { z, o, damping, lag, hours: run.end - run.start + 1, hasOutdoor };
+  // `demand` is this environment's own meters, or null where there are none to
+  // read — a design day, or a desk with the System strip bypassed.
+  return { z, o, damping, lag, hours: run.end - run.start + 1, hasOutdoor, demand };
 }
 
 const f1 = (v) => v.toFixed(1);
 const or = (v, fmt) => (Number.isFinite(v) ? fmt(v) : '—');
+
+// A sentence counts in words. `applyRun` writes one run period per unbroken
+// group of months, and a twelve-month calendar cannot break into more than
+// six, so the list is closed at what the desk can actually produce; the index
+// starts at two because one run period is said by its own noun.
+const RUN_TALLY = Object.freeze(['', '', 'both', 'all three', 'all four', 'all five', 'all six']);
 
 // A schedule in the drawing sense: quantities down the side, environments
 // across the top, units in their own column.
@@ -851,6 +860,23 @@ const SCHEDULE_ROWS = [
   { label: 'Damping — zone swing ÷ outdoor swing', unit: '', group: true, at: (m) => m.damping, fmt: f2 },
   { label: 'Thermal lag — outdoor peak to zone peak', unit: 'h', at: (m) => m.lag, fmt: String },
   { label: 'Hours simulated', unit: 'h', at: (m) => m.hours, fmt: (v) => v.toLocaleString('en-US'), nodelta: true },
+  // The three the sweep draws, for the desk as it stands. A study answers
+  // "what would this control do to the demand"; without these rows the sheet
+  // could not answer "what is the demand", and the curve had no point on it
+  // the reader could check against the run in front of them. Same readers,
+  // same arithmetic — `demandOver` is what the sweep's `readDemand` is built
+  // from — so the tick under a study's redline and the figure in this column
+  // are the same number whenever the study was swept against this desk.
+  //
+  // Per environment, because that is what a column of this schedule is. The
+  // bill's per-m² row refuses to print on anything short of a whole year, and
+  // rightly: it stands under no head that says what period it covers. These
+  // do — a column is `Run period · Jan–Mar`, with its own hours a few rows up
+  // — so the period is lettered where the reader is already looking, and a
+  // partial year reads as itself rather than as nothing.
+  { label: 'Thermal energy demand intensity — TEDI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.tedi ?? NaN, fmt: f1 },
+  { label: 'Cooling energy demand intensity — CEDI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.cedi ?? NaN, fmt: f1 },
+  { label: 'Energy use intensity — EUI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.eui ?? NaN, fmt: f1 },
 ];
 
 /**
@@ -890,9 +916,22 @@ function renderSchedule(columns, baseColumns) {
   table.append(thead);
 
   const tbody = document.createElement('tbody');
-  for (const row of SCHEDULE_ROWS) {
+  // A demand row with nothing behind it anywhere is left out rather than drawn
+  // as a line of em dashes. The em-dash rule is for a reading that was asked
+  // for and did not arrive; the System strip bypassed is not a missing
+  // measurement but a building with no system in it, and three permanent
+  // blanks under every free-running run would be the schedule reporting the
+  // absence of a channel rather than the results of a run.
+  const rows = SCHEDULE_ROWS.filter(
+    (row) => !row.demand || cols.some((c) => c.metrics && Number.isFinite(row.at(c.metrics))),
+  );
+  // The block's rule sits above whichever of the three survived, since TEDI
+  // can be the one that is missing.
+  const opensDemand = rows.find((row) => row.demand);
+
+  for (const row of rows) {
     const tr = tbody.insertRow();
-    if (row.group) tr.className = 'group';
+    if (row.group || row === opensDemand) tr.className = 'group';
     const head = tr.insertCell();
     if (row.marker) {
       const key = document.createElement('i');
@@ -3130,10 +3169,23 @@ async function solve() {
   // cut out of the label with a string split until a run period could be
   // called `Run period · Jan–Mar`, which lowercased into a sentence as
   // "the jan–mar's".
+  //
+  // The demand intensities divide by the floor the run was solved with, read
+  // off the document the same way the bill and every sweep sample read it. A
+  // design day gets none: twenty-four hours of a sizing condition is not a
+  // period anything is billed or benchmarked over, which is the same line the
+  // bill draws when it picks the environments it prices.
+  const floorArea = geometryFacts(model).floor;
   const columns = runs.map((r) => ({
     label: r.label,
     noun: r.noun,
-    metrics: metricsFor(zone, out, r, hasOutdoor),
+    metrics: metricsFor(
+      zone,
+      out,
+      r,
+      hasOutdoor,
+      r.kind === null ? demandOver(eso, new Set([r.key]), floorArea) : null,
+    ),
   }));
   renderSchedule(columns, baseline?.columns);
   solvedColumns = columns;
@@ -3228,7 +3280,40 @@ async function solve() {
   const finding = $('finding');
   finding.textContent = '';
   const m = lead.metrics;
-  if (Number.isFinite(m.damping)) {
+  // Whether an ideal unit was in the path, read off the run and not off the
+  // desk: these meters exist only when the System strip is engaged, and the
+  // controls may have moved since this run was started. The sentence below
+  // used to open "with no heating or cooling anywhere in this model"
+  // whatever the strip was doing, which was the sheet stating the opposite of
+  // what it had just simulated.
+  const conditioned = END_USES.some((u) => u.needs === 'system' && meterTotal(eso, u.meter) != null);
+  // The same reading the sweep takes at every sample, over the same billed
+  // environments, so the sentence, the schedule's columns and the tick under
+  // a study's redline are one number rather than three that ought to agree.
+  const demand = readDemand(eso, floorArea);
+  const billedRuns = runs.filter((r) => r.kind === null);
+
+  if (demand?.eui != null) {
+    finding.append(
+      'Holding the setpoints across ',
+      billedRuns.length === 1 ? `the ${billedRuns[0].noun}` : `${RUN_TALLY[billedRuns.length]} run periods`,
+      ' asks ',
+      q(f1(demand.tedi)),
+      ' kWh/m² of heat into the zone and ',
+      q(f1(demand.cedi)),
+      ' kWh/m² back out of it — ',
+      q(f1(demand.eui), true),
+      ' kWh/m² of building energy delivered in all, before any plant efficiency is applied to it below.',
+    );
+  } else if (conditioned) {
+    finding.append(
+      'An ideal unit holds the zone between ',
+      q(f1(m.z.min)),
+      ' °C and ',
+      q(f1(m.z.max), true),
+      ` °C over the ${lead.noun}. Demand intensities need a run period to read over — a sizing day is a condition, not a period — so attach a weather file and TEDI, CEDI and the building EUI join the schedule above.`,
+    );
+  } else if (Number.isFinite(m.damping)) {
     finding.append(
       'With no heating or cooling anywhere in this model, the envelope alone takes the ',
       lead.noun,
