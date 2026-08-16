@@ -5,6 +5,7 @@ import {
   DEFAULT_BYPASS,
   DEFAULT_PARAMETERS,
   monthSpans,
+  parseHolidays,
 } from './controls.js';
 import { END_USES } from './bill.js';
 
@@ -426,12 +427,14 @@ export function buildModel(schema, parameters = DEFAULT_PARAMETERS, bypass = DEF
     maximum_number_of_hvac_sizing_simulation_passes: 1,
   });
 
+  // Replaced wholesale by `applyRun`, which writes one of these per group of
+  // months. It is here so the document is complete before the first apply, and
+  // it carries no `day_of_week_for_start_day` for the reason set out there.
   doc.add('RunPeriod', 'Run Period 1', {
     begin_month: 1,
     begin_day_of_month: 1,
     end_month: 12,
     end_day_of_month: 31,
-    day_of_week_for_start_day: 'Tuesday',
     use_weather_file_holidays_and_special_days: 'Yes',
     use_weather_file_daylight_saving_period: 'Yes',
     apply_weekend_holiday_rule: 'No',
@@ -1037,6 +1040,15 @@ function bandSchedule(doc, name, limits, params, { on = 1, off = 0.1 } = {}) {
 
   rows.push('For: Weekdays SummerDesignDay WinterDesignDay');
   rows.push(...dayRows(params.occFrom, params.occTo, on, off));
+  // Before `AllOtherDays`, which is the catch-all: a holiday falls into it
+  // unless something claims the day first, which is why this row's absence made
+  // a holiday and a Sunday the same day for as long as it was absent. At
+  // `AsWeekend` nothing is written and that is exactly what it means.
+  if (params.holidayUse !== 'AsWeekend') {
+    rows.push('For: Holidays');
+    const holiday = params.holidayUse === 'Open' ? on : off;
+    rows.push(...dayRows(params.occFrom, params.occTo, holiday, off));
+  }
   rows.push('For: AllOtherDays');
   const weekend = params.weekend === 'Occupied' ? on : off;
   rows.push(...dayRows(params.occFrom, params.occTo, weekend, off));
@@ -1194,6 +1206,13 @@ function applySystem(doc, params, engaged, gainsOn) {
         : dayRows(params.occFrom, params.occTo, base, back);
     rows.push('For: Weekdays SummerDesignDay WinterDesignDay');
     rows.push(...day(true));
+    // Gated on `gainsOn` the same way the weekend row below is: with Gains out
+    // of the path there is no occupancy to justify a holiday setback, and a
+    // System-only desk should not acquire one.
+    if (gainsOn && params.holidayUse !== 'AsWeekend') {
+      rows.push('For: Holidays');
+      rows.push(...day(params.holidayUse === 'Open'));
+    }
     rows.push('For: AllOtherDays');
     rows.push(...day(params.weekend === 'Occupied' && gainsOn));
     schedule.set('data', rows.map((field) => ({ field })));
@@ -1349,21 +1368,58 @@ function applySolver(doc, params) {
  * document carried, so the default desk serialises byte for byte as it did.
  */
 function applyRun(doc, params) {
+  // Both types are cleared and rewritten whole. The special days are not tied
+  // to any one period — they are the calendar the whole run keeps — so they are
+  // written once, while the holiday *fields* belong to each period and are
+  // written on every one of them.
   clear(doc, 'RunPeriod');
+  clear(doc, 'RunPeriodControl:SpecialDays');
+
   monthSpans(params.months).forEach(({ from, to }, i) => {
     doc.add('RunPeriod', `Run Period ${i + 1}`, {
       begin_month: from,
       begin_day_of_month: 1,
       end_month: to,
       end_day_of_month: DAYS_IN_MONTH[to - 1],
-      day_of_week_for_start_day: 'Tuesday',
-      use_weather_file_holidays_and_special_days: params.holidays,
+      // `day_of_week_for_start_day` is deliberately absent. Pinned to Tuesday
+      // it overrode what the weather file says about itself — every TMYx
+      // declares `DATA PERIODS,1,1,Data,Sunday,1/ 1,12/31` — and put the run on
+      // an invented calendar, in which the third Monday of January fell on the
+      // 21st. Left empty, EnergyPlus takes the file's own start day and picks a
+      // real non-leap year to match it (2017 for a Sunday), so every date lands
+      // where it belongs and the weekend holiday rule is about a real weekend.
+      //
+      // It matters more here than it would have with one period. The field
+      // anchors to *this period's* begin date, so pinning it would start every
+      // span on the same weekday and put a January and a July on two different
+      // calendars. Empty, they share the year's: measured, a June-to-August
+      // period reports 1 June as a Thursday, which is what 1 June 2017 was.
+      //
+      // The two holiday sources are independent fields, and the strip's three
+      // states are the three combinations that mean anything. `Listed` has to
+      // turn the file's days off, because where both are present the weather
+      // file's specification takes precedence and the listed days would lose
+      // silently.
+      use_weather_file_holidays_and_special_days: params.holidays === 'Yes' ? 'Yes' : 'No',
       use_weather_file_daylight_saving_period: params.dst,
-      apply_weekend_holiday_rule: 'No',
+      apply_weekend_holiday_rule: params.holidayRule,
       use_weather_file_rain_indicators: 'Yes',
       use_weather_file_snow_indicators: 'Yes',
     });
   });
+
+  if (params.holidays !== 'No') {
+    for (const day of parseHolidays(params.holidayDays)) {
+      // All four fields written out: the schema carries `min_fields: 4`, so
+      // leaning on the duration and type defaults would produce an object the
+      // engine reads as incomplete.
+      doc.add('RunPeriodControl:SpecialDays', day.name, {
+        start_date: day.startDate(),
+        duration: day.duration,
+        special_day_type: 'Holiday',
+      });
+    }
+  }
 
   must(doc, 'SimulationControl').run_simulation_for_sizing_periods = params.sizingPeriods;
 }

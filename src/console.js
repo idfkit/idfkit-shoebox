@@ -1,4 +1,14 @@
-import { CHANNELS, MONTHS, controlFor } from './controls.js';
+import {
+  CHANNELS,
+  MONTHS,
+  WEEKDAY_LABELS,
+  controlFor,
+  coveredDays,
+  parseHolidays,
+  resolveHoliday,
+  runDays,
+  serializeHolidays,
+} from './controls.js';
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -65,6 +75,7 @@ export function mountConsole({
   const rows = new Map(); // parameter key -> the control's row, for study cards
   const cards = new Map(); // parameter key -> { node, kind, study, syncTick }
   const studyButtons = new Map(); // parameter key -> that scale's Study button
+  const daysWidgets = new Map(); // parameter key -> that list's weather-file offer
   let solo = null;
   // The instant every meter on the desk is reading at: `{ text, pinned,
   // released }`, or null before anything has been solved.
@@ -301,6 +312,7 @@ export function mountConsole({
     if (control.kind === 'facade') return buildFacade(control);
     if (control.kind === 'profile') return buildProfile(control);
     if (control.kind === 'calendar') return buildCalendar(control);
+    if (control.kind === 'days') return buildDays(control);
     throw new Error(`the console cannot draw a ${control.kind}`);
   }
 
@@ -854,6 +866,267 @@ export function mountConsole({
     return row;
   }
 
+  /**
+   * A list of days, over a year rule.
+   *
+   * The rule is not decoration. A fixed date knows where in the year it falls
+   * and is ticked there; an nth-weekday date does not, because the run period
+   * carries no year, so it is marked at its month's centre in ghost ink. Two
+   * marks that look different because they *are* different — the alternative
+   * was ticking both at a guessed day of the month, which is the kind of quiet
+   * invention this sheet exists not to make.
+   *
+   * Nothing is registered in `rows`: that map is what gives a control a Study
+   * button, and a list has no range to sweep.
+   */
+  function buildDays(control) {
+    const row = el('div', 'ctl ctl-days');
+    const head = el('div', 'ctl-head');
+    head.append(el('span', 'ctl-label', control.label));
+    const value = el('span', 'ctl-value');
+    head.append(value);
+    row.append(head);
+
+    const rule = svg('svg', { viewBox: '0 0 240 26', class: 'days-rule', role: 'img' });
+    row.append(rule);
+
+    const list = el('div', 'days');
+    row.append(list);
+
+    // The field speaks the grammar the address bar speaks, so what you type
+    // here is what a scheme link carries and the refusals are word for word
+    // the ones a bad link gets.
+    const add = el('div', 'day-add');
+    const field = el('input', 'day-field');
+    field.type = 'text';
+    field.placeholder = '12/25: Christmas';
+    field.autocomplete = 'off';
+    field.spellcheck = false;
+    field.setAttribute('aria-label', `Add a holiday to ${control.label}`);
+    const addBtn = el('button', 'day-put', 'Add');
+    addBtn.type = 'button';
+    add.append(field, addBtn);
+    row.append(add);
+
+    const error = el('p', 'day-error');
+    error.hidden = true;
+    error.setAttribute('role', 'status');
+    row.append(error);
+
+    const sets = el('div', 'day-presets');
+    for (const calendar of control.presets) {
+      const chip = el('button', 'day-set', `${calendar.code} ${calendar.count()}`);
+      chip.type = 'button';
+      // The whole sentence, permanently on the offer rather than shown once
+      // after the click: a calendar that is four days short stays four days
+      // short, and a notice that expires would be a lie by expiry.
+      chip.title = calendar.title();
+      chip.addEventListener('click', () => stamp(calendar.encode()));
+      sets.append(chip);
+    }
+    // Only ever appended when a file actually names days, which no TMYx does.
+    const fromFile = el('button', 'day-set', 'From file');
+    fromFile.type = 'button';
+    fromFile.hidden = true;
+    fromFile.addEventListener('click', () => stamp(fromFile.dataset.days));
+    sets.append(fromFile);
+    row.append(sets);
+
+    const fileNote = el('p', 'ctl-note');
+    fileNote.hidden = true;
+    row.append(fileNote);
+    const outsideNote = el('p', 'ctl-note out');
+    outsideNote.hidden = true;
+    row.append(outsideNote);
+    if (control.note) row.append(el('p', 'ctl-note', control.note));
+
+    // The weekday the run's year begins on, from the attached file, or null
+    // while there is no file and therefore no calendar to letter against.
+    let startWeekday = null;
+    // How much of one holiday the run actually simulates, in days.
+    //
+    // Not "is its start month in the mask": a special day is a span, so a
+    // shutdown beginning in a month the run keeps and ending in one it drops is
+    // partly simulated, and calling it wholly in would overstate what reaches
+    // the engine by exactly the days it loses. Against the mask rather than a
+    // range, too — the run is a set of months now, so a day can fall in a gap
+    // between two run periods as easily as before the first.
+    const reach = (day) => coveredDays(day, startWeekday, params.months);
+
+    const commitList = (days) => {
+      markGesture(control.key);
+      onChange(control.key, serializeHolidays(days), true);
+    };
+    const stamp = (text) => {
+      error.hidden = true;
+      markGesture(control.key);
+      onChange(control.key, text, true);
+    };
+
+    const put = () => {
+      const typed = field.value.trim();
+      if (typed === '') return;
+      const kept = parseHolidays(params[control.key]);
+      let next;
+      try {
+        // Parsed together with what is already there, so the duplicate-name
+        // and length rules are checked against the list this would become
+        // rather than against the entry alone.
+        next = parseHolidays(serializeHolidays(kept) + (kept.length ? ';' : '') + typed);
+      } catch (failure) {
+        error.textContent = failure.message;
+        error.hidden = false;
+        return;
+      }
+      field.value = '';
+      error.hidden = true;
+      commitList(next);
+    };
+    addBtn.addEventListener('click', put);
+    field.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      put();
+    });
+    // Cleared here and not in `redraw`: `sync()` fires from a dozen paths, and
+    // a redraw that wiped the message would erase a refusal a frame after it
+    // appeared.
+    field.addEventListener('input', () => { error.hidden = true; });
+
+    const redraw = () => {
+      const days = parseHolidays(params[control.key]);
+      value.textContent = control.format(params[control.key]);
+
+      // Resolved against the run's real calendar when there is one. Without an
+      // attached file there is no calendar at all — the design days carry none
+      // — so the dates are left unresolved rather than shown against a guess.
+      const placed = startWeekday === null
+        ? null
+        : days.map((day) => ({ ...resolveHoliday(day, startWeekday), reaches: reach(day) }));
+
+      rule.replaceChildren();
+      rule.setAttribute(
+        'aria-label',
+        days.length === 0 ? 'No holidays listed' : `${days.length} holidays across the year`,
+      );
+      rule.append(svg('line', {
+        x1: 0, y1: 16, x2: 240, y2: 16, stroke: 'var(--rule-firm)', 'stroke-width': 1,
+      }));
+      for (let m = 0; m <= 12; m += 1) {
+        rule.append(svg('line', {
+          x1: m * 20, y1: 13, x2: m * 20, y2: 16,
+          stroke: 'var(--rule)', 'stroke-width': 0.5,
+        }));
+      }
+      for (const [at, day] of days.entries()) {
+        const here = placed?.[at];
+        if (here) {
+          const x = (here.month - 1 + (here.day - 1) / DAYS_IN_MONTH[here.month - 1]) * 20;
+          rule.append(svg('line', {
+            x1: x, y1: 4, x2: x, y2: 16,
+            stroke: here.reaches === 0 ? 'var(--ink-ghost)' : 'var(--redline)', 'stroke-width': 1,
+          }));
+          continue;
+        }
+        // No calendar: a fixed date still knows where it falls, an nth weekday
+        // does not, and the two are drawn differently rather than one of them
+        // being invented.
+        const fixed = day.date.match(/^(\d{1,2})\/(\d{1,2})$/);
+        if (fixed) {
+          const month = Number(fixed[1]) - 1;
+          const x = (month + (Number(fixed[2]) - 1) / DAYS_IN_MONTH[month]) * 20;
+          rule.append(svg('line', {
+            x1: x, y1: 4, x2: x, y2: 16, stroke: 'var(--redline)', 'stroke-width': 1,
+          }));
+        } else {
+          rule.append(svg('circle', {
+            cx: MONTHS.indexOf(day.date.slice(-3)) * 20 + 10, cy: 9, r: 2,
+            fill: 'none', stroke: 'var(--ink-ghost)', 'stroke-width': 1,
+          }));
+        }
+      }
+
+      // In days, because a day is the unit that reaches the engine — and as a
+      // union rather than a sum, because holidays overlap and the engine marks
+      // a day once however many entries claim it.
+      const { listed, covered } = placed === null
+        ? { listed: 0, covered: 0 }
+        : runDays(days, startWeekday, params.months);
+
+      list.replaceChildren();
+      for (const [at, day] of days.entries()) {
+        const line = el('div', 'day');
+        line.append(el('span', 'day-date', day.duration > 1 ? `${day.date} ×${day.duration}` : day.date));
+        line.append(el('span', 'day-name', day.name));
+        const here = placed?.[at];
+        if (here) {
+          // The whole point of following the weather file's calendar: an nth
+          // weekday now has an answer, and it is lettered rather than left for
+          // the error file to reveal.
+          const when = `${WEEKDAY_LABELS[here.weekday]} ${here.day} ${MONTHS[here.month - 1]}`;
+          // A span that only partly lands says so on its own row: the count
+          // below cannot tell you *which* entry was cut short.
+          const part = here.reaches > 0 && here.reaches < day.duration;
+          const mark = el('span', 'day-when', part ? `${when} · ${here.reaches} of ${day.duration}` : when);
+          if (here.reaches === 0) {
+            mark.classList.add('out');
+            mark.title = 'In a month no run period covers, so the engine drops it without saying so.';
+          } else if (part) {
+            mark.classList.add('part');
+            mark.title = `${day.duration - here.reaches} of its ${day.duration} days run past the months this run covers, and the engine drops them without saying so.`;
+          }
+          line.append(mark);
+        }
+        const drop = el('button', 'day-drop', '×');
+        drop.type = 'button';
+        drop.setAttribute('aria-label', `Remove ${day.name}`);
+        drop.addEventListener('click', () => {
+          error.hidden = true;
+          commitList(days.filter((_, i) => i !== at));
+        });
+        line.append(drop);
+        list.append(line);
+      }
+
+      // The reading is of what the engine gets rather than of what was typed,
+      // but only once there is a calendar to work it out against.
+      value.textContent = placed === null
+        ? control.format(params[control.key])
+        : covered === listed
+          ? `${listed} day${listed === 1 ? '' : 's'}`
+          : `${covered} of ${listed} days`;
+
+      // EnergyPlus drops a special day it cannot place in silence, whether it
+      // loses the whole of one or the tail of one. Measured both ways against
+      // 26.1: a January-plus-June-to-August mask carrying the eleven US federal
+      // holidays simulated four of them, and a November-to-December mask
+      // carrying a nine-day Christmas shutdown simulated eight of its days.
+      // Neither run put anything in the error file, and the input echo lists
+      // every special day under every run period whether it lands or not — so
+      // there is no reading of this anywhere but here.
+      const lost = listed - covered;
+      outsideNote.hidden = placed === null || lost === 0;
+      outsideNote.textContent = outsideNote.hidden
+        ? ''
+        : `${lost} of the ${listed} days listed fall in months the run does not cover, and the engine drops them without saying so.`;
+
+      row.classList.toggle('idle', control.needs ? !control.needs(params) : false);
+    };
+    faces.set(control.key, redraw);
+
+    daysWidgets.set(control.key, {
+      fromFile,
+      fileNote,
+      setStartWeekday(weekday) {
+        startWeekday = weekday;
+        redraw();
+      },
+    });
+    return row;
+  }
+
+  const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
   /* ── studies ─────────────────────────────────────────────────────────── */
 
   /**
@@ -1104,6 +1377,41 @@ export function mountConsole({
     settle() {
       ghost = {};
       api.sync();
+    },
+
+    /**
+     * What the attached weather file's own calendar contains.
+     *
+     * Four states, and they are four different sentences:
+     *
+     *   - `undefined` — no file attached, so the question does not arise;
+     *   - `''` — a file that names no holidays at all, which is every TMYx
+     *     there is, and the reason this method exists. "From file" has always
+     *     read an empty list and said nothing about it, and a reading with
+     *     nothing behind it has to say so rather than pass for a zero;
+     *   - `null` — a file naming days this page cannot read, in which case the
+     *     offer is withdrawn rather than stamping the part that parsed;
+     *   - a holiday list — the file's own days, offered as one more stamp
+     *     beside the published calendars.
+     */
+    setWeatherHolidays(days, startWeekday = null) {
+      const offered = typeof days === 'string' && days !== '';
+      for (const widget of daysWidgets.values()) widget.setStartWeekday(startWeekday);
+      for (const { fromFile, fileNote } of daysWidgets.values()) {
+        fromFile.hidden = !offered;
+        if (offered) {
+          fromFile.dataset.days = days;
+          const n = days.split(';').length;
+          fromFile.title = `Replace the list with the ${n} holiday${n === 1 ? '' : 's'} this weather file names.`;
+        }
+        const note = days === ''
+          ? 'This weather file names no holidays of its own.'
+          : days === null
+            ? 'This weather file names holidays this page cannot read, so it offers none.'
+            : '';
+        fileNote.hidden = note === '';
+        fileNote.textContent = note;
+      }
     },
 
     get solo() {

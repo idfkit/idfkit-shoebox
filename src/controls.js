@@ -284,6 +284,551 @@ export class Profile extends Control {
 }
 
 /**
+ * A list of days, drawn as a year rule with the entries listed under it.
+ *
+ * The value is a string, not an array, and that is a deliberate and load-bearing
+ * choice. Every other parameter on the desk is a scalar, and four separate
+ * mechanisms assume it: `commit`'s `params[key] !== value` guard, `encodeState`'s
+ * identity diff against a frozen default, `decodeState`'s one-value-per-key rule,
+ * and — the one that would have been found late and painfully — `revert`'s
+ * `Object.assign(params, DEFAULT_PARAMETERS)`. `Object.freeze` is shallow, so an
+ * array default would be *aliased* into live `params` by that assign, and the
+ * first edit would corrupt `DEFAULT_PARAMETERS` for the rest of the session. The
+ * permalink's `DEFAULTS_BY_VERSION.v1` is that same object, so the link format
+ * itself would have drifted, with no symptom until a shared link came back
+ * describing a different building.
+ *
+ * So the list is carried as text and parsed at every boundary that needs the
+ * days themselves. `parseHolidays` below is that boundary.
+ */
+export class Days extends Control {
+  constructor({ key, label, value, presets = [], max = 24, note = null, needs = null }) {
+    super({ key, label, value, note, needs });
+    this.kind = 'days';
+    this.presets = Object.freeze([...presets]);
+    // Most entries the list may hold. A cap exists because the list travels in a
+    // URL fragment, and an unbounded one would make a scheme link unshareable.
+    this.max = max;
+    Object.freeze(this);
+  }
+
+  /**
+   * Entries, not days — the honest reading with no calendar behind it.
+   *
+   * Days would be the better unit, and it is what the console prints the moment
+   * a weather file supplies a year. But it cannot be counted from the text
+   * alone: an nth weekday has no day of the year until the calendar is known,
+   * and overlapping spans have to be unioned before they can be totalled. So
+   * this counts what it can actually see, and names that unit so the change to
+   * days later reads as a different measurement rather than a jump in the same
+   * one.
+   */
+  format(v) {
+    const entries = parseHolidays(v).length;
+    if (entries === 0) return 'None';
+    return `${entries} holiday${entries === 1 ? '' : 's'}`;
+  }
+}
+
+/* ══ the holiday grammar ═════════════════════════════════════════════════ */
+
+const WEEKDAYS = Object.freeze(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
+const MONTH_NAMES = Object.freeze([
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]);
+const WEEKDAY_NAMES = Object.freeze([
+  'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
+]);
+// `MONTHS` and `DAYS_IN_MONTH` are the run period's, above, and are the same
+// twelve facts. February has 28 of them and no leap year is reachable, which is
+// why 29 February is a parse error below rather than a day quietly dropped.
+
+/** How many entries a list may carry, and how long a name may be. */
+const MAX_DAYS = 24;
+const MAX_NAME = 40;
+/**
+ * A name becomes an IDF object name and is echoed into `eplus.err` by a local
+ * EnergyPlus, so it stays ASCII. It also travels in a URL fragment, where every
+ * accented character costs six.
+ */
+const NAME = /^[A-Za-z0-9 '.&-]+$/;
+
+const FIXED = /^(\d{1,2})\/(\d{1,2})$/;
+/**
+ * One to four, never five.
+ *
+ * Every month has at least 28 days, so a first, second, third and fourth of any
+ * weekday exist in every year, as does a last. A *fifth* exists only in some
+ * years, and when it does not EnergyPlus does not warn and carry on — it stops:
+ *
+ *     ** Severe ** SetSpecialDayDates: Special Day Date, Nth Day of Month,
+ *                  not enough Nths, for SpecialDay=IMPOSSIBLE DAY
+ *     EnergyPlus Terminated--Fatal Error Detected.
+ *
+ * measured on `5th Monday in December` against a year beginning Sunday. A
+ * grammar that can express a desk which fatals the engine is not a grammar this
+ * page should offer, and nothing in any published calendar is a fifth weekday.
+ * So the range is closed at four and the whole grammar is total: every list
+ * that parses runs, under every calendar.
+ */
+const NTH = /^([1-4]) ([A-Za-z]{3}) in ([A-Za-z]{3})$/;
+const LAST = /^Last ([A-Za-z]{3}) in ([A-Za-z]{3})$/;
+
+/**
+ * One day the run period should treat as a holiday.
+ *
+ * `date` is the canonical token this module reads and writes; `startDate()` is
+ * the same date in EnergyPlus's own spelling, which is what goes into the IDF.
+ * The two are kept apart on purpose: the canonical token is short, because it
+ * travels in an address bar, and the engine's spelling is long, because the
+ * stock example files spell it out and there is nothing to gain from betting on
+ * the abbreviations the schema says it also accepts.
+ */
+export class Holiday {
+  constructor({ date, duration = 1, name }) {
+    this.date = date;
+    this.duration = duration;
+    this.name = name;
+    Object.freeze(this);
+  }
+
+  /** The date as `RunPeriodControl:SpecialDays` wants it. */
+  startDate() {
+    const fixed = this.date.match(FIXED);
+    if (fixed) return `${MONTH_NAMES[Number(fixed[1]) - 1]} ${Number(fixed[2])}`;
+    const nth = this.date.match(NTH);
+    if (nth) {
+      const ordinal = ['1st', '2nd', '3rd', '4th', '5th'][Number(nth[1]) - 1];
+      return `${ordinal} ${WEEKDAY_NAMES[WEEKDAYS.indexOf(nth[2])]} in ${MONTH_NAMES[MONTHS.indexOf(nth[3])]}`;
+    }
+    const last = this.date.match(LAST);
+    return `Last ${WEEKDAY_NAMES[WEEKDAYS.indexOf(last[1])]} in ${MONTH_NAMES[MONTHS.indexOf(last[2])]}`;
+  }
+}
+
+/**
+ * Read a holiday list, or throw naming what is wrong with it.
+ *
+ * The grammar is
+ *
+ *     list   := "" | record (";" record)*
+ *     record := date ["*" duration] ":" name
+ *     date   := M "/" D | nth " " Www " in " Mmm | "Last " Www " in " Mmm
+ *
+ * with the three date forms taken from the three the 26.1 `start_date` field
+ * accepts. Two shapes are deliberate. `*` carries the duration because it is one
+ * of the few characters `URLSearchParams` leaves unescaped, so a shutdown costs
+ * no extra length in a link. And weekdays and months are the three-letter forms
+ * only, though the schema also takes the full names: exactly one spelling per
+ * value is what makes `serializeHolidays(parseHolidays(s)) === s` an assertion
+ * rather than a hope, and two spellings of one calendar would key two identical
+ * solves through `shapeKey`.
+ *
+ * Every failure throws. Nothing is clamped, repaired or dropped — this list is
+ * the reader's own calendar, and a holiday that silently did not make it into
+ * the model would be invisible in the results it changed.
+ */
+export function parseHolidays(raw) {
+  if (typeof raw !== 'string') throw new Error('a holiday list is text');
+  if (raw === '') return Object.freeze([]);
+
+  const days = [];
+  const seen = new Set();
+  const dates = new Set();
+  for (const record of raw.split(';')) {
+    if (record.trim() === '') throw new Error('an empty entry in the holiday list (a stray ";")');
+
+    const cut = record.indexOf(':');
+    if (cut === -1) {
+      throw new Error(`"${record.trim()}" has no name — write it as "${record.trim()}: Christmas"`);
+    }
+    const name = record.slice(cut + 1).trim();
+    if (name === '') throw new Error(`"${record.slice(0, cut).trim()}" has no name after its colon`);
+    if (name.length > MAX_NAME) {
+      throw new Error(`"${name}" is ${name.length} characters, and a holiday name takes at most ${MAX_NAME}`);
+    }
+    if (!NAME.test(name)) {
+      throw new Error(`"${name}" — a holiday name takes letters, digits, spaces and ' . & - only`);
+    }
+    // Names become IDF object names, which must be unique. Two Christmases would
+    // be rejected by the engine long after the desk had accepted them.
+    const seenKey = name.toUpperCase();
+    if (seen.has(seenKey)) throw new Error(`two holidays are both called "${name}"`);
+    seen.add(seenKey);
+
+    const head = record.slice(0, cut).trim();
+    const star = head.indexOf('*');
+    const date = star === -1 ? head : head.slice(0, star).trim();
+    let duration = 1;
+    if (star !== -1) {
+      const tail = head.slice(star + 1).trim();
+      if (!/^\d+$/.test(tail)) throw new Error(`"${head}" — a duration is a whole number of days`);
+      duration = Number(tail);
+      if (duration < 1 || duration > 366) {
+        throw new Error(`"${head}" lasts ${duration} days, and a special day runs 1 to 366`);
+      }
+    }
+
+    const canonical = readDate(date);
+    // Two entries on one date is a mistake the engine will not report: the
+    // schema says plainly that there is "no error message on duplicate days or
+    // overlapping days", so the second would simply vanish into the first.
+    if (dates.has(canonical)) throw new Error(`two holidays both start on ${canonical}`);
+    dates.add(canonical);
+
+    days.push(new Holiday({ date: canonical, duration, name }));
+  }
+
+  if (days.length > MAX_DAYS) {
+    throw new Error(`${days.length} holidays listed, and the list holds at most ${MAX_DAYS}`);
+  }
+  return Object.freeze(days);
+}
+
+/** One date token, validated into its canonical spelling. */
+function readDate(raw) {
+  const fixed = raw.match(FIXED);
+  if (fixed) {
+    const month = Number(fixed[1]);
+    const day = Number(fixed[2]);
+    if (month < 1 || month > 12) throw new Error(`"${raw}" is not a date: months run 1 to 12`);
+    if (day < 1 || day > DAYS_IN_MONTH[month - 1]) {
+      const reason = month === 2 && day === 29
+        ? 'the run period carries no year, so its February has 28 days'
+        : `${MONTH_NAMES[month - 1]} has ${DAYS_IN_MONTH[month - 1]} days`;
+      throw new Error(`"${raw}" is not a date: ${reason}`);
+    }
+    return `${month}/${day}`;
+  }
+
+  const nth = raw.match(NTH);
+  if (nth) return `${nth[1]} ${weekday(nth[2], raw)} in ${month(nth[3], raw)}`;
+
+  const last = raw.match(LAST);
+  if (last) return `Last ${weekday(last[1], raw)} in ${month(last[2], raw)}`;
+
+  if (/^\d+ /.test(raw)) {
+    throw new Error(
+      `"${raw}" is not a date: the nth weekday runs 1 to 4, or "Last" — a fifth does not exist in every year, and EnergyPlus stops with a severe error in the years it does not`,
+    );
+  }
+  throw new Error(`"${raw}" is not a date: write 12/25, "4 Thu in Nov" or "Last Mon in May"`);
+}
+
+const cased = (word) => word[0].toUpperCase() + word.slice(1).toLowerCase();
+
+function weekday(word, raw) {
+  const found = WEEKDAYS.indexOf(cased(word));
+  if (found === -1) {
+    throw new Error(`"${raw}" — "${word}" is not a weekday: write ${WEEKDAYS.join(', ')}`);
+  }
+  return WEEKDAYS[found];
+}
+
+function month(word, raw) {
+  const found = MONTHS.indexOf(cased(word));
+  if (found === -1) {
+    throw new Error(`"${raw}" — "${word}" is not a month: write ${MONTHS.join(', ')}`);
+  }
+  return MONTHS[found];
+}
+
+/**
+ * Where a holiday actually falls, given the year the run will use.
+ *
+ * The run period's calendar is a real one: `day_of_week_for_start_day` is left
+ * empty, so EnergyPlus takes the weather file's own `DATA PERIODS` start day —
+ * Sunday, on every TMYx — and picks a real non-leap year to match, 2017 for a
+ * Sunday. A non-leap year is fully determined by the weekday its 1 January
+ * falls on, so that weekday is all this needs: no year is passed, because none
+ * is needed and naming one would invite the belief that the weather is that
+ * year's.
+ *
+ * Returns `{ month, day, weekday, doy, ends }`, 1-indexed month and day,
+ * `weekday` 0 for Sunday. `ends` is the last day the special day covers, which
+ * wraps past 31 December the way EnergyPlus wraps it.
+ */
+export function resolveHoliday(holiday, startWeekday) {
+  const doyOf = (month, day) => DAYS_IN_MONTH.slice(0, month - 1).reduce((n, d) => n + d, 0) + day;
+  const weekdayOf = (doy) => (startWeekday + doy - 1) % 7;
+
+  let month;
+  let day;
+  const fixed = holiday.date.match(FIXED);
+  if (fixed) {
+    [month, day] = [Number(fixed[1]), Number(fixed[2])];
+  } else {
+    const nth = holiday.date.match(NTH);
+    const last = holiday.date.match(LAST);
+    const want = WEEKDAYS.indexOf(nth ? nth[2] : last[1]);
+    month = MONTHS.indexOf(nth ? nth[3] : last[2]) + 1;
+    const firstWeekday = weekdayOf(doyOf(month, 1));
+    const first = 1 + ((want - firstWeekday + 7) % 7);
+    day = nth
+      ? first + 7 * (Number(nth[1]) - 1)
+      // The last one is the last occurrence at or before the month's end. Four
+      // always exist, so stepping back from `first + 28` cannot underflow.
+      : first + 7 * Math.floor((DAYS_IN_MONTH[month - 1] - first) / 7);
+  }
+
+  const doy = doyOf(month, day);
+  return {
+    month,
+    day,
+    doy,
+    weekday: weekdayOf(doy),
+    // A shutdown beginning 24 December runs into January, and EnergyPlus wraps
+    // it into the same simulated year rather than losing the tail. Measured:
+    // `12/24*9` flagged 24–31 December and 1 January as Holiday.
+    ends: ((doy + holiday.duration - 2) % 365) + 1,
+  };
+}
+
+/** Which month a day of the year falls in, 1-indexed. */
+function monthOfDoy(doy) {
+  let left = doy;
+  for (let m = 0; m < 12; m += 1) {
+    if (left <= DAYS_IN_MONTH[m]) return m + 1;
+    left -= DAYS_IN_MONTH[m];
+  }
+  return 12;
+}
+
+/**
+ * How many of a holiday's days the run actually simulates.
+ *
+ * Counted day by day rather than judged by the start date, because a special
+ * day is a *span*: a nine-day shutdown beginning 24 December reaches into
+ * January, and a run that keeps December but drops January simulates eight of
+ * its nine days. Measured — the engine flagged 24 to 31 December and stopped,
+ * with nothing in the error file to say two days had gone.
+ *
+ * That is the whole reason this counts days and not entries. EnergyPlus is
+ * silent about a special day it cannot place, whether it loses all of one or
+ * part of one, so the only honest reading is of what actually lands.
+ */
+export function coveredDays(holiday, startWeekday, mask) {
+  const { doy } = resolveHoliday(holiday, startWeekday);
+  let covered = 0;
+  for (let i = 0; i < holiday.duration; i += 1) {
+    // Wrapping at 365 the way the engine wraps it, back into the same year.
+    const day = ((doy - 1 + i) % 365) + 1;
+    if (mask[monthOfDoy(day) - 1] === '1') covered += 1;
+  }
+  return covered;
+}
+
+/**
+ * The whole list as days of the year — how many it names, and how many of those
+ * the run simulates.
+ *
+ * Sets, not sums, because holidays overlap and a day is a day. A nine-day
+ * shutdown from 24 December swallows Christmas and — wrapping — New Year, so
+ * eleven federal holidays plus that shutdown is eighteen days and not twenty.
+ * Summing the entries reported eleven days for a November-to-December run where
+ * the engine flagged ten, which is how this was found: the schema says outright
+ * that there is "no error message on duplicate days or overlapping days", so the
+ * engine simply marks each day once and says nothing about the arithmetic.
+ */
+export function runDays(holidays, startWeekday, mask) {
+  const listed = new Set();
+  const covered = new Set();
+  for (const holiday of holidays) {
+    const { doy } = resolveHoliday(holiday, startWeekday);
+    for (let i = 0; i < holiday.duration; i += 1) {
+      const day = ((doy - 1 + i) % 365) + 1;
+      listed.add(day);
+      if (mask[monthOfDoy(day) - 1] === '1') covered.add(day);
+    }
+  }
+  return { listed: listed.size, covered: covered.size };
+}
+
+/** `Sun` … `Sat`, for lettering a resolved day. The months are `MONTHS`. */
+export const WEEKDAY_LABELS = WEEKDAYS;
+
+/** The list as text, in the one spelling the parser reads back unchanged. */
+export function serializeHolidays(days) {
+  return days
+    .map((day) => `${day.date}${day.duration > 1 ? `*${day.duration}` : ''}: ${day.name}`)
+    .join(';');
+}
+
+/* ══ national calendars ══════════════════════════════════════════════════ */
+
+/**
+ * One day of a published calendar, written or not.
+ *
+ * A preset declares its *whole* national calendar, including the days it cannot
+ * express, each carrying the reason it cannot. That is what lets the offer say
+ * "CA 8/10" and name the two missing days before the reader presses it, rather
+ * than stamping ten days' worth of expectation and delivering eight. Deriving
+ * the counts from the days themselves also means the label cannot drift from the
+ * list the day somebody edits one.
+ */
+class PresetDay {
+  constructor({ name, date = null, missing = null }) {
+    if ((date === null) === (missing === null)) {
+      throw new Error(`${name} needs either a date or a reason it has none`);
+    }
+    this.name = name;
+    this.date = date;
+    this.missing = missing;
+    Object.freeze(this);
+  }
+}
+
+/** The two reasons a published holiday cannot be written as an IDF date. */
+const EASTER = 'set by Easter, which a date field with no year cannot carry';
+const VICTORIA = 'the Monday preceding 25 May, which is neither an nth weekday nor the last';
+
+/** A published calendar, offered as a starting point for the list. */
+class HolidayCalendar {
+  constructor({ code, label, days }) {
+    this.code = code;
+    this.label = label;
+    this.days = Object.freeze([...days]);
+    Object.freeze(this);
+  }
+
+  get written() {
+    return this.days.filter((d) => d.date !== null);
+  }
+
+  get unwritten() {
+    return this.days.filter((d) => d.missing !== null);
+  }
+
+  /** This calendar as a holiday list, ready to become the parameter. */
+  encode() {
+    return serializeHolidays(
+      this.written.map((d) => new Holiday({ date: d.date, name: d.name })),
+    );
+  }
+
+  /**
+   * What the offer says about itself, in full, before it is pressed.
+   *
+   * Grouped by reason rather than listed day by day, because four German
+   * holidays share one sentence about Easter and printing it four times reads
+   * as noise instead of as the one fact it is.
+   */
+  title() {
+    const head = `Replace the list with the ${this.written.length} ${this.label} holidays this page can write`;
+    if (this.unwritten.length === 0) return `${head}.`;
+    const reasons = new Map();
+    for (const d of this.unwritten) {
+      reasons.set(d.missing, [...(reasons.get(d.missing) ?? []), d.name]);
+    }
+    const short = [...reasons]
+      .map(([why, names]) => `${series(names)} ${names.length === 1 ? 'is' : 'are'} ${why}`)
+      .join('; ');
+    return `${head}. ${this.unwritten.length} cannot be: ${short}.`;
+  }
+
+  /** `US 11` when whole, `CA 8/10` when short. */
+  count() {
+    return this.unwritten.length === 0
+      ? String(this.written.length)
+      : `${this.written.length}/${this.days.length}`;
+  }
+}
+
+const day = (name, date) => new PresetDay({ name, date });
+const absent = (name, missing) => new PresetDay({ name, missing });
+
+/** `A`, `A and B`, `A, B and C`. */
+const series = (names) =>
+  names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+
+/**
+ * The five regions the tariff data covers, so the calendar and the bill agree
+ * about which countries this page claims to know anything about.
+ */
+export const HOLIDAY_CALENDARS = Object.freeze([
+  new HolidayCalendar({
+    code: 'US',
+    label: 'United States federal',
+    days: [
+      day('New Year', '1/1'),
+      day('Martin Luther King Day', '3 Mon in Jan'),
+      day('Presidents Day', '3 Mon in Feb'),
+      day('Memorial Day', 'Last Mon in May'),
+      day('Juneteenth', '6/19'),
+      day('Independence Day', '7/4'),
+      day('Labor Day', '1 Mon in Sep'),
+      day('Columbus Day', '2 Mon in Oct'),
+      day('Veterans Day', '11/11'),
+      day('Thanksgiving', '4 Thu in Nov'),
+      day('Christmas', '12/25'),
+    ],
+  }),
+  new HolidayCalendar({
+    code: 'CA',
+    label: 'Canadian federal',
+    days: [
+      day('New Year', '1/1'),
+      absent('Good Friday', EASTER),
+      absent('Victoria Day', VICTORIA),
+      day('Canada Day', '7/1'),
+      day('Labour Day', '1 Mon in Sep'),
+      day('Truth and Reconciliation', '9/30'),
+      day('Thanksgiving', '2 Mon in Oct'),
+      day('Remembrance Day', '11/11'),
+      day('Christmas', '12/25'),
+      day('Boxing Day', '12/26'),
+    ],
+  }),
+  new HolidayCalendar({
+    code: 'UK',
+    label: 'England and Wales bank',
+    days: [
+      day('New Year', '1/1'),
+      absent('Good Friday', EASTER),
+      absent('Easter Monday', EASTER),
+      day('Early May', '1 Mon in May'),
+      day('Spring Bank Holiday', 'Last Mon in May'),
+      day('Summer Bank Holiday', 'Last Mon in Aug'),
+      day('Christmas', '12/25'),
+      day('Boxing Day', '12/26'),
+    ],
+  }),
+  new HolidayCalendar({
+    code: 'FR',
+    label: 'French public',
+    days: [
+      day('Jour de l An', '1/1'),
+      absent('Lundi de Paques', EASTER),
+      day('Fete du Travail', '5/1'),
+      day('Victoire 1945', '5/8'),
+      absent('Ascension', EASTER),
+      absent('Lundi de Pentecote', EASTER),
+      day('Fete Nationale', '7/14'),
+      day('Assomption', '8/15'),
+      day('Toussaint', '11/1'),
+      day('Armistice', '11/11'),
+      day('Noel', '12/25'),
+    ],
+  }),
+  new HolidayCalendar({
+    code: 'DE',
+    label: 'German public',
+    days: [
+      day('Neujahr', '1/1'),
+      absent('Karfreitag', EASTER),
+      absent('Ostermontag', EASTER),
+      day('Tag der Arbeit', '5/1'),
+      absent('Christi Himmelfahrt', EASTER),
+      absent('Pfingstmontag', EASTER),
+      day('Tag der Deutschen Einheit', '10/3'),
+      day('Erster Weihnachtstag', '12/25'),
+      day('Zweiter Weihnachtstag', '12/26'),
+    ],
+  }),
+]);
+
+/**
  * Why a control cannot hold a value handed to it, or null when it can.
  *
  * A gesture can never produce an inadmissible value — the range input and the
@@ -300,6 +845,17 @@ export class Profile extends Control {
 export function refuses(control, value) {
   if (control.kind === 'selector') {
     return control.options.some((o) => o.value === value) ? null : 'is not one of its options';
+  }
+  // Non-numeric kinds are named here, above the numeric gate, for the reason
+  // CLAUDE.md gives for the same ordering in `readValue`: a branch added below
+  // it is unreachable, and every value of that kind is refused as "not a
+  // number" — a true sentence about the wrong thing. A month mask and a day
+  // list are both strings, both belong to the Run channel, and Run is
+  // `UNTOUCHABLE`, so no preset can reach them; they throw rather than
+  // validate, because the only way to arrive here is a programming error and
+  // an explicit one is worth more than a plausible verdict.
+  if (control.kind === 'calendar' || control.kind === 'days') {
+    throw new Error(`a "${control.kind}" control is not set by value here`);
   }
   if (typeof value !== 'number' || !Number.isFinite(value)) return 'is not a number';
   let min;
@@ -325,7 +881,7 @@ export function refuses(control, value) {
       integer = true;
       break;
     default:
-      // A sixth control kind must be taught its rules here explicitly, not fall
+      // A new control kind must be taught its rules here explicitly, not fall
       // into whichever range happens to be last.
       throw new Error(`no value rules are written for a "${control.kind}" control`);
   }
@@ -1010,6 +1566,21 @@ export const CHANNELS = Object.freeze([
           { value: 'Occupied', label: 'Open' },
         ],
       }),
+      // Lives here rather than on Run because Run says *when* the holidays are
+      // and this says what the building does on one, which is a question about
+      // occupancy. At "As weekend" no `For: Holidays` row is written at all and
+      // `AllOtherDays` catches a holiday exactly as it always has — which is
+      // also the admission that until this control existed, a holiday and a
+      // Sunday were the same day to every schedule on the desk.
+      new Selector({
+        key: 'holidayUse', label: 'Holidays', value: 'AsWeekend',
+        options: [
+          { value: 'AsWeekend', label: 'As weekend' },
+          { value: 'Closed', label: 'Closed' },
+          { value: 'Open', label: 'Open' },
+        ],
+        needs: (p) => p.holidays !== 'No',
+      }),
     ],
   }),
 
@@ -1308,12 +1879,37 @@ export const CHANNELS = Object.freeze([
           { value: 'No', label: 'Skip' },
         ],
       }),
+      // The two sources are orthogonal in EnergyPlus and the strip has to say so.
+      // `use_weather_file_holidays_and_special_days = No` turns off the file's
+      // days but leaves any `RunPeriodControl:SpecialDays` standing, and where
+      // both are on the file's specification takes precedence. So "From file"
+      // still writes the list — it just loses to the file where they collide —
+      // and "None" parks a list rather than destroying it, which is what makes
+      // the preset buttons safe to press.
       new Selector({
         key: 'holidays', label: 'Holidays', value: 'Yes',
         options: [
-          { value: 'Yes', label: 'Observe' },
-          { value: 'No', label: 'Ignore' },
+          { value: 'Yes', label: 'From file' },
+          { value: 'Listed', label: 'Listed' },
+          { value: 'No', label: 'None' },
         ],
+      }),
+      new Days({
+        key: 'holidayDays', label: 'Holidays observed', value: '',
+        presets: HOLIDAY_CALENDARS,
+        needs: (p) => p.holidays !== 'No',
+        note:
+          'One RunPeriodControl:SpecialDays each. Only bites on a weather-file run period — the design days carry no calendar.',
+      }),
+      new Selector({
+        key: 'holidayRule', label: 'Weekend holiday rule', value: 'No',
+        options: [
+          { value: 'No', label: 'Keep' },
+          { value: 'Yes', label: 'Observe' },
+        ],
+        needs: (p) => p.holidays !== 'No' && p.holidayUse !== 'AsWeekend',
+        note:
+          'Moves a holiday that lands on a weekend onto the adjacent weekday. The run follows the weather file’s own calendar, so the weekend it moves off is a real one.',
       }),
       new Selector({
         key: 'dst', label: 'Daylight saving', value: 'Yes',

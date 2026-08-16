@@ -131,6 +131,50 @@ Exclusive states on one segmented rule: `1px --rule` border, `var(--r)` radius,
 `--ink` with `--vellum` text. Native `select` cannot be styled and hides state;
 a console has to be readable without opening anything.
 
+### A list of dates, over a year rule
+
+A control holding a set of days is drawn as a 12-month rule with the entries
+listed beneath it, an entry field, and a row of ghost-ink stamps.
+
+- The rule is `240 × 26`, a `--rule-firm` baseline with a `--rule` hairline at
+  each month boundary, and a `1px` `--redline` tick where each day falls.
+- **A rule that cannot be resolved is drawn differently from one that can.**
+  Once a weather file supplies the calendar, every entry — a fixed date and an
+  nth weekday alike — has a real place and is ticked there. Before one is
+  attached there is no calendar at all, so an nth weekday becomes a hollow
+  `--ink-ghost` circle at its month's centre instead of a tick at a guessed day.
+  Two marks, because they are two different kinds of knowledge.
+- Rows are `auto 1fr auto auto`: the date in `--mono` tabular figures, the name
+  in `--sans` and ellipsised at `min-width: 0`, the resolved day in ghost `--mono`
+  — read off the run, not set — and a `×`. Editing is remove-and-re-add, so a row
+  is a reading, not a form.
+- **What the engine will drop is struck through, and counted.** An entry in a
+  month no run period covers is ignored by EnergyPlus in silence; the resolved
+  date wears a line through it and a `--redline` note says how many and why.
+  Silence about a dropped input is the failure the sheet exists to prevent,
+  whoever is being silent.
+- **Count in the unit that reaches the engine, and count it as a set.** The
+  reading is days, not rows, because one row can be a nine-day shutdown — and
+  overlapping rows are unioned, because the engine marks a day once however many
+  entries claim it. A row only partly inside says so on its own line
+  (`Sun 24 Dec · 8 of 9`) in `--redline` rather than struck through, since a
+  strikethrough would be as wrong as silence. Where the unit cannot honestly be
+  days — before any calendar exists — the reading names the unit it *can* count
+  ("12 holidays"), so the later switch reads as a different measurement rather
+  than a jump in the same one.
+- The entry field is `--inset` ground with a `1px --rule` border, like
+  `.site-field`, and speaks **the same grammar the address bar speaks** — what
+  you type is what a shared link carries, and a refusal is word for word the one
+  a bad link gets.
+- A refused entry is stated in place, in the dashed `--rule-focus` box the
+  blocked-channel note uses, so a refusal looks like every other refusal on the
+  page. It is cleared by the next keystroke, never by a redraw: redraws fire
+  from a dozen paths and would erase the message a frame after it appeared.
+- Stamps that replace the list carry their whole truth in a `title`,
+  permanently, including what they cannot supply and why. A list that is four
+  days short stays four days short, so a notice shown once after the click would
+  be a lie by expiry.
+
 ### The square marker
 
 An `8px` to `9px` square with a `1px` border and `1px` radius means "a step that
