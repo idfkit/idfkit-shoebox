@@ -41,6 +41,7 @@ import {
   DEFAULT_PARAMETERS,
   DEFAULT_BYPASS,
   controlFor,
+  isMonthMask,
   refuses,
 } from './controls.js';
 
@@ -60,18 +61,22 @@ export const isSchemeFragment = (raw) => /^v\d+(&|$)/.test(raw);
  * What an omitted key meant, per version. Today one entry; a changed default
  * adds the outgoing table here under the old version before the new one ships.
  *
- * The Grounds channel moved the stock example's grounds lighting out of the
- * baseline without a bump: that would ordinarily be a v2 with a migration
- * engaging the strip on old links, but it shipped before any link existed in
- * the wild, so v1 simply means the desk as it stands.
+ * Two changes have taken a free pass rather than a bump, on the same grounds
+ * both times: nothing was in the wild to carry forward. The Grounds channel
+ * moved the stock example's grounds lighting out of the baseline, and the Run
+ * strip's calendar replaced the run period's `beginMonth` / `endMonth` pair
+ * with a `months` mask — a rename, which ordinarily costs a version and a
+ * migration step. Neither had a link to break, so v1 simply means the desk as
+ * it stands. The next such change will not be so lucky, which is what the
+ * ledger below is for.
  */
 const DEFAULTS_BY_VERSION = Object.freeze({ v1: DEFAULT_PARAMETERS });
 
 /**
  * One step per version bump, `(pairs) => ({ to, pairs })`, rewriting old
  * vocabulary into the next version's under the version it lands on. Empty
- * until a key actually churns; the structure exists
- * from day one because retrofitting it after unversioned links are in the wild
+ * until a key actually churns with links in the wild; the structure exists
+ * from day one because retrofitting it after unversioned links are out there
  * is the expensive path — there would be no way left to tell which defaults an
  * omission meant.
  */
@@ -191,6 +196,15 @@ function readValue(key, raw) {
     if (!option) throw new Error(`"${raw}" is not an option of ${key}`);
     return option.value;
   }
+  if (control.kind === 'calendar') {
+    // Twelve characters and at least one month in them, asked of the same
+    // predicate the control declaration and the console's gesture ask, so a
+    // link cannot mint a run period the desk itself refuses to make.
+    if (!isMonthMask(raw)) {
+      throw new Error(`"${raw}" is not a year of twelve months with at least one in the run`);
+    }
+    return raw;
+  }
   // The text is checked before the number, because `Number`'s grammar is wider
   // than a link's: `Number('')` is 0 and `Number('0x18')` is 24, and either
   // would load a value the sharer never set — a truncated `occFrom=` became a
@@ -200,7 +214,9 @@ function readValue(key, raw) {
   // The admissible range is the control's own and is asked of the control. It
   // used to be restated here, which was tolerable while a link was the only
   // thing that handed a control a bare value; a standard's specification is a
-  // second, and two copies of "what this control can hold" would drift.
+  // second, and two copies of "what this control can hold" would drift. The
+  // calendar is answered above rather than by `refuses`, because a month mask
+  // is not a number and never reaches this line.
   const reason = refuses(control, value);
   if (reason) throw new Error(`${key} is ${raw}, and it ${reason}`);
   return value;

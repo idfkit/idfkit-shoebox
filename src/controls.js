@@ -155,6 +155,117 @@ export class Facade extends Control {
   }
 }
 
+/* ── the calendar ──────────────────────────────────────────────────────── */
+
+export const MONTHS = Object.freeze([
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+]);
+
+/** Days per month, on the non-leap year an EnergyPlus weather file carries. */
+export const DAYS_IN_MONTH = Object.freeze([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]);
+
+/**
+ * A year of months as twelve characters, January first: `'111111111111'` is the
+ * whole year, `'110000000011'` is November through February.
+ *
+ * A string rather than an array of booleans because a parameter has to behave
+ * like a value everywhere the desk treats it as one: the permalink writes
+ * `String(params[key])` and compares against the default with `!==`, and two
+ * arrays holding the same twelve booleans are never `!==`-equal, so every link
+ * would carry a mask nobody had set. Twelve characters also read in an address
+ * bar, which is the point of the delta encoding.
+ *
+ * The empty mask is not a mask. A run with no months in it is a weather-file
+ * run period EnergyPlus would refuse to start, so "at least one month" is part
+ * of what a mask *is* rather than a rule bolted on at one of the three places
+ * that set one — the control declaration, the console's gesture and the link
+ * decoder all ask this question here.
+ */
+export const isMonthMask = (v) => typeof v === 'string' && /^[01]{12}$/.test(v) && v.includes('1');
+
+/** The year entire, which is what the desk starts at and what a benchmark is. */
+export const FULL_YEAR = '111111111111';
+export const isWholeYear = (mask) => mask === FULL_YEAR;
+
+/**
+ * The unbroken groups of months in a mask, as inclusive 1-based month numbers.
+ *
+ * This is the whole reason the desk can offer months rather than a span: months
+ * that do not touch cannot be one `RunPeriod`, and EnergyPlus is perfectly
+ * happy to be handed several. Each group becomes one, in calendar order.
+ *
+ * December and January are deliberately *not* joined when both are set and the
+ * months between them are not. A `RunPeriod` whose end date precedes its begin
+ * date does wrap the turn of the year in EnergyPlus, but it would run those two
+ * months as one environment out of calendar order, and every reading on this
+ * sheet — the chart's month ticks, the schedule's columns, the bill's
+ * environments — is lettered from the timestamps that come back. Two groups in
+ * January-to-December order is the arrangement that stays legible.
+ */
+export function monthSpans(mask) {
+  if (!isMonthMask(mask)) throw new Error(`"${mask}" is not a twelve-month mask`);
+  const spans = [];
+  for (let m = 0; m < 12; m += 1) {
+    if (mask[m] !== '1') continue;
+    if (spans.length && spans.at(-1).to === m) spans.at(-1).to = m + 1;
+    else spans.push({ from: m + 1, to: m + 1 });
+  }
+  return spans;
+}
+
+/** The hours a mask covers, which is what the Run strip's meter counts. */
+export function monthHours(mask) {
+  let days = 0;
+  for (let m = 0; m < 12; m += 1) if (mask[m] === '1') days += DAYS_IN_MONTH[m];
+  return days * 24;
+}
+
+const spanLabel = ({ from, to }) =>
+  from === to ? MONTHS[from - 1] : `${MONTHS[from - 1]}–${MONTHS[to - 1]}`;
+
+/** `a`, `a and b`, `a, b and c` — a list a sentence can end on. */
+const sentenceList = (items) =>
+  items.length < 3
+    ? items.join(' and ')
+    : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
+
+/**
+ * Which months are simulated, drawn as a twelve-cell year you set month by
+ * month.
+ *
+ * The run period used to be two numbers on two calibration faces, which could
+ * only ever describe one unbroken span and made "January and July" — the
+ * two-season comparison anyone actually wants from a shoebox — impossible to
+ * ask for. A year of cells can be worked with one gesture, states which months
+ * are in the run without arithmetic, and can say plainly how many run periods
+ * the engine is being handed, which is the part of this that is an EnergyPlus
+ * fact rather than a preference.
+ */
+export class Calendar extends Control {
+  constructor({ key, label, value, note = null, needs = null }) {
+    super({ key, label, value, note, needs });
+    this.kind = 'calendar';
+    if (!isMonthMask(value)) throw new Error(`${key} starts at "${value}", which is not a mask`);
+    Object.freeze(this);
+  }
+
+  format(v) {
+    if (isWholeYear(v)) return 'All year';
+    const spans = monthSpans(v);
+    if (spans.length === 1) return spanLabel(spans[0]);
+    const months = [...v].filter((c) => c === '1').length;
+    return `${months} months · ${spans.length} periods`;
+  }
+
+  /** What the engine is actually being handed, in its own vocabulary. */
+  periods(v) {
+    const spans = monthSpans(v);
+    const count = ['One', 'Two', 'Three', 'Four', 'Five', 'Six'][spans.length - 1];
+    const what = isWholeYear(v) ? 'the whole year' : sentenceList(spans.map(spanLabel));
+    return `${count} run period${spans.length > 1 ? 's' : ''}: ${what}.`;
+  }
+}
+
 /**
  * The occupied span of a day, drawn as a 24-hour band you sweep.
  *
@@ -1183,11 +1294,13 @@ export const CHANNELS = Object.freeze([
     bypassable: false,
     meter: new Meter({ label: 'Hours to solve', terms: [], derived: true }),
     controls: [
-      new Scale({
-        key: 'beginMonth', label: 'Run from', value: 1, min: 1, max: 12, step: 1, digits: 0,
-        note: 'Only bites when a weather file is attached.',
+      new Calendar({
+        key: 'months', label: 'Run months', value: FULL_YEAR,
+        note:
+          'Only reaches the model with a weather file attached; without one the run is the two ' +
+          'design days. Months need not touch — each unbroken group is written as its own run ' +
+          'period, so a January and a July can be solved without the spring between them.',
       }),
-      new Scale({ key: 'endMonth', label: 'Run to', value: 12, min: 1, max: 12, step: 1, digits: 0 }),
       new Selector({
         key: 'sizingPeriods', label: 'Design days', value: 'Yes',
         options: [

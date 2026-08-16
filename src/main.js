@@ -21,6 +21,8 @@ import {
   DEFAULT_PARAMETERS,
   SHEET_KEYS,
   controlFor,
+  isWholeYear,
+  monthHours,
 } from './controls.js';
 import { mountConsole } from './console.js';
 import { mountTour } from './tour.js';
@@ -802,12 +804,18 @@ const stats = (v) => {
  * Design days become one labelled band each; a year long enough to crowd them
  * gets month ticks instead.
  *
- * An annual run is both at once — two design days ahead of 8,760 hours — and
- * each environment is bucketed on its own, because running the month walk
- * across the whole axis would print the design days as two more months and set
- * their names against the year's January. Twenty-four hours out of 8,808 is far
- * too narrow a band to letter, so on a dense axis they keep their rule and give
- * up their label.
+ * An annual run is both at once — two design days ahead of a year — and each
+ * environment is bucketed on its own, because running the month walk across the
+ * whole axis would print the design days as two more months and set their names
+ * against the year's January.
+ *
+ * Whether a band is lettered is decided by how wide it lands, not by what kind
+ * of environment it came from. Twenty-four hours out of 8,808 is far too narrow
+ * a band to letter, so the design days keep their rule and give up their label;
+ * a run period of one month is half of a two-month axis and takes its name. A
+ * count-based rule got this wrong the moment a run period could be a single
+ * month: a desk set to January and July drew four bands and lettered none of
+ * them.
  */
 function axisSegments(points, runs) {
   if (runs.length > 1 && points.length <= 400) return runs;
@@ -820,10 +828,12 @@ function axisSegments(points, runs) {
     }
     return found;
   };
-  return runs.flatMap((run) => {
-    const found = months(run);
-    return found.length > 1 ? found : [{ ...run, label: runs.length > 1 ? '' : run.label }];
-  });
+  // Six per cent of the axis: below it a label sits over a band narrower than
+  // the label itself and reads as belonging to its neighbour.
+  const wide = (seg) => (seg.end - seg.start + 1) / points.length > 0.06;
+  return runs.flatMap((run) =>
+    months(run).map((seg) => (wide(seg) ? seg : { ...seg, label: '' })),
+  );
 }
 
 function metricsFor(zone, out, run, hasOutdoor) {
@@ -1029,6 +1039,7 @@ function billFrom(run) {
     hours: run.hours,
     engaged: new Set([...(modelState ?? [])].filter(([, s]) => s.engaged).map(([id]) => id)),
     annual: run.annual,
+    months: run.months,
   });
 }
 
@@ -1075,9 +1086,18 @@ const cell = (row, text, className, label = null) => {
  * match for the plainer reason that subtracting euros from dollars is not
  * arithmetic. Same refusal the results schedule makes when its baseline
  * describes another set of environments.
+ *
+ * The period has to match for the same reason the schedule's does. A weather
+ * file stopped meaning a year the day the Run strip's calendar could leave
+ * months out, so a scheme pinned on twelve months and then read against a
+ * January-to-March run would head every row "Δ against …" and report a
+ * three-quarters saving that is nothing but a shorter run. Metered hours
+ * rather than months, because February and March are both one month and
+ * seventy-two hours apart.
  */
 function comparable(a, b) {
   if (!a || !b || a.currency !== b.currency) return false;
+  if (a.annual !== b.annual || a.hours !== b.hours) return false;
   const uses = (bill) => bill.lines.map((l) => l.use.id).join();
   return uses(a) === uses(b);
 }
@@ -1116,9 +1136,14 @@ function renderBillHead(againstLabel) {
     : tariff.source.id === 'assumed'
       ? ' Priced at the rates assumed on the Tariff strip.'
       : ` Priced at the ${tariff.source.kind.toLowerCase()} published for ${placeName(site)}, never a residential one, and factored at its grid carbon intensity.`;
-  $('bill-lede').textContent = bill.annual
+  // Three periods, not two. A weather file no longer means a year: months can
+  // be taken out of the run, and a bill of ten of them has to say so, because
+  // the reader's next move is to compare the total with a year's.
+  $('bill-lede').textContent = bill.wholeYear
     ? `Metered across the ${group(bill.hours)}-hour run.${priced}`
-    : `These are the ${group(bill.hours)} hours of the sizing days — two conditions chosen for being extreme. They are a real bill for a real two days, and they are deliberately not multiplied up into a year; attach a weather file for one of those.${priced}`;
+    : bill.annual
+      ? `Metered across the ${group(bill.hours)} hours of the run — ${bill.months} of the year's twelve months, so this is a bill for those months and not for a year. Put the missing months back on the Run strip for one of those.${priced}`
+      : `These are the ${group(bill.hours)} hours of the sizing days — two conditions chosen for being extreme. They are a real bill for a real two days, and they are deliberately not multiplied up into a year; attach a weather file for one of those.${priced}`;
 }
 
 /**
@@ -1327,11 +1352,11 @@ function renderBillTable(against) {
       base: against ? BILL_COLUMNS.map((c) => against.total(c.field, section.id) ?? NaN) : null,
     });
 
-    // Per square metre only on a year. The figure exists to be held against a
-    // published benchmark, every one of which is annual, and 0.3 kgCO₂e/m²
-    // over two design days is a number whose only possible use is to be
-    // mistaken for one.
-    if (section.id === 'building' && bill.annual) {
+    // Per square metre only on a whole year. The figure exists to be held
+    // against a published benchmark, every one of which is annual, and 0.3
+    // kgCO₂e/m² over two design days — or 14 kWh/m² over a winter taken alone
+    // — is a number whose only possible use is to be mistaken for one.
+    if (section.id === 'building' && bill.wholeYear) {
       line(null, BILL_COLUMNS.map((c) => bill.intensity(c.field) ?? NaN), {
         className: 'sum',
         head: 'Per m² of floor, per year',
@@ -1882,22 +1907,15 @@ function engagedReadings() {
  */
 let pinnedHour = null;
 
-const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-
 /**
  * The hours the next run will solve, read off the desk — the sizing days when
- * they are kept, plus the run period's own months when a year is attached.
+ * they are kept, plus every month left in the run when a year is attached.
  * One computation, because the Run strip's meter, the title block and the
  * attach sentence all quote it, and three hand-kept copies of "8,760" would
  * go quietly wrong the first time a run period covered less than the year.
  */
 function runHours() {
-  const [a, b] =
-    params.beginMonth <= params.endMonth
-      ? [params.beginMonth, params.endMonth]
-      : [params.endMonth, params.beginMonth];
-  const year = DAYS_IN_MONTH.slice(a - 1, b).reduce((total, d) => total + d, 0) * 24;
-  return (params.sizingPeriods === 'Yes' ? 48 : 0) + (annual() ? year : 0);
+  return (params.sizingPeriods === 'Yes' ? 48 : 0) + (annual() ? monthHours(params.months) : 0);
 }
 
 /**
@@ -1909,6 +1927,12 @@ function runHours() {
  */
 function syncRunSub() {
   if (!annual()) return;
+  // "Annual" is a claim about the run, not about the weather file. The
+  // calendar can take months out of it, and the attach that first lettered
+  // this field happens once while the Run strip keeps moving — so the run type
+  // is re-read off the mask here, alongside the hours it already quotes,
+  // rather than left standing as whatever the attach said.
+  $('t-run').textContent = isWholeYear(params.months) ? 'Annual' : 'Run period';
   $('t-run-sub').textContent = `${
     params.sizingPeriods === 'Yes' ? 'Weather file and sizing days' : 'Weather file'
   }, ${runHours().toLocaleString('en-US')} hours`;
@@ -2675,7 +2699,7 @@ async function choose(row, pick, sizing = 'No') {
   // With a real year attached the sizing days stop earning their place. They
   // are 48 hours of the most extreme weather in the file, run ahead of 8,760
   // hours of the actual one, and every reading downstream then has to be told
-  // which of the three environments it means -- the plate labels them, the
+  // which environment it means -- the plate labels them, the
   // meters had to be filtered to exclude them, and the bill would otherwise
   // carry them. Skipped by default once there is a year to run, and still
   // switchable on the Run strip for anyone sizing equipment. A permalink that
@@ -2698,7 +2722,9 @@ async function choose(row, pick, sizing = 'No') {
   }
 
   const hours = runHours().toLocaleString('en-US');
-  set('t-run', 'Annual');
+  // The run type goes on with the hours, out of `syncRunSub`, which reads both
+  // off the calendar: an attach onto a desk with months already taken out is
+  // not an annual run and must not be lettered as one.
   syncRunSub();
   statusEl.className = 'status';
   statusEl.textContent =
@@ -3820,6 +3846,13 @@ async function solve() {
   const capture = {
     epw: epwText ?? null,
     annual: Boolean(epwText),
+    // Which months the weather run covers, off the snapshot that is being
+    // solved. The manifest states the run in one line, and "Annual" over 4,344
+    // hours is the drift the whole capture-before-the-await exists to prevent.
+    // Named for the mask it holds, not for the months, because `lastRun.months`
+    // beside it is a count — the bill divides by it and the manifest spells it
+    // out, and one name over two shapes is a trap for whoever edits next.
+    monthMask: epwText ? snapshot.months : null,
     weatherStem:
       epwText && station?.url ? station.url.split('/').pop().replace(/\.zip$/i, '') : null,
     location: $('t-location').textContent,
@@ -3914,7 +3947,17 @@ async function solve() {
 
   plot = { zone, out, segments: axisSegments(points, runs) };
 
-  const columns = runs.map((r) => ({ label: r.label, metrics: metricsFor(zone, out, r, hasOutdoor) }));
+  // `noun` rides along beside the column's label because the finding says the
+  // environment in a sentence and the label heads a column: "the winter design
+  // day's swing" against a column headed `Winter design day · 21 Dec`. It was
+  // cut out of the label with a string split until a run period could be
+  // called `Run period · Jan–Mar`, which lowercased into a sentence as
+  // "the jan–mar's".
+  const columns = runs.map((r) => ({
+    label: r.label,
+    noun: r.noun,
+    metrics: metricsFor(zone, out, r, hasOutdoor),
+  }));
   renderSchedule(columns, baseline?.columns);
   solvedColumns = columns;
   solvedParams = snapshot;
@@ -3947,11 +3990,19 @@ async function solve() {
   // without one there are just the sizing days, and those are billed as
   // themselves rather than passed off as a year.
   const billed = runs.some((r) => r.kind === null) ? runs.filter((r) => r.kind === null) : runs;
+  const weather = billed.some((r) => r.kind === null);
   lastRun = {
     eso,
     environments: new Set(billed.map((r) => r.key)),
     hours: billed.reduce((total, r) => total + (r.end - r.start + 1), 0),
-    annual: billed.some((r) => r.kind === null),
+    annual: weather,
+    // How much of the year the meters actually cover, counted off the run
+    // rather than off the Run strip, which may have moved since. Months can be
+    // taken out of the run, and a bill that divided ten of them by the floor
+    // area and headed the row "per year" would be handing an architect a
+    // number whose only use is to be held against an annual benchmark it
+    // cannot be compared with.
+    months: weather ? billed.reduce((total, r) => total + r.months, 0) : null,
     // Everything the download bundle needs, captured here rather than read back
     // off live state at click time: the inputs the engine ran and the report it
     // wrote, alongside the run facts the manifest states. `html` is the genuine
@@ -4009,7 +4060,7 @@ async function solve() {
   if (Number.isFinite(m.damping)) {
     finding.append(
       'With no heating or cooling anywhere in this model, the envelope alone takes the ',
-      lead.label.split(' · ')[0].toLowerCase(),
+      lead.noun,
       "'s ",
       q(f1(m.o.swing)),
       ' °C outdoor swing down to ',
@@ -4289,6 +4340,10 @@ const partialStudy = (job) => ({
   label: shapeLabel(job.snapshot),
   restShape: job.restShape,
   annual: job.annual,
+  // Whether the sweep's runs were a whole year of weather or a few months of
+  // one, which is what the card's own words turn on: the extremes of a run
+  // period that stops in May are not "the annual peak".
+  wholeYear: job.annual && isWholeYear(job.snapshot.months),
   metric: job.metric,
   // Samples still in flight are simply absent, so the silhouette spans them
   // and sharpens as they land; a sample that failed stays in the curve with
@@ -4354,7 +4409,11 @@ function onStudyUpdate(job, event) {
   }
   const key = job.key;
   const said = controlFor(key).control.label.toLowerCase();
-  const kind = job.annual ? 'annual' : 'design-day';
+  const kind = !job.annual
+    ? 'design-day'
+    : isWholeYear(job.snapshot.months)
+      ? 'annual'
+      : 'run-period';
 
   if (event === 'point') {
     desk.setStudy(key, partialStudy(job), { stale: false });
@@ -4365,6 +4424,7 @@ function onStudyUpdate(job, event) {
       label: shapeLabel(job.snapshot),
       restShape: job.restShape,
       annual: job.annual,
+      wholeYear: job.annual && isWholeYear(job.snapshot.months),
       metric: job.metric,
       curve: job.curve,
       // A coarse first pass is a real study, drawn honestly at eleven points;
