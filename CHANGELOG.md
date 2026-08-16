@@ -75,6 +75,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A run that fails can be downloaded.** The bundle used to ride on the
+  readings, so the download went dark at exactly the moment it became worth
+  having: a fatal leaves no plate, no schedule and no bill, and until now it
+  left nothing to carry off the page either — the one run nobody could debug
+  here was the one run nobody could debug anywhere else. It now follows the
+  run rather than the readings, and all three ways a solve can end without
+  results — an engine that never accepted the model, a fatal, a run that came
+  back clean but wrote no zone temperature — bundle exactly as a good one
+  does.
+
+  A failed bundle is not dressed up as a successful one. The button reads
+  **Download failed run**, the file arrives as `…-failed.zip`, the manifest
+  says so on its first line, quotes the sentence the page reported under *Why
+  it stopped*, and leaves every figure the run never reached — the hours, the
+  exit code, the error counts — as an em dash rather than a zero. It also
+  points at `results/console.log` first, which is where the answer usually is:
+  the engine echoes the whole of `eplusout.err` into its console, so the
+  bundle carries the severes naming the object and the field, where the page
+  itself could only ever show a count of them.
+
 - **The run now follows the weather file's calendar.** `RunPeriod`'s day of week
   for the start day had been pinned to Tuesday since the model was written,
   which overrode what every weather file says about itself — TMYx declares

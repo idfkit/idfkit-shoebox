@@ -2254,7 +2254,10 @@
           <!-- The two reproduction paths, together: the bundle re-runs this
                run in a local EnergyPlus, the link re-solves this scheme here.
                Only the first waits for a run — a scheme exists from the first
-               frame, results do not. -->
+               frame, a run does not. It waits for one to have been
+               *attempted*, though, not to have worked: a failed run bundles
+               too, and says so on the button. The label below is only the
+               state before anything has run; `syncDownload` owns it after. -->
           <div class="ledger-take">
             <button type="button" class="link" id="download" disabled>
               Download run bundle
