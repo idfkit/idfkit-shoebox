@@ -1052,6 +1052,24 @@ let chaseGhost = null;
  */
 let lastRun = null; // { eso, environments, hours, annual }
 
+/**
+ * The last run the engine was handed, held for the download.
+ *
+ * Kept apart from `lastRun` above, which is the readings — because the two
+ * stop being true at different moments. A run that fatals leaves no readings
+ * at all and `clearReadings` takes them down, but it is still a run that
+ * happened, and it is the one a reader most needs to carry off the page: the
+ * sheet can only show the fatal sentence and a count of severes, while the
+ * console the bundle ships carries the whole `eplusout.err` the engine echoed
+ * into it. Riding on `lastRun`, as it did, the bundle went down with the
+ * readings at exactly the moment it became worth having.
+ *
+ * So this holds whatever was last attempted, failed or not, and only another
+ * attempt replaces it. `failure` carries the sentence the status line
+ * reported, which is what tells the manifest which kind of bundle to write.
+ */
+let lastBundle = null;
+
 /** The published card with the Tariff strip's assumptions written over it. */
 const rateCard = () => assume(resolveRates(station), params);
 
@@ -1505,24 +1523,42 @@ syncPin();
  * The trust move on a page that solves where nobody can watch: hand the run
  * over whole — the IDF and EPW the engine was given, and the report it wrote —
  * so the numbers can be reproduced in any EnergyPlus rather than believed. The
- * button follows the results it describes: dark until a run lands, gone again
- * the moment the plate is cleared, because a download offered over no results
- * would zip up the last run under the current sheet and call it this one.
+ * button follows the run rather than the readings: dark until something has
+ * been attempted, and live from then on, because a run that failed is a run
+ * that happened and the inputs that provoked it are exactly what the reader
+ * needs to take away. It was once gated on the readings, which meant the one
+ * run nobody could debug on the page was also the one run they could not carry
+ * off it.
+ *
+ * A failure says so on the button, because the manifest saying so is one click
+ * too late: the reader is choosing whether to download, and "Download run
+ * bundle" over a fatal promises results that are not in the ZIP. That is why
+ * the label lives here and not in the markup as `#share`'s does — it is two
+ * words, chosen by the outcome, and the markup carries only the state before
+ * anything has run.
  */
-function syncDownload() {
-  downloadBtn.disabled = !lastRun?.bundle;
-}
+const DOWNLOAD_LABEL = { ok: 'Download run bundle', failed: 'Download failed run' };
 
+// Zipping a year's EPW takes long enough to be seen, and the button says so
+// where it says everything else about its state. Declared above `syncDownload`
+// because that is the one place the three states are chosen between.
 let bundling = false;
 
+function syncDownload() {
+  downloadBtn.disabled = !lastBundle || bundling;
+  downloadBtn.textContent = bundling
+    ? 'Zipping…'
+    : lastBundle?.failure
+      ? DOWNLOAD_LABEL.failed
+      : DOWNLOAD_LABEL.ok;
+}
+
 downloadBtn.addEventListener('click', async () => {
-  if (!lastRun?.bundle || bundling) return;
+  if (!lastBundle || bundling) return;
   bundling = true;
-  const was = downloadBtn.textContent;
-  downloadBtn.textContent = 'Zipping…';
-  downloadBtn.disabled = true;
+  syncDownload();
   try {
-    const { blob, filename } = await runBundle(lastRun.bundle);
+    const { blob, filename } = await runBundle(lastBundle);
     const url = URL.createObjectURL(blob);
     const a = Object.assign(document.createElement('a'), { href: url, download: filename });
     document.body.append(a);
@@ -1536,7 +1572,6 @@ downloadBtn.addEventListener('click', async () => {
     statusEl.className = 'status bad';
     statusEl.textContent = `The run could not be bundled: ${error.message}`;
   } finally {
-    downloadBtn.textContent = was;
     bundling = false;
     syncDownload();
   }
@@ -1623,10 +1658,14 @@ function clearReadings() {
   lastReadings = new Map();
   renderBill();
   syncPin();
-  syncDownload();
-  // The register reads the run too — the scoreboard's margins and the kept
-  // schemes' deltas both — so it is re-lettered with the rest of the readings
-  // rather than in `clearResults` below, which is now only the title block.
+  // The bundle stays. It is not a reading — it is the run itself, and the two
+  // paths through here are a run that failed and a link that was refused. The
+  // first is precisely when someone wants the IDF in their hands, and the
+  // second happens before anything has been attempted, so there is nothing to
+  // hold. See `lastBundle`.
+  //
+  // The register does not stay: the scoreboard's margins and the kept schemes'
+  // deltas are readings, so they are re-lettered here with the rest of them.
   renderRegister();
   $('finding').textContent = '';
 }
@@ -1656,6 +1695,16 @@ const studies = new Map(); // parameter key -> the study drawn under that contro
 // out of automatic refresh until the rest of the desk moves again, at which
 // point the stopped curve is stale history like any other.
 const studyStops = new Map(); // key -> the rest-shape the Stop was issued under
+// The two controls that act on every study at once — Set aside in the status
+// row, Clear in the desk head. Declared up here with the state they letter,
+// not down beside their listeners, because `syncStudyControls` runs from the
+// station attach, and a permalink carrying a station attaches during the boot
+// awaits — before the studies section at the foot of this module has been
+// evaluated at all. That is the same reason every `studyScheduler` call above
+// is written `?.`; a const in its temporal dead zone has no such spelling and
+// would simply throw.
+const studiesStopBtn = $('studies-stop');
+const studiesClearBtn = $('desk-clear-studies');
 
 /**
  * Solo, as the desk applies it: one channel in, every other bypassable one out.
@@ -2260,6 +2309,8 @@ desk = mountConsole({
   onStudyClear(key) {
     studies.delete(key);
     desk.setStudy(key, null);
+    // The desk head's Clear counts the cards, and one just came down.
+    syncStudyControls();
   },
 });
 
@@ -2771,16 +2822,22 @@ async function choose(row, pick, sizing = 'No') {
   syncPin();
   renderBill();
   renderRegister();
-  // The bundle goes with the run it described. Without this, the download
-  // button stayed lettered live over a cleared `lastRun` and clicking it did
-  // nothing at all — the exact silent control the design refuses.
-  syncDownload();
+  // The bundle stays where the bill goes, because the two answer to different
+  // things. A bill re-priced across a station change would be one city's
+  // energy at another city's tariffs, true of nowhere; the bundle is not
+  // re-derived at all — it holds its own IDF, its own EPW, and a manifest that
+  // names the city it was solved in. Downloaded after the picker has moved on
+  // it is still exactly the run it says it is. This line used to call
+  // `syncDownload`, back when the bundle rode on `lastRun` and clearing that
+  // left the button lettered live over nothing; `lastBundle` cannot be in that
+  // state, because lettered means loaded.
   // The studies go the way the pin does, and for the same reason: they were
   // swept under the old climate, and a curve of Denver design days under a
   // Singapore titleblock would be a lie told in graphite. New sweeps read the
   // new climate — a score of annual runs now, counted out on the strip.
   studies.clear();
   desk?.clearStudies();
+  syncStudyControls();
 
   // With a real year attached the sizing days stop earning their place. They
   // are 48 hours of the most extreme weather in the file, run ahead of 8,760
@@ -3978,6 +4035,23 @@ async function solve() {
   // shipping inputs that never produced the results on the sheet.
   const idf = writeIdf(model);
 
+  /**
+   * The download's copy of this run, filed the moment its outcome is known.
+   *
+   * Everything the bundle needs, captured as it happens rather than read back
+   * off live state at click time, and filed on every exit rather than only the
+   * one that reaches the bottom of this function — a fatal is the run whose
+   * inputs are worth the most, and it used to be the run that shipped nothing.
+   * `capture` carries the identity taken before the await (the EPW, the run
+   * kind, the location and the permalink of the scheme that produced this),
+   * spread whole for the same reason `idf` is held above: a field-by-field
+   * copy is one more list to forget a field in.
+   */
+  const file = (extra) => {
+    lastBundle = { idf, version: ENERGYPLUS_VERSION, ...capture, ...extra };
+    syncDownload();
+  };
+
   let result;
   try {
     result = await ep.run({ idf, epw: epwText });
@@ -3990,6 +4064,10 @@ async function solve() {
     clearResults();
     statusEl.className = 'status bad';
     statusEl.textContent = `The run could not be attempted: ${error.message}`;
+    // The engine wrote nothing, so the bundle is the inputs and the reason —
+    // which is the whole of what is known, and enough to hand to a local
+    // EnergyPlus that will get further than this one did.
+    file({ failure: statusEl.textContent });
     return;
   } finally {
     if (tick) clearInterval(tick);
@@ -4010,6 +4088,29 @@ async function solve() {
   set('t-exit', String(result.exitCode), result.exitCode === 0 ? '' : 'flag');
   set('t-err', `${severe} / ${warnings}`, severe ? 'flag' : '');
 
+  // What the engine wrote back, in the shape the bundle takes it: the same
+  // fields whatever the outcome, so the three exits below differ only in
+  // whether they carry a failure and an hour count. `html` is the genuine
+  // eplustbl.htm — the model requests AllSummary with an All column separator,
+  // so EnergyPlus writes it on every run that gets that far and it arrives on
+  // the result; a run that fataled first has none and the manifest leaves it
+  // out rather than shipping an empty file. `log` is the engine's own console
+  // output, which the run already carries: it costs nothing to keep, and the
+  // worker echoes every line of `/output/eplusout.err` into it after each run,
+  // so it holds the severes in EnergyPlus's own words rather than the counts
+  // the page shows. That is what makes a failed bundle worth having at all.
+  // The .eso and the .err *file* come back only parsed, so shipping either as
+  // a file of its own would mean re-serialising into something that isn't what
+  // the engine wrote — left out rather than faked.
+  const wrote = {
+    html: result.html ?? null,
+    log: result.consoleOutput?.length ? result.consoleOutput.join('\n') : null,
+    exitCode: result.exitCode,
+    severe,
+    warnings,
+    seconds,
+  };
+
   if (!result.success) {
     // A fatal is rarely about this one shape, so stop solving on every drag
     // frame and let the failure sit still long enough to be read.
@@ -4024,6 +4125,12 @@ async function solve() {
     statusEl.className = 'status bad';
     statusEl.textContent = result.fatalError ?? `Engine exited with code ${result.exitCode}`;
     for (const entry of errs) log(`[${entry.severity}] ${entry.message}`);
+    // No hours: the run stopped somewhere inside them and this file does not
+    // guess where. Everything else the engine wrote goes, which for a fatal is
+    // the console — the page shows the error entries parsed into a count and a
+    // severity, and the sentences that name the object and the field are only
+    // in there.
+    file({ ...wrote, failure: statusEl.textContent });
     return;
   }
 
@@ -4041,6 +4148,12 @@ async function solve() {
     clearReadings();
     statusEl.className = 'status bad';
     statusEl.textContent = 'Run completed, but no hourly zone temperature was found in the ESO.';
+    // A run that came back whole and still lettered nothing is the hardest of
+    // the three to diagnose from the page, because the title block reports a
+    // clean exit over a blank plate. The bundle carries the tabular report the
+    // engine did write, and re-running it locally produces the .rdd, which is
+    // where the answer to a missing output variable actually is.
+    file({ ...wrote, failure: statusEl.textContent });
     return;
   }
 
@@ -4128,36 +4241,11 @@ async function solve() {
     // number whose only use is to be held against an annual benchmark it
     // cannot be compared with.
     months: weather ? billed.reduce((total, r) => total + r.months, 0) : null,
-    // Everything the download bundle needs, captured here rather than read back
-    // off live state at click time: the inputs the engine ran and the report it
-    // wrote, alongside the run facts the manifest states. `html` is the genuine
-    // eplustbl.htm — the model requests AllSummary with an All column separator,
-    // so EnergyPlus writes it on every run and it arrives on the result. `log`
-    // is the engine's own console output, which the run already carries: it
-    // costs nothing to keep and it is where EnergyPlus states its warnings and
-    // severes in its own words, which the raw .err would otherwise be needed
-    // for. The .eso and .err themselves come back only parsed, so shipping them
-    // as files would mean re-serialising into something that isn't what the
-    // engine wrote — left out rather than faked.
-    bundle: {
-      idf,
-      html: result.html ?? null,
-      log: result.consoleOutput?.length ? result.consoleOutput.join('\n') : null,
-      version: ENERGYPLUS_VERSION,
-      hours: nn,
-      exitCode: result.exitCode,
-      severe,
-      warnings,
-      seconds,
-      // The run's identity — epw, annual, weatherStem, location and the
-      // permalink of the scheme that produced it — spread whole from the
-      // snapshot taken before the await, for the same reason `idf` is held: a
-      // field-by-field copy is one more list to forget a field in, and a
-      // slider nudged since the solve must not have the manifest citing a
-      // scheme that never produced these results.
-      ...capture,
-    },
   };
+  // The run that did letter the sheet, filed for download like the three that
+  // do not. `hours` is the count the readings were taken over, which is what
+  // makes this the one bundle whose manifest can state the run in full.
+  file({ ...wrote, hours: nn });
   bill = billFrom(lastRun);
   // What the criteria on the register ask about, read once here rather than
   // off the ESO whenever a card is re-lettered. The register re-letters on
@@ -4166,7 +4254,6 @@ async function solve() {
   lastOutcome = readOutcome(eso);
   syncPin();
   renderBill();
-  syncDownload();
   renderRegister();
 
   desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt);
@@ -4531,7 +4618,7 @@ function restoreStudyCard(key) {
  */
 function syncStudyStatus(finalLine = null, { quietly = false } = {}) {
   const p = studyScheduler.progress();
-  studiesStopBtn.hidden = p.jobs === 0;
+  syncStudyControls();
   if (pumping || quietly || statusEl.classList.contains('bad')) return;
   if (p.manual > 0) {
     statusEl.className = 'status';
@@ -4548,7 +4635,6 @@ function syncStudyStatus(finalLine = null, { quietly = false } = {}) {
 // within a sample's time. Each shed key is suppressed like a per-study Stop,
 // so the next idle pass does not quietly restart the work; the next desk
 // move lapses the suppression and the studies refresh as usual.
-const studiesStopBtn = $('studies-stop');
 studiesStopBtn.addEventListener('click', () => {
   studyScheduler?.cancelWhere(() => true, 'shed');
   if (!pumping) {
@@ -4556,6 +4642,68 @@ studiesStopBtn.addEventListener('click', () => {
     statusEl.textContent = 'Studies set aside — they refresh when the desk next moves.';
   }
 });
+
+// The desk head's Clear, beside Revert all: one takes the controls back and
+// leaves the curves, the other takes the curves down and leaves the controls.
+// It lives in the console's own head because that is where every study is —
+// the Study buttons and the cards are on the strips and nowhere else — and it
+// is wired here rather than beside `desk-revert` so that everything that can
+// cancel or discard a study reads in one place.
+studiesClearBtn.addEventListener('click', () => clearAllStudies());
+
+/**
+ * Both global study controls, lettered from what is actually on the desk.
+ *
+ * Set aside appears while the pool has work; Clear appears while any card is
+ * standing, which outlives the work by design — a finished curve is exactly
+ * what there is to clear. The count comes off the console's cards rather than
+ * the `studies` map so a sweep still landing is counted the moment its card
+ * goes up, not when its curve is stored.
+ */
+function syncStudyControls() {
+  studiesStopBtn.hidden = (studyScheduler?.progress().jobs ?? 0) === 0;
+  const n = desk?.studyCount() ?? 0;
+  studiesClearBtn.hidden = n === 0;
+  if (n > 0) studiesClearBtn.textContent = `Clear ${n} ${n === 1 ? 'study' : 'studies'}`;
+}
+
+/**
+ * Take every curve down at once, and leave the desk exactly as it stands.
+ *
+ * The per-card Clear is the right gesture for one curve and a poor one for
+ * six: the cards hang under the controls they sweep, which on a five-column
+ * desk means six clicks in six places, each one reflowing the column it sits
+ * in. This is the same act performed once.
+ *
+ * Nothing here touches `params`, `bypass` or the document — a study never did,
+ * so clearing one cannot. That is the whole difference from Revert all beside
+ * it, and it is why no solve follows: the desk after this click describes the
+ * same building it described before, and the sheet's own numbers still stand.
+ *
+ * Queued and running sweeps go first, or a sample landing a moment later would
+ * draw its card straight back onto a console the reader has just cleared. They
+ * are cancelled as `cleared` rather than `shed`, which is the difference
+ * between a study set aside and one that no longer exists: a shed key is
+ * suppressed so the idle densify does not restart it, whereas a cleared study
+ * is simply gone from `studies`, and both `refreshStudies` and
+ * `densifyStudies` walk that map. Stops go too, for the same reason — a
+ * decision about a study that is no longer there.
+ *
+ * The sample cache is deliberately kept. It is keyed by the sample's own desk
+ * and holds runs that are still true of it, so sweeping the same control again
+ * costs nothing; clearing a drawing is not a claim that the arithmetic behind
+ * it was wrong.
+ */
+function clearAllStudies() {
+  studyScheduler?.cancelWhere(() => true, 'cleared');
+  studies.clear();
+  studyStops.clear();
+  desk?.clearStudies();
+  // Through `syncStudyStatus` rather than by writing the line here: it is the
+  // one place that knows a run in flight or a refusal already owns the status
+  // line, and it syncs both buttons on the way past.
+  syncStudyStatus('Studies cleared — every control stands where it was.');
+}
 
 function onStudyUpdate(job, event) {
   if (event === 'idle') {
@@ -4602,6 +4750,10 @@ function onStudyUpdate(job, event) {
   } else if (event === 'failed') {
     desk.setStudyProgress(key, null);
     restoreStudyCard(key);
+    // The one branch that writes the status line itself and so never reaches
+    // `syncStudyStatus`. A failed sweep can take the last card off the desk,
+    // and Clear must go with it.
+    syncStudyControls();
     // A failure is worth saying whichever way the study was asked for — it is
     // the one study outcome that leaves nothing drawn to speak for itself.
     if (!pumping) {

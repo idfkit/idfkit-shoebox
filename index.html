@@ -669,6 +669,14 @@
          as a live control that happens to do nothing. */
       .link:disabled { color: var(--ink-ghost); border-bottom-color: transparent; cursor: default; }
       .link:disabled:hover { color: var(--ink-ghost); border-bottom-color: transparent; }
+      /* `all: unset` above re-declares `display`, and an author declaration
+         beats the user agent's `[hidden] { display: none }` outright — so a
+         link carrying the attribute went on rendering as though it did not.
+         Measured on this page: `#studies-stop` stood in the status row at all
+         times, offering to set aside studies that did not exist. Every other
+         element whose display an author rule sets already carries its own
+         `[hidden]` twin; this is the one the links were missing. */
+      .link[hidden] { display: none; }
       /* Tighter than the ledger's own 16px gap: the two are one idea — take
          this away — not two entries in the log above them. */
       .ledger-take {
@@ -2780,7 +2788,10 @@
           <!-- The two reproduction paths, together: the bundle re-runs this
                run in a local EnergyPlus, the link re-solves this scheme here.
                Only the first waits for a run — a scheme exists from the first
-               frame, results do not. -->
+               frame, a run does not. It waits for one to have been
+               *attempted*, though, not to have worked: a failed run bundles
+               too, and says so on the button. The label below is only the
+               state before anything has run; `syncDownload` owns it after. -->
           <div class="ledger-take">
             <button type="button" class="link" id="download" disabled>
               Download run bundle
@@ -3068,6 +3079,14 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
         <p class="eyebrow">Recall sheet</p>
         <h2>Model console</h2>
         <span class="desk-actions">
+          <!-- Beside Revert all because the two are the same gesture from opposite
+               ends: Revert all puts every control back and leaves the curves to
+               re-sweep themselves, this takes every curve down and leaves every
+               control where it stands. It is lettered with the count because the
+               desk can be five columns wide with the cards scrolled out of sight,
+               and it is absent rather than disabled when there is nothing to
+               clear — a desk with no studies on it should not say the word. -->
+          <button type="button" class="link" id="desk-clear-studies" hidden>Clear studies</button>
           <button type="button" class="link" id="desk-revert">Revert all</button>
           <button type="button" class="link" id="desk-close">Close</button>
         </span>

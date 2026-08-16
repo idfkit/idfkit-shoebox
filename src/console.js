@@ -1569,6 +1569,18 @@ export function mountConsole({
       api.sync();
     },
 
+    /**
+     * How many study cards are standing, counted off the console itself.
+     *
+     * The desk's Clear letters itself from this rather than from the caller's
+     * map of finished studies: a sweep still landing has a card up before it
+     * has a curve to store, so the two disagree for exactly as long as a study
+     * takes to solve. The cards are what the reader can see and what Clear
+     * takes down, so the cards are what it counts — the page's own rule about
+     * reading a number back off the thing it describes.
+     */
+    studyCount: () => cards.size,
+
     /** The studies go with the climate they were swept under. */
     clearStudies() {
       for (const { node } of cards.values()) node.remove();

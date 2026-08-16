@@ -14,6 +14,19 @@
  * refusal the weather picker makes when a station's design conditions can't be
  * read.
  *
+ * A run that *failed* bundles under exactly the same rule, and is the case the
+ * download is worth the most in: the sheet can only ever show a status line and
+ * a parsed error count, while what explains a fatal is the sentence naming the
+ * object and the field — and that sentence is already in hand. Measured: the
+ * engine worker reads `/output/eplusout.err` after every run and echoes it line
+ * by line into the console output, so `results/console.log` carries the error
+ * file itself, not a summary of it. So the inputs ship whether or not results
+ * came back, `run.failure` carries the sentence the sheet reported, and every
+ * figure the run never got as far as producing — the hours, the exit code, the
+ * error counts — is an em dash in the manifest rather than a zero. The one
+ * thing a failed bundle must not do is pass for a good one, so it says so on
+ * its first line and in its filename.
+ *
  * The ZIP is written by hand rather than pulling in a library, because the page
  * already inflates gzip with `DecompressionStream` and the mirror of that,
  * `CompressionStream('deflate-raw')`, is all a standard ZIP's DEFLATE member
@@ -151,13 +164,17 @@ const group = (n) => n.toLocaleString('en-US');
  * the sheet's numbers in their own EnergyPlus — so the months are named, in
  * the same words the console says them in. The phrasing comes from the control
  * declaration rather than being written a second time here.
+ *
+ * The hours are counted off the result, so a run that failed does not have
+ * them; the parenthetical is dropped rather than filled with the 48 or the
+ * 8,760 a run of that kind would have covered had it finished.
  */
 function runLine(run) {
-  const hours = `${group(run.hours)} hours`;
-  if (!run.annual) return `Design days (${hours})`;
-  if (!run.monthMask || isWholeYear(run.monthMask)) return `Annual (${hours})`;
+  const hours = Number.isFinite(run.hours) ? ` (${group(run.hours)} hours)` : '';
+  if (!run.annual) return `Design days${hours}`;
+  if (!run.monthMask || isWholeYear(run.monthMask)) return `Annual${hours}`;
   const { control } = controlFor('months');
-  return `${control.periods(run.monthMask).replace(/\.$/, '')} (${hours})`;
+  return `${control.periods(run.monthMask).replace(/\.$/, '')}${hours}`;
 }
 
 /**
@@ -183,7 +200,9 @@ function members(run) {
     run.log && {
       name: 'results/console.log',
       text: run.log,
-      note: 'the engine console, warnings and severes in its own words',
+      note: run.failure
+        ? 'the engine console, with the eplusout.err it echoes — every severe that led to the fatal, in full'
+        : 'the engine console, with the eplusout.err it echoes — warnings and severes in its own words',
     },
   ].filter(Boolean);
 }
@@ -198,6 +217,12 @@ function members(run) {
  */
 function manifest(run, list) {
   const epwFile = list.find((m) => m.name.endsWith('.epw'))?.name ?? null;
+  // Every figure the run did not get far enough to produce reads as an em
+  // dash, the same as it does on the sheet: a run that never entered the
+  // engine has no exit code, and printing 0 for one would be a measurement
+  // where there was none. `severe` stands for the pair — the counts are read
+  // off the same parsed error file in the same breath.
+  const dash = (value, format) => (value == null ? '—' : format(value));
   const rows = [
     ['EnergyPlus', run.version],
     ['Run', runLine(run)],
@@ -207,9 +232,18 @@ function manifest(run, list) {
         'none — a design-day run, driven by the SizingPeriod:DesignDay objects written into the IDF',
     ],
     ['Location', run.location || '—'],
-    ['Exit code', String(run.exitCode)],
-    ['Errors', `${run.severe} severe / ${run.warnings} warning${run.warnings === 1 ? '' : 's'}`],
-    ['Solved in', `${run.seconds.toFixed(2)} s, in-browser WebAssembly`],
+    ['Outcome', run.failure ? 'Failed' : 'Completed'],
+    ['Exit code', dash(run.exitCode, String)],
+    [
+      'Errors',
+      dash(run.severe, () => `${run.severe} severe / ${run.warnings} warning${run.warnings === 1 ? '' : 's'}`),
+    ],
+    // "Solved in" is a claim about the outcome as much as about the clock, and
+    // a run that fataled after 0.4 s solved nothing in it.
+    [
+      run.failure ? 'Ran for' : 'Solved in',
+      dash(run.seconds, (s) => `${s.toFixed(2)} s, in-browser WebAssembly`),
+    ],
     ['Bundled', run.date.toLocaleString('en-CA')],
   ];
   const pad = Math.max(...rows.map(([k]) => k.length));
@@ -229,21 +263,63 @@ function manifest(run, list) {
     ? `\n  Or open the same scheme live, re-solved in the browser:\n  ${run.permalink}\n`
     : '';
 
+  // Where to start reading, for a bundle that failed. Branched on the member
+  // list for the same reason the reproduce line above is: a run that never
+  // entered the engine wrote no console at all, and a manifest that opened by
+  // sending the reader to a file that is not in the ZIP would be exactly the
+  // fabrication the rest of this refuses.
+  const logFile = list.find((m) => m.name.endsWith('console.log'))?.name ?? null;
+  const readFirst = logFile
+    ? `Start with ${logFile}: the engine echoes the whole\n` +
+      `eplusout.err into it, so the severes are in there naming the object and\n` +
+      `the field, where this page could only ever show you a count of them.\n` +
+      `Then re-run the inputs below in a local EnergyPlus and the same thing\n` +
+      `happens again.\n`
+    : `The engine was never entered, so it wrote nothing at all — what is here\n` +
+      `is the inputs it refused. Re-run them in a local EnergyPlus, which will\n` +
+      `at least get far enough to write an eplusout.err about them.\n`;
+
+  // Two ledes, because a bundle over a failed run is a different object: it
+  // has no numbers to be checked against and exists to be debugged. The
+  // heading says which one this is before anything else does, so a file that
+  // has been sitting in a downloads folder for a week cannot be mistaken for a
+  // good run.
+  const lede = run.failure
+    ? `idfkit shoebox — simulation bundle (FAILED RUN)\n` +
+      `\n` +
+      `This run, in your browser at shoebox.idfkit.com, produced no readings, so\n` +
+      `there is nothing in here to check the page against. What there is, is\n` +
+      `everything the run did leave: the exact IDF and weather the engine was\n` +
+      `handed, and whatever it wrote before it stopped, if it got that far.\n` +
+      `Nothing is re-derived and nothing is filled in — figures the run never\n` +
+      `reached read as em dashes below, and what went wrong is quoted under\n` +
+      `"Why it stopped".\n` +
+      `\n` +
+      readFirst
+    : `idfkit shoebox — simulation bundle\n` +
+      `\n` +
+      `This is the exact input and output of a run performed in your browser at\n` +
+      `shoebox.idfkit.com. Nothing here is re-derived: the IDF is the text handed\n` +
+      `to the engine, the EPW is the weather file as downloaded, and the report is\n` +
+      `what EnergyPlus wrote back. Re-run it to reproduce every number the page\n` +
+      `showed.\n`;
+
+  // The sentence the sheet reported, quoted rather than paraphrased: it is
+  // frequently the engine's own fatal message, and re-wording it here would
+  // break the one string a search for the error would be made against.
+  const why = run.failure ? `\nWhy it stopped\n  ${run.failure}\n` : '';
+
   return (
-    `idfkit shoebox — simulation bundle\n` +
-    `\n` +
-    `This is the exact input and output of a run performed in your browser at\n` +
-    `shoebox.idfkit.com. Nothing here is re-derived: the IDF is the text handed\n` +
-    `to the engine, the EPW is the weather file as downloaded, and the report is\n` +
-    `what EnergyPlus wrote back. Re-run it to reproduce every number the page\n` +
-    `showed.\n` +
+    lede +
     `\n` +
     rows.map(([k, v]) => `  ${k.padEnd(pad)}   ${v}`).join('\n') +
-    `\n\n` +
+    `\n` +
+    why +
+    `\n` +
     `Files\n` +
     files.map(([k, v]) => `  ${k.padEnd(filePad)}   ${v}`).join('\n') +
     `\n\n` +
-    `To reproduce\n` +
+    (run.failure ? `To reproduce the failure\n` : `To reproduce\n`) +
     `  Install EnergyPlus ${run.version}, then from this folder run:\n` +
     reproduce +
     `\n` +
@@ -262,6 +338,17 @@ function manifest(run, list) {
 const kind = (run) =>
   !run.annual ? 'designday' : !run.monthMask || isWholeYear(run.monthMask) ? 'annual' : 'runperiod';
 
+/**
+ * And whether it worked, in one more.
+ *
+ * The manifest says it on its first line, but a manifest is inside the ZIP and
+ * a downloads folder is a list of filenames. Two bundles of the same scheme —
+ * one that ran and one that fataled — would otherwise arrive under the same
+ * name, and the browser would letter the second `…(1).zip`, which says nothing
+ * about which is which.
+ */
+const outcome = (run) => (run.failure ? '-failed' : '');
+
 /** A filesystem-safe stem from the run's location, for the download's name. */
 function slug(run) {
   const base = (run.location || 'run').replace(/,.*$/, '');
@@ -270,7 +357,7 @@ function slug(run) {
 }
 
 /**
- * Everything captured from one solved run, as a downloadable ZIP.
+ * Everything captured from one attempted run, as a downloadable ZIP.
  *
  * Returns the Blob and the filename it should be offered under; the caller owns
  * the anchor-and-click, because that is a DOM concern and this module has no
@@ -284,5 +371,5 @@ export async function runBundle(run) {
   files.push({ name: 'MANIFEST.txt', bytes: enc.encode(manifest({ ...run, date }, list)) });
 
   const blob = await zip(files, { date });
-  return { blob, filename: `shoebox-${slug(run)}-${kind(run)}.zip` };
+  return { blob, filename: `shoebox-${slug(run)}-${kind(run)}${outcome(run)}.zip` };
 }
