@@ -38,6 +38,115 @@ export function environmentRuns(points, environments) {
 }
 
 /**
+ * Room temperature: the only neutral point that means anything here, and the
+ * hinge both the axonometric's tint and the reading hour are measured from.
+ */
+export const NEUTRAL_C = 20;
+
+/** The environment kinds a pinned hour can name, as the permalink spells them. */
+export const kindToken = (run) =>
+  run.kind === 'Winter design day' ? 'winter' : run.kind === 'Summer design day' ? 'summer' : 'year';
+
+/**
+ * The hour the building is having the hardest time, within one environment:
+ * the one furthest from 20 °C. This is the desk's default reading instant and
+ * the reason the pin exists.
+ *
+ * It is an `argmax` over two candidates half a year apart — the annual low and
+ * the annual high — so it is not a continuous function of any control. On a
+ * balanced climate the two sit close enough that a control with no optical
+ * effect whatever can invert the ranking and move every meter on the desk from
+ * a sunlit August afternoon to a January night: measured on Boston TMYx, a
+ * concrete slab reads at 31.4 °C on 3 August (11.44 K off, and 612 W of
+ * transmitted solar), and the same desk with a lightweight slab reads at
+ * 5.6 °C on 21 January (14.42 K off, and no sun at all). Both readings are
+ * true. They are not a comparison, which is what the pin is for.
+ */
+export function worstHour(points, run) {
+  let at = run.start;
+  let worst = -Infinity;
+  for (let i = run.start; i <= run.end; i += 1) {
+    const off = Math.abs(points[i].value - NEUTRAL_C);
+    if (off > worst) {
+      worst = off;
+      at = i;
+    }
+  }
+  return at;
+}
+
+/** The pin a reader takes by pinning the hour currently being read. */
+export function pinAt(points, runs, at) {
+  const run = runs.find((r) => at >= r.start && at <= r.end);
+  const t = points[at]?.timestamp;
+  if (!run || !t) return null;
+  return { kind: kindToken(run), month: t.month, day: t.day, hour: t.hour ?? 0 };
+}
+
+/**
+ * Find a pinned hour in a run that has just been solved, or return null.
+ *
+ * Null is the honest answer often enough to be the interesting case: a pin
+ * taken on the run period does not exist in a design-day run, a pin on 3
+ * August is absent from a run period that covers only the winter, and a
+ * station change replaces the calendar the stamp was read off. The caller
+ * releases the pin and says which hour went missing rather than sliding the
+ * reading to a neighbouring one — a meter quietly reading an hour nobody
+ * pinned is exactly the substitution this codebase refuses everywhere else.
+ */
+export function resolvePin(pin, points, runs) {
+  if (!pin) return null;
+  for (const run of runs) {
+    if (kindToken(run) !== pin.kind) continue;
+    for (let i = run.start; i <= run.end; i += 1) {
+      const t = points[i].timestamp;
+      if (t.month === pin.month && t.day === pin.day && (t.hour ?? 0) === pin.hour) return i;
+    }
+  }
+  return null;
+}
+
+/**
+ * The hour a click on the plate means.
+ *
+ * An annual trace is 8,760 points across about 900 px — roughly ten hours to
+ * the pixel — so a click cannot mean an hour, only a day. Rather than take the
+ * hour that happens to sit under the cursor, which is arbitrary and a tenth
+ * likely to be the one meant, the pick is snapped to the extreme *within the
+ * clicked day*: one gesture, and it lands on the hour of that day worth
+ * reading. Same rule as `worstHour`, over a day instead of an environment, so
+ * the plate and the desk agree about what "the hour that matters" means.
+ *
+ * The caller decides whether to snap, from the axis's own resolution: a
+ * design-day run is 48 points across the same width, where a click already
+ * names its hour to within a fifth of one and snapping would throw that away —
+ * it would leave the whole winter day reachable only at its coldest hour.
+ */
+export function dayExtremeNear(points, runs, index) {
+  const run = runs.find((r) => index >= r.start && index <= r.end);
+  if (!run) return null;
+  const { month, day } = points[index].timestamp;
+  let at = index;
+  let worst = -Infinity;
+  for (let i = run.start; i <= run.end; i += 1) {
+    const t = points[i].timestamp;
+    if (t.month !== month || t.day !== day) continue;
+    const off = Math.abs(points[i].value - NEUTRAL_C);
+    if (off > worst) {
+      worst = off;
+      at = i;
+    }
+  }
+  return at;
+}
+
+/** A pinned or read hour, lettered the one way the whole sheet letters it. */
+export const stampText = (points, at) => {
+  const t = points[at]?.timestamp;
+  return t ? `${String(t.hour ?? 0).padStart(2, '0')}:00, ${t.day} ${MONTHS[t.month - 1]}` : null;
+};
+
+/**
  * The zone series with its environment runs — the one prelude both readers
  * below share, so "which hours count" cannot drift between them. Returns null
  * when the run carried no hourly zone temperature at all.

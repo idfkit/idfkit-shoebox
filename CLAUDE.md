@@ -228,6 +228,41 @@ next moves. Studies and the sample cache clear on a station change — sample
 shapes deliberately carry no climate — and studies are absent on priced
 channels.
 
+### The general notes (src/tour.js)
+
+The onboarding, drawn the way a drawing set carries it: a numbered block of
+general notes at the head of the sheet, not a modal tour. Six steps, each
+bearing the run ledger's square marker — and a marker fills **only when its
+step has actually happened on the desk**. `main.js` reports the real events
+(`tour?.note('solve' | 'drag' | 'station' | 'desk' | 'patch' | 'link')`);
+there is no Next button, because that would be the onboarding taking the
+reader's word for it, which is the one thing this page never does. The first
+unfilled note takes the redline and its subject on the sheet is circled with
+the dashed markup hairline (`.guided`). Clicking a note stages the scene
+(scrolls, opens the desk) but never fills the marker. State lives in
+localStorage under a versioned key; all six taken retires the sheet on the
+next visit, and setting it aside folds it to a one-line row that still reads.
+
+- **The notes must be kept true to the app.** Any change that adds a feature,
+  renames a control, moves a step's subject, or changes what a step teaches
+  must update `NOTES` in `src/tour.js` (the copy and the `target` / `focus`
+  selectors) and, where the flow changed, the `tour?.note(...)` call sites in
+  `main.js`. An onboarding that walks a page that no longer exists is worse
+  than none — treat updating the general notes as part of any feature's
+  definition of done, and check them whenever a modification to the
+  onboarding itself is requested.
+- **Bump the storage key** (`shoebox-general-notes-v1`) whenever the steps
+  change meaning, so a returning reader gets the new sheet rather than stale
+  ticks against notes they never read.
+- Completion only ever comes from the genuine event: the solve note from the
+  end of a successful `solve()` (the early returns must not claim it), the
+  drag note from a real slider or console gesture (priced keys excluded —
+  they resolve nothing; programmatic `commit`s such as a station attach
+  setting `sizingPeriods` must not count either, which is why the note is
+  filed from the input listeners and not from `commit`), the station note
+  from `choose()` attaching — a link's automatic attach counts, because the
+  notes record what has happened on the desk, not who did it.
+
 ### The permalink (src/permalink.js)
 
 The URL fragment carries the desk — params off their defaults, patch state,
@@ -407,6 +442,52 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   environment, not an average. A free-running zone returns to where it started,
   so every term averages to roughly nothing over a day and the whole desk reads
   zero.
+- **That instant is chosen by the result, so it moves — and the pin is what
+  holds it.** `worstHour` is an `argmax` over |T − 20| with two candidates half
+  a year apart, so it is not a continuous function of any control, and it is
+  chosen by one signal and then applied to all five meters. On Boston TMYx the
+  two candidates sit 0.6 K apart: a concrete slab reads at 31.4 °C on 3 August
+  (612 W of transmitted solar), and *only* changing the slab to lightweight
+  reads at 5.6 °C on 21 January (no sun at all), because the lighter slab costs
+  the winter night 3.6 K of coasting while adding 1.0 K to the summer peak and
+  the ranking inverts. The transmitted-solar series is byte-identical between
+  those two runs — 8,760 hours, max difference 0 W — so the whole apparent
+  change was the hour. Both readings are true; the pair is not a comparison.
+  `pinnedHour` in `main.js` holds the instant, and there are two controls for
+  it: the rail's `Read at …` line holds whatever hour the run chose, and the
+  **plate is clickable** to choose any other.
+- **The plate carries the marker, because the plate has the axis for it.** A
+  vertical hairline with the desk's armed square at its head and a dot on the
+  zone curve — filled `--redline` when held, a dashed `--ink-ghost` outline
+  when it is the run's own worst hour. The hour was previously stated only in
+  the rail's footer, which made the most movable thing about the readings the
+  least visible; the desk's rule is that a path reads without opening
+  anything, and the hour those paths are read at now does too. Guarded on
+  `lastReadFrom.points.length === plot.zone.length`, the way the gesture ghost
+  is, because a station change redraws the plate with new datums while the
+  previous run's curve still stands.
+- **A click on the plate snaps by the axis's resolution, not by run kind.**
+  `dayExtremeNear` takes the furthest-from-20 hour *within the clicked day*
+  when there is more than one hour to the pixel — an annual trace is 8,760
+  points across ~900 px, so a click can only honestly mean a day. A design day
+  is 48 points across the same width, where a click already names its hour and
+  snapping would leave the whole winter day reachable only at its coldest
+  hour. Clicking the held hour again releases it, so the plate can undo its own
+  gesture. `renderTrace` therefore runs **after** `readAt` in `solve` — drawn
+  first it would post the previous run's instant.
+- **The pin is a calendar stamp, not an index.** `{ kind, month, day, hour }`,
+  where kind is `year` / `winter` / `summer` — by environment *kind* because
+  the index is not a property of the desk (keeping the sizing days renumbers
+  the year from 0 to 2). `resolvePin` re-finds it in each new run; when it is
+  not there — a year pin in a design-day run, a design-day pin after a station
+  attach sets `sizingPeriods=No` — the pin is **released and the rail says
+  which hour went missing**, rather than sliding to the nearest one. It rides
+  the permalink as the reserved key `at=year.8-3T13`, separator a full stop
+  because `URLSearchParams` escapes `@`.
+- **Turning the pin runs nothing.** It reaches no IDF object, so it stays off
+  `params` (anything there starts a run) and re-letters from the ESO already
+  held, exactly as `reprice` does for a tariff. It is `pinnedHour`, not
+  `pinned` — the bill has held a pinned *scheme* since long before this.
 
 ## Invariants that fail quietly
 

@@ -23,6 +23,7 @@ import {
   controlFor,
 } from './controls.js';
 import { mountConsole } from './console.js';
+import { mountTour } from './tour.js';
 import { COARSE_SAMPLES, SWEEP_SAMPLES, samplePoints, sampleOrder } from './study.js';
 import { createEnginePool, poolLimit } from './pool.js';
 import { createStudyScheduler, makeStudyJob } from './scheduler.js';
@@ -44,21 +45,27 @@ import {
 import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
 import {
   MONTHS,
+  NEUTRAL_C,
+  dayExtremeNear,
   environmentRuns,
   hourly,
+  pinAt,
   readDemand,
   readExtremes,
   readOverheat,
   readPeaks,
+  resolvePin,
+  stampText,
+  worstHour,
 } from './readings.js';
 import {
   LEFT_ALONE,
   Measure,
   PRESETS,
+  PRESET_BY_ID,
   Scheme,
   SHELF_LIMIT,
   Shelf,
-  PRESET_BY_ID,
   applyPreset,
   chaseVerdict,
   conformance,
@@ -157,8 +164,9 @@ function svg(tag, attrs = {}) {
 
 // The zone tinted by its own result. The scale is hinged at 20 °C — room
 // temperature, the only neutral point that means anything here — and runs out
-// to the two design conditions. Colour is degrees, never decoration.
-const NEUTRAL_C = 20;
+// to the two design conditions. Colour is degrees, never decoration. The hinge
+// is `readings.js`'s, because the reading hour is measured from the same point
+// and two copies of "neutral" would drift.
 function tint(celsius) {
   const cold = [61, 100, 120];
   const paper = [178, 170, 154];
@@ -640,6 +648,65 @@ function renderTrace() {
     );
   }
 
+  /*
+   * ── the reading hour
+   *
+   * The instant every meter on the desk is reading, drawn on the one picture
+   * that has an axis for it. Before this the hour was stated only in the rail's
+   * footer — ten-pixel mono at the foot of a desk you had to open first — which
+   * made the single most movable thing about the readings the least visible.
+   * The desk's own rule is that a path is readable without opening anything;
+   * the hour the paths are read at had better be too.
+   *
+   * The head is the same square the patch buttons and the rail's pin carry:
+   * filled `--redline` when the hour is held, a hairline outline when it is
+   * whichever hour this run happened to be worst at. One armed idiom, three
+   * places.
+   *
+   * Guarded on the series lengths agreeing, the way the ghost is: a station
+   * change redraws the plate with the new city's datums while the previous
+   * run's curve is still standing, and an index into a run that is no longer
+   * the one plotted would put the marker at an hour nobody is reading.
+   */
+  const reading = lastReadFrom?.points.length === n ? lastReadFrom : null;
+  if (reading) {
+    const mx = x(reading.at, n);
+    const held = Boolean(pinnedHour);
+    const ink = held ? 'var(--redline)' : 'var(--ink-ghost)';
+    const mark = svg('g', { 'pointer-events': 'none' });
+    mark.append(
+      svg('line', {
+        x1: mx, y1: PAD.t + 5, x2: mx, y2: PAD.t + inner.h,
+        stroke: ink, 'stroke-width': 1,
+        'stroke-dasharray': held ? null : '2 3',
+        'shape-rendering': 'crispEdges',
+      }),
+    );
+    mark.append(
+      svg('rect', {
+        x: mx - 3.5, y: PAD.t - 1, width: 7, height: 7,
+        fill: held ? 'var(--redline)' : 'none',
+        stroke: held ? 'var(--redline)' : 'var(--ink-ghost)', 'stroke-width': 1,
+      }),
+    );
+    // The point on the zone curve the desk is actually reading off.
+    mark.append(
+      svg('circle', { cx: mx, cy: y(plot.zone[reading.at]), r: 2.6, fill: ink }),
+    );
+    const title = svg('title');
+    title.textContent = `${held ? 'Held at' : 'Read at'} ${stampText(reading.points, reading.at)}`;
+    mark.append(title);
+    root.append(mark);
+    // The plate's description says what it is now showing, since the marker is
+    // part of the picture a reader who cannot see it is being told about.
+    root.setAttribute(
+      'aria-label',
+      `Zone mean air temperature against outdoor drybulb temperature. ` +
+        `The desk's meters are ${held ? 'held at' : 'reading at'} ` +
+        `${stampText(reading.points, reading.at)}.`,
+    );
+  }
+
   // ── direct labels in the right gutter beat a legend box
   const labels = [
     { text: 'Zone', y: y(plot.zone[n - 1]), fill: 'var(--redline)', opacity: 1 },
@@ -686,6 +753,38 @@ function renderTrace() {
     axis.append(t);
   }
   root.append(axis);
+
+  /*
+   * ── choosing the hour
+   *
+   * Point at the moment you want explained. The alternative was a date field
+   * on the rail, which is precise and asks the reader to type "14 February,
+   * 15:00" at a picture of 14 February that is already on the screen — and
+   * which invites February the 30th and hour 25 purely to meet a refusal
+   * message. The curve is the instrument; clicking it is reading back off the
+   * model in the same sense everything else here is.
+   *
+   * Snapping is decided by the axis's own resolution rather than by run kind,
+   * because the resolution is what the reader is actually up against and it
+   * moves with the window: an annual run at ten hours to the pixel cannot
+   * mean an hour, a design day at five pixels to the hour can.
+   */
+  if (reading) {
+    const hoursPerPixel = n / inner.w;
+    root.style.cursor = 'crosshair';
+    root.addEventListener('click', (event) => {
+      const box = root.getBoundingClientRect();
+      if (!box.width) return;
+      // The viewBox is `0 0 w H` against a width of 100 %, so a client pixel
+      // is `w / box.width` user units — read per click rather than cached,
+      // since the plate resizes with the window and the desk opening.
+      const px = (event.clientX - box.left) * (w / box.width);
+      const i = Math.round(((px - PAD.l) / inner.w) * (n - 1));
+      if (i < 0 || i > n - 1) return; // the gutters are not part of the field
+      pinFromPlate(i, hoursPerPixel > 1);
+    });
+  }
+
   host.append(root);
 }
 
@@ -938,7 +1037,7 @@ function reprice() {
   if (!lastRun) return;
   bill = billFrom(lastRun);
   renderBill();
-  desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt);
+  desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt);
 }
 
 /**
@@ -1433,6 +1532,19 @@ function clearResults() {
   // still showing "under by 3.2" over a cleared plate would be quoting a run
   // that is no longer on the sheet.
   lastOutcome = null;
+  // The instant goes with them: it is an index into a run that is no longer
+  // on the sheet. The pin itself survives — it is a calendar stamp and a
+  // request, not a reading, so the next solve is asked for the same hour.
+  //
+  // The meters go with the instant, in the same breath. Every figure on the
+  // rail is a reading at one hour, so clearing the hour and leaving the watts
+  // would draw a whole closed heat balance with nothing above it saying when
+  // — which is the unfalsifiable rail the "Read at" line exists to prevent.
+  // It is visible whenever a non-live solve fails: `clearResults` runs, the
+  // engine fatals, and the next `applyGeometry` re-letters the strips.
+  lastReadFrom = null;
+  lastAt = null;
+  lastReadings = new Map();
   renderBill();
   syncPin();
   syncDownload();
@@ -1596,15 +1708,7 @@ function applyGeometry() {
   desk?.setState(modelState);
   syncStudies();
   syncRunSub();
-  // A reading survives until the next solve supersedes it, the way the plate's
-  // curve does — except on a channel that has just gone out of the path, where
-  // the last number it produced would now be describing a path that is no
-  // longer there.
-  desk?.setReadings(
-    new Map([...lastReadings].map(([id, w]) => [id, modelState.get(id)?.engaged ? w : null])),
-    derivedReadings(facts),
-    lastAt,
-  );
+  desk?.setReadings(engagedReadings(), derivedReadings(facts), lastAt);
   // Whether the desk is built to a standard is a measurement of the desk, not
   // a flag set when a button was pressed, so it is re-taken here — the one
   // place every change to the parameters passes through. Nudge a wall
@@ -1681,7 +1785,14 @@ function buildSliders() {
     };
     show();
 
-    input.addEventListener('input', () => commit(key, Number(input.value)));
+    // The general notes hear about the gesture from the listener, not from
+    // `commit`: commit is also the path programmatic changes take (a station
+    // attach setting `sizingPeriods`), and those must not fill the square
+    // that says the reader took hold of something.
+    input.addEventListener('input', () => {
+      tour?.note('drag');
+      commit(key, Number(input.value));
+    });
     input.addEventListener('change', () => commit(key, Number(input.value), true));
 
     row.append(label, input, value);
@@ -1729,7 +1840,47 @@ $('reset').addEventListener('click', () => revert(SHEET_KEYS));
 let desk = null;
 let lastReadings = new Map();
 let lastHours = null;
-let lastAt = null; // the instant the desk's meters are reading
+let lastAt = null; // the instant the desk's meters are reading, as the rail letters it
+
+/**
+ * The readings as the desk is allowed to show them.
+ *
+ * A reading survives until the next solve supersedes it, the way the plate's
+ * curve does — except on a channel that has just gone out of the path, where
+ * the last number it produced would now be describing a path that is no
+ * longer there. Every route that re-letters the strips from the run already in
+ * hand goes through here rather than handing `lastReadings` straight over:
+ * turning a tariff and taking the reading pin both re-letter without solving,
+ * and either would otherwise give a channel patched out since the run its
+ * watts back, under a strip the drawing says is out of the document.
+ */
+function engagedReadings() {
+  return new Map([...lastReadings].map(([id, w]) => [id, modelState?.get(id)?.engaged ? w : null]));
+}
+
+/**
+ * The hour the reader has pinned, or null to read the worst one.
+ *
+ * The desk's own instant is an `argmax` over the zone temperature, so it is
+ * chosen by one signal and applied to all of them: a control with no optical
+ * effect can move the transmitted-solar reading, because it moved the hour.
+ * Worse, it is discontinuous — the annual low and the annual high sit close
+ * enough on a balanced climate that a slider can invert the ranking and take
+ * every meter on the rail from an August afternoon to a January night in one
+ * step. Both readings are true; the pair is not a comparison, and a console
+ * whose whole purpose is turning a control back and forth has to be able to
+ * hold its subject still.
+ *
+ * Deliberately not a parameter. It reaches no IDF object, so it must stay off
+ * `params` — anything there starts a run, and this one could only reproduce
+ * the numbers already in hand. Turning it re-letters from the ESO already
+ * held, the way a tariff re-letters the bill.
+ *
+ * `pinnedHour`, not `pinned`: the bill has held a pinned *scheme* since long
+ * before this, and the two are different instruments — one holds a whole bill
+ * to measure against, this one holds the instant the meters read at.
+ */
+let pinnedHour = null;
 
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
@@ -1823,6 +1974,117 @@ function derivedReadings(facts) {
 const exactly = (name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 
 /**
+ * Everything the instant is chosen from, kept so the pin can be turned without
+ * asking the engine for anything. The ESO is already held for the bill; this
+ * adds the zone series and its environments, which are parsed out of it once
+ * per solve rather than once per click.
+ */
+let lastReadFrom = null;
+
+/** An hour pin lettered without a run to look it up in — for saying what went missing. */
+const hourPinText = (pin) =>
+  `${String(pin.hour).padStart(2, '0')}:00, ${pin.day} ${MONTHS[pin.month - 1]}` +
+  (pin.kind === 'year' ? '' : ` on the ${pin.kind} design day`);
+
+/**
+ * Put the meters on one hour of a solved run: the pinned one if it is in
+ * there, the worst one otherwise.
+ *
+ * A pin that cannot be found is released rather than slid to the nearest hour,
+ * and the rail says which hour went missing. Sliding would be the substitution
+ * this codebase refuses everywhere else, and it would be the worst kind here:
+ * silently reading an hour nobody asked for, under a marker claiming the
+ * reading is held still.
+ */
+function readAt(points, runs, leadIndex, eso) {
+  let at = resolvePin(pinnedHour, points, runs);
+  let released = null;
+  if (pinnedHour && at == null) {
+    released = pinnedHour;
+    pinnedHour = null;
+  }
+  if (at == null) at = worstHour(points, runs[leadIndex]);
+  // Set after the pin has been resolved or released, so `at` is the hour that
+  // was actually read and the plate's marker cannot claim a different one.
+  lastReadFrom = { points, runs, leadIndex, eso, at };
+  const stamp = stampText(points, at);
+  lastAt = stamp
+    ? {
+        // The temperature off `points` rather than the plate's parallel array
+        // of bare values: the same number, and one series to be indexed by one
+        // instant is one fewer thing that can be sliced differently.
+        text: `${stamp} · zone ${points[at].value.toFixed(1)} °C`,
+        pinned: Boolean(pinnedHour),
+        released: released ? hourPinText(released) : null,
+      }
+    : null;
+  lastReadings = readMeters(eso, at);
+  // A released pin has to leave the address with it. Without this the bar goes
+  // on carrying `at=winter.1-1T5` for an hour the desk has already told the
+  // reader it could not find — the address claiming a scheme the sheet is not
+  // showing, which is the failure the `hashchange` reload exists to prevent,
+  // arriving by the one route that never touches the hash.
+  if (released) updatePermalink();
+}
+
+/**
+ * Take or release the pin, off the run already in hand.
+ *
+ * No solve: the hour is a way of reading a result, not a property of one, so
+ * this is the same move `reprice` makes for a tariff. The address bar follows,
+ * because a click is a whole gesture — there is no drag here to hold it still.
+ */
+function toggleHourPin() {
+  if (!lastReadFrom) return;
+  const { points, runs, leadIndex, eso } = lastReadFrom;
+  if (pinnedHour) pinnedHour = null;
+  else {
+    pinnedHour = pinAt(points, runs, worstHour(points, runs[leadIndex]));
+    if (!pinnedHour) return; // no stamp to pin; leave the desk exactly as it was
+  }
+  readAt(points, runs, leadIndex, eso);
+  reletterReading();
+}
+
+/**
+ * Take the hour a click on the plate named.
+ *
+ * Clicking the hour already being held releases it, so the plate can undo its
+ * own gesture: a reader who found the pin by pointing at the curve should not
+ * have to go and find the rail's button to let go of it again.
+ */
+function pinFromPlate(index, snap) {
+  if (!lastReadFrom) return;
+  const { points, runs, leadIndex, eso } = lastReadFrom;
+  const at = snap ? dayExtremeNear(points, runs, index) : index;
+  if (at == null) return;
+  const taken = pinAt(points, runs, at);
+  if (!taken) return;
+  const same =
+    pinnedHour &&
+    pinnedHour.kind === taken.kind &&
+    pinnedHour.month === taken.month &&
+    pinnedHour.day === taken.day &&
+    pinnedHour.hour === taken.hour;
+  pinnedHour = same ? null : taken;
+  readAt(points, runs, leadIndex, eso);
+  reletterReading();
+}
+
+/**
+ * Everything that reads the instant, re-lettered from the run already in hand.
+ *
+ * The desk's meters, the plate's marker and the address bar are three views of
+ * one hour, and a route that moved the hour without moving all three would put
+ * the marker on one instant while the strips reported another.
+ */
+function reletterReading() {
+  desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt);
+  renderTrace();
+  updatePermalink();
+}
+
+/**
  * What each channel was contributing at one instant.
  *
  * At one instant, and not averaged over the run, which was the first attempt
@@ -1831,7 +2093,9 @@ const exactly = (name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\
  * whole desk reads zero. A console meter shows level now, not the mean of the
  * song. So the desk reads at the hour the building is having the hardest time —
  * the one furthest from 20 °C, which is the hour the design is judged at, and
- * an instant where the balance genuinely closes.
+ * an instant where the balance genuinely closes. Unless the reader has pinned
+ * an hour, in which case it is that one: see `pinned` below for why a console
+ * that only ever picks its own instant cannot be used to compare two desks.
  *
  * A channel whose series the ESO did not carry reads null, not zero. Zero is a
  * measurement; this is the absence of one, and the strip letters it as an em
@@ -1862,20 +2126,6 @@ function readMeters(eso, at) {
   return readings;
 }
 
-/** The hour the building is having the hardest time, within one environment. */
-function worstHour(zone, run) {
-  let at = run.start;
-  let worst = -Infinity;
-  for (let i = run.start; i <= run.end; i += 1) {
-    const off = Math.abs(zone[i] - 20);
-    if (off > worst) {
-      worst = off;
-      at = i;
-    }
-  }
-  return at;
-}
-
 const deskPanel = $('desk');
 const deskButton = $('desk-open');
 
@@ -1883,8 +2133,16 @@ desk = mountConsole({
   host: deskPanel,
   params,
   bypass,
-  onChange: commit,
+  onChange(key, value, done = false) {
+    // A console control genuinely turned is the same "take hold of
+    // something" note the sheet's sliders file. Priced keys are excluded —
+    // they re-letter the bill and resolve nothing, which is not the lesson.
+    if (params[key] !== value && !PRICED_KEYS.has(key)) tour?.note('drag');
+    commit(key, value, done);
+  },
+  onPin: toggleHourPin,
   onPatch(id, off) {
+    tour?.note('patch');
     beginGesture();
     bypass[id] = off;
     // Taking a channel in by hand is an answer to the solo question too.
@@ -1898,6 +2156,8 @@ desk = mountConsole({
     if (autoOn()) pump();
   },
   onSolo(next) {
+    // Solo is patching by another route: every other channel goes out.
+    tour?.note('patch');
     beginGesture();
     solo = next;
     applyGeometry();
@@ -1917,6 +2177,10 @@ function openDesk(open) {
   document.body.classList.toggle('desk-open', open);
   deskButton.setAttribute('aria-expanded', String(open));
   $('desk-count').textContent = open ? 'Close the desk' : 'Every control on the desk';
+  if (open) tour?.note('desk');
+  // The patch note's subject moves with the desk: the first patch button when
+  // the console is open, the button that opens it when it is not.
+  tour?.syncGuide();
   // The plate is inside a column that just changed width.
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(renderTrace, 60);
@@ -1928,6 +2192,19 @@ $('desk-close').addEventListener('click', () => {
   openDesk(false);
   deskButton.focus();
 });
+
+/* ══ the general notes ═══════════════════════════════════════════════════ */
+
+// The onboarding reads the desk rather than asking it: this module reports
+// each real event once — the solve, the drag, the attach, the patch — and the
+// notes decide whether it fills a square. Mounted after the console so the
+// patch note can point at a real patch button, and handed `openDesk` so a
+// note whose subject lives on the console can stage it.
+const tour = mountTour({ openDesk });
+// The two carry-away paths are one step: either proves the scheme leaves the
+// page. The buttons keep their own handlers; the note is a second listener.
+$('share').addEventListener('click', () => tour?.note('link'));
+$('download').addEventListener('click', () => tour?.note('link'));
 
 /* ══ the baseline ════════════════════════════════════════════════════════ */
 
@@ -2430,6 +2707,10 @@ async function choose(row, pick, sizing = 'No') {
       : `${siteName(picked)} attached, design conditions and all — the run covers ${hours} hours, with the sizing days skipped.`;
   syncAuto();
   markStale();
+  // Filed on the attach itself, wherever it came from: a reader arriving on a
+  // station link has a year genuinely attached, and the notes record what has
+  // happened on this desk, not who did it.
+  tour?.note('station');
   return true;
 }
 
@@ -2457,7 +2738,7 @@ let linkAttachPending = false;
  * pre-solo patch state while the bundle's manifest carried the solo map.
  */
 const schemeHash = (p = params) =>
-  encodeState({ params: p, bypass: patching(), station: stationToken() });
+  encodeState({ params: p, bypass: patching(), station: stationToken(), pin: pinnedHour });
 
 /** The absolute form, for the clipboard and the run bundle's manifest. */
 const schemeUrl = (p = params) => {
@@ -2514,6 +2795,10 @@ function refuseLink(message) {
   syncSweepGate();
   stopAuto();
   revert();
+  // `revert` restores the parameters and the patch bay; the pinned hour is
+  // neither, so it has to be released by name or a refused link would leave
+  // its one surviving claim on the desk.
+  pinnedHour = null;
   clearResults();
   history.replaceState(null, '', location.pathname + location.search);
   statusEl.className = 'status bad';
@@ -3473,6 +3758,11 @@ if (location.hash.length > 1) {
     linked = decodeState(location.hash.slice(1));
     Object.assign(params, linked.params);
     Object.assign(bypass, linked.bypass);
+    // The pinned hour is taken here rather than after the first solve, because
+    // it has to be in force *for* that solve: honoured afterwards, the desk
+    // would letter its own worst hour first and jump to the link's, which is
+    // the flicker a link exists to avoid.
+    pinnedHour = linked.pin;
     desk?.sync();
   } catch (error) {
     linkError = error;
@@ -3623,7 +3913,6 @@ async function solve() {
   const runs = environmentRuns(points, eso?.environments ?? []);
 
   plot = { zone, out, segments: axisSegments(points, runs) };
-  renderTrace();
 
   const columns = runs.map((r) => ({ label: r.label, metrics: metricsFor(zone, out, r, hasOutdoor) }));
   renderSchedule(columns, baseline?.columns);
@@ -3643,12 +3932,12 @@ async function solve() {
   renderAxon(lastMean);
 
   lastHours = nn;
-  const at = worstHour(zone, runs[leadIndex]);
-  const stamp = points[at]?.timestamp;
-  lastAt = stamp
-    ? `${String(stamp.hour ?? 0).padStart(2, '0')}:00, ${stamp.day} ${MONTHS[stamp.month - 1]} · zone ${zone[at].toFixed(1)} °C`
-    : null;
-  lastReadings = readMeters(eso, at);
+  readAt(points, runs, leadIndex, eso);
+
+  // The plate is drawn after the hour is known, not before: it now carries the
+  // marker for that hour, and drawing it first would post a marker for the
+  // previous run's instant for the rest of this function.
+  renderTrace();
 
   // The end-use meters ride in on the same ESO -- `Output:Meter` writes to both
   // the .eso and the .mtr -- so the bill is priced off the run that is already
@@ -3744,6 +4033,10 @@ async function solve() {
   statusEl.textContent = live
     ? `${nn.toLocaleString('en-US')} hours solved locally in ${seconds.toFixed(2)} s · auto-solve`
     : `${nn.toLocaleString('en-US')} hours solved locally in ${seconds.toFixed(2)} s · ${warnings} warning${warnings === 1 ? '' : 's'}`;
+
+  // Only a run that produced readable results fills the first square — the
+  // early returns above are exactly the runs the note must not claim.
+  tour?.note('solve');
 }
 
 /* ══ the scheduler ═══════════════════════════════════════════════════════ */
