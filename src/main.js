@@ -46,6 +46,7 @@ import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
 import {
   MONTHS,
   NEUTRAL_C,
+  dayExtremeNear,
   environmentRuns,
   hourly,
   pinAt,
@@ -633,6 +634,65 @@ function renderTrace() {
     );
   }
 
+  /*
+   * ── the reading hour
+   *
+   * The instant every meter on the desk is reading, drawn on the one picture
+   * that has an axis for it. Before this the hour was stated only in the rail's
+   * footer — ten-pixel mono at the foot of a desk you had to open first — which
+   * made the single most movable thing about the readings the least visible.
+   * The desk's own rule is that a path is readable without opening anything;
+   * the hour the paths are read at had better be too.
+   *
+   * The head is the same square the patch buttons and the rail's pin carry:
+   * filled `--redline` when the hour is held, a hairline outline when it is
+   * whichever hour this run happened to be worst at. One armed idiom, three
+   * places.
+   *
+   * Guarded on the series lengths agreeing, the way the ghost is: a station
+   * change redraws the plate with the new city's datums while the previous
+   * run's curve is still standing, and an index into a run that is no longer
+   * the one plotted would put the marker at an hour nobody is reading.
+   */
+  const reading = lastReadFrom?.points.length === n ? lastReadFrom : null;
+  if (reading) {
+    const mx = x(reading.at, n);
+    const held = Boolean(pinnedHour);
+    const ink = held ? 'var(--redline)' : 'var(--ink-ghost)';
+    const mark = svg('g', { 'pointer-events': 'none' });
+    mark.append(
+      svg('line', {
+        x1: mx, y1: PAD.t + 5, x2: mx, y2: PAD.t + inner.h,
+        stroke: ink, 'stroke-width': 1,
+        'stroke-dasharray': held ? null : '2 3',
+        'shape-rendering': 'crispEdges',
+      }),
+    );
+    mark.append(
+      svg('rect', {
+        x: mx - 3.5, y: PAD.t - 1, width: 7, height: 7,
+        fill: held ? 'var(--redline)' : 'none',
+        stroke: held ? 'var(--redline)' : 'var(--ink-ghost)', 'stroke-width': 1,
+      }),
+    );
+    // The point on the zone curve the desk is actually reading off.
+    mark.append(
+      svg('circle', { cx: mx, cy: y(plot.zone[reading.at]), r: 2.6, fill: ink }),
+    );
+    const title = svg('title');
+    title.textContent = `${held ? 'Held at' : 'Read at'} ${stampText(reading.points, reading.at)}`;
+    mark.append(title);
+    root.append(mark);
+    // The plate's description says what it is now showing, since the marker is
+    // part of the picture a reader who cannot see it is being told about.
+    root.setAttribute(
+      'aria-label',
+      `Zone mean air temperature against outdoor drybulb temperature. ` +
+        `The desk's meters are ${held ? 'held at' : 'reading at'} ` +
+        `${stampText(reading.points, reading.at)}.`,
+    );
+  }
+
   // ── direct labels in the right gutter beat a legend box
   const labels = [
     { text: 'Zone', y: y(plot.zone[n - 1]), fill: 'var(--redline)', opacity: 1 },
@@ -679,6 +739,38 @@ function renderTrace() {
     axis.append(t);
   }
   root.append(axis);
+
+  /*
+   * ── choosing the hour
+   *
+   * Point at the moment you want explained. The alternative was a date field
+   * on the rail, which is precise and asks the reader to type "14 February,
+   * 15:00" at a picture of 14 February that is already on the screen — and
+   * which invites February the 30th and hour 25 purely to meet a refusal
+   * message. The curve is the instrument; clicking it is reading back off the
+   * model in the same sense everything else here is.
+   *
+   * Snapping is decided by the axis's own resolution rather than by run kind,
+   * because the resolution is what the reader is actually up against and it
+   * moves with the window: an annual run at ten hours to the pixel cannot
+   * mean an hour, a design day at five pixels to the hour can.
+   */
+  if (reading) {
+    const hoursPerPixel = n / inner.w;
+    root.style.cursor = 'crosshair';
+    root.addEventListener('click', (event) => {
+      const box = root.getBoundingClientRect();
+      if (!box.width) return;
+      // The viewBox is `0 0 w H` against a width of 100 %, so a client pixel
+      // is `w / box.width` user units — read per click rather than cached,
+      // since the plate resizes with the window and the desk opening.
+      const px = (event.clientX - box.left) * (w / box.width);
+      const i = Math.round(((px - PAD.l) / inner.w) * (n - 1));
+      if (i < 0 || i > n - 1) return; // the gutters are not part of the field
+      pinFromPlate(i, hoursPerPixel > 1);
+    });
+  }
+
   host.append(root);
 }
 
@@ -1853,7 +1945,6 @@ const hourPinText = (pin) =>
  * reading is held still.
  */
 function readAt(points, runs, leadIndex, eso) {
-  lastReadFrom = { points, runs, leadIndex, eso };
   let at = resolvePin(pinnedHour, points, runs);
   let released = null;
   if (pinnedHour && at == null) {
@@ -1861,6 +1952,9 @@ function readAt(points, runs, leadIndex, eso) {
     pinnedHour = null;
   }
   if (at == null) at = worstHour(points, runs[leadIndex]);
+  // Set after the pin has been resolved or released, so `at` is the hour that
+  // was actually read and the plate's marker cannot claim a different one.
+  lastReadFrom = { points, runs, leadIndex, eso, at };
   const stamp = stampText(points, at);
   lastAt = stamp
     ? {
@@ -1897,7 +1991,44 @@ function toggleHourPin() {
     if (!pinnedHour) return; // no stamp to pin; leave the desk exactly as it was
   }
   readAt(points, runs, leadIndex, eso);
+  reletterReading();
+}
+
+/**
+ * Take the hour a click on the plate named.
+ *
+ * Clicking the hour already being held releases it, so the plate can undo its
+ * own gesture: a reader who found the pin by pointing at the curve should not
+ * have to go and find the rail's button to let go of it again.
+ */
+function pinFromPlate(index, snap) {
+  if (!lastReadFrom) return;
+  const { points, runs, leadIndex, eso } = lastReadFrom;
+  const at = snap ? dayExtremeNear(points, runs, index) : index;
+  if (at == null) return;
+  const taken = pinAt(points, runs, at);
+  if (!taken) return;
+  const same =
+    pinnedHour &&
+    pinnedHour.kind === taken.kind &&
+    pinnedHour.month === taken.month &&
+    pinnedHour.day === taken.day &&
+    pinnedHour.hour === taken.hour;
+  pinnedHour = same ? null : taken;
+  readAt(points, runs, leadIndex, eso);
+  reletterReading();
+}
+
+/**
+ * Everything that reads the instant, re-lettered from the run already in hand.
+ *
+ * The desk's meters, the plate's marker and the address bar are three views of
+ * one hour, and a route that moved the hour without moving all three would put
+ * the marker on one instant while the strips reported another.
+ */
+function reletterReading() {
   desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt);
+  renderTrace();
   updatePermalink();
 }
 
@@ -2889,7 +3020,6 @@ async function solve() {
   const runs = environmentRuns(points, eso?.environments ?? []);
 
   plot = { zone, out, segments: axisSegments(points, runs) };
-  renderTrace();
 
   const columns = runs.map((r) => ({ label: r.label, metrics: metricsFor(zone, out, r, hasOutdoor) }));
   renderSchedule(columns, baseline?.columns);
@@ -2910,6 +3040,11 @@ async function solve() {
 
   lastHours = nn;
   readAt(points, runs, leadIndex, eso);
+
+  // The plate is drawn after the hour is known, not before: it now carries the
+  // marker for that hour, and drawing it first would post a marker for the
+  // previous run's instant for the rest of this function.
+  renderTrace();
 
   // The end-use meters ride in on the same ESO -- `Output:Meter` writes to both
   // the .eso and the .mtr -- so the bill is priced off the run that is already

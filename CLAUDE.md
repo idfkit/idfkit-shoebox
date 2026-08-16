@@ -351,8 +351,28 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   the ranking inverts. The transmitted-solar series is byte-identical between
   those two runs — 8,760 hours, max difference 0 W — so the whole apparent
   change was the hour. Both readings are true; the pair is not a comparison.
-  `pinnedHour` in `main.js` holds the instant, and the rail's `Read at …` line
-  is the control that takes it.
+  `pinnedHour` in `main.js` holds the instant, and there are two controls for
+  it: the rail's `Read at …` line holds whatever hour the run chose, and the
+  **plate is clickable** to choose any other.
+- **The plate carries the marker, because the plate has the axis for it.** A
+  vertical hairline with the desk's armed square at its head and a dot on the
+  zone curve — filled `--redline` when held, a dashed `--ink-ghost` outline
+  when it is the run's own worst hour. The hour was previously stated only in
+  the rail's footer, which made the most movable thing about the readings the
+  least visible; the desk's rule is that a path reads without opening
+  anything, and the hour those paths are read at now does too. Guarded on
+  `lastReadFrom.points.length === plot.zone.length`, the way the gesture ghost
+  is, because a station change redraws the plate with new datums while the
+  previous run's curve still stands.
+- **A click on the plate snaps by the axis's resolution, not by run kind.**
+  `dayExtremeNear` takes the furthest-from-20 hour *within the clicked day*
+  when there is more than one hour to the pixel — an annual trace is 8,760
+  points across ~900 px, so a click can only honestly mean a day. A design day
+  is 48 points across the same width, where a click already names its hour and
+  snapping would leave the whole winter day reachable only at its coldest
+  hour. Clicking the held hour again releases it, so the plate can undo its own
+  gesture. `renderTrace` therefore runs **after** `readAt` in `solve` — drawn
+  first it would post the previous run's instant.
 - **The pin is a calendar stamp, not an index.** `{ kind, month, day, hour }`,
   where kind is `year` / `winter` / `summer` — by environment *kind* because
   the index is not a property of the desk (keeping the sizing days renumbers

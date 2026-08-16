@@ -106,6 +106,40 @@ export function resolvePin(pin, points, runs) {
   return null;
 }
 
+/**
+ * The hour a click on the plate means.
+ *
+ * An annual trace is 8,760 points across about 900 px — roughly ten hours to
+ * the pixel — so a click cannot mean an hour, only a day. Rather than take the
+ * hour that happens to sit under the cursor, which is arbitrary and a tenth
+ * likely to be the one meant, the pick is snapped to the extreme *within the
+ * clicked day*: one gesture, and it lands on the hour of that day worth
+ * reading. Same rule as `worstHour`, over a day instead of an environment, so
+ * the plate and the desk agree about what "the hour that matters" means.
+ *
+ * The caller decides whether to snap, from the axis's own resolution: a
+ * design-day run is 48 points across the same width, where a click already
+ * names its hour to within a fifth of one and snapping would throw that away —
+ * it would leave the whole winter day reachable only at its coldest hour.
+ */
+export function dayExtremeNear(points, runs, index) {
+  const run = runs.find((r) => index >= r.start && index <= r.end);
+  if (!run) return null;
+  const { month, day } = points[index].timestamp;
+  let at = index;
+  let worst = -Infinity;
+  for (let i = run.start; i <= run.end; i += 1) {
+    const t = points[i].timestamp;
+    if (t.month !== month || t.day !== day) continue;
+    const off = Math.abs(points[i].value - NEUTRAL_C);
+    if (off > worst) {
+      worst = off;
+      at = i;
+    }
+  }
+  return at;
+}
+
 /** A pinned or read hour, lettered the one way the whole sheet letters it. */
 export const stampText = (points, at) => {
   const t = points[at]?.timestamp;
