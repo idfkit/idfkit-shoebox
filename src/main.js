@@ -947,9 +947,18 @@ const cell = (row, text, className) => {
  * match for the plainer reason that subtracting euros from dollars is not
  * arithmetic. Same refusal the results schedule makes when its baseline
  * describes another set of environments.
+ *
+ * The period has to match for the same reason the schedule's does. A weather
+ * file stopped meaning a year the day the Run strip's calendar could leave
+ * months out, so a scheme pinned on twelve months and then read against a
+ * January-to-March run would head every row "Δ against …" and report a
+ * three-quarters saving that is nothing but a shorter run. Metered hours
+ * rather than months, because February and March are both one month and
+ * seventy-two hours apart.
  */
 function comparable(a, b) {
   if (!a || !b || a.currency !== b.currency) return false;
+  if (a.annual !== b.annual || a.hours !== b.hours) return false;
   const uses = (bill) => bill.lines.map((l) => l.use.id).join();
   return uses(a) === uses(b);
 }
@@ -1717,6 +1726,12 @@ function runHours() {
  */
 function syncRunSub() {
   if (!annual()) return;
+  // "Annual" is a claim about the run, not about the weather file. The
+  // calendar can take months out of it, and the attach that first lettered
+  // this field happens once while the Run strip keeps moving — so the run type
+  // is re-read off the mask here, alongside the hours it already quotes,
+  // rather than left standing as whatever the attach said.
+  $('t-run').textContent = isWholeYear(params.months) ? 'Annual' : 'Run period';
   $('t-run-sub').textContent = `${
     params.sizingPeriods === 'Yes' ? 'Weather file and sizing days' : 'Weather file'
   }, ${runHours().toLocaleString('en-US')} hours`;
@@ -2390,7 +2405,9 @@ async function choose(row, pick, sizing = 'No') {
   }
 
   const hours = runHours().toLocaleString('en-US');
-  set('t-run', 'Annual');
+  // The run type goes on with the hours, out of `syncRunSub`, which reads both
+  // off the calendar: an attach onto a desk with months already taken out is
+  // not an annual run and must not be lettered as one.
   syncRunSub();
   statusEl.className = 'status';
   statusEl.textContent =
@@ -2681,7 +2698,10 @@ async function solve() {
     // Which months the weather run covers, off the snapshot that is being
     // solved. The manifest states the run in one line, and "Annual" over 4,344
     // hours is the drift the whole capture-before-the-await exists to prevent.
-    months: epwText ? snapshot.months : null,
+    // Named for the mask it holds, not for the months, because `lastRun.months`
+    // beside it is a count — the bill divides by it and the manifest spells it
+    // out, and one name over two shapes is a trap for whoever edits next.
+    monthMask: epwText ? snapshot.months : null,
     weatherStem:
       epwText && station?.url ? station.url.split('/').pop().replace(/\.zip$/i, '') : null,
     location: $('t-location').textContent,

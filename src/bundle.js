@@ -155,9 +155,9 @@ const group = (n) => n.toLocaleString('en-US');
 function runLine(run) {
   const hours = `${group(run.hours)} hours`;
   if (!run.annual) return `Design days (${hours})`;
-  if (!run.months || isWholeYear(run.months)) return `Annual (${hours})`;
+  if (!run.monthMask || isWholeYear(run.monthMask)) return `Annual (${hours})`;
   const { control } = controlFor('months');
-  return `${control.periods(run.months).replace(/\.$/, '')} (${hours})`;
+  return `${control.periods(run.monthMask).replace(/\.$/, '')} (${hours})`;
 }
 
 /**
@@ -251,6 +251,17 @@ function manifest(run, list) {
   );
 }
 
+/**
+ * What the download calls the run, in one word.
+ *
+ * The same distinction the manifest's Run line makes, and made here for the
+ * same reason: a file sitting in a downloads folder called `…-annual.zip`
+ * holding four months of weather is a claim nobody is left in a position to
+ * check.
+ */
+const kind = (run) =>
+  !run.annual ? 'designday' : !run.monthMask || isWholeYear(run.monthMask) ? 'annual' : 'runperiod';
+
 /** A filesystem-safe stem from the run's location, for the download's name. */
 function slug(run) {
   const base = (run.location || 'run').replace(/,.*$/, '');
@@ -273,5 +284,5 @@ export async function runBundle(run) {
   files.push({ name: 'MANIFEST.txt', bytes: enc.encode(manifest({ ...run, date }, list)) });
 
   const blob = await zip(files, { date });
-  return { blob, filename: `shoebox-${slug(run)}-${run.annual ? 'annual' : 'designday'}.zip` };
+  return { blob, filename: `shoebox-${slug(run)}-${kind(run)}.zip` };
 }
