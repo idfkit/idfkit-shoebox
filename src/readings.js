@@ -235,8 +235,7 @@ export function readExtremes(eso) {
 }
 
 /**
- * The demand intensities, for a desk with ideal loads in the path and a year
- * to read them over.
+ * The demand intensities over one named set of environments.
  *
  * Ideal loads meter as `DistrictHeatingWater` and `DistrictCooling` — heat
  * delivered at a notional 100 % — which is exactly what a demand intensity
@@ -245,18 +244,24 @@ export function readExtremes(eso) {
  * EUI sums the bill's building section only, by the bill's own benchmark
  * rule, and refuses to print at all when heating or cooling is missing — a
  * total quietly short its largest term would read as a finding.
+ *
+ * Every field comes back null rather than zero where the meter behind it was
+ * never requested, which is what a bypassed System looks like from here: the
+ * caller draws an em dash and leaves the row out of anything it sums. The
+ * meters' own presence is the gate, so nothing here has to be told which
+ * channels were in the path.
+ *
+ * Which environments count is the caller's question, not this function's —
+ * the same division `meterTotal` already makes, and the reason the sweep and
+ * the results schedule can read the same arithmetic over different sets.
  */
-export function readDemand(eso, floorArea) {
-  if (!(floorArea > 0)) return null;
-  const zr = zoneRuns(eso);
-  const year = zr ? zr.runs.filter((r) => r.kind === null) : [];
-  if (!year.length) return null;
-  const billed = new Set(year.map((r) => r.key));
+export function demandOver(eso, environments, floorArea) {
+  if (!(floorArea > 0) || !environments?.size) return null;
 
   const kwh = new Map();
   for (const use of END_USES) {
     if (use.group !== 'building') continue;
-    const joules = meterTotal(eso, use.meter, billed);
+    const joules = meterTotal(eso, use.meter, environments);
     if (joules != null) kwh.set(use.id, joules * J_TO_KWH);
   }
   const heating = kwh.get('heating') ?? null;
@@ -269,4 +274,21 @@ export function readDemand(eso, floorArea) {
         ? null
         : [...kwh.values()].reduce((a, b) => a + b, 0) / floorArea,
   };
+}
+
+/**
+ * The demand intensities of a whole run, for a desk with ideal loads in the
+ * path and a year to read them over.
+ *
+ * The billed environments and nothing else, by the bill's rule: sizing days
+ * kept on the Run strip accumulate into the same meters, and forty-eight
+ * hours of the most extreme weather in the file has no business in an
+ * intensity. This is what the sweep reads at every sample, so the sheet's own
+ * reading of the desk it is standing on goes through it too.
+ */
+export function readDemand(eso, floorArea) {
+  const zr = zoneRuns(eso);
+  const year = zr ? zr.runs.filter((r) => r.kind === null) : [];
+  if (!year.length) return null;
+  return demandOver(eso, new Set(year.map((r) => r.key)), floorArea);
 }
