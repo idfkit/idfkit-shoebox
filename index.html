@@ -1824,6 +1824,124 @@
         .month:nth-child(6n) { border-right: 0; }
         .month:nth-child(-n + 6) { border-bottom: 1px solid var(--rule-soft); }
       }
+      /* ── a list of days over a year rule ──────────────────────────── */
+
+      .days-rule { display: block; width: 100%; height: auto; }
+      .days { display: flex; flex-direction: column; }
+      .day {
+        display: grid;
+        grid-template-columns: auto 1fr auto auto;
+        align-items: baseline;
+        gap: 8px;
+        padding: 3px 0;
+        border-bottom: 1px solid var(--rule-soft);
+      }
+      /* Where the day actually falls, once a weather file has supplied a
+         calendar. Ghost ink because it is read off the run rather than set. */
+      .day-when {
+        font: 400 10px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink-ghost);
+        white-space: nowrap;
+      }
+      /* Dropped whole by the run, so the engine will lose it without a word. */
+      .day-when.out { text-decoration: line-through; }
+      /* Only partly inside: struck through would be a lie, so the row carries
+         the fraction and the redline says the reading is short of the list. */
+      .day-when.part { color: var(--redline); }
+      .ctl-note.out { color: var(--redline); }
+      .day:last-child { border-bottom: 0; }
+      .day-date {
+        font: 400 10.5px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+        white-space: nowrap;
+      }
+      /* `min-width: 0` so a long name ellipsises instead of pushing the row
+         wider than the folded strip it sits in on the index sheet. */
+      .day-name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font: 400 10.5px/1.4 var(--sans);
+        color: var(--ink-2);
+      }
+      .day-drop {
+        all: unset;
+        cursor: pointer;
+        padding: 0 2px;
+        font: 400 12px/1 var(--sans);
+        color: var(--ink-ghost);
+      }
+      /* The guard every unset button on this sheet carries: the one real
+         `button:hover:not(:disabled)` rule is more specific than a bare class
+         and would paint the × solid redline on redline. */
+      .day .day-drop:hover:not(:disabled) { background: transparent; color: var(--redline); }
+      .day-drop:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 1px; }
+
+      .day-add { display: flex; gap: 6px; align-items: stretch; margin-top: 6px; }
+      .day-field {
+        all: unset;
+        box-sizing: border-box;
+        flex: 1;
+        min-width: 0;
+        padding: 4px 7px;
+        background: var(--inset);
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        font: 400 10.5px/1.4 var(--mono);
+        color: var(--ink);
+      }
+      .day-field::placeholder { color: var(--ink-ghost); }
+      .day-field:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: -2px; }
+      .day-put {
+        all: unset;
+        cursor: pointer;
+        padding: 0 4px;
+        font: 500 9px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+        border-bottom: 1px solid transparent;
+      }
+      .day-add button.day-put:hover:not(:disabled) {
+        background: transparent;
+        color: var(--redline);
+        border-bottom-color: var(--redline);
+      }
+      .day-put:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+
+      /* The refusal, in the dashed treatment every other refusal on the sheet
+         wears, so a rejected entry looks like the blocked-channel note rather
+         than like a new kind of thing. */
+      .day-error {
+        margin: 6px 0 0;
+        padding: 5px 7px;
+        border: 1px dashed var(--rule-focus);
+        border-radius: var(--r);
+        font: 400 10.5px/1.4 var(--sans);
+        color: var(--redline);
+      }
+      .day-error[hidden] { display: none; }
+
+      .day-presets { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 7px; }
+      .day-set {
+        all: unset;
+        cursor: pointer;
+        font: 500 9px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-ghost);
+        border-bottom: 1px solid transparent;
+      }
+      .day-presets button.day-set:hover:not(:disabled) {
+        background: transparent;
+        color: var(--redline);
+        border-bottom-color: var(--redline);
+      }
+      .day-set:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+      .day-set[hidden] { display: none; }
 
       /* ── what a channel is actually contributing ──────────────────── */
 

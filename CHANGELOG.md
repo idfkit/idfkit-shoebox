@@ -9,6 +9,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Holidays you define. The Run strip's **Holidays** switch reads *From file*,
+  *Listed* or *None*, and under it is the list itself: dates you type, days you
+  remove, and five published calendars — United States, Canada, England and
+  Wales, France, Germany, the same five regions the tariffs cover — that stamp
+  themselves into it. Each entry becomes a `RunPeriodControl:SpecialDays`, so a
+  fixed date (`12/25`), an nth weekday (`4 Thu in Nov`), a last weekday
+  (`Last Mon in May`) and a multi-day shutdown (`12/24*9`) are all sayable. The
+  list is drawn against a twelve-month rule, and the two kinds of date are
+  marked differently on it: a fixed date gets a tick where it falls, an
+  nth-weekday rule a hollow mark at its month's centre, because that is genuinely
+  all the run period knows about it. What you type is what a scheme link carries
+  — the field and the address bar speak one grammar — and a malformed entry is
+  refused in words, in place, rather than clamped or dropped.
+
+  The companion is on Gains, where the occupancy lives: **Holidays** as
+  *As weekend*, *Closed* or *Open*. That control is the point of the exercise.
+  Until it existed, every `Schedule:Compact` on the desk ran
+  `For: Weekdays …` then `For: AllOtherDays`, and `AllOtherDays` swallows a
+  holiday alongside Sunday — so observing a holiday and ignoring one produced
+  the same building, and the switch that offered the choice was decorative. It
+  now writes a `For: Holidays` row. Measured on a Denver year with the weekend
+  open and the eleven federal holidays plus a nine-day Christmas shutdown
+  listed: 488 against 499 MJ/m², a 2.2 % difference that was previously
+  unreachable. At *As weekend* no row is written and the IDF is byte for byte
+  what it was.
+
+  Attach a year and each entry is lettered with the day it actually falls on —
+  `3 Mon in Jan · Mon 16 Jan` — and ticked there on the rule. Anything outside
+  the run is struck through and counted, because EnergyPlus drops such a day
+  without a word — and there is no reading of it anywhere else: the error file
+  is silent and the input echo lists every special day under every run period
+  whether it lands or not.
+
+  The reading is in **days, as a set**, because that is the unit that reaches the
+  engine. One row can be a nine-day shutdown, and a shutdown beginning 24
+  December is simulated up to the year end and then dropped, so a row can be
+  partly in — it says `Sun 24 Dec · 8 of 9` on its own line rather than being
+  struck through, which would be as wrong as saying nothing. Overlapping rows are
+  unioned: the same shutdown swallows Christmas and, wrapping past the year end,
+  New Year, so eleven federal holidays plus that shutdown is eighteen days and
+  not twenty. Before a weather file supplies a calendar none of that is
+  knowable, so the reading names what it can count — "12 holidays" — and becomes
+  days once there is a year to count them in.
+
+  All of it is checked against the engine rather than against itself: three runs,
+  read back off their own `Site Day Type Index` series, agree with the desk's
+  count exactly — 4, 9 and 10 days.
+
+  One thing the arrangement cannot do, said here because the interface says it
+  too. **Easter is not expressible** — an IDF date field carries no year, so Good
+  Friday, Easter Monday, Ascension and Whit Monday cannot be written, and neither
+  can Victoria Day, which is the Monday *preceding* 25 May and so is neither the
+  third Monday nor the last. Each calendar therefore declares its whole national
+  list and states, on the offer and before you press it, which days it is short
+  and why: `DE 5/9`, `CA 8/10`.
+
+  Attaching a station now also reads the EPW's own
+  `HOLIDAYS/DAYLIGHT SAVINGS` record — not to fill the list, but to say what is
+  in it. Every TMYx file names no holidays and no daylight saving period at all,
+  measured across Denver, Berlin and the five files shipped with EnergyPlus, so
+  *From file* has always been reading an empty list and reporting nothing about
+  it. The strip now states it. A file that does name days offers them as one
+  more stamp.
+
+### Changed
+
+- **The run now follows the weather file's calendar.** `RunPeriod`'s day of week
+  for the start day had been pinned to Tuesday since the model was written,
+  which overrode what every weather file says about itself — TMYx declares
+  `DATA PERIODS,1,1,Data,Sunday,1/ 1,12/31` — and put every annual run on an
+  invented year. Left empty, EnergyPlus takes the file's own start day and picks
+  a real non-leap year to match it, so weekends fall where weekends fall. It is
+  one field, and it is the only difference between the default IDF before this
+  change and after.
+
+  It matters more now that the year can be run in pieces. The field anchors to
+  each run period's own begin date, so pinned, a January and a June would both
+  start on a Tuesday and sit in two different calendars. Empty, they share one:
+  measured, January begins Sunday and June begins Thursday, which is 2017.
+
+  This moves results. Every annual run's day-of-week alignment shifts by two
+  days, so anything scheduled by weekday — the occupancy band's weekends, the
+  setpoint setback — lands on different dates than it used to, and any figure
+  from a previous annual run is not comparable. Design-day runs are unaffected;
+  a run period is not simulated without a weather file.
+
+  It also makes the holidays true rather than approximately placed. Under the
+  old Tuesday, Martin Luther King Day resolved to 21 January, Memorial Day to
+  27 May and Thanksgiving to 28 November. Following the file they are 16 January,
+  29 May and 23 November — the real 2017 dates, which is the year EnergyPlus
+  picks for a Sunday start. And the weekend holiday rule finally does something
+  real: with it on, New Year gains Monday 2 January and Veterans Day moves from
+  Saturday the 11th to Monday the 13th, exactly as observed.
+
+### Removed
+
+- **A fifth weekday is no longer sayable.** `5 Fri in Dec` parsed happily and
+  would have stopped the engine dead in any year December had only four Fridays
+  — `** Severe ** SetSpecialDayDates: … not enough Nths`, a fatal error, not a
+  warning. The nth now runs 1 to 4, plus `Last`. Every month has at least 28
+  days, so those five always exist, which makes the grammar total: every list
+  that parses runs, under every calendar. Nothing in any published calendar was
+  a fifth weekday.
+
+- Two entries starting on the same date are refused. EnergyPlus states plainly
+  that it gives "no error message on duplicate days or overlapping days", so the
+  second would have disappeared into the first without a word.
+
 - Parameter studies. Every scale on the console now carries a quiet **Study**
   action that sweeps that one control across its full range — about twenty
   solves of whatever run the sheet would make, a second or two of engine on the

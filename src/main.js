@@ -44,6 +44,7 @@ import {
   siteRegion,
   weatherFor,
 } from './weather.js';
+import { holidayList, parseEpwCalendar, parseEpwStartDay } from './epw.js';
 import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
 import {
   MONTHS,
@@ -2224,6 +2225,25 @@ const site = $('site');
 const autoBox = $('auto');
 
 /**
+ * What a weather file's own calendar can offer the holiday list.
+ *
+ * `''` for a file that names no holidays — which is every TMYx there is, so it
+ * is the answer the strip almost always prints. `null` when the file names days
+ * this page cannot read: the offer is withdrawn entirely rather than stamping
+ * the subset that happened to parse, and the strip says as much. Otherwise the
+ * file's days as a holiday list.
+ */
+function weatherHolidays(epw) {
+  const { holidays } = parseEpwCalendar(epw);
+  if (holidays.length === 0) return '';
+  try {
+    return holidayList(holidays);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Auto-solve has two cadences, because the two run types are three orders of
  * magnitude apart.
  *
@@ -2589,6 +2609,7 @@ async function choose(row, pick, sizing = 'No') {
   // and the location on the DDY. Denver's come out, this station's go in.
   epwText = files.epw;
   setDesignConditions(model, conditions);
+  desk?.setWeatherHolidays(weatherHolidays(files.epw), parseEpwStartDay(files.epw));
 
   // The drawing follows the weather, and reads it off the model exactly as it
   // did for Denver: the datum lines from the design days, the co-ordinates from
