@@ -58,7 +58,7 @@ function watts(w) {
  * scales cannot drift apart. Every gesture goes back out through `onChange`.
  */
 export function mountConsole({
-  host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear,
+  host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear, onPin,
 }) {
   const strips = new Map(); // channel id -> { redraw(), meter, patch, solo }
   const faces = new Map(); // parameter key -> redraw for that control
@@ -66,7 +66,13 @@ export function mountConsole({
   const cards = new Map(); // parameter key -> { node, kind, study, syncTick }
   const studyButtons = new Map(); // parameter key -> that scale's Study button
   let solo = null;
-  let reading = null; // the instant every meter on the desk is reading at
+  // The instant every meter on the desk is reading at: `{ text, pinned,
+  // released }`, or null before anything has been solved.
+  let reading = null;
+  // The rail's pin, as of the last redraw. Held because the rail is rebuilt
+  // whole on every reading, so the node that took a click is never the node
+  // that has to take the focus back.
+  let whenButton = null;
   let engaged = new Set(); // which channels the model says are in the path
   let ghost = {}; // where each control stood when the current gesture began
   // Whether a study can be taken at all, and the sentence for when it cannot.
@@ -1101,6 +1107,52 @@ export function mountConsole({
   };
 
   /**
+   * The line that says which instant the desk is reading, and holds it.
+   *
+   * The marker is the desk's own armed idiom — filled `--redline` when the
+   * hour is held, a hairline outline when it is the run's own worst hour — so
+   * "pinned" reads the same way "patched in" and "pinned as scheme" already
+   * do. It labels the instant rather than sitting beside it, because what is
+   * being armed is that hour and no other.
+   */
+  function whenLine() {
+    const wrap = el('div', 'rail-when');
+    const button = el('button', 'pin pin-inline');
+    whenButton = button;
+    button.type = 'button';
+    button.setAttribute('aria-pressed', String(reading.pinned));
+    button.title = reading.pinned
+      ? 'Release the hour and read the worst one in each run again'
+      : 'Hold this hour, so the meters keep reading it as the desk changes';
+    button.append(el('i', 'mark'), el('span', null, `Read at ${reading.text}`));
+    button.addEventListener('click', () => {
+      onPin?.();
+      // Turning the pin re-letters the rail, and `drawRail` empties the host,
+      // so by the time this handler returns the button that was clicked is
+      // detached and the focus has fallen to the body. Every other control on
+      // the desk keeps its node across a redraw; this one is rebuilt, so it
+      // has to hand the focus on to its replacement or a reader working the
+      // desk from the keyboard loses their place on every press -- and the
+      // `aria-pressed` they just changed is never announced.
+      if (whenButton?.isConnected) whenButton.focus();
+    });
+    wrap.append(button);
+    // A pin that could not be found is released, and the reader is told which
+    // hour went missing -- a marker that quietly went dark would leave every
+    // number on the rail claiming to be held when it is not.
+    if (reading.released) {
+      wrap.append(
+        el(
+          'p',
+          'rail-note loose',
+          `${reading.released} is not in this run, so the pin was released and the meters are reading the worst hour again.`,
+        ),
+      );
+    }
+    return wrap;
+  }
+
+  /**
    * The master bus: the zone air heat balance, as one signed rail.
    *
    * Zero is at the centre. Terms adding heat to the zone air stack out to the
@@ -1120,8 +1172,12 @@ export function mountConsole({
     head.append(el('p', 'eyebrow', 'Zone air heat balance'));
     railHost.append(head);
     // Every meter on the desk is an instantaneous reading, so the rail has to
-    // say which instant, or the numbers are unfalsifiable.
-    if (reading) railHost.append(el('p', 'rail-when', `Read at ${reading}`));
+    // say which instant, or the numbers are unfalsifiable. And because that
+    // instant is chosen by the result — the hour furthest from 20 °C, which a
+    // control can move without touching the quantity being read — the line
+    // that states it is also where it is held still. One control, in the one
+    // place the reading hour is already named.
+    if (reading) railHost.append(whenLine());
 
     if (!terms.length) {
       railHost.append(el('p', 'rail-empty', 'No solved run to balance yet.'));
