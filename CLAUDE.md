@@ -66,14 +66,32 @@ controls.js  declares every control (typed classes) and groups them into Channel
 ```
 
 `src/controls.js` is the single source of truth. A control exists once, as a
-`Scale`, `Selector`, `Arm`, `Bearing`, `Facade` (four walls on one plan key) or
-`Profile` (a 24 hour band), attached to a `Channel`. The console draws it, the
-model applies it, and the sheet's five dimension sliders look their specs up by
-key from the same place, so the two surfaces cannot drift.
+`Scale`, `Selector`, `Bearing`, `Facade` (four walls on one plan key), `Profile`
+(a 24 hour band) or `Days` (a list of dates), attached to a `Channel`. The
+console draws it, the model applies it, and the sheet's five dimension sliders
+look their specs up by key from the same place, so the two surfaces cannot
+drift.
 
 **To add a control:** declare it in `controls.js`, then write the field in that
 channel's applier in `model.js`. Do not add markup, defaults, or label strings
 anywhere else. `DEFAULT_PARAMETERS` is derived from the declaration.
+
+**To add a control *kind*** — rarer, and it has two gates that fail in opposite
+directions. `console.js`'s `buildControl` throws for a kind it cannot draw, so
+the desk fails loudly at mount. `permalink.js`'s `readValue` is the quieter one:
+its numeric regex runs *before* the per-kind switch, so a branch added inside
+the switch is unreachable and every link carrying that key is refused as "not a
+number". A non-numeric kind is taught above the regex, beside `selector`.
+
+**Every parameter is a scalar, and four separate mechanisms rely on it**:
+`commit`'s `params[key] !== value` guard, `encodeState`'s identity diff against
+a frozen default, `decodeState`'s one-value-per-key rule, and `revert`'s
+`Object.assign(params, DEFAULT_PARAMETERS)`. `Object.freeze` is shallow, so the
+last of those would alias an array default straight into live `params` — and
+`DEFAULTS_BY_VERSION.v1` is that same object, so the link format itself would
+drift with no symptom until a shared link came back wrong. A list-valued control
+carries canonical text and parses at the boundaries; `Days` is the worked
+example.
 
 ### `applyModel` (src/model.js)
 
@@ -355,6 +373,37 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
 - **`Schedule:Compact`**: `Until: 08:00` and the value after it are two separate
   extensible fields. Joining them into one comma-bearing string produces a
   malformed IDF.
+- **A `Schedule:Compact` with no `For: Holidays` row cannot tell a holiday from
+  a Sunday.** `AllOtherDays` is the catch-all and it swallows them, which is why
+  the Run channel's holiday switch changed nothing whatever for as long as the
+  Gains channel had no row to go with it. The row goes *before* `AllOtherDays`;
+  at `holidayUse: 'AsWeekend'` none is written, which is exactly what that
+  setting means and what keeps the default IDF byte-identical.
+- **The weather file's special days take precedence** over
+  `RunPeriodControl:SpecialDays`, so "Listed" has to write
+  `use_weather_file_holidays_and_special_days = No` or the listed days lose
+  silently where they collide. The two are otherwise independent fields: `No`
+  turns off the *file's* days and leaves the objects standing, which is why
+  file-plus-list is a real state and not a contradiction. Special days are also
+  never used with a `SizingPeriod:*` — a design-day desk has no calendar at all.
+  A special day falling outside a narrowed run period is silently ignored:
+  measured on a June–August run carrying the November and December holidays,
+  which completed with zero warnings.
+- **The run period carries no year.** `day_of_week_for_start_day` is pinned to
+  Tuesday (`model.js`) and nothing re-derives it from an attached file, so the
+  calendar is a fiction: a fixed date lands on the right date and an arbitrary
+  weekday, and an nth-weekday date the reverse — the third Monday of January
+  resolves to 21 January here. `apply_weekend_holiday_rule` therefore shifts
+  holidays off a weekend that is itself invented. Giving the run period a real
+  year would fix it and move every existing run's day alignment with it, which
+  makes it a `LINK_VERSION` question rather than a field edit. The Run strip
+  says so on the control rather than leaving it to be discovered.
+- **Every TMYx file names no holidays and no daylight saving period.** Measured:
+  `HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0` on Denver 725650 and Berlin-Tegel 103820
+  in the 2009–2023 window, and on all five EPWs shipped with EnergyPlus 26.1. So
+  "From file" reads an empty list, and the daylight saving control beside it is
+  inert for the same reason. `src/epw.js` reads the header so the strip can say
+  that rather than let an empty reading pass for a zero.
 - **Field names drift between EnergyPlus versions.** `Lights` and
   `ElectricEquipment` use `watts_per_floor_area`, not
   `watts_per_zone_floor_area`. In 26.1 transmitted solar is

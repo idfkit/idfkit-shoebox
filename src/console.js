@@ -1,4 +1,4 @@
-import { CHANNELS, controlFor } from './controls.js';
+import { CHANNELS, controlFor, parseHolidays, serializeHolidays } from './controls.js';
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -65,6 +65,7 @@ export function mountConsole({
   const rows = new Map(); // parameter key -> the control's row, for study cards
   const cards = new Map(); // parameter key -> { node, kind, study, syncTick }
   const studyButtons = new Map(); // parameter key -> that scale's Study button
+  const daysWidgets = new Map(); // parameter key -> that list's weather-file offer
   let solo = null;
   let reading = null; // the instant every meter on the desk is reading at
   let engaged = new Set(); // which channels the model says are in the path
@@ -294,6 +295,7 @@ export function mountConsole({
     if (control.kind === 'bearing') return buildBearing(control);
     if (control.kind === 'facade') return buildFacade(control);
     if (control.kind === 'profile') return buildProfile(control);
+    if (control.kind === 'days') return buildDays(control);
     throw new Error(`the console cannot draw a ${control.kind}`);
   }
 
@@ -705,6 +707,179 @@ export function mountConsole({
     return row;
   }
 
+  /**
+   * A list of days, over a year rule.
+   *
+   * The rule is not decoration. A fixed date knows where in the year it falls
+   * and is ticked there; an nth-weekday date does not, because the run period
+   * carries no year, so it is marked at its month's centre in ghost ink. Two
+   * marks that look different because they *are* different — the alternative
+   * was ticking both at a guessed day of the month, which is the kind of quiet
+   * invention this sheet exists not to make.
+   *
+   * Nothing is registered in `rows`: that map is what gives a control a Study
+   * button, and a list has no range to sweep.
+   */
+  function buildDays(control) {
+    const row = el('div', 'ctl ctl-days');
+    const head = el('div', 'ctl-head');
+    head.append(el('span', 'ctl-label', control.label));
+    const value = el('span', 'ctl-value');
+    head.append(value);
+    row.append(head);
+
+    const rule = svg('svg', { viewBox: '0 0 240 26', class: 'days-rule', role: 'img' });
+    row.append(rule);
+
+    const list = el('div', 'days');
+    row.append(list);
+
+    // The field speaks the grammar the address bar speaks, so what you type
+    // here is what a scheme link carries and the refusals are word for word
+    // the ones a bad link gets.
+    const add = el('div', 'day-add');
+    const field = el('input', 'day-field');
+    field.type = 'text';
+    field.placeholder = '12/25: Christmas';
+    field.autocomplete = 'off';
+    field.spellcheck = false;
+    field.setAttribute('aria-label', `Add a holiday to ${control.label}`);
+    const addBtn = el('button', 'day-put', 'Add');
+    addBtn.type = 'button';
+    add.append(field, addBtn);
+    row.append(add);
+
+    const error = el('p', 'day-error');
+    error.hidden = true;
+    error.setAttribute('role', 'status');
+    row.append(error);
+
+    const sets = el('div', 'day-presets');
+    for (const calendar of control.presets) {
+      const chip = el('button', 'day-set', `${calendar.code} ${calendar.count()}`);
+      chip.type = 'button';
+      // The whole sentence, permanently on the offer rather than shown once
+      // after the click: a calendar that is four days short stays four days
+      // short, and a notice that expires would be a lie by expiry.
+      chip.title = calendar.title();
+      chip.addEventListener('click', () => stamp(calendar.encode()));
+      sets.append(chip);
+    }
+    // Only ever appended when a file actually names days, which no TMYx does.
+    const fromFile = el('button', 'day-set', 'From file');
+    fromFile.type = 'button';
+    fromFile.hidden = true;
+    fromFile.addEventListener('click', () => stamp(fromFile.dataset.days));
+    sets.append(fromFile);
+    row.append(sets);
+
+    const fileNote = el('p', 'ctl-note');
+    fileNote.hidden = true;
+    row.append(fileNote);
+    if (control.note) row.append(el('p', 'ctl-note', control.note));
+
+    const commitList = (days) => {
+      markGesture(control.key);
+      onChange(control.key, serializeHolidays(days), true);
+    };
+    const stamp = (text) => {
+      error.hidden = true;
+      markGesture(control.key);
+      onChange(control.key, text, true);
+    };
+
+    const put = () => {
+      const typed = field.value.trim();
+      if (typed === '') return;
+      const kept = parseHolidays(params[control.key]);
+      let next;
+      try {
+        // Parsed together with what is already there, so the duplicate-name
+        // and length rules are checked against the list this would become
+        // rather than against the entry alone.
+        next = parseHolidays(serializeHolidays(kept) + (kept.length ? ';' : '') + typed);
+      } catch (failure) {
+        error.textContent = failure.message;
+        error.hidden = false;
+        return;
+      }
+      field.value = '';
+      error.hidden = true;
+      commitList(next);
+    };
+    addBtn.addEventListener('click', put);
+    field.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      put();
+    });
+    // Cleared here and not in `redraw`: `sync()` fires from a dozen paths, and
+    // a redraw that wiped the message would erase a refusal a frame after it
+    // appeared.
+    field.addEventListener('input', () => { error.hidden = true; });
+
+    const redraw = () => {
+      const days = parseHolidays(params[control.key]);
+      value.textContent = control.format(params[control.key]);
+
+      rule.replaceChildren();
+      rule.setAttribute(
+        'aria-label',
+        days.length === 0 ? 'No holidays listed' : `${days.length} holidays across the year`,
+      );
+      rule.append(svg('line', {
+        x1: 0, y1: 16, x2: 240, y2: 16, stroke: 'var(--rule-firm)', 'stroke-width': 1,
+      }));
+      for (let m = 0; m <= 12; m += 1) {
+        rule.append(svg('line', {
+          x1: m * 20, y1: 13, x2: m * 20, y2: 16,
+          stroke: 'var(--rule)', 'stroke-width': 0.5,
+        }));
+      }
+      for (const day of days) {
+        const fixed = day.date.match(/^(\d{1,2})\/(\d{1,2})$/);
+        if (fixed) {
+          const month = Number(fixed[1]) - 1;
+          const at = (month + (Number(fixed[2]) - 1) / DAYS_IN_MONTH[month]) * 20;
+          rule.append(svg('line', {
+            x1: at, y1: 4, x2: at, y2: 16, stroke: 'var(--redline)', 'stroke-width': 1,
+          }));
+        } else {
+          const month = MONTH_ORDER.indexOf(day.date.slice(-3));
+          rule.append(svg('circle', {
+            cx: month * 20 + 10, cy: 9, r: 2,
+            fill: 'none', stroke: 'var(--ink-ghost)', 'stroke-width': 1,
+          }));
+        }
+      }
+
+      list.replaceChildren();
+      for (const [at, day] of days.entries()) {
+        const line = el('div', 'day');
+        line.append(el('span', 'day-date', day.duration > 1 ? `${day.date} ×${day.duration}` : day.date));
+        line.append(el('span', 'day-name', day.name));
+        const drop = el('button', 'day-drop', '×');
+        drop.type = 'button';
+        drop.setAttribute('aria-label', `Remove ${day.name}`);
+        drop.addEventListener('click', () => {
+          error.hidden = true;
+          commitList(days.filter((_, i) => i !== at));
+        });
+        line.append(drop);
+        list.append(line);
+      }
+
+      row.classList.toggle('idle', control.needs ? !control.needs(params) : false);
+    };
+    faces.set(control.key, redraw);
+
+    daysWidgets.set(control.key, { fromFile, fileNote });
+    return row;
+  }
+
+  const MONTH_ORDER = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
   /* ── studies ─────────────────────────────────────────────────────────── */
 
   /**
@@ -935,6 +1110,40 @@ export function mountConsole({
     settle() {
       ghost = {};
       api.sync();
+    },
+
+    /**
+     * What the attached weather file's own calendar contains.
+     *
+     * Four states, and they are four different sentences:
+     *
+     *   - `undefined` — no file attached, so the question does not arise;
+     *   - `''` — a file that names no holidays at all, which is every TMYx
+     *     there is, and the reason this method exists. "From file" has always
+     *     read an empty list and said nothing about it, and a reading with
+     *     nothing behind it has to say so rather than pass for a zero;
+     *   - `null` — a file naming days this page cannot read, in which case the
+     *     offer is withdrawn rather than stamping the part that parsed;
+     *   - a holiday list — the file's own days, offered as one more stamp
+     *     beside the published calendars.
+     */
+    setWeatherHolidays(days) {
+      const offered = typeof days === 'string' && days !== '';
+      for (const { fromFile, fileNote } of daysWidgets.values()) {
+        fromFile.hidden = !offered;
+        if (offered) {
+          fromFile.dataset.days = days;
+          const n = days.split(';').length;
+          fromFile.title = `Replace the list with the ${n} holiday${n === 1 ? '' : 's'} this weather file names.`;
+        }
+        const note = days === ''
+          ? 'This weather file names no holidays of its own.'
+          : days === null
+            ? 'This weather file names holidays this page cannot read, so it offers none.'
+            : '';
+        fileNote.hidden = note === '';
+        fileNote.textContent = note;
+      }
     },
 
     get solo() {

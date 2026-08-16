@@ -1,5 +1,5 @@
 import { IDFDocument, parseIdf } from '@idfkit/core';
-import { CHANNELS, DEFAULT_BYPASS, DEFAULT_PARAMETERS } from './controls.js';
+import { CHANNELS, DEFAULT_BYPASS, DEFAULT_PARAMETERS, parseHolidays } from './controls.js';
 import { END_USES } from './bill.js';
 
 /**
@@ -1031,6 +1031,15 @@ function bandSchedule(doc, name, limits, params, { on = 1, off = 0.1 } = {}) {
 
   rows.push('For: Weekdays SummerDesignDay WinterDesignDay');
   rows.push(...dayRows(params.occFrom, params.occTo, on, off));
+  // Before `AllOtherDays`, which is the catch-all: a holiday falls into it
+  // unless something claims the day first, which is why this row's absence made
+  // a holiday and a Sunday the same day for as long as it was absent. At
+  // `AsWeekend` nothing is written and that is exactly what it means.
+  if (params.holidayUse !== 'AsWeekend') {
+    rows.push('For: Holidays');
+    const holiday = params.holidayUse === 'Open' ? on : off;
+    rows.push(...dayRows(params.occFrom, params.occTo, holiday, off));
+  }
   rows.push('For: AllOtherDays');
   const weekend = params.weekend === 'Occupied' ? on : off;
   rows.push(...dayRows(params.occFrom, params.occTo, weekend, off));
@@ -1188,6 +1197,13 @@ function applySystem(doc, params, engaged, gainsOn) {
         : dayRows(params.occFrom, params.occTo, base, back);
     rows.push('For: Weekdays SummerDesignDay WinterDesignDay');
     rows.push(...day(true));
+    // Gated on `gainsOn` the same way the weekend row below is: with Gains out
+    // of the path there is no occupancy to justify a holiday setback, and a
+    // System-only desk should not acquire one.
+    if (gainsOn && params.holidayUse !== 'AsWeekend') {
+      rows.push('For: Holidays');
+      rows.push(...day(params.holidayUse === 'Open'));
+    }
     rows.push('For: AllOtherDays');
     rows.push(...day(params.weekend === 'Occupied' && gainsOn));
     schedule.set('data', rows.map((field) => ({ field })));
@@ -1329,6 +1345,12 @@ function applySolver(doc, params) {
 
 /** 16 — what actually gets simulated. */
 function applyRun(doc, params) {
+  // Cleared unconditionally and rewritten in list order, the discipline
+  // `syncReporting` uses: the sweep restores the live desk by re-applying, and
+  // a differential update would leave the document in a different order than
+  // the one it started in.
+  clear(doc, 'RunPeriodControl:SpecialDays');
+
   const period = must(doc, 'RunPeriod', 'Run Period 1');
   const [from, to] = params.beginMonth <= params.endMonth
     ? [params.beginMonth, params.endMonth]
@@ -1337,8 +1359,26 @@ function applyRun(doc, params) {
   period.begin_day_of_month = 1;
   period.end_month = to;
   period.end_day_of_month = DAYS_IN_MONTH[to - 1];
-  period.use_weather_file_holidays_and_special_days = params.holidays;
+  // The two holiday sources are independent fields, and the strip's three
+  // states are the three combinations that mean anything. `Listed` has to turn
+  // the file's days off, because where both are present the weather file's
+  // specification takes precedence and the listed days would lose silently.
+  period.use_weather_file_holidays_and_special_days = params.holidays === 'Yes' ? 'Yes' : 'No';
+  period.apply_weekend_holiday_rule = params.holidayRule;
   period.use_weather_file_daylight_saving_period = params.dst;
+
+  if (params.holidays !== 'No') {
+    for (const day of parseHolidays(params.holidayDays)) {
+      // All four fields written out: the schema carries `min_fields: 4`, so
+      // leaning on the duration and type defaults would produce an object the
+      // engine reads as incomplete.
+      doc.add('RunPeriodControl:SpecialDays', day.name, {
+        start_date: day.startDate(),
+        duration: day.duration,
+        special_day_type: 'Holiday',
+      });
+    }
+  }
 
   must(doc, 'SimulationControl').run_simulation_for_sizing_periods = params.sizingPeriods;
 }

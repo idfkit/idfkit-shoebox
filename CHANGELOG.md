@@ -9,6 +9,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Holidays you define. The Run strip's **Holidays** switch reads *From file*,
+  *Listed* or *None*, and under it is the list itself: dates you type, days you
+  remove, and five published calendars — United States, Canada, England and
+  Wales, France, Germany, the same five regions the tariffs cover — that stamp
+  themselves into it. Each entry becomes a `RunPeriodControl:SpecialDays`, so a
+  fixed date (`12/25`), an nth weekday (`4 Thu in Nov`), a last weekday
+  (`Last Mon in May`) and a multi-day shutdown (`12/24*9`) are all sayable. The
+  list is drawn against a twelve-month rule, and the two kinds of date are
+  marked differently on it: a fixed date gets a tick where it falls, an
+  nth-weekday rule a hollow mark at its month's centre, because that is genuinely
+  all the run period knows about it. What you type is what a scheme link carries
+  — the field and the address bar speak one grammar — and a malformed entry is
+  refused in words, in place, rather than clamped or dropped.
+
+  The companion is on Gains, where the occupancy lives: **Holidays** as
+  *As weekend*, *Closed* or *Open*. That control is the point of the exercise.
+  Until it existed, every `Schedule:Compact` on the desk ran
+  `For: Weekdays …` then `For: AllOtherDays`, and `AllOtherDays` swallows a
+  holiday alongside Sunday — so observing a holiday and ignoring one produced
+  the same building, and the switch that offered the choice was decorative. It
+  now writes a `For: Holidays` row. Measured on a Denver year with the weekend
+  open and the eleven federal holidays plus a nine-day Christmas shutdown
+  listed: 488 against 499 MJ/m², a 2.2 % difference that was previously
+  unreachable. At *As weekend* no row is written and the IDF is byte for byte
+  what it was.
+
+  Two things the arrangement cannot do, said here because the interface says
+  them too. **Easter is not expressible** — an IDF date field carries no year,
+  so Good Friday, Easter Monday, Ascension and Whit Monday cannot be written,
+  and neither can Victoria Day, which is the Monday *preceding* 25 May and so
+  is neither the third Monday nor the last. Each calendar therefore declares its
+  whole national list and states, on the offer and before you press it, which
+  days it is short and why: `DE 5/9`, `CA 8/10`. And **the run period's calendar
+  is a fiction**: it starts on a Tuesday and never asks the weather file, so a
+  fixed date lands on the right date and an arbitrary weekday, and an
+  nth-weekday date the reverse. The weekend holiday rule is offered anyway,
+  beside a note that says as much.
+
+  Attaching a station now also reads the EPW's own
+  `HOLIDAYS/DAYLIGHT SAVINGS` record — not to fill the list, but to say what is
+  in it. Every TMYx file names no holidays and no daylight saving period at all,
+  measured across Denver, Berlin and the five files shipped with EnergyPlus, so
+  *From file* has always been reading an empty list and reporting nothing about
+  it. The strip now states it. A file that does name days offers them as one
+  more stamp.
+
+  No scheme link changes meaning: the new keys default to today's behaviour, the
+  existing `Yes` and `No` values are unchanged behind the new labels, and a
+  default desk still serialises to the same bytes.
+
 - Parameter studies. Every scale on the console now carries a quiet **Study**
   action that sweeps that one control across its full range — about twenty
   solves of whatever run the sheet would make, a second or two of engine on the

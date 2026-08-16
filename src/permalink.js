@@ -41,6 +41,8 @@ import {
   DEFAULT_PARAMETERS,
   DEFAULT_BYPASS,
   controlFor,
+  parseHolidays,
+  serializeHolidays,
 } from './controls.js';
 
 export const LINK_VERSION = 'v1';
@@ -129,6 +131,19 @@ function readValue(key, raw) {
     const option = control.options.find((o) => String(o.value) === raw);
     if (!option) throw new Error(`"${raw}" is not an option of ${key}`);
     return option.value;
+  }
+  if (control.kind === 'days') {
+    // Above the numeric gate below, not inside the switch after it: a holiday
+    // list is not a number, so a branch down there would never be reached and
+    // every link carrying one would be refused for the wrong reason.
+    //
+    // Parsed rather than pattern-matched, through the same function the console
+    // refuses keystrokes with, so a bad link and a bad entry say the same
+    // sentence. Re-serialized so a link can only ever put the canonical
+    // spelling on `params`: two spellings of one calendar would key two
+    // identical solves through `shapeKey`, and one of them would not match the
+    // link it came from.
+    return serializeHolidays(parseHolidays(raw));
   }
   // The text is checked before the number, because `Number`'s grammar is wider
   // than a link's: `Number('')` is 0 and `Number('0x18')` is 24, and either

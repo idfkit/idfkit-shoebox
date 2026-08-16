@@ -131,6 +131,34 @@ Exclusive states on one segmented rule: `1px --rule` border, `var(--r)` radius,
 `--ink` with `--vellum` text. Native `select` cannot be styled and hides state;
 a console has to be readable without opening anything.
 
+### A list of dates, over a year rule
+
+A control holding a set of days is drawn as a 12-month rule with the entries
+listed beneath it, an entry field, and a row of ghost-ink stamps.
+
+- The rule is `240 × 26`, a `--rule-firm` baseline with a `--rule` hairline at
+  each month boundary. A date that knows where in the year it falls gets a `1px`
+  `--redline` tick at that point. A date that does *not* — an nth-weekday rule,
+  in a run period with no year — gets a hollow `--ink-ghost` circle at its
+  month's centre instead. Two marks, because they are two different kinds of
+  knowledge; ticking both at a guessed day would be the invention this sheet
+  exists not to make.
+- Rows are `auto 1fr auto`: the date in `--mono` tabular figures, the name in
+  `--sans` and ellipsised at `min-width: 0`, and a `×` in ghost ink. Editing is
+  remove-and-re-add, so a row is a reading, not a form.
+- The entry field is `--inset` ground with a `1px --rule` border, like
+  `.site-field`, and speaks **the same grammar the address bar speaks** — what
+  you type is what a shared link carries, and a refusal is word for word the one
+  a bad link gets.
+- A refused entry is stated in place, in the dashed `--rule-focus` box the
+  blocked-channel note uses, so a refusal looks like every other refusal on the
+  page. It is cleared by the next keystroke, never by a redraw: redraws fire
+  from a dozen paths and would erase the message a frame after it appeared.
+- Stamps that replace the list carry their whole truth in a `title`,
+  permanently, including what they cannot supply and why. A list that is four
+  days short stays four days short, so a notice shown once after the click would
+  be a lie by expiry.
+
 ### The square marker
 
 An `8px` to `9px` square with a `1px` border and `1px` radius means "a step that
