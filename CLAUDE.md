@@ -289,6 +289,30 @@ measurement), and everything is read off the run rather than off live `params`,
 which is also what stopped the finding opening "with no heating or cooling
 anywhere in this model" over a run that had just simulated an ideal unit.
 
+**A plan key's four walls are four subjects, not one.** The `Facade` controls —
+window-to-wall ratio and overhang projection — own a key per wall, so each wall
+carries its own Study offer in the legend under the plan and its own curve, and
+nothing in the scheduler needed teaching: `controlFor` already resolved a wall
+key to `{ control, side }`, and a `Facade` carries the `min` / `max` / `step` /
+`fraction` a sweep reads. What the console had to grow is where a curve hangs
+and what it is called. `rows` holds a per-wall anchor rather than the shared
+row, so four cards stand in compass order however the sweeps land, and a card
+under a plan key names its wall (`Study · Glazing W`) because four of them can
+be up at once under one label. `phraseFor` is the same fact in a sentence —
+"the west wall's window-to-wall ratio" — since "the study of the window-to-wall
+ratio" would be true of four different curves.
+
+`Side` carries a `needs` predicate and the `unreached` sentence for when it is
+false, which is the per-wall twin of `Control.needs`: an overhang is cut from
+the opening it shelters, so a projection on a solid wall reaches no object in
+the document at all. Measured — four positions of `ohW` across a west wall at
+zero glazing wrote four byte-identical IDFs. That is a sweep of twenty-one
+identical models bought at full engine price, so the offer is refused with the
+wall's own reason, and the legend entry and its bar on the plan are greyed. A
+`Side` with a predicate and no reason throws at module load: one row-wide note
+cannot say which of four walls is inert, which is the whole reason the sentence
+is per wall.
+
 A sweep never touches live `params`, and the one shared mutable is the model
 document: `buildSample` applies the overlay with the metric's lean reporting
 profile, writes the IDF and restores the live desk **in one synchronous

@@ -23,6 +23,7 @@ import {
   controlFor,
   isWholeYear,
   monthHours,
+  phraseFor,
 } from './controls.js';
 import { mountConsole } from './console.js';
 import { mountTour } from './tour.js';
@@ -3812,7 +3813,10 @@ function onStudyUpdate(job, event) {
     return;
   }
   const key = job.key;
-  const said = controlFor(key).control.label.toLowerCase();
+  // The subject as a sentence names it: a plan key's wall says which wall,
+  // because four of its curves can be drawn at once and "the study of the
+  // window-to-wall ratio" would be true of all four.
+  const said = phraseFor(key);
   const kind = !job.annual
     ? 'design-day'
     : isWholeYear(job.snapshot.months)
