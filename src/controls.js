@@ -953,6 +953,16 @@ const SHADE_SIDES = [
 
 const glazed = (p) => p.wwrN > 0 || p.wwrE > 0 || p.wwrS > 0 || p.wwrW > 0;
 const layered = (p) => p.glazingModel === 'Layered';
+// Roof glazing is deliberately a separate question from wall glazing: the two
+// channels own different holes in different surfaces, and everything that
+// depends on "is there glass here" has to say which glass it means. Fins and
+// frames are a wall opening's business; daylight is either one's.
+const skylit = (p) => p.skyRatio > 0;
+// Whether the rooflights are built of the walls' own assembly. It matters
+// beyond the Skylights strip: a blind can only be hung on the layered
+// construction, so a rooflight glazed in its own simple unit is one the Blinds
+// channel cannot reach.
+const skyAsWalls = (p) => p.skyGlass === 'Walls';
 
 export const CHANNELS = Object.freeze([
   new Channel({
@@ -1189,8 +1199,113 @@ export const CHANNELS = Object.freeze([
   }),
 
   new Channel({
-    id: 'shading',
+    id: 'skylights',
     index: '04',
+    name: 'Skylights',
+    term: 'Q☼↧',
+    blurb:
+      'The other way in. A rooflight faces the one part of the sky that is never behind a neighbour and never off to one side, so it collects hardest exactly when the building least wants it — and a curb is the only overhang it will ever have.',
+    bypassed: true,
+    // Read off the roof rather than out of the ESO. The transmitted-solar
+    // series the Glazing strip reads is the enclosure's total, walls and roof
+    // together, so repeating it here would say nothing about the rooflights in
+    // particular; the area and the ratio it makes are what this strip is for,
+    // and they are true before anything has been run.
+    meter: new Meter({ label: 'Roof glazing', terms: [], derived: true }),
+    controls: [
+      new Scale({
+        key: 'skyRatio',
+        label: 'Skylight-to-roof ratio',
+        value: 0.06,
+        min: 0,
+        max: 0.3,
+        step: 0.005,
+        digits: 3,
+        zero: 'Solid',
+        note: 'Of the gross roof. Daylighting codes ask for 3–6 %; past about 10 % the summer gain runs away from the light.',
+      }),
+      new Selector({
+        key: 'skyForm',
+        label: 'Arrangement',
+        value: 'Square',
+        options: [
+          { value: 'Square', label: 'Square lights' },
+          { value: 'Linear', label: 'Linear' },
+        ],
+        note: 'The same area, spread as discrete lights or as continuous rooflights running the width.',
+      }),
+      new Scale({
+        key: 'skyCount',
+        label: 'Units across',
+        value: 2,
+        min: 1,
+        max: 4,
+        step: 1,
+        digits: 0,
+        unit: '×',
+        needs: skylit,
+        note: 'Square lights sit one per cell of an n × n grid, so 4 across is sixteen of them; linear rooflights are n bands.',
+      }),
+      new Scale({
+        key: 'skyCurb',
+        label: 'Curb height',
+        value: 0.15,
+        min: 0,
+        max: 1.2,
+        step: 0.01,
+        unit: 'm',
+        zero: 'Flush',
+        needs: skylit,
+        note: 'The upstand a rooflight is bedded on, standing all the way round. It is the roof’s overhang, and the only shade a horizontal opening gets.',
+      }),
+      new Selector({
+        key: 'skyGlass',
+        label: 'Rooflight glass',
+        value: 'Walls',
+        options: [
+          { value: 'Walls', label: 'As walls' },
+          { value: 'Own', label: 'Its own' },
+        ],
+        needs: skylit,
+        note: 'Its own is a simple unit and nothing can be hung inside one, so rooflights glazed that way take no blind — the walls’ assembly is what the Blinds strip reaches.',
+      }),
+      new Scale({
+        key: 'skyU',
+        label: 'Rooflight U-factor',
+        value: 2.6,
+        min: 0.4,
+        max: 6,
+        step: 0.01,
+        unit: 'W/m²K',
+        needs: (p) => skylit(p) && !skyAsWalls(p),
+        note: 'A domed unit is a worse assembly than a wall window of the same generation, and it loses to a colder sky.',
+      }),
+      new Scale({
+        key: 'skySHGC',
+        label: 'Rooflight SHGC',
+        value: 0.35,
+        min: 0.05,
+        max: 0.9,
+        step: 0.01,
+        digits: 2,
+        needs: (p) => skylit(p) && !skyAsWalls(p),
+      }),
+      new Scale({
+        key: 'skyVisT',
+        label: 'Rooflight visible transmittance',
+        value: 0.5,
+        min: 0.05,
+        max: 0.9,
+        step: 0.01,
+        digits: 2,
+        needs: (p) => skylit(p) && !skyAsWalls(p),
+      }),
+    ],
+  }),
+
+  new Channel({
+    id: 'shading',
+    index: '05',
     name: 'Shading',
     term: 'Q☼↓',
     blurb:
@@ -1228,17 +1343,19 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'blinds',
-    index: '05',
+    index: '06',
     name: 'Blinds',
     term: 'Q☼⇅',
     blurb:
       'Shading that answers the weather instead of standing still. The control decides when it deploys, and the slat angle decides what gets through when it does.',
     bypassed: true,
     requires: {
-      test: (p) => layered(p) && glazed(p),
-      // Simple glazing is one equivalent layer with no cavity to hang anything
+      // The rooflights count as openings a blind can hang on only when they
+      // are glazed in the walls' own assembly; their own unit is simple
+      // glazing, which is one equivalent layer with no cavity to hang anything
       // in, and EnergyPlus will not accept a shading device on it.
-      reason: 'Needs the layered glazing model and at least one opening.',
+      test: (p, on) => layered(p) && (glazed(p) || (on('skylights') && skylit(p) && skyAsWalls(p))),
+      reason: 'Needs the layered glazing model and at least one opening it can hang in.',
     },
     meter: new Meter({
       label: 'Transmitted solar',
@@ -1282,7 +1399,7 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'fabric',
-    index: '06',
+    index: '07',
     name: 'Fabric',
     term: 'Q↔',
     blurb:
@@ -1334,7 +1451,7 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'mass',
-    index: '07',
+    index: '08',
     name: 'Mass',
     term: 'Qsto',
     blurb:
@@ -1383,7 +1500,7 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'air',
-    index: '08',
+    index: '09',
     name: 'Air',
     term: 'Qinf',
     blurb:
@@ -1458,7 +1575,7 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'gains',
-    index: '09',
+    index: '10',
     name: 'Gains',
     term: 'Qint',
     blurb:
@@ -1524,15 +1641,19 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'daylight',
-    index: '10',
+    index: '11',
     name: 'Daylight',
     term: 'Qlux',
     blurb:
       'The channel that closes the loop. A sensor in the room dims the lights against the daylight the windows let in, so a bigger opening buys back some of the load it costs.',
     bypassed: true,
     requires: {
-      test: (p) => glazed(p),
-      reason: 'Needs at least one opening to see daylight through.',
+      // Either kind of opening will do, but it has to be one the document
+      // actually holds: a channel that is patched out has had its openings
+      // removed, and a daylight sensor in a room with none is a control the
+      // engine warns about and the sheet would letter as if it worked.
+      test: (p, on) => (glazed(p) && on('glazing')) || (skylit(p) && on('skylights')),
+      reason: 'Needs at least one opening — a window or a rooflight — to see daylight through.',
     },
     meter: new Meter({
       label: 'Lighting power',
@@ -1565,7 +1686,7 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'system',
-    index: '11',
+    index: '12',
     name: 'System',
     term: 'Qsys',
     blurb:
@@ -1630,7 +1751,7 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'grounds',
-    index: '12',
+    index: '13',
     name: 'Grounds',
     term: '☾',
     blurb:
@@ -1656,7 +1777,7 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'plant',
-    index: '13',
+    index: '14',
     name: 'Plant',
     term: 'η',
     prices: true,
@@ -1697,7 +1818,7 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'tariff',
-    index: '14',
+    index: '15',
     name: 'Tariff',
     term: '¤',
     prices: true,
@@ -1738,7 +1859,7 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'solver',
-    index: '15',
+    index: '16',
     name: 'Solver',
     term: 'Δt',
     blurb:
@@ -1795,7 +1916,7 @@ export const CHANNELS = Object.freeze([
 
   new Channel({
     id: 'run',
-    index: '16',
+    index: '17',
     name: 'Run',
     term: '∑h',
     blurb:

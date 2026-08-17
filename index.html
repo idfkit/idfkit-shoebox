@@ -1440,12 +1440,12 @@
       /* The desk's width is whatever the window had left after the sheet, so
          the strips lie on as many ruled columns as that width will carry: the
          one column a laptop always had, up to five across a wide monitor.
-         Columns rather than a grid of rows, for two reasons. The sixteen
+         Columns rather than a grid of rows, for two reasons. The eighteen
          channels keep reading in signal order — down one column and on to the
          head of the next, the way a drawing index reads — and the strips'
          heights differ by a factor of four, which a row-aligned grid turns
          into ragged whitespace and a balanced column set packs. Five is the
-         ceiling because sixteen strips over five columns is already the desk
+         ceiling because eighteen strips over five columns is already the desk
          laid as flat as it goes; past that the columns widen instead. The
          rule between columns is the same hairline the strips rule between
          themselves, and the 1px gap leaves the strips' own 18px side padding
@@ -2015,7 +2015,7 @@
 
       /* ── the index sheet ──────────────────────────────────────────────
          Below the breakpoint the desk is no longer a column beside the
-         drawing but a page of its own, and sixteen strips laid end to end is
+         drawing but a page of its own, and eighteen strips laid end to end is
          about ten screens with nothing in them to say which one you are in.
          So the strips fold to a line each and the console becomes its own
          index: number, name, reading, patch state, in signal order, on one
@@ -2036,7 +2036,7 @@
          closing. Height first, contents second, and the name sits still.
 
          36px is under the usual 44px thumb, which is the trade this sheet
-         exists to make: at 44 the sixteen channels no longer fit on one
+         exists to make: at 44 the eighteen channels no longer fit on one
          screen, and a row you have to scroll to find is worse than a row that
          is slightly tight to hit — it spans the full width of the sheet, which
          is the other half of a target. */
@@ -2208,7 +2208,7 @@
            the flag back rather than knowing the number. */
         .strips { --index: 1; overflow-y: visible; }
         /* The index is one list read top to bottom; columns would cut it in
-           half and put channels 09–16 beside 01–08 instead of after them. */
+           half and put channels 09–17 beside 00–08 instead of after them. */
         .strip-grid { column-width: auto; column-count: auto; }
         /* "Widen the window" is advice a phone cannot take, and down here the
            narrow layout is a presentation rather than a squeeze. */
@@ -2345,7 +2345,8 @@
                   <div><dt>Exposed envelope</dt><dd id="q-exposed">—</dd></div>
                   <div><dt>Volume</dt><dd id="q-volume">—</dd></div>
                   <div><dt>Envelope ÷ volume</dt><dd id="q-compact">—</dd></div>
-                  <div><dt>Glazing, south</dt><dd id="q-glazing">—</dd></div>
+                  <div><dt>Glazing, walls</dt><dd id="q-glazing">—</dd></div>
+                  <div><dt>Rooflights</dt><dd id="q-skylight">—</dd></div>
                   <div><dt>Overhang, south</dt><dd id="q-overhang">—</dd></div>
                   <div class="solved">
                     <dt><i class="chip" id="q-chip"></i>Zone mean</dt>
@@ -2512,7 +2513,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
           <button type="button" class="link" id="desk-close">Close</button>
         </span>
         <p class="desk-sub">
-          Sixteen channels in the order the physics happens. Every control writes a real object
+          Eighteen channels in the order the physics happens. Every control writes a real object
           into the IDF, and every strip reads back what its path is actually contributing. The five
           marked <em>rail</em> are terms of the zone air heat balance, and they sum at the foot.
         </p>

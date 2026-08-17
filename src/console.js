@@ -14,7 +14,7 @@ import {
 /**
  * The model console: a recall sheet for the zone heat balance.
  *
- * Sixteen channel strips in signal order, every control visible at once, no
+ * Eighteen channel strips in signal order, every control visible at once, no
  * tabs and no accordions -- the whole point of a desk is that you can read the
  * state of every path without opening anything. The one exception is the index
  * sheet below, which a screen too narrow to lay the desk out forces and which
@@ -107,7 +107,7 @@ export function mountConsole({
   /* ── the index sheet ─────────────────────────────────────────────────────
    *
    * Below the stylesheet's breakpoint the desk stops being a column beside the
-   * drawing and becomes a page of its own, where sixteen strips laid end to end
+   * drawing and becomes a page of its own, where eighteen strips laid end to end
    * is about ten screens of scrolling with nothing in them to say which one you
    * are in. So the strips fold to a line each and the console becomes its own
    * index: number, name, reading and patch state, in signal order, on one
@@ -137,7 +137,7 @@ export function mountConsole({
       const shown = !indexing || opened === channel.id;
       // `hidden` rather than a class, so a folded strip's controls leave the
       // tab order and the accessibility tree with it. A reader tabbing through
-      // the index should meet sixteen rows, not sixteen rows and ninety
+      // the index should meet eighteen rows, not eighteen rows and a hundred
       // controls they cannot see.
       here.fold.hidden = !shown;
       here.strip.classList.toggle('open', Boolean(indexing) && shown);

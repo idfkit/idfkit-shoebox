@@ -76,7 +76,7 @@ export const NOTES = Object.freeze([
     id: 'desk',
     title: 'Open the model console',
     body:
-      'Sixteen channels in the order the physics happens. Every control ' +
+      'Eighteen channels in the order the physics happens. Every control ' +
       'writes a real object into the IDF, and every strip reads back what ' +
       'its path contributes.',
     target: '#desk-open',

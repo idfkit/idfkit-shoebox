@@ -55,8 +55,23 @@ export const WALLS = Object.freeze([
 
 export { DEFAULT_PARAMETERS };
 
+export const ROOF = 'Zn001:Roof001';
+
 const CONTEXT_SHADE = 'Context:Obstruction';
 const FRAME = 'WINDOW FRAME';
+/** The rooflights' own assembly, when they are not glazed as the walls are. */
+const SKY_CON = 'SKYLIGHT';
+const SKY_GLASS = 'SKYLIGHT GLAZING';
+/**
+ * The most rooflights the roof can carry, which is the square of the count
+ * control's top stop.
+ *
+ * It is a constant rather than a reading off `params` because the applier has
+ * to sweep names the desk is no longer asking for in order to remove them: a
+ * grid that has just gone from four across to two leaves twelve openings and
+ * forty-eight curb faces in the document that nothing would otherwise delete.
+ */
+const SKY_MAX = 16;
 const BLIND = 'WINDOW BLIND';
 const INTERNAL_MASS = 'Internal Mass';
 const INTERNAL_MASS_CON = 'INTERNALMASS';
@@ -169,7 +184,7 @@ function boxSurfaces(params) {
       verts: [plan[1], plan[0], plan[3], plan[2]].map(([x, y]) => [x, y, 0]),
     },
     {
-      name: 'Zn001:Roof001',
+      name: ROOF,
       type: 'Roof',
       construction: 'ROOF31',
       boundary: 'Outdoors',
@@ -323,6 +338,99 @@ function finsOn(opening, params) {
       [p[0], p[1], opening.z0],
       [q[0], q[1], opening.z0],
       [q[0], q[1], head],
+    ];
+  });
+}
+
+/**
+ * The rooflights, laid out on the plan and sized to hit the roof ratio.
+ *
+ * Worked in the unturned plan and turned at the end, the same way `planPoints`
+ * does it, so a building set to a bearing carries its rooflights round with it
+ * instead of having them slide across a roof that moved underneath them.
+ *
+ * The two arrangements spend one area two ways, and the difference is a real
+ * one on a roof. Square lights take a cell each of an n × n grid and are
+ * scaled by √r within it — the same arithmetic the punched wall aperture uses,
+ * and for the same reason: it keeps each light in proportion with the piece of
+ * roof it belongs to at every ratio. Linear rooflights run the full width and
+ * spend the area on depth instead, which is the north-light section drawn flat.
+ *
+ * Both clamp against a reveal, and a clamp that bites is not hidden: the area
+ * that results is what goes into the document, and the strip's ratio is read
+ * back off those vertices rather than off the number the slider says. There is
+ * no tilt here and there cannot be — a `FenestrationSurface:Detailed` has to be
+ * coplanar with the surface it is cut into, so a monitor or a sawtooth would
+ * need the roof itself to fold, which is a different building.
+ */
+function skylightsOn(params) {
+  const r = params.skyRatio;
+  if (!(r > 0)) return [];
+  const { width: w, depth: d, height: H } = params;
+  const n = Math.max(1, Math.min(4, Math.round(params.skyCount)));
+  const centre = [w / 2, d / 2];
+  const rects = [];
+
+  if (params.skyForm === 'Linear') {
+    const x0 = MARGIN;
+    const x1 = Math.max(x0 + 0.1, w - MARGIN);
+    const band = Math.min((r * w * d) / (n * (x1 - x0)), Math.max(0.1, d / n - 2 * MARGIN));
+    for (let i = 0; i < n; i += 1) {
+      const cy = ((i + 0.5) * d) / n;
+      rects.push([x0, cy - band / 2, x1, cy + band / 2]);
+    }
+  } else {
+    const s = Math.sqrt(r);
+    const [cw, cd] = [w / n, d / n];
+    const lw = Math.min(cw * s, Math.max(0.1, cw - 2 * MARGIN));
+    const ld = Math.min(cd * s, Math.max(0.1, cd - 2 * MARGIN));
+    for (let i = 0; i < n; i += 1) {
+      for (let j = 0; j < n; j += 1) {
+        const [cx, cy] = [(i + 0.5) * cw, (j + 0.5) * cd];
+        rects.push([cx - lw / 2, cy - ld / 2, cx + lw / 2, cy + ld / 2]);
+      }
+    }
+  }
+
+  return rects.map(([x0, y0, x1, y1]) => {
+    // Wound as the roof is wound — upper-left first, counter-clockwise seen
+    // from above — so the rooflight's outward normal points at the sky like
+    // the surface it is cut into, and not down into the room.
+    const plan = [
+      [x0, y1],
+      [x0, y0],
+      [x1, y0],
+      [x1, y1],
+    ].map((p) => turn(p, params.northAxis, centre));
+    return { plan, verts: plan.map(([x, y]) => [x, y, H]) };
+  });
+}
+
+/**
+ * The upstand a rooflight is bedded on, as four faces standing round its edge.
+ *
+ * Written as detailed shading surfaces rather than as the `outside_reveal_depth`
+ * of a `WindowProperty:FrameAndDivider`, which would shade the same opening in
+ * one field. The field is the smaller change and the wrong one here: the sheet
+ * draws its geometry by reading coordinates back off the document, so a curb
+ * expressed as a number would shade the run and be invisible on the drawing —
+ * and a curb you cannot see is exactly the one you forget you set.
+ *
+ * Each face is wound the way `boxSurfaces` winds a wall, so with the plan
+ * running counter-clockwise the outward normal points away from the opening.
+ */
+function curbOn(light, params) {
+  const c = params.skyCurb;
+  if (!(c > 0)) return [];
+  const base = params.height;
+  const top = base + c;
+  return light.plan.map((a, i) => {
+    const b = light.plan[(i + 1) % light.plan.length];
+    return [
+      [a[0], a[1], top],
+      [a[0], a[1], base],
+      [b[0], b[1], base],
+      [b[0], b[1], top],
     ];
   });
 }
@@ -646,6 +754,7 @@ export function applyModel(doc, params, bypass = {}, { reporting = 'sheet' } = {
   applyFabric(doc, params, on('fabric'));
   applyMass(doc, params, on('mass'));
   applyGlazing(doc, params, on('glazing'));
+  applySkylights(doc, params, on('skylights'));
   applyShading(doc, params, on('shading'), on('glazing'));
   applyBlinds(doc, params, on('blinds'));
   applyAir(doc, params, on('air'));
@@ -912,7 +1021,79 @@ function applyGlazing(doc, params, engaged) {
   }
 }
 
-/** 04 — overhangs and fins, cut from the openings' own numbers. */
+/**
+ * 04 — the openings in the roof, and the curbs they stand on.
+ *
+ * Runs after Glazing because it may borrow that channel's assembly, and before
+ * Blinds because a rooflight glazed as the walls are is a surface the blind
+ * control has to find.
+ */
+function applySkylights(doc, params, engaged) {
+  // The rooflights' own unit, rebuilt from scratch like the walls' — and gone
+  // entirely when they are glazed as the walls are, rather than left standing
+  // unreferenced, because an unused construction in the document is a thing
+  // the reader has to work out is unused.
+  drop(doc, 'Construction', SKY_CON);
+  drop(doc, 'WindowMaterial:SimpleGlazingSystem', SKY_GLASS);
+  const own = engaged && params.skyGlass === 'Own';
+  if (own) {
+    doc.add('WindowMaterial:SimpleGlazingSystem', SKY_GLASS, {
+      u_factor: params.skyU,
+      solar_heat_gain_coefficient: params.skySHGC,
+      visible_transmittance: params.skyVisT,
+    });
+    doc.add('Construction', SKY_CON, { outside_layer: SKY_GLASS });
+  }
+
+  const lights = engaged ? skylightsOn(params) : [];
+  for (let i = 0; i < SKY_MAX; i += 1) {
+    const name = `${ROOF}:Sky${String(i + 1).padStart(3, '0')}`;
+    const light = lights[i];
+    const existing = doc.get('FenestrationSurface:Detailed', name);
+    if (!light) {
+      if (existing) doc.remove(existing);
+      continue;
+    }
+    const target =
+      existing ??
+      doc.add('FenestrationSurface:Detailed', name, {
+        // There is no skylight in the 26.1 surface-type list, and there does
+        // not need to be: a rooflight is a window whose base surface happens
+        // to be the roof, and every consumer on this sheet reads the host
+        // rather than the word.
+        surface_type: 'Window',
+        building_surface_name: ROOF,
+        // A horizontal opening looking up sees no ground at all, which is what
+        // the roof it is cut into already says.
+        view_factor_to_ground: 0,
+        multiplier: 1,
+      });
+    target.construction_name = own ? SKY_CON : 'WINDOW';
+    target.number_of_vertices = light.verts.length;
+    for (const [field, value] of Object.entries(windowVertexFields(light.verts))) {
+      target.set(field, value);
+    }
+  }
+
+  // Four faces per light, indexed across the whole set so the curbs can shrink
+  // with the grid as well as grow with it.
+  const curbs = lights.flatMap((light) => curbOn(light, params));
+  for (let i = 0; i < SKY_MAX * 4; i += 1) {
+    const name = `${ROOF}:Curb${String(i + 1).padStart(3, '0')}`;
+    const verts = curbs[i];
+    const existing = doc.get('Shading:Zone:Detailed', name);
+    if (!verts) {
+      if (existing) doc.remove(existing);
+      continue;
+    }
+    const target =
+      existing ?? doc.add('Shading:Zone:Detailed', name, { base_surface_name: ROOF });
+    target.number_of_vertices = verts.length;
+    target.set('vertices', vertexGroups(verts));
+  }
+}
+
+/** 05 — overhangs and fins, cut from the openings' own numbers. */
 function applyShading(doc, params, engaged, glazingOn) {
   for (const wall of wallPlan(params)) {
     const opening = glazingOn ? apertureOn(wall, params) : null;
@@ -967,7 +1148,16 @@ function applyBlinds(doc, params, engaged) {
     blind_to_glass_distance: 0.05,
   });
 
-  const windows = doc.all('FenestrationSurface:Detailed').toArray().map((w) => String(w.name));
+  // Only the openings built of the layered assembly. A rooflight glazed in its
+  // own simple unit is one equivalent layer with no cavity, and naming it here
+  // is a severe error rather than a blind that quietly does nothing — so the
+  // control is written for the surfaces it can actually serve, and the
+  // Skylights strip says on its glass selector which those are.
+  const windows = doc
+    .all('FenestrationSurface:Detailed')
+    .toArray()
+    .filter((w) => String(w.construction_name) === 'WINDOW')
+    .map((w) => String(w.name));
   if (!windows.length) return;
 
   const control = doc.add('WindowShadingControl', 'Blind Control', {
@@ -1589,18 +1779,36 @@ export function geometryFacts(doc) {
   const exposed = area(surfaces.filter((s) => s.boundary === 'outdoors'));
   const volume = floor * height;
 
+  // Openings are sorted by the surface they are cut into, not by their names.
+  // Summed together they would report a rooflight as wall glazing and put the
+  // roof's area into the window-to-wall ratio's numerator over the walls'
+  // denominator, which is a number about no part of the building.
+  const hostType = new Map(surfaces.map((s) => [s.name, s.type]));
   const windows = windowGeometry(doc);
-  const glazing = area(windows);
+  const roofLights = windows.filter((w) => hostType.get(w.host) === 'roof');
+  const glazing = area(windows.filter((w) => hostType.get(w.host) === 'wall'));
   const walls = surfaces.filter((s) => s.type === 'wall');
   const wallArea = area(walls);
   const wwr = wallArea > 0 ? glazing / wallArea : NaN;
+
+  // Against the gross roof, which is what a skylight-to-roof ratio is measured
+  // over: the rooflights are subsurfaces and the roof polygon still holds the
+  // area they sit in.
+  const roofGlazing = area(roofLights);
+  const roofArea = area(surfaces.filter((s) => s.type === 'roof'));
+  const srr = roofArea > 0 ? roofGlazing / roofArea : NaN;
 
   // How far a shade reaches off the wall plane, and that reach against the
   // height of the opening beneath it — the projection factor an architect sizes
   // a shade by. Measured perpendicular to the host wall rather than along a
   // fixed axis, so it stays true once the building is turned.
+  // The zone's shades divide by what hosts them: an overhang or a fin stands on
+  // a wall, a curb stands on the roof. They are two channels' readings and
+  // summing them would have the Shading strip report an upstand it does not own.
   const shades = shadeGeometry(doc);
-  const zoneShades = shades.filter((s) => !s.context);
+  const wallNames = new Set(WALLS.map((w) => w.name));
+  const zoneShades = shades.filter((s) => !s.context && wallNames.has(s.host));
+  const curbs = shades.filter((s) => !s.context && !wallNames.has(s.host));
   const south = zoneShades.find((s) => s.host === SOUTH_WALL);
   const southWall = walls.find((s) => s.name === SOUTH_WALL);
   const southWindow = windows.find((w) => w.host === SOUTH_WALL);
@@ -1614,9 +1822,12 @@ export function geometryFacts(doc) {
     volume,
     glazing,
     wwr,
+    roofGlazing,
+    srr,
     overhang,
     projection,
     shadeArea: area(zoneShades),
+    curbArea: area(curbs),
     contextArea: area(shades.filter((s) => s.context)),
     compactness: volume > 0 ? exposed / volume : NaN,
   };

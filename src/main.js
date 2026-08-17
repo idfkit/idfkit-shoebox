@@ -1788,6 +1788,13 @@ function applyGeometry() {
     ? `${facts.compactness.toFixed(3)} m⁻¹`
     : '—';
   $('q-glazing').textContent = facts.glazing > 0 ? m2(facts.glazing) : 'None';
+  // Area and ratio together, the way the overhang row below carries its depth
+  // and its projection factor: the area is what was built, the ratio is what it
+  // means against the roof it was cut out of.
+  $('q-skylight').textContent =
+    facts.roofGlazing > 0
+      ? `${m2(facts.roofGlazing)} · SRR ${facts.srr.toFixed(3)}`
+      : 'None';
   // Depth and projection factor together: the depth is what the slider says,
   // the factor is what it means against the opening it shades.
   $('q-overhang').textContent =
@@ -2018,6 +2025,15 @@ function derivedReadings(facts) {
       bypass.context || (solo && solo !== 'context')
         ? '—'
         : `${((Math.atan2(params.ctxHeight, params.ctxDistance) * 180) / Math.PI).toFixed(0)}° up`,
+    ],
+    // Area and the ratio it makes, both summed off the rooflights the document
+    // actually holds — so a grid clamped by its reveal reads as the area it
+    // really got rather than the one the slider asked for.
+    [
+      'skylights',
+      facts.roofGlazing > 0
+        ? `${facts.roofGlazing.toFixed(1)} m² · SRR ${facts.srr.toFixed(3)}`
+        : 'None',
     ],
     ['shading', facts.shadeArea > 0 ? `${facts.shadeArea.toFixed(1)} m²` : 'None'],
     ['solver', `${params.timestep} / hour`],
