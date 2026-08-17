@@ -970,9 +970,15 @@ function renderSchedule(columns, baseColumns) {
  * printed figure is not a reading.
  */
 class BillColumn {
-  constructor({ id, label, field, unit, format }) {
+  constructor({ id, label, noun, field, unit, format }) {
     this.id = id;
     this.label = label;
+    // The same column said inside a sentence rather than over a column of
+    // figures. "At the meter" heads the column honestly and reads as nonsense
+    // in prose — "nothing here can be measured in at the meter" — so the two
+    // are declared apart, the way an environment's `noun` is kept apart from
+    // its `label`.
+    this.noun = noun;
     this.field = field;
     this.unit = unit;
     this.format = format;
@@ -991,15 +997,15 @@ const group = (v, digits = 0) =>
 
 const BILL_COLUMNS = Object.freeze([
   new BillColumn({
-    id: 'metered', label: 'At the meter', field: 'metered', unit: 'kWh',
+    id: 'metered', label: 'At the meter', noun: 'energy', field: 'metered', unit: 'kWh',
     format: (v) => group(v, v < 100 ? 1 : 0),
   }),
   new BillColumn({
-    id: 'cost', label: 'Cost', field: 'cost', unit: '',
+    id: 'cost', label: 'Cost', noun: 'a cost', field: 'cost', unit: '',
     format: (v, bill) => bill.currency.format(v, Math.abs(v) < 100 ? 2 : 0),
   }),
   new BillColumn({
-    id: 'carbon', label: 'Carbon', field: 'carbon', unit: 'kgCO₂e',
+    id: 'carbon', label: 'Carbon', noun: 'a carbon figure', field: 'carbon', unit: 'kgCO₂e',
     format: (v) => group(v, Math.abs(v) < 100 ? 1 : 0),
   }),
 ]);
@@ -1149,25 +1155,29 @@ function renderBill() {
 }
 
 function renderBillHead(againstLabel) {
-  const site = bill.card.site;
   $('bill-scope').textContent = againstLabel ? ` Δ against ${againstLabel}` : '';
   // Named in full at the top as well as beside each rate, because "is this a
   // commercial rate or a household one" is the first question anyone sensible
   // asks of a bill they did not receive themselves.
+  //
+  // The geography is the rate's own `region` rather than the card's country:
+  // North America is priced by state and province, so a Colorado bill headed
+  // "published for the United States" would name a table one grain coarser
+  // than the number it is describing.
   const tariff = bill.card.electricity;
   const priced = !isRate(tariff)
     ? ''
     : tariff.source.id === 'assumed'
       ? ' Priced at the rates assumed on the Tariff strip.'
-      : ` Priced at the ${tariff.source.kind.toLowerCase()} published for ${placeName(site)}, never a residential one, and factored at its grid carbon intensity.`;
+      : ` Priced at the ${tariff.source.kind.toLowerCase()} published for ${placeName(tariff.region)}, never a residential one, and factored at its grid carbon intensity.`;
   // Three periods, not two. A weather file no longer means a year: months can
   // be taken out of the run, and a bill of ten of them has to say so, because
   // the reader's next move is to compare the total with a year's.
   $('bill-lede').textContent = bill.wholeYear
     ? `Metered across the ${group(bill.hours)}-hour run.${priced}`
     : bill.annual
-      ? `Metered across the ${group(bill.hours)} hours of the run — ${bill.months} of the year's twelve months, so this is a bill for those months and not for a year. Put the missing months back on the Run strip for one of those.${priced}`
-      : `These are the ${group(bill.hours)} hours of the sizing days — two conditions chosen for being extreme. They are a real bill for a real two days, and they are deliberately not multiplied up into a year; attach a weather file for one of those.${priced}`;
+      ? `Metered across the ${group(bill.hours)} hours of the run — ${bill.months} of the year's twelve months, so this is a bill for those months and not for a year. Put the missing months back on the Run strip for a year's.${priced}`
+      : `These are the ${group(bill.hours)} hours of the sizing days — two conditions chosen for being extreme. They are a real bill for a real two days, and they are deliberately not multiplied up into a year; attach a weather file for a year's.${priced}`;
 }
 
 /**
@@ -1272,7 +1282,10 @@ function renderBillBar() {
     key.append(
       Object.assign(document.createElement('p'), {
         className: 'bill-note',
-        textContent: `Nothing on this run can be measured in ${billBasis.label.toLowerCase()} — the rate behind it was not published for this location.`,
+        textContent:
+          billBasis.id === 'metered'
+            ? 'Nothing on this run metered any energy at all.'
+            : `Nothing on this run can be given ${billBasis.noun} — the rate behind it was not published for this location.`,
       }),
     );
     return;
@@ -1433,7 +1446,7 @@ const cited = (source) =>
 function renderBillNotes() {
   const absences = bill.card.absences;
   $('bill-absences').textContent = absences.length
-    ? `${absences.map((a) => `${a.what}: ${a.reason}`).join(' ')} Those columns read as an em dash and are left out of every total on this schedule.`
+    ? `${absences.map((a) => `${a.what}: ${a.reason}`).join(' ')} Those figures read as an em dash and are left out of every total on this schedule.`
     : '';
 
   const refs = $('bill-refs');
@@ -1572,7 +1585,8 @@ shareBtn.addEventListener('click', async () => {
     // The clipboard can be withheld; the address bar cannot. The same link is
     // sitting there, and saying so beats failing quietly.
     statusEl.className = 'status bad';
-    statusEl.textContent = 'The link could not be copied here — it is the address in the address bar.';
+    statusEl.textContent =
+      'The clipboard was refused here — the link is the address in the address bar, ready to copy by hand.';
     return;
   }
   shareBtn.textContent = 'Copied';
@@ -3087,7 +3101,8 @@ runBtn.disabled = false;
 runBtn.textContent = 'Run simulation';
 syncAuto();
 syncSweepGate();
-statusEl.textContent = 'Engine compiled and resident. Nothing further is downloaded.';
+statusEl.textContent =
+  'Engine compiled and resident. Nothing further is downloaded until you pick a weather station.';
 
 /**
  * Solve the shape the sliders are showing right now.
@@ -3373,10 +3388,17 @@ async function solve() {
 
   desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt);
 
+  // Denver is named only where Denver is what was solved. A short weather run
+  // — January alone is 744 hours, and 792 with the sizing days kept — falls
+  // into the same narrow-axis branch as a design-day run, so another city's
+  // January was being lettered as Denver's two design days by nothing more
+  // than its hour count. The run kind decides the sentence, not the width.
   $('fig-cap').textContent = hasOutdoor
     ? nn > 900
       ? 'Zone mean air temperature against outdoor drybulb over the full run period. Each column spans the hourly range within it; the model at left is drawn from the surface vertices in the IDF and tinted by the zone mean.'
-      : 'Zone mean air temperature against outdoor drybulb across both Denver design days. The model at left is drawn from the surface vertices in the IDF and tinted by the zone mean.'
+      : capture.annual
+        ? 'Zone mean air temperature against outdoor drybulb over the months in the run. The model at left is drawn from the surface vertices in the IDF and tinted by the zone mean.'
+        : 'Zone mean air temperature against outdoor drybulb across both Denver design days. The model at left is drawn from the surface vertices in the IDF and tinted by the zone mean.'
     : 'Zone mean air temperature over the run. No outdoor drybulb was recorded in the ESO.';
 
   const q = (text, hot) =>
@@ -3915,7 +3937,7 @@ if (linkError) {
   stopAuto();
   statusEl.className = 'status bad';
   statusEl.textContent =
-    'This scheme skips the sizing days but attaches no weather, so there is nothing to solve. Switch Design days back on in the Run strip, or pick a station.';
+    'This scheme skips the sizing days but attaches no weather, so there is nothing to solve. Set Design days to Run on the Run strip, or pick a station.';
 } else if (autoOn()) {
   pump();
 }

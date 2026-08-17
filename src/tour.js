@@ -68,7 +68,8 @@ export const NOTES = Object.freeze([
     title: 'Attach a year of weather',
     body:
       'Pick any of 17,292 stations. The run becomes a full 8,760-hour year ' +
-      'and the bill of quantities appears, priced from published tariffs.',
+      'at that place, design conditions and all. Patch in System or Gains ' +
+      'and the bill of quantities follows, priced from published tariffs.',
     target: '#site',
     focus: '#site-field',
   }),
@@ -85,7 +86,7 @@ export const NOTES = Object.freeze([
     id: 'patch',
     title: 'Patch a channel out',
     body:
-      'The patch button takes a channel’s objects out of the document — ' +
+      'The patch button takes a channel\'s objects out of the document — ' +
       'removed, not zeroed — so the drawing and the model always agree ' +
       'about what is in the path.',
     target: '#desk-open',
