@@ -132,9 +132,19 @@ export function createStudyScheduler({
     const shared = pending.get(ck);
     if (shared) {
       // Ride the run another job started; no capacity slot is consumed.
+      // Drain after landing, as the owning run does: a job whose last sample
+      // rode someone else's run would otherwise finish after the owner's own
+      // drain had already run, leaving `wasIdle` false and the queue running
+      // dry without ever saying so.
       shared.then(
-        (point) => land(job, index, point),
-        () => land(job, index, null),
+        (point) => {
+          land(job, index, point);
+          drain();
+        },
+        () => {
+          land(job, index, null);
+          drain();
+        },
       );
       return;
     }

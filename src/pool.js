@@ -54,8 +54,13 @@ export function createEnginePool({ createEngine, limit }) {
         throw error;
       }
     }
-    return new Promise((resolve) => {
-      waiters.push(resolve);
+    // A waiter carries its rejection as well as its resolution: when the
+    // replacement instance promised to it cannot be compiled, the sample has
+    // to fail as a gap. Resolve-only, the acquire never settled and that
+    // sample hung forever — the curve stopping one short with no failure
+    // anywhere to say why.
+    return new Promise((resolve, reject) => {
+      waiters.push({ resolve, reject });
     });
   }
 
@@ -66,7 +71,7 @@ export function createEnginePool({ createEngine, limit }) {
       return;
     }
     const waiter = waiters.shift();
-    if (waiter) waiter(engine);
+    if (waiter) waiter.resolve(engine);
     else idle.push(engine);
   }
 
@@ -96,8 +101,9 @@ export function createEnginePool({ createEngine, limit }) {
           created += 1;
           Promise.resolve()
             .then(createEngine)
-            .then(waiter, () => {
+            .then(waiter.resolve, (err) => {
               created -= 1;
+              waiter.reject(err);
             });
         }
         throw error;
