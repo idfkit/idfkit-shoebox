@@ -35,6 +35,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alongside it. Until now that control could be turned all day, on a desk that
   never moved, with nothing anywhere to say so.
 
+- Skylights, as their own strip at **04**, between Glazing and Shading. The
+  roof was the one elevation this desk could not open: it carried an R-value
+  and an absorptance and nothing else, so the whole question of top-lighting —
+  the one an architect asks about any deep plan — could not be put to the
+  engine at all.
+
+  The strip owns a **skylight-to-roof ratio**, an **arrangement** (square
+  lights on an n × n grid, or linear rooflights running the width), how many
+  **units across**, a **curb height**, and whether the glass is the walls' own
+  assembly or **its own** unit with its own U-factor, SHGC and visible
+  transmittance. Each light is a `FenestrationSurface:Detailed` cut into
+  `Zn001:Roof001` and wound to match it, so its normal points at the sky; the
+  curb is four `Shading:Zone:Detailed` faces standing round the opening.
+
+  The curb is the part that earns its keep, and it is written as real geometry
+  rather than as the one field that would say the same thing. A
+  `WindowProperty:FrameAndDivider` has an `outside_reveal_depth` that shades an
+  opening exactly as a curb does, in one number — but this sheet draws by
+  reading coordinates back off the document, so a curb expressed as a number
+  would shade the run and be invisible on the drawing, and a curb you cannot
+  see is the one you forget you set. Measured on the Denver design days at a
+  10 % roof ratio, four lights: transmitted solar falls from 57.0 to 33.5 kWh
+  over the pair as the curb goes from flush to 1.2 m — 41 % — and the summer
+  zone peak with it, 46.5 to 39.8 °C, monotone at every step between.
+
+  What the rooflights themselves are worth is the finding the strip exists to
+  produce. At the default 6 % ratio on the stock Denver box, transmitted solar
+  goes from 5.1 to 33.6 kWh over the two design days — 6.6× — against a wall
+  ratio of 5 % that contributes the smaller half of it, because a horizontal
+  opening faces the one part of the sky that is never behind a neighbour and
+  never off to one side. Swept from solid to 30 % the summer high climbs to
+  63.3 °C while the winter low moves 0.4 K, which is the asymmetry a top-lit
+  plan lives or dies by and which no wall control on this desk can show.
+
+  Two joins with the rest of the desk, both stated in the interface rather than
+  left to be discovered. **Daylight** now takes a rooflight as an opening, so a
+  building with no window in any wall can still be top-lit and dimmed — and its
+  precondition now asks whether the opening is actually in the document rather
+  than only whether a slider is off zero, which it did not before. **Blinds**
+  reach the rooflights when their glass is the walls' assembly and cannot when
+  it is their own: simple glazing is one equivalent layer with no cavity to
+  hang a slat in, and naming such a surface on a `WindowShadingControl` is a
+  severe error rather than a blind that quietly does nothing. So the shading
+  control is written for the surfaces it can serve, and the glass selector says
+  which those are. Its precondition asks the same question Daylight's now does,
+  of both kinds of opening: that the channel owning the glass is actually in the
+  path, not merely that a slider is off zero — a blind with nothing to hang in
+  used to read as engaged while writing no shading control at all.
+
 - Holidays you define. The Run strip's **Holidays** switch reads *From file*,
   *Listed* or *None*, and under it is the list itself: dates you type, days you
   remove, and five published calendars — United States, Canada, England and
@@ -98,6 +147,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *From file* has always been reading an empty list and reporting nothing about
   it. The strip now states it. A file that does name days offers them as one
   more stamp.
+
+### Fixed
+
+- The window-to-wall ratio counted every opening in the model against the wall
+  area alone. With nothing but wall openings in the document that was right by
+  accident; with a roof that can be glazed it would have put the rooflights
+  into the numerator over the walls' denominator and reported a ratio about no
+  part of the building. Openings are now sorted by the surface they are cut
+  into, and the quantities panel reads *Glazing, walls* and *Rooflights*
+  separately — the first of which was already mislabelled *Glazing, south*
+  while summing all four elevations.
+
+- The model console described itself as sixteen channels while carrying
+  seventeen, in the desk's own subheading, in the general notes and in four
+  layout comments. It is eighteen now, and says so.
 
 ### Changed
 
