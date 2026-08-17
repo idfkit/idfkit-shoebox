@@ -2089,8 +2089,10 @@
          the same reason: `button:hover:not(:disabled)` is one element more
          specific than `.study:hover`, so it painted the background solid
          redline under exactly the same pointer that turns the label redline —
-         the word "Study" vanished into its own hover state. */
-      .ctl-head button.study:hover { background: transparent; color: var(--redline); border-bottom-color: var(--redline); }
+         the word "Study" vanished into its own hover state. Scoped to `.ctl`
+         rather than to `.ctl-head`, because a plan key's four offers stand in
+         its legend and each of them needs the same guard. */
+      .ctl button.study:hover { background: transparent; color: var(--redline); border-bottom-color: var(--redline); }
       .study:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
       .study:disabled { color: var(--ink-ghost); opacity: 0.35; cursor: default; border-bottom-color: transparent; }
       .study.on { color: var(--ink); border-bottom-color: var(--rule-firm); }
@@ -2107,6 +2109,16 @@
         text-transform: uppercase;
         letter-spacing: 0.11em;
         color: var(--ink-3);
+      }
+      /* Which of a plan key's four walls this curve is of — drawn only there,
+         and in full ink, because on that one control it is the card's subject
+         rather than a repetition of the label above it. */
+      .study-side {
+        font: 500 9px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink);
+        white-space: nowrap;
       }
       /* Which desk the curve was swept against; the card's one long string. */
       .study-desk {
@@ -2232,6 +2244,19 @@
         font-variant-numeric: tabular-nums;
         color: var(--ink);
       }
+      /* A wall whose number reaches no object in the document — an overhang on
+         a solid elevation. Dimmed here and on its own bar of the plan, which
+         the row-wide `.ctl.idle` cannot do: one of four is the whole point. */
+      .plan-read.idle, .plan .idle { opacity: 0.4; }
+      /* The offer, under the number it would sweep. Centred with the rest of
+         the entry rather than pushed to a margin, because the column is 50-odd
+         pixels wide and there is no margin to push it to. */
+      .plan-read .study { align-self: center; margin-top: 1px; }
+
+      /* Four curves can stand under one plan key. The anchors inside are empty
+         and draw nothing; they exist so each wall's card lands in compass
+         order however the sweeps happened to finish. */
+      .plan-studies .study-card { margin-top: 6px; }
 
       .band { display: block; width: 100%; height: auto; }
       .band-grab { cursor: ew-resize; }
