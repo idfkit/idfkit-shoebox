@@ -418,7 +418,7 @@ foot, and folds to the index sheet below.
 
 Where a panel is too long to navigate on the screen it has, fold its sections to
 one line each and let the list become its own index — the sheet a drawing set
-already carries for this. On the console below `780px`, sixteen strips end to
+already carries for this. On the console below `780px`, eighteen strips end to
 end is about ten screens with nothing in them to say which one you are in; as an
 index it is one screen, in signal order.
 

@@ -149,6 +149,51 @@ lettering rather than the arithmetic:
   environment made it: a design day is 24 hours out of 8,808 and gives up its
   label, a one-month run period is half of a two-month axis and keeps it.
 
+### Skylights (channel 04)
+
+Roof glazing is its own channel rather than a fifth face on the Glazing strip's
+plan key, because almost nothing about it is the wall question rotated.
+
+- **A rooflight is a `Window` on the roof, not a surface type.** EnergyPlus 26.1
+  has no `Skylight` in the `FenestrationSurface:Detailed` type list, and needs
+  none: the host surface is what makes it a rooflight. Everything on the sheet
+  that has to tell wall glass from roof glass reads `building_surface_name` and
+  looks the host's type up, never the object's name — `geometryFacts` does this
+  for the ratio, and it is why the window-to-wall ratio did not start counting
+  the roof.
+- **There is no tilt control and there cannot be one.** A fenestration surface
+  has to be coplanar with the surface it is cut into, so a monitor, a sawtooth
+  or a south-tilted rooflight all need the roof itself to fold — a different
+  building, not a different parameter.
+- **The curb is detailed shading geometry, not `outside_reveal_depth`.** The
+  field on `WindowProperty:FrameAndDivider` shades identically and costs one
+  number instead of four surfaces per light. It is still the wrong choice here,
+  for the reason `overhangOn` is written out as vertices rather than as
+  `Shading:Overhang`: the drawing reads its geometry off the document, so a
+  curb carried as a number would shade the run and never appear on the sheet.
+  It is a real control — flush to 1.2 m takes 41 % off the transmitted solar at
+  a 10 % roof ratio — and the one solar control a horizontal opening has.
+- **`SKY_MAX` is a constant, not a reading off `params`.** The applier has to
+  sweep sixteen opening names and sixty-four curb names on every apply so a grid
+  that has just gone from four across to two takes its abandoned surfaces out
+  of the document. That sweep costs 0.4 ms against a 50 ms design day; sizing it
+  from the live count instead would leave orphans behind every shrink. It is a
+  constant of the *declaration* rather than a literal — `SKY_MAX` is the square
+  of `controlFor('skyCount').control.max`, and the same control's stops clamp
+  the grid in `skylightsOn` — because a literal repeated in two places is how a
+  later widening of the slider becomes a silent clamp and a sweep one square
+  short.
+- **Nothing is subtracted from the roof.** A rooflight is a subsurface and the
+  roof polygon still holds the area it sits in, which is what makes
+  `roofGlazing / roofArea` the skylight-to-roof ratio a code means.
+- **The blind control names only the surfaces it can serve.** `applyBlinds`
+  filters to fenestration built of the layered `WINDOW` construction, because a
+  `WindowShadingControl` naming a simple-glazing surface is a severe error, not
+  a blind that does nothing. Rooflights on their own glass are therefore outside
+  the blind, and the Skylights strip's glass selector says so — this is the one
+  place on the desk where two engaged channels deliberately do not compose, and
+  it is stated rather than discovered.
+
 ### Channels that price rather than simulate
 
 `Plant` and `Tariff` carry `prices: true`. Nothing they own reaches the IDF, so:
@@ -542,7 +587,7 @@ the conformance by itself, because there was never a flag to go stale.
 ### The index sheet (narrow screens)
 
 Below the `780px` breakpoint the desk stops being a column beside the drawing and
-becomes a page of its own, where sixteen strips end to end is about ten screens
+becomes a page of its own, where eighteen strips end to end is about ten screens
 with nothing in them to say which one you are in. So the strips fold to a line
 each — number, name, reading, patch marker — and the console becomes its own
 index, one screen tall, in signal order.
@@ -626,6 +671,26 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   `params` (anything there starts a run) and re-letters from the ESO already
   held, exactly as `reprice` does for a tariff. It is `pinnedHour`, not
   `pinned` — the bill has held a pinned *scheme* since long before this.
+
+## Known defect: bypassing Fabric fatals any run that has an opening
+
+Patching out **Fabric** sends every wall and the roof to `Adiabatic`, and
+EnergyPlus refuses a `FenestrationSurface:Detailed` or a `Shading:Zone:Detailed`
+whose base surface is adiabatic:
+
+    ** Severe ** FenestrationSurface:Detailed="ZN001:WALL001:WIN001",
+                 invalid Building Surface Name="ZN001:WALL001".
+    ** Fatal  ** GetSurfaceData: Errors discovered, program terminates.
+
+So the flask the Fabric strip advertises is only reachable with Glazing,
+Shading and Skylights all out as well. This predates the Skylights channel —
+measured on the default desk at `main`, one wall window is enough to produce it
+— and Skylights only adds more of the same severes. It is not fixable through
+`Channel.requires` as the desk currently stands: `channelState` hands `on(id)`
+only the channels already decided, in declaration order, and Fabric is declared
+at 07, below all three of the channels that would need to ask about it. Fixing
+it means either reordering that graph or giving `requires` a second pass, which
+is a decision about the desk rather than about any one channel.
 
 ## Invariants that fail quietly
 
