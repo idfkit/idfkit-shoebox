@@ -177,7 +177,12 @@ plan key, because almost nothing about it is the wall question rotated.
   sweep sixteen opening names and sixty-four curb names on every apply so a grid
   that has just gone from four across to two takes its abandoned surfaces out
   of the document. That sweep costs 0.4 ms against a 50 ms design day; sizing it
-  from the live count instead would leave orphans behind every shrink.
+  from the live count instead would leave orphans behind every shrink. It is a
+  constant of the *declaration* rather than a literal — `SKY_MAX` is the square
+  of `controlFor('skyCount').control.max`, and the same control's stops clamp
+  the grid in `skylightsOn` — because a literal repeated in two places is how a
+  later widening of the slider becomes a silent clamp and a sweep one square
+  short.
 - **Nothing is subtracted from the roof.** A rooflight is a subsurface and the
   roof polygon still holds the area it sits in, which is what makes
   `roofGlazing / roofArea` the skylight-to-roof ratio a code means.
@@ -456,7 +461,7 @@ round-trip of every key and refusal of every malformed input class.
 ### The index sheet (narrow screens)
 
 Below the `780px` breakpoint the desk stops being a column beside the drawing and
-becomes a page of its own, where sixteen strips end to end is about ten screens
+becomes a page of its own, where eighteen strips end to end is about ten screens
 with nothing in them to say which one you are in. So the strips fold to a line
 each — number, name, reading, patch marker — and the console becomes its own
 index, one screen tall, in signal order.

@@ -1,6 +1,7 @@
 import { IDFDocument, parseIdf } from '@idfkit/core';
 import {
   CHANNELS,
+  controlFor,
   DAYS_IN_MONTH,
   DEFAULT_BYPASS,
   DEFAULT_PARAMETERS,
@@ -63,6 +64,13 @@ const FRAME = 'WINDOW FRAME';
 const SKY_CON = 'SKYLIGHT';
 const SKY_GLASS = 'SKYLIGHT GLAZING';
 /**
+ * The stops on the rooflight grid, read off the control that owns them rather
+ * than written out again here. Repeating the top stop as a literal is how a
+ * later widening of the slider becomes a silent clamp in `skylightsOn` and a
+ * sweep in `applySkylights` that is one square too short.
+ */
+const SKY_COUNT = controlFor('skyCount').control;
+/**
  * The most rooflights the roof can carry, which is the square of the count
  * control's top stop.
  *
@@ -71,7 +79,7 @@ const SKY_GLASS = 'SKYLIGHT GLAZING';
  * grid that has just gone from four across to two leaves twelve openings and
  * forty-eight curb faces in the document that nothing would otherwise delete.
  */
-const SKY_MAX = 16;
+const SKY_MAX = SKY_COUNT.max ** 2;
 const BLIND = 'WINDOW BLIND';
 const INTERNAL_MASS = 'Internal Mass';
 const INTERNAL_MASS_CON = 'INTERNALMASS';
@@ -367,7 +375,7 @@ function skylightsOn(params) {
   const r = params.skyRatio;
   if (!(r > 0)) return [];
   const { width: w, depth: d, height: H } = params;
-  const n = Math.max(1, Math.min(4, Math.round(params.skyCount)));
+  const n = Math.max(SKY_COUNT.min, Math.min(SKY_COUNT.max, Math.round(params.skyCount)));
   const centre = [w / 2, d / 2];
   const rects = [];
 
@@ -816,7 +824,7 @@ function applyContext(doc, params, engaged) {
   shade.set('vertices', vertexGroups(contextVertices(params)));
 }
 
-/** 06 — the opaque envelope. Bypassed, the box becomes a flask. */
+/** 07 — the opaque envelope. Bypassed, the box becomes a flask. */
 function applyFabric(doc, params, engaged) {
   const wall = must(doc, 'Material:NoMass', 'R13LAYER');
   const roof = must(doc, 'Material:NoMass', 'R31LAYER');
@@ -873,7 +881,7 @@ const SLAB_MATERIALS = Object.freeze({
   Timber: { conductivity: 0.15, density: 608, specific_heat: 1630 },
 });
 
-/** 07 — what the building remembers. */
+/** 08 — what the building remembers. */
 function applyMass(doc, params, engaged) {
   const slab = must(doc, 'Material', 'C5 - 4 IN HW CONCRETE');
   const stuff = SLAB_MATERIALS[params.slabMaterial];
@@ -1121,7 +1129,7 @@ function applyShading(doc, params, engaged, glazingOn) {
   }
 }
 
-/** 05 — shading that answers the weather. */
+/** 06 — shading that answers the weather. */
 function applyBlinds(doc, params, engaged) {
   clear(doc, 'WindowShadingControl');
   drop(doc, 'WindowMaterial:Blind', BLIND);
@@ -1173,7 +1181,7 @@ function applyBlinds(doc, params, engaged) {
   control.set('fenestration_surfaces', windows.map((name) => ({ fenestration_surface_name: name })));
 }
 
-/** 08 — leakage, and openings that answer the temperature. */
+/** 09 — leakage, and openings that answer the temperature. */
 function applyAir(doc, params, engaged) {
   clear(doc, 'ZoneInfiltration:DesignFlowRate');
   clear(doc, 'ZoneVentilation:DesignFlowRate');
@@ -1264,7 +1272,7 @@ function dayRows(from, to, value, off) {
   return rows;
 }
 
-/** 09 — people, light and equipment. */
+/** 10 — people, light and equipment. */
 function applyGains(doc, params, engaged) {
   clear(doc, 'People');
   clear(doc, 'Lights');
@@ -1316,7 +1324,7 @@ function applyGains(doc, params, engaged) {
   }
 }
 
-/** 10 — the sensor that dims the lights against the daylight. */
+/** 11 — the sensor that dims the lights against the daylight. */
 function applyDaylight(doc, params, engaged, gainsOn) {
   clear(doc, 'Daylighting:Controls');
   clear(doc, 'Daylighting:ReferencePoint');
@@ -1362,7 +1370,7 @@ const NODE = Object.freeze({
 });
 
 /**
- * 11 — the master bus.
+ * 12 — the master bus.
  *
  * Hand-authored rather than left to `HVACTemplate`, so the IDF that runs is the
  * IDF this file wrote: no expansion step stands between what the console says
@@ -1501,7 +1509,7 @@ function applySystem(doc, params, engaged, gainsOn) {
 }
 
 /**
- * 12 — the site around the building, after dark.
+ * 13 — the site around the building, after dark.
  *
  * The stock example's grounds lighting, put behind a strip. On the astronomical
  * clock the schedule is a formality -- the engine switches the load by sun
@@ -1525,7 +1533,7 @@ function applyGrounds(doc, params, engaged) {
   });
 }
 
-/** 15 — the engine room. */
+/** 16 — the engine room. */
 function applySolver(doc, params) {
   must(doc, 'Timestep').number_of_timesteps_per_hour = params.timestep;
   must(doc, 'SurfaceConvectionAlgorithm:Inside').algorithm = params.insideConv;
@@ -1543,7 +1551,7 @@ function applySolver(doc, params) {
 }
 
 /**
- * 16 — what actually gets simulated.
+ * 17 — what actually gets simulated.
  *
  * One `RunPeriod` per unbroken group of months, which is how EnergyPlus is
  * asked for a year with holes in it: the engine runs each as its own

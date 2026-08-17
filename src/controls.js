@@ -1232,6 +1232,7 @@ export const CHANNELS = Object.freeze([
           { value: 'Square', label: 'Square lights' },
           { value: 'Linear', label: 'Linear' },
         ],
+        needs: skylit,
         note: 'The same area, spread as discrete lights or as continuous rooflights running the width.',
       }),
       new Scale({
@@ -1354,7 +1355,15 @@ export const CHANNELS = Object.freeze([
       // are glazed in the walls' own assembly; their own unit is simple
       // glazing, which is one equivalent layer with no cavity to hang anything
       // in, and EnergyPlus will not accept a shading device on it.
-      test: (p, on) => layered(p) && (glazed(p) || (on('skylights') && skylit(p) && skyAsWalls(p))),
+      //
+      // Both branches ask whether the opening is actually in the document and
+      // not only whether a slider is off zero, for the reason Daylight's
+      // precondition does: a channel that is patched out has had its openings
+      // deleted, and a blind with nothing to hang in writes an unreferenced
+      // material and no shading control at all while the strip reads engaged.
+      test: (p, on) =>
+        layered(p) &&
+        ((glazed(p) && on('glazing')) || (skylit(p) && skyAsWalls(p) && on('skylights'))),
       reason: 'Needs the layered glazing model and at least one opening it can hang in.',
     },
     meter: new Meter({

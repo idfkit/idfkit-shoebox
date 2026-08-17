@@ -53,7 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hang a slat in, and naming such a surface on a `WindowShadingControl` is a
   severe error rather than a blind that quietly does nothing. So the shading
   control is written for the surfaces it can serve, and the glass selector says
-  which those are.
+  which those are. Its precondition asks the same question Daylight's now does,
+  of both kinds of opening: that the channel owning the glass is actually in the
+  path, not merely that a slider is off zero — a blind with nothing to hang in
+  used to read as engaged while writing no shading control at all.
 
 ### Fixed
 
