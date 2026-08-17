@@ -111,6 +111,38 @@ export class Bearing extends Control {
 }
 
 /**
+ * One wall of a plan key: the parameter it owns and how it is lettered.
+ *
+ * A typed object rather than the loose dictionary this used to be, because a
+ * side now carries a predicate as well as three strings, and a predicate with
+ * no reason beside it is exactly the kind of silent state this desk refuses
+ * elsewhere. `needs` is the per-wall twin of `Control.needs`: true when
+ * setting this wall's number reaches the model at all. `unreached` is the
+ * sentence for when it does not — the four walls of a plan key are set from
+ * one control, so a single row-wide note could not say which of them is
+ * inert.
+ */
+class Side {
+  constructor({ key, side, label, needs = null, unreached = null }) {
+    if (!key) throw new Error('a wall of a plan key needs a parameter key');
+    if (Boolean(needs) !== Boolean(unreached)) {
+      throw new Error(`${key} carries a precondition with no reason, or a reason with no precondition`);
+    }
+    this.key = key;
+    this.side = side; // 'north' | 'east' | 'south' | 'west', as the model names it
+    this.label = label; // 'N' … 'W', as the plan key letters it
+    this.needs = needs;
+    this.unreached = unreached;
+    Object.freeze(this);
+  }
+
+  /** Whether this wall's number is reaching the model as the desk stands. */
+  reaches(params) {
+    return this.needs ? Boolean(this.needs(params)) : true;
+  }
+}
+
+/**
  * Four values that belong to four walls, drawn on a plan key rather than as
  * four rows.
  *
@@ -118,6 +150,10 @@ export class Bearing extends Control {
  * building. Ruling each wall's scale along its own edge of a small plan is the
  * only arrangement where the number you are setting is beside the wall it
  * belongs to, and where the four read as a parti rather than a list.
+ *
+ * Each wall is nevertheless its own parameter, and therefore its own question:
+ * a study sweeps one key, so the plan key carries four of them rather than a
+ * single "the glazing" that no single number in the document corresponds to.
  */
 export class Facade extends Control {
   constructor({
@@ -131,7 +167,7 @@ export class Facade extends Control {
     // plan key — the sheet's narrow label column has no room for the full name.
     this.short = short ?? label;
     // Drawn in compass order, which is also the order `boxSurfaces` generates.
-    this.sides = sides.map((s) => Object.freeze({ ...s }));
+    this.sides = Object.freeze(sides.map((s) => new Side(s)));
     this.min = min;
     this.max = max;
     this.step = step;
@@ -944,11 +980,22 @@ const ORIENTATIONS = [
   { key: 'wwrW', side: 'west', label: 'W' },
 ];
 
+/**
+ * An overhang is cut from the opening it shelters — `applyShading` asks
+ * `apertureOn` for the wall's opening first and writes nothing at all when
+ * there is none. So a projection set on a solid wall is a number that reaches
+ * no object in the document, which is worth saying on the wall it was set on:
+ * silently, it is the reader turning a control and watching the sheet not
+ * move.
+ */
+const noOpening = (wall) =>
+  `The ${wall} wall has no opening, so an overhang there hangs on nothing.`;
+
 const SHADE_SIDES = [
-  { key: 'ohN', side: 'north', label: 'N' },
-  { key: 'ohE', side: 'east', label: 'E' },
-  { key: 'ohS', side: 'south', label: 'S' },
-  { key: 'ohW', side: 'west', label: 'W' },
+  { key: 'ohN', side: 'north', label: 'N', needs: (p) => p.wwrN > 0, unreached: noOpening('north') },
+  { key: 'ohE', side: 'east', label: 'E', needs: (p) => p.wwrE > 0, unreached: noOpening('east') },
+  { key: 'ohS', side: 'south', label: 'S', needs: (p) => p.wwrS > 0, unreached: noOpening('south') },
+  { key: 'ohW', side: 'west', label: 'W', needs: (p) => p.wwrW > 0, unreached: noOpening('west') },
 ];
 
 const glazed = (p) => p.wwrN > 0 || p.wwrE > 0 || p.wwrS > 0 || p.wwrW > 0;
@@ -2070,6 +2117,20 @@ export function formatValue(key, value) {
 export function labelFor(key) {
   const { control, side } = controlFor(key);
   return side ? `${control.short} ${side.label}` : control.label;
+}
+
+/**
+ * How a key reads inside a sentence, as opposed to on a label.
+ *
+ * A wall of a plan key has to name its wall here even though the label above
+ * it does not: "the study of the overhang projection" is four controls at
+ * once, and the reader has four cards on the desk to tell apart. Lower case
+ * because every caller sets it mid-sentence.
+ */
+export function phraseFor(key) {
+  const { control, side } = controlFor(key);
+  const said = control.label.toLowerCase();
+  return side ? `the ${side.side} wall's ${said}` : said;
 }
 
 export const CHANNEL_BY_ID = Object.freeze(Object.fromEntries(CHANNELS.map((c) => [c.id, c])));

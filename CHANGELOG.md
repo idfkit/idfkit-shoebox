@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Each wall of a plan key can be swept.** The window-to-wall ratio and the
+  overhang projection were the two controls on the desk a study could not be
+  taken of, which is the wrong two: an elevation is where orientation stops
+  being a diagram and becomes a number, and "what does glass on the west cost
+  me?" is the question a shoebox exists to answer. Each of the eight walls now
+  carries its own **Study**, in the legend under the plan where that wall's
+  number is already lettered, and draws its own curve.
+
+  Four walls are four studies, not one, because a study holds the whole desk
+  still and moves a single parameter — turning all four together would answer a
+  question about a building nobody is designing. So the curves stack under the
+  plan in compass order, each card naming its wall, and each is stale, stopped,
+  cleared and re-swept on its own. On Denver's design days the difference is the
+  point: north from solid to 0.90 moves the summer peak 32.7 → 36.8 °C, and the
+  same glass on the west moves it 32.7 → 51.1 °C.
+
+  **An overhang over a solid wall is refused, and says why.** Overhangs are cut
+  from the opening they shelter, so a projection set on an unglazed elevation
+  reaches no object in the document — measured, four positions of the west
+  overhang wrote four byte-identical IDFs. That is a sweep of twenty-one
+  identical models at full engine price, so the offer is disabled with the
+  wall's own sentence — *The west wall has no opening, so an overhang there
+  hangs on nothing* — and the reading and its bar on the plan are greyed
+  alongside it. Until now that control could be turned all day, on a desk that
+  never moved, with nothing anywhere to say so.
+
 - Skylights, as their own strip at **04**, between Glazing and Shading. The
   roof was the one elevation this desk could not open: it carried an R-value
   and an absorptance and nothing else, so the whole question of top-lighting —
@@ -57,21 +83,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of both kinds of opening: that the channel owning the glass is actually in the
   path, not merely that a slider is off zero — a blind with nothing to hang in
   used to read as engaged while writing no shading control at all.
-
-### Fixed
-
-- The window-to-wall ratio counted every opening in the model against the wall
-  area alone. With nothing but wall openings in the document that was right by
-  accident; with a roof that can be glazed it would have put the rooflights
-  into the numerator over the walls' denominator and reported a ratio about no
-  part of the building. Openings are now sorted by the surface they are cut
-  into, and the quantities panel reads *Glazing, walls* and *Rooflights*
-  separately — the first of which was already mislabelled *Glazing, south*
-  while summing all four elevations.
-
-- The model console described itself as sixteen channels while carrying
-  seventeen, in the desk's own subheading, in the general notes and in four
-  layout comments. It is eighteen now, and says so.
 
 - Holidays you define. The Run strip's **Holidays** switch reads *From file*,
   *Listed* or *None*, and under it is the list itself: dates you type, days you
@@ -136,6 +147,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *From file* has always been reading an empty list and reporting nothing about
   it. The strip now states it. A file that does name days offers them as one
   more stamp.
+
+### Fixed
+
+- The window-to-wall ratio counted every opening in the model against the wall
+  area alone. With nothing but wall openings in the document that was right by
+  accident; with a roof that can be glazed it would have put the rooflights
+  into the numerator over the walls' denominator and reported a ratio about no
+  part of the building. Openings are now sorted by the surface they are cut
+  into, and the quantities panel reads *Glazing, walls* and *Rooflights*
+  separately — the first of which was already mislabelled *Glazing, south*
+  while summing all four elevations.
+
+- The model console described itself as sixteen channels while carrying
+  seventeen, in the desk's own subheading, in the general notes and in four
+  layout comments. It is eighteen now, and says so.
 
 ### Changed
 
