@@ -5,6 +5,7 @@ import {
   WEEKDAY_LABELS,
   controlFor,
   coveredDays,
+  labelFor,
   parseHolidays,
   resolveHoliday,
   runDays,
@@ -73,7 +74,10 @@ export function mountConsole({
 }) {
   const strips = new Map(); // channel id -> { redraw(), meter, patch, solo }
   const faces = new Map(); // parameter key -> redraw for that control
-  const rows = new Map(); // parameter key -> the control's row, for study cards
+  // Parameter key -> the node a study card hangs after: the control's own row
+  // for the kinds that own one key, and a per-wall anchor for a plan key,
+  // which owns four and can carry four curves at once.
+  const rows = new Map();
   const cards = new Map(); // parameter key -> { node, kind, study, syncTick }
   const studyButtons = new Map(); // parameter key -> that scale's Study button
   const daysWidgets = new Map(); // parameter key -> that list's weather-file offer
@@ -310,11 +314,64 @@ export function mountConsole({
     if (control.kind === 'scale') return buildScale(control, channel);
     if (control.kind === 'selector') return buildSelector(control);
     if (control.kind === 'bearing') return buildBearing(control);
-    if (control.kind === 'facade') return buildFacade(control);
+    if (control.kind === 'facade') return buildFacade(control, channel);
     if (control.kind === 'profile') return buildProfile(control);
     if (control.kind === 'calendar') return buildCalendar(control);
     if (control.kind === 'days') return buildDays(control);
     throw new Error(`the console cannot draw a ${control.kind}`);
+  }
+
+  /**
+   * The question every swept control carries: what would the rest of your
+   * face do?
+   *
+   * Not on a priced channel — nothing it owns reaches the engine, so a sweep
+   * of it could only redraw the numbers already on the sheet. `name` is the
+   * subject as the offer says it, which for one wall of a plan key is that
+   * wall and not the group: four buttons under one label would otherwise all
+   * announce themselves identically.
+   */
+  function studyOffer(key, name, control, channel) {
+    if (channel?.prices) return null;
+    const btn = el('button', 'study', 'Study');
+    btn.type = 'button';
+    btn.setAttribute(
+      'aria-label',
+      `Study ${name}: sweep from ${control.format(control.min)} to ${control.format(control.max)}`,
+    );
+    btn.addEventListener('click', () => onStudy?.(key));
+    studyButtons.set(key, btn);
+    return btn;
+  }
+
+  /**
+   * Whether that offer can be taken as the desk stands, with the reason
+   * lettered when it cannot.
+   *
+   * While its own sweep runs the button is a Stop and stays live whatever the
+   * gate says; the gate, the patch bay and the idle state govern only the
+   * asking. A control on a channel that is out of the path would sweep
+   * twenty-one byte-identical models — the flat line the priced exclusion
+   * exists to prevent, bought at full engine price. `unreached` is what a
+   * plan key's wall says for itself, since one row-wide note cannot name
+   * which of four walls is inert.
+   *
+   * Written only on change: this runs for every control on every synced frame
+   * of a drag, and attribute writes are never free.
+   */
+  function syncStudyOffer(btn, channel, { idle, unreached = null }) {
+    if (!btn || btn.dataset.running) return;
+    const out = !engaged.has(channel.id);
+    const disabled = !sweepGate.ok || out || idle;
+    const title = !sweepGate.ok
+      ? sweepGate.reason
+      : out
+        ? 'This path is out of the model — patch it in to sweep it.'
+        : idle
+          ? unreached ?? 'Set, but not reaching the model — there is nothing to sweep.'
+          : 'Sweep this control across its face: the desk solved at a score of positions, drawn as a curve.';
+    if (btn.disabled !== disabled) btn.disabled = disabled;
+    if (btn.title !== title) btn.title = title;
   }
 
   /**
@@ -333,20 +390,7 @@ export function mountConsole({
     const value = el('output', 'ctl-value');
     value.htmlFor = `k-${control.key}`;
 
-    // The question every scale can be asked: what would the rest of your face
-    // do? Not on a priced channel — nothing it owns reaches the engine, so a
-    // sweep of it could only redraw the numbers already on the sheet.
-    let studyBtn = null;
-    if (!channel?.prices) {
-      studyBtn = el('button', 'study', 'Study');
-      studyBtn.type = 'button';
-      studyBtn.setAttribute(
-        'aria-label',
-        `Study ${control.label}: sweep from ${control.format(control.min)} to ${control.format(control.max)}`,
-      );
-      studyBtn.addEventListener('click', () => onStudy?.(control.key));
-      studyButtons.set(control.key, studyBtn);
-    }
+    const studyBtn = studyOffer(control.key, control.label, control, channel);
     head.append(label, ...(studyBtn ? [studyBtn] : []), value);
 
     const face = el('div', 'face');
@@ -385,26 +429,7 @@ export function mountConsole({
       if (show) ghostTick.style.left = `${clamp(control.fraction(was), 0, 1) * 100}%`;
       const idle = control.needs ? !control.needs(params) : false;
       row.classList.toggle('idle', idle);
-      // While its own sweep runs the button is a Stop and stays live whatever
-      // the gate says; the gate, the patch bay and the idle state govern only
-      // the asking. A control on a channel that is out of the path would
-      // sweep twenty-one byte-identical models — the flat line the priced
-      // exclusion exists to prevent, bought at full engine price.
-      if (studyBtn && !studyBtn.dataset.running) {
-        const out = !engaged.has(channel.id);
-        const disabled = !sweepGate.ok || out || idle;
-        const title = !sweepGate.ok
-          ? sweepGate.reason
-          : out
-            ? 'This path is out of the model — patch it in to sweep it.'
-            : idle
-              ? 'Set, but not reaching the model — there is nothing to sweep.'
-              : 'Sweep this control across its face: the desk solved at a score of positions, drawn as a curve.';
-        // Written only on change: this redraw runs for every scale on every
-        // synced frame of a drag, and attribute writes are never free.
-        if (studyBtn.disabled !== disabled) studyBtn.disabled = disabled;
-        if (studyBtn.title !== title) studyBtn.title = title;
-      }
+      syncStudyOffer(studyBtn, channel, { idle });
       // Dragging the swept control just walks the study's tick along its curve.
       cards.get(control.key)?.syncTick?.();
     };
@@ -541,8 +566,16 @@ export function mountConsole({
    * setting is beside the wall it belongs to and the four read as a parti
    * rather than as a list. The plan turns with the building, so once you have
    * rotated the box you can still see which opening now faces where.
+   *
+   * Each wall carries its own Study offer, in the legend under the plan where
+   * that wall's number is already lettered. Four separate offers rather than
+   * one for the plan key, because a study moves one parameter and holds the
+   * rest of the desk still — and the whole reason this control is a plan key
+   * is that its four walls are four different decisions. "What does the west
+   * elevation cost?" is the question, and it is not answerable by turning all
+   * four at once.
    */
-  function buildFacade(control) {
+  function buildFacade(control, channel) {
     const row = el('div', 'ctl ctl-facade');
     const head = el('div', 'ctl-head');
     head.append(el('span', 'ctl-label', control.label));
@@ -611,7 +644,7 @@ export function mountConsole({
         onEnd: () => onChange(side.key, params[side.key], true),
       });
 
-      return { side, filled, cap, place };
+      return { side, group: g, filled, cap, place };
     });
 
     root.append(turning);
@@ -623,14 +656,31 @@ export function mountConsole({
       item.append(el('span', null, side.label));
       const out = el('b');
       item.append(out);
+      const studyBtn = studyOffer(side.key, labelFor(side.key), control, channel);
+      if (studyBtn) item.append(studyBtn);
       legend.append(item);
-      return { side, out };
+      return { side, item, out, studyBtn };
     });
     row.append(legend);
     if (control.note) row.append(el('p', 'ctl-note', control.note));
 
+    // Four curves can stand under one plan key, so each wall gets an anchor of
+    // its own and its card is hung after that. A card is inserted after the
+    // node `rows` holds, and four keys sharing the row itself would stack
+    // their curves in whatever order the sweeps happened to land in, under a
+    // control that is drawn in compass order. The anchors are empty and carry
+    // no box of their own.
+    const bay = el('div', 'plan-studies');
+    for (const side of control.sides) {
+      const anchor = el('div', 'plan-study');
+      bay.append(anchor);
+      rows.set(side.key, anchor);
+    }
+    row.append(bay);
+
     const redraw = () => {
       turning.setAttribute('transform', `rotate(${params.northAxis})`);
+      const spent = control.needs ? !control.needs(params) : false;
       for (const bar of bars) {
         const v = params[bar.side.key];
         const f = clamp(control.fraction(v), 0, 1);
@@ -639,9 +689,26 @@ export function mountConsole({
         // Keep the lettering upright however far the plan has been turned.
         const total = params.northAxis + bar.place.rotate;
         bar.cap.setAttribute('transform', `rotate(${-total})`);
+        // A wall whose number reaches nothing is greyed on the plan as well as
+        // in the legend, at the bar you would reach for — the row-wide `idle`
+        // the other kinds use cannot say "this one and not those three".
+        bar.group.classList.toggle('idle', !bar.side.reaches(params));
       }
-      for (const read of reads) read.out.textContent = control.format(params[read.side.key]);
-      row.classList.toggle('idle', control.needs ? !control.needs(params) : false);
+      for (const read of reads) {
+        read.out.textContent = control.format(params[read.side.key]);
+        // Only the wall's own reason dims the legend entry: were the whole
+        // control idle as well, two nested 0.4s would take the reading to a
+        // sixth of its ink and out of legibility altogether.
+        const reaches = read.side.reaches(params);
+        read.item.classList.toggle('idle', !reaches);
+        syncStudyOffer(read.studyBtn, channel, {
+          idle: spent || !reaches,
+          unreached: reaches ? null : read.side.unreached,
+        });
+      }
+      row.classList.toggle('idle', spent);
+      // Dragging a wall walks its own study's tick along its curve.
+      for (const side of control.sides) cards.get(side.key)?.syncTick?.();
     };
     for (const side of control.sides) faces.set(side.key, redraw);
     // The plan turns with the north axis, so it has to redraw when that moves.
@@ -1129,6 +1196,20 @@ export function mountConsole({
   /* ── studies ─────────────────────────────────────────────────────────── */
 
   /**
+   * What a card is a study of, when the control it hangs under is not answer
+   * enough.
+   *
+   * Every other card stands directly beneath its own labelled row, so naming
+   * its subject again would be the page repeating itself. A plan key's four
+   * walls share one label and can have four curves standing under it at once,
+   * which is exactly the case where the card has to say which wall it is.
+   */
+  function studySubject(key) {
+    const { side } = controlFor(key);
+    return side ? [el('span', 'study-side', labelFor(key))] : [];
+  }
+
+  /**
    * The curve a sweep drew, under the control it swept.
    *
    * The x axis is `control.fraction` — the same 0..1 the face tick above it
@@ -1147,7 +1228,7 @@ export function mountConsole({
     const { control } = controlFor(key);
     const card = el('div', 'study-card');
     const head = el('div', 'study-head');
-    head.append(el('span', 'study-tag', 'Study'));
+    head.append(el('span', 'study-tag', 'Study'), ...studySubject(key));
     // Which desk this curve was swept against, the way the bill names what it
     // is pinned to. Everything else about the card assumes that desk.
     const desk = el('span', 'study-desk', `of ${study.label}`);
@@ -1230,7 +1311,7 @@ export function mountConsole({
     const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' });
     root.setAttribute(
       'aria-label',
-      `Study of ${control.label} from ${control.format(control.min)} to ${control.format(control.max)}: ` +
+      `Study of ${labelFor(key)} from ${control.format(control.min)} to ${control.format(control.max)}: ` +
         series
           .map((s) => {
             const found = study.curve.map(s.sel).filter((v) => v != null);
@@ -1554,7 +1635,7 @@ export function mountConsole({
         const node = el('div', 'study-card');
         const head = el('div', 'study-head');
         const wait = el('span', 'study-wait');
-        head.append(el('span', 'study-tag', 'Study'), wait);
+        head.append(el('span', 'study-tag', 'Study'), ...studySubject(key), wait);
         node.append(head);
         have = { node, kind: 'wait', wait };
         row.after(node);
