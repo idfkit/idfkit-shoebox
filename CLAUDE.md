@@ -566,6 +566,40 @@ index, one screen tall, in signal order.
   folds change and the difference is `scrollBy`-ed back after, or closing a strip
   above the one you opened yanks the page under your thumb.
 
+### The schedules on a phone
+
+The results schedule and the bill are the same instrument and fold the same
+way, at their own breakpoint of `620px` — a *second* one, and the only other in
+the stylesheet, because it answers a different question from `--index`. The
+desk stops being a column beside the sheet when the window can no longer carry
+both; a schedule stops being a table when its own columns collide, which
+happens some way further down. A bill of a year's run under a pinned scheme
+wants seven columns — an end use, three bases, a change against each — and at
+390px they ran into one another (`18,456 −3,193$1,090 −$1893,727 −645` was one
+row) while the results schedule pushed its unit column off the sheet entirely.
+
+- **A row folds into a block**: the quantity keeps its own line, and every
+  figure stands on a line of its own under it with the head it was under
+  lettered at its left. Nothing is dropped and nothing scrolls out of sight,
+  which is the same rule the folded strip keeps — a reading that cannot be read
+  is not a reading.
+- **The head a cell carries is `data-head`, set where the cell is built**
+  (`renderSchedule`, `renderBillTable`), so the words over a column and the
+  words beside a figure are one string. `headOf` names the bill's, for the same
+  reason: a figure lettered `Carbon` under a column headed `Carbon (kgCO₂e)`
+  would be a figure whose unit depends on the window width.
+- **`keepTableSemantics` states the table roles outright.** `display: grid` on
+  a `tr` or a `td` drops the implicit table roles in every engine, so without
+  it a screen reader would lose the row and column structure at exactly the
+  width where the figures need it most. The roles are set unconditionally —
+  they are the same ones the elements already carry above the breakpoint.
+- **The breakpoint is a judgement, not a derivation.** The column count is not
+  fixed (the schedule heads one column per environment, and a run can carry
+  eight), so it is set for the case that has to hold rather than computed from
+  a count. Above it, the gutter between one column of figures and the next —
+  `td + td` — is what keeps `Cost` and `Carbon (kgCO₂e)` from running together
+  as the window narrows.
+
 ### The balance rail
 
 The console's signature. Five channel meters are terms of the zone *air* heat
