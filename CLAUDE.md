@@ -314,15 +314,15 @@ the high in the warm pen and the low in the cold one, read over the billed
 environments (the year when there is one, so kept sizing days stay out;
 otherwise the winter day owns the low and the summer day the high). With System
 engaged and a year attached the reading is `readDemand` instead — TEDI, CEDI
-and building EUI off the meters through `meterTotal`, by the bill's
+and their total off the meters through `meterTotal`, by the bill's
 building-section intensity rule, each sample divided by its own floor area. The
 readers live in `src/readings.js`, DOM-free, so the harness calls the real
 ones.
 
 **The sheet reads the same three for the desk it is standing on.** A curve with
 no point on it the reader can check against the run in front of them is a
-comparison of hypotheticals, so the results schedule carries TEDI, CEDI and the
-building EUI as rows and the finding says them in a sentence — the sheet's own
+comparison of hypotheticals, so the results schedule carries TEDI, CEDI and
+their total as rows and the finding says them in a sentence — the sheet's own
 answer to the question a study asks of one control. `demandOver` is the shared
 arithmetic: the schedule reads it **per environment**, because that is what a
 column of that schedule is, and the finding reads `readDemand` over the billed
@@ -333,6 +333,39 @@ than drawn as em dashes — a building with no system is not a missing
 measurement), and everything is read off the run rather than off live `params`,
 which is also what stopped the finding opening "with no heating or cooling
 anywhere in this model" over a run that had just simulated an ideal unit.
+
+**The three names are pinned to published definitions, and one of them was
+wrong.** TEDI and CEDI are compliance metrics with numeric targets attached, so
+they are not ours to redefine, and the pinned wording lives in `demandOver`'s
+comment with its sources:
+
+- **TEDI** — space *and ventilation* heating **output**, per unit of modelled
+  floor area, per year (City of Vancouver Energy Modelling Guidelines v3.0;
+  CaGBC ZCB-Design v3/v4, which states it "is intended to represent the heat
+  delivered to the building" and counts a heat pump's output rather than its
+  electricity). Before any efficiency or COP.
+- **CEDI** — cooling **output**, sensible *and latent*, same denominator, and
+  "does not include mechanical efficiencies of cooling equipment" (Vancouver,
+  where it is a defined term with no target). CaGBC defines no cooling metric,
+  so Vancouver is the only authority for this one.
+- **EUI** — "the sum of all site energy consumed on site … divided by the
+  building modelled floor area" (CaGBC). Metered energy, *after* the plant.
+
+Which is why the third row is no longer called one. It was the four building
+end uses summed on the *demand* side, which is not an EUI by any published
+definition and disagreed with the bill's own per-m² figure by 44 % on a Denver
+year — 111.2 against 77.1, the difference being the boiler efficiency and the
+chiller COP the bill divides by and the schedule did not. The ideal-loads
+meters are the output side both demand definitions ask for, so TEDI and CEDI
+were right all along; only their companion was mislabelled.
+
+The denominator is a separate matter and is **not** yet right: every intensity
+here divides by one zone's floor polygon while the meters carry the zone
+multiplier, so a multiplier of 3 reports three times the true intensity
+(measured: TEDI 9.6 → 28.8, and the bill's per-m² 77.1 → 231). The rail already
+divides its System term back down through `Term.perBuilding`; the intensities
+do not. See the open issue rather than fixing it in passing — it moves the bill,
+the schedule and every study curve at once.
 
 **A plan key's four walls are four subjects, not one.** The `Facade` controls —
 window-to-wall ratio and overhang projection — own a key per wall, so each wall

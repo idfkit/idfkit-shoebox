@@ -237,13 +237,44 @@ export function readExtremes(eso) {
 /**
  * The demand intensities over one named set of environments.
  *
- * Ideal loads meter as `DistrictHeatingWater` and `DistrictCooling` — heat
- * delivered at a notional 100 % — which is exactly what a demand intensity
- * means: TEDI and CEDI are the envelope's ask, before any plant, so the
- * priced channels stay out of this the way they stay out of `shapeKey`. The
- * EUI sums the bill's building section only, by the bill's own benchmark
- * rule, and refuses to print at all when heating or cooling is missing — a
- * total quietly short its largest term would read as a finding.
+ * The three names are pinned to published definitions rather than to how they
+ * are used in conversation, because two of them are compliance metrics with
+ * numeric targets attached and the third is the most misused acronym in the
+ * field:
+ *
+ *   TEDI — "the annual heating energy demand for space conditioning and
+ *   conditioning of ventilation air … the amount of heating energy that is
+ *   output from any and all types of heating equipment, per unit of Modelled
+ *   Floor Area" (City of Vancouver Energy Modelling Guidelines v3.0). CaGBC
+ *   ZCB-Design v3/v4 gives the same formula — Σ space and ventilation heating
+ *   output ÷ modelled floor area — and states outright that it "is intended to
+ *   represent the heat delivered to the building", counting a heat pump's
+ *   output rather than the electricity it drew. TEDI is therefore *before* any
+ *   efficiency or COP.
+ *
+ *   CEDI — "the annual cooling energy demand for space conditioning and
+ *   conditioning of ventilation air … the amount of cooling output, both
+ *   latent and sensible, from any and all types of cooling equipment per unit
+ *   of Modelled Floor Area … CEDI does not include mechanical efficiencies of
+ *   cooling equipment" (same guidelines, where it is a defined term that
+ *   carries no target). CaGBC defines no cooling metric at all, so Vancouver
+ *   is the authority for this one.
+ *
+ *   EUI — "the sum of all site energy consumed on site (e.g., electricity,
+ *   natural gas, district heat), including all process loads, divided by the
+ *   building modelled floor area" (CaGBC ZCB-Design v3/v4). Metered energy,
+ *   *after* the plant. It is therefore not a name anything here may take: the
+ *   sheet has no plant to meter, and the figure the bill divides per m² is the
+ *   real one. The third field below is the plain sum of the four building end
+ *   uses on the demand side, and is named for what it is.
+ *
+ * All of which the ideal-loads meters give directly: `DistrictHeatingWater`
+ * and `DistrictCooling` are heat moved across the zone boundary at a notional
+ * 100 %, which is the output side both definitions ask for, with the outdoor
+ * air the ideal unit conditions already in them. So the priced channels stay
+ * out of this the way they stay out of `shapeKey`, and the total refuses to
+ * print at all when heating or cooling is missing — a sum quietly short its
+ * largest term would read as a finding.
  *
  * Every field comes back null rather than zero where the meter behind it was
  * never requested, which is what a bypassed System looks like from here: the
@@ -269,7 +300,10 @@ export function demandOver(eso, environments, floorArea) {
   return {
     tedi: heating == null ? null : heating / floorArea,
     cedi: cooling == null ? null : cooling / floorArea,
-    eui:
+    // Not an EUI: see the definitions above. The four building end uses on
+    // the demand side, which is what the finding says in a sentence and the
+    // study's third curve draws.
+    total:
       heating == null || cooling == null
         ? null
         : [...kwh.values()].reduce((a, b) => a + b, 0) / floorArea,

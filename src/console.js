@@ -1254,11 +1254,11 @@ export function mountConsole({
     // TEDI and CEDI keep it deliberately: they are the year's heat asked into
     // and out of the zone — the rail's signed watts integrated, not a price
     // or an emission — so warm-in / cold-out encodes exactly the sign it does
-    // everywhere else on the desk. The EUI, a directionless total like every
-    // other energy figure on the sheet, is graphite.
+    // everywhere else on the desk. Their total, a directionless figure like
+    // every other energy quantity on the sheet, is graphite.
     const series = energy
       ? [
-          { sel: (p) => p.eui, pen: 'var(--ink)', name: 'EUI', said: 'building EUI' },
+          { sel: (p) => p.total, pen: 'var(--ink)', name: 'ALL', said: 'all four end uses before plant' },
           { sel: (p) => p.tedi, pen: 'var(--warm)', name: 'TEDI', said: 'heating demand TEDI' },
           { sel: (p) => p.cedi, pen: 'var(--cold)', name: 'CEDI', said: 'cooling demand CEDI' },
         ]

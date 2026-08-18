@@ -877,7 +877,7 @@ const SCHEDULE_ROWS = [
   // partial year reads as itself rather than as nothing.
   { label: 'Thermal energy demand intensity — TEDI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.tedi ?? NaN, fmt: f1 },
   { label: 'Cooling energy demand intensity — CEDI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.cedi ?? NaN, fmt: f1 },
-  { label: 'Energy use intensity — EUI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.eui ?? NaN, fmt: f1 },
+  { label: 'All four end uses, before plant efficiency', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.total ?? NaN, fmt: f1 },
 ];
 
 /**
@@ -3419,7 +3419,7 @@ async function solve() {
   const demand = readDemand(eso, floorArea);
   const billedRuns = runs.filter((r) => r.kind === null);
 
-  if (demand?.eui != null) {
+  if (demand?.total != null) {
     finding.append(
       'Holding the setpoints across ',
       billedRuns.length === 1 ? `the ${billedRuns[0].noun}` : `${RUN_TALLY[billedRuns.length]} run periods`,
@@ -3428,8 +3428,8 @@ async function solve() {
       ' kWh/m² of heat into the zone and ',
       q(f1(demand.cedi)),
       ' kWh/m² back out of it — ',
-      q(f1(demand.eui), true),
-      ' kWh/m² of building energy delivered in all, before any plant efficiency is applied to it below.',
+      q(f1(demand.total), true),
+      ' kWh/m² of demand in all, before the plant efficiencies the bill below divides it by.',
     );
   } else if (conditioned) {
     finding.append(
@@ -3437,7 +3437,7 @@ async function solve() {
       q(f1(m.z.min)),
       ' °C and ',
       q(f1(m.z.max), true),
-      ` °C over the ${lead.noun}. Demand intensities need a run period to read over — a sizing day is a condition, not a period — so attach a weather file and TEDI, CEDI and the building EUI join the schedule above.`,
+      ` °C over the ${lead.noun}. Demand intensities need a run period to read over — a sizing day is a condition, not a period — so attach a weather file and TEDI, CEDI and their total join the schedule above.`,
     );
   } else if (Number.isFinite(m.damping)) {
     finding.append(
@@ -3648,7 +3648,7 @@ function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES } = {}) {
   // What each run is read for. Free-running, the zone's two extremes are the
   // design quantities. With ideal loads in the path and a year to bill, the
   // extremes flatten at the setpoints and the demand the system pays to hold
-  // them there is the reading — TEDI, CEDI and the building EUI.
+  // them there is the reading — TEDI, CEDI and their total.
   const metric = epw && channelState(snapshot, patch).get('system').engaged ? 'energy' : 'extremes';
   const points = samplePoints(control, snapshot[key], n);
   studyScheduler.enqueue(
