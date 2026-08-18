@@ -150,6 +150,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **"Heat only" and "Cool only" fatalled the engine.** The System strip's
+  *Available* selector wrote the thermostat's control type number — 1 for
+  heating only, 2 for cooling only — but left the control itself named as the
+  `ThermostatSetpoint:DualSetpoint` the *Always* setting uses. EnergyPlus reads
+  that number as a thermostat *type* and then looks for a control of that type
+  in the zone's own list, so a 1 over a dual setpoint is not a dual setpoint
+  with its cooling half suppressed; it is a control of a type the zone does not
+  have, and the run stops in get-input before any environment starts:
+
+      ** Severe  ** Control Type Schedule=CONTROL TYPE
+      **   ~~~   ** ..specifies 1 (ThermostatSetpoint:SingleHeating) as the
+                     control type. Not valid for this zone.
+      **  Fatal  ** Errors getting Zone Control input data.
+
+  So two of the four settings of that control could not be solved at all, on
+  any weather, on any desk — the sheet reported only that the engine had
+  crashed. Each setting now writes the setpoint object its number names, and
+  the meters say what the labels do: on a Boston 725090 year *Heat only* heats
+  and never cools, *Cool only* the reverse, and *Always* does both.
+
 - **The results schedule and the bill collided on a phone.** Both are tables of
   right-aligned figures, and a bill of a year's run under a pinned scheme wants
   seven columns: an end use, three bases and a change against each. At 390 px
