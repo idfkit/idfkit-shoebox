@@ -156,9 +156,9 @@ export const degreeDays = (station) =>
  * withholding location from the browser, whatever the page was granted.
  */
 const GEOLOCATION_ERRORS = {
-  1: 'Location permission was declined — search for a city instead',
-  2: 'The browser could not work out where you are. On macOS this is usually Chrome itself being denied Location Services, in System Settings › Privacy & Security',
-  3: 'The browser took too long to find you — try again, or search for a city',
+  1: 'Location permission was declined — search for a city instead.',
+  2: 'The browser could not work out where you are. On macOS this is usually the browser itself being denied Location Services, in System Settings › Privacy & Security.',
+  3: 'The browser took too long to find you — try again, or search for a city.',
 };
 
 /**

@@ -97,7 +97,7 @@ export function createStudyScheduler({
     job.state = 'done';
     drop(job);
     const drew = job.curve.some(
-      (p) => (p?.low ?? p?.high ?? p?.tedi ?? p?.cedi ?? p?.eui) != null,
+      (p) => (p?.low ?? p?.high ?? p?.tedi ?? p?.cedi) != null,
     );
     onUpdate(job, drew ? 'done' : 'failed');
   }

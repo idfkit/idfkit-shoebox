@@ -313,26 +313,86 @@ queue. Each sample keeps two numbers off the hourly zone mean air temperature:
 the high in the warm pen and the low in the cold one, read over the billed
 environments (the year when there is one, so kept sizing days stay out;
 otherwise the winter day owns the low and the summer day the high). With System
-engaged and a year attached the reading is `readDemand` instead — TEDI, CEDI
-and building EUI off the meters through `meterTotal`, by the bill's
-building-section intensity rule, each sample divided by its own floor area. The
+engaged and a year attached the reading is `readDemand` instead — TEDI and
+CEDI off the meters through `meterTotal`, each sample divided by its own floor
+area. The
 readers live in `src/readings.js`, DOM-free, so the harness calls the real
 ones.
 
-**The sheet reads the same three for the desk it is standing on.** A curve with
+**The sheet reads the same pair for the desk it is standing on.** A curve with
 no point on it the reader can check against the run in front of them is a
-comparison of hypotheticals, so the results schedule carries TEDI, CEDI and the
-building EUI as rows and the finding says them in a sentence — the sheet's own
+comparison of hypotheticals, so the results schedule carries TEDI and CEDI as
+rows and the finding says them in a sentence — the sheet's own
 answer to the question a study asks of one control. `demandOver` is the shared
 arithmetic: the schedule reads it **per environment**, because that is what a
 column of that schedule is, and the finding reads `readDemand` over the billed
 environments, so the columns sum to the sentence. Two rules keep the rows
 honest: the meters' own presence is the gate (no `Heating:DistrictHeatingWater`
-in the ESO means the System strip was out, and the three rows are omitted rather
+in the ESO means the System strip was out, and both rows are omitted rather
 than drawn as em dashes — a building with no system is not a missing
 measurement), and everything is read off the run rather than off live `params`,
 which is also what stopped the finding opening "with no heating or cooling
 anywhere in this model" over a run that had just simulated an ideal unit.
+
+**The three names are pinned to published definitions, and one of them was
+wrong.** TEDI and CEDI are compliance metrics with numeric targets attached, so
+they are not ours to redefine, and the pinned wording lives in `demandOver`'s
+comment with its sources:
+
+- **TEDI** — space *and ventilation* heating **output**, per unit of modelled
+  floor area, per year (City of Vancouver Energy Modelling Guidelines v3.0;
+  CaGBC ZCB-Design v3/v4, which states it "is intended to represent the heat
+  delivered to the building" and counts a heat pump's output rather than its
+  electricity). Before any efficiency or COP.
+- **CEDI** — cooling **output**, sensible *and latent*, same denominator, and
+  "does not include mechanical efficiencies of cooling equipment" (Vancouver,
+  where it is a defined term with no target). CaGBC defines no cooling metric,
+  so Vancouver is the only authority for this one.
+- **EUI** — "the sum of all site energy consumed on site … divided by the
+  building modelled floor area" (CaGBC). Metered energy, *after* the plant.
+
+Which is why there is no third reading. It was the four building end uses
+summed on the *demand* side, drawn for a while as an "EUI", and it disagreed
+with the bill's own per-m² figure by 44 % on a Denver year — 111.2 against
+77.1, the difference being the boiler efficiency and the chiller COP the bill
+divides by and the schedule did not. Renaming it was the first fix and the
+wrong one: a sum of the demand side has no published definition and no
+benchmark to hold it against, so under any name it is a figure the reader
+cannot use, on a sheet whose claim is that every figure means something. The
+ideal-loads meters are the output side both demand definitions ask for, so
+TEDI and CEDI were right all along; their companion is simply gone, and the
+per-m² energy figure anyone actually benchmarks is the bill's.
+
+**The denominator is the whole building, and `geometryFacts` is where that is
+decided.** Every intensity used to divide by one zone's floor polygon while the
+meters carried the zone multiplier, so a multiplier of 3 reported three times
+the true intensity — TEDI 9.6 → 28.8, the bill's per-m² 77.1 → 231. The rail
+had long since learned this lesson in its own half of the desk, where
+`Term.perBuilding` divides the building-level system term back down.
+
+So `geometryFacts` now returns both: `floor`, `exposed`, `volume`, `glazing`
+and the rest per storey — what the axonometric draws — and `grossFloor`,
+`grossExposed`, `grossVolume`, `grossGlazing`, `grossRoofGlazing`,
+`grossShadeArea` for the building the engine was handed, alongside the
+`storeys` that made it. Three rules hold it together:
+
+- **The multiplier is read off the `Zone` object, never off `params`.**
+  `buildSample` hands this function a document carrying a sweep's overlay, so
+  a fact taken from live parameters would describe the desk instead of the
+  sample. Measured: sweeping the zone multiplier 1× to 30× now draws TEDI flat
+  at 9.6 and CEDI flat at 50.1 across all twenty-one samples, which is the
+  right answer — stacking identical floors buys three times the energy over
+  three times the area.
+- **Everything that divides by an area takes the gross one**: the bill, the
+  schedule's demand columns, the finding, and every study sample.
+- **Every area and volume the page letters is the building's**, in the
+  quantities panel and on the strips alike, so one quantity never appears
+  twice on one page at two sizes. The ratios — window-to-wall,
+  skylight-to-roof, envelope-to-volume — take no multiplier and must never be
+  given one: every term in them scales by the same n. Only the floor row names
+  the multiplier (`696.8 m² · 3 floors`), because it is the one row whose
+  cause is not otherwise obvious, and because a reading the reader cannot
+  check the division of is the thing this sheet exists not to print.
 
 **A plan key's four walls are four subjects, not one.** The `Facade` controls —
 window-to-wall ratio and overhang projection — own a key per wall, so each wall

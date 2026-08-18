@@ -834,7 +834,7 @@ export const HOLIDAY_CALENDARS = Object.freeze([
     code: 'FR',
     label: 'French public',
     days: [
-      day('Jour de l An', '1/1'),
+      day("Jour de l'An", '1/1'),
       absent('Lundi de Paques', EASTER),
       day('Fete du Travail', '5/1'),
       day('Victoire 1945', '5/8'),
@@ -1044,14 +1044,14 @@ export const CHANNELS = Object.freeze([
     name: 'Site',
     term: 'Q☼',
     blurb:
-      'Where the box stands and which way it faces. North turns the building under the sun — the vertices do not move, so the drawing turns its north point instead.',
+      'Where the box stands and which way it faces. North turns the building under the sun — the vertices themselves turn, so the drawing holds the box square to the page and turns its north point instead.',
     bypassable: false,
     controls: [
       new Bearing({
         key: 'northAxis',
         label: 'North axis',
         value: 0,
-        note: 'Building.north_axis. At 0 the glazed wall of the stock model faces due south.',
+        note: 'Turned into the vertices, since World coordinates have EnergyPlus ignore Building.north_axis. At 0 the wall this demo glazes faces due south.',
       }),
       new Selector({
         key: 'terrain',
@@ -1304,7 +1304,7 @@ export const CHANNELS = Object.freeze([
         unit: 'm',
         zero: 'Flush',
         needs: skylit,
-        note: 'The upstand a rooflight is bedded on, standing all the way round. It is the roof’s overhang, and the only shade a horizontal opening gets.',
+        note: 'The upstand a rooflight is bedded on, standing all the way round. It is the roof\'s overhang, and the only shade a horizontal opening gets.',
       }),
       new Selector({
         key: 'skyGlass',
@@ -1315,7 +1315,7 @@ export const CHANNELS = Object.freeze([
           { value: 'Own', label: 'Its own' },
         ],
         needs: skylit,
-        note: 'Its own is a simple unit and nothing can be hung inside one, so rooflights glazed that way take no blind — the walls’ assembly is what the Blinds strip reaches.',
+        note: 'Its own is a simple unit and nothing can be hung inside one, so rooflights glazed that way take no blind — the walls\' assembly is what the Blinds strip reaches.',
       }),
       new Scale({
         key: 'skyU',
@@ -1459,7 +1459,7 @@ export const CHANNELS = Object.freeze([
     name: 'Fabric',
     term: 'Q↔',
     blurb:
-      'The opaque envelope. Bypassed, every surface goes adiabatic and the box becomes a flask — which is the cleanest way there is to see what the other channels are worth.',
+      'The opaque envelope. Bypassed, every surface goes adiabatic and the box becomes a flask — the cleanest way there is to see what the other channels are worth, though Glazing, Skylights and Shading have to come out with it: EnergyPlus refuses an opening cut into an adiabatic wall and stops the run.',
     meter: new Meter({
       label: 'Surface convection to air',
       rail: true,
@@ -1880,7 +1880,7 @@ export const CHANNELS = Object.freeze([
     prices: true,
     bypassable: false,
     blurb:
-      'The published rate, and what happens if it is wrong. Left alone the bill uses the tariff and grid factor on file for this country; taken to Assumed, it uses what you set — which is how a grid that has not decarbonised yet gets tested against one that has.',
+      'The published rate, and what happens if it is wrong. Left alone the bill uses the tariff and grid factor published for this place; taken to Assumed, it uses what you set — which is how a grid that has not decarbonised yet gets tested against one that has.',
     meter: new Meter({ label: 'Electricity rate', terms: [], derived: true }),
     controls: [
       new Selector({
@@ -2014,7 +2014,7 @@ export const CHANNELS = Object.freeze([
         presets: HOLIDAY_CALENDARS,
         needs: (p) => p.holidays !== 'No',
         note:
-          'One RunPeriodControl:SpecialDays each. Only bites on a weather-file run period — the design days carry no calendar.',
+          'One RunPeriodControl:SpecialDays each. Only reaches the model on a weather-file run period — the design days carry no calendar.',
       }),
       new Selector({
         key: 'holidayRule', label: 'Weekend holiday rule', value: 'No',
@@ -2024,7 +2024,7 @@ export const CHANNELS = Object.freeze([
         ],
         needs: (p) => p.holidays !== 'No' && p.holidayUse !== 'AsWeekend',
         note:
-          'Moves a holiday that lands on a weekend onto the adjacent weekday. The run follows the weather file’s own calendar, so the weekend it moves off is a real one.',
+          'Moves a holiday that lands on a weekend onto the adjacent weekday. The run follows the weather file\'s own calendar, so the weekend it moves off is a real one.',
       }),
       new Selector({
         key: 'dst', label: 'Daylight saving', value: 'Yes',

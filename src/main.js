@@ -861,7 +861,7 @@ const SCHEDULE_ROWS = [
   { label: 'Damping — zone swing ÷ outdoor swing', unit: '', group: true, at: (m) => m.damping, fmt: f2 },
   { label: 'Thermal lag — outdoor peak to zone peak', unit: 'h', at: (m) => m.lag, fmt: String },
   { label: 'Hours simulated', unit: 'h', at: (m) => m.hours, fmt: (v) => v.toLocaleString('en-US'), nodelta: true },
-  // The three the sweep draws, for the desk as it stands. A study answers
+  // The pair the sweep draws, for the desk as it stands. A study answers
   // "what would this control do to the demand"; without these rows the sheet
   // could not answer "what is the demand", and the curve had no point on it
   // the reader could check against the run in front of them. Same readers,
@@ -877,7 +877,6 @@ const SCHEDULE_ROWS = [
   // partial year reads as itself rather than as nothing.
   { label: 'Thermal energy demand intensity — TEDI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.tedi ?? NaN, fmt: f1 },
   { label: 'Cooling energy demand intensity — CEDI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.cedi ?? NaN, fmt: f1 },
-  { label: 'Energy use intensity — EUI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.eui ?? NaN, fmt: f1 },
 ];
 
 /**
@@ -970,9 +969,15 @@ function renderSchedule(columns, baseColumns) {
  * printed figure is not a reading.
  */
 class BillColumn {
-  constructor({ id, label, field, unit, format }) {
+  constructor({ id, label, noun, field, unit, format }) {
     this.id = id;
     this.label = label;
+    // The same column said inside a sentence rather than over a column of
+    // figures. "At the meter" heads the column honestly and reads as nonsense
+    // in prose — "nothing here can be measured in at the meter" — so the two
+    // are declared apart, the way an environment's `noun` is kept apart from
+    // its `label`.
+    this.noun = noun;
     this.field = field;
     this.unit = unit;
     this.format = format;
@@ -991,15 +996,15 @@ const group = (v, digits = 0) =>
 
 const BILL_COLUMNS = Object.freeze([
   new BillColumn({
-    id: 'metered', label: 'At the meter', field: 'metered', unit: 'kWh',
+    id: 'metered', label: 'At the meter', noun: 'energy', field: 'metered', unit: 'kWh',
     format: (v) => group(v, v < 100 ? 1 : 0),
   }),
   new BillColumn({
-    id: 'cost', label: 'Cost', field: 'cost', unit: '',
+    id: 'cost', label: 'Cost', noun: 'a cost', field: 'cost', unit: '',
     format: (v, bill) => bill.currency.format(v, Math.abs(v) < 100 ? 2 : 0),
   }),
   new BillColumn({
-    id: 'carbon', label: 'Carbon', field: 'carbon', unit: 'kgCO₂e',
+    id: 'carbon', label: 'Carbon', noun: 'a carbon figure', field: 'carbon', unit: 'kgCO₂e',
     format: (v) => group(v, Math.abs(v) < 100 ? 1 : 0),
   }),
 ]);
@@ -1065,7 +1070,7 @@ function billFrom(run) {
     series,
     params,
     card: rateCard(),
-    floorArea: geometryFacts(model).floor,
+    floorArea: geometryFacts(model).grossFloor,
     hours: run.hours,
     engaged: new Set([...(modelState ?? [])].filter(([, s]) => s.engaged).map(([id]) => id)),
     annual: run.annual,
@@ -1149,25 +1154,29 @@ function renderBill() {
 }
 
 function renderBillHead(againstLabel) {
-  const site = bill.card.site;
   $('bill-scope').textContent = againstLabel ? ` Δ against ${againstLabel}` : '';
   // Named in full at the top as well as beside each rate, because "is this a
   // commercial rate or a household one" is the first question anyone sensible
   // asks of a bill they did not receive themselves.
+  //
+  // The geography is the rate's own `region` rather than the card's country:
+  // North America is priced by state and province, so a Colorado bill headed
+  // "published for the United States" would name a table one grain coarser
+  // than the number it is describing.
   const tariff = bill.card.electricity;
   const priced = !isRate(tariff)
     ? ''
     : tariff.source.id === 'assumed'
       ? ' Priced at the rates assumed on the Tariff strip.'
-      : ` Priced at the ${tariff.source.kind.toLowerCase()} published for ${placeName(site)}, never a residential one, and factored at its grid carbon intensity.`;
+      : ` Priced at the ${tariff.source.kind.toLowerCase()} published for ${placeName(tariff.region)}, never a residential one, and factored at its grid carbon intensity.`;
   // Three periods, not two. A weather file no longer means a year: months can
   // be taken out of the run, and a bill of ten of them has to say so, because
   // the reader's next move is to compare the total with a year's.
   $('bill-lede').textContent = bill.wholeYear
     ? `Metered across the ${group(bill.hours)}-hour run.${priced}`
     : bill.annual
-      ? `Metered across the ${group(bill.hours)} hours of the run — ${bill.months} of the year's twelve months, so this is a bill for those months and not for a year. Put the missing months back on the Run strip for one of those.${priced}`
-      : `These are the ${group(bill.hours)} hours of the sizing days — two conditions chosen for being extreme. They are a real bill for a real two days, and they are deliberately not multiplied up into a year; attach a weather file for one of those.${priced}`;
+      ? `Metered across the ${group(bill.hours)} hours of the run — ${bill.months} of the year's twelve months, so this is a bill for those months and not for a year. Put the missing months back on the Run strip for a year's.${priced}`
+      : `These are the ${group(bill.hours)} hours of the sizing days — two conditions chosen for being extreme. They are a real bill for a real two days, and they are deliberately not multiplied up into a year; attach a weather file for a year's.${priced}`;
 }
 
 /**
@@ -1272,7 +1281,10 @@ function renderBillBar() {
     key.append(
       Object.assign(document.createElement('p'), {
         className: 'bill-note',
-        textContent: `Nothing on this run can be measured in ${billBasis.label.toLowerCase()} — the rate behind it was not published for this location.`,
+        textContent:
+          billBasis.id === 'metered'
+            ? 'Nothing on this run metered any energy at all.'
+            : `Nothing on this run can be given ${billBasis.noun} — the rate behind it was not published for this location.`,
       }),
     );
     return;
@@ -1433,7 +1445,7 @@ const cited = (source) =>
 function renderBillNotes() {
   const absences = bill.card.absences;
   $('bill-absences').textContent = absences.length
-    ? `${absences.map((a) => `${a.what}: ${a.reason}`).join(' ')} Those columns read as an em dash and are left out of every total on this schedule.`
+    ? `${absences.map((a) => `${a.what}: ${a.reason}`).join(' ')} Those figures read as an em dash and are left out of every total on this schedule.`
     : '';
 
   const refs = $('bill-refs');
@@ -1572,7 +1584,8 @@ shareBtn.addEventListener('click', async () => {
     // The clipboard can be withheld; the address bar cannot. The same link is
     // sitting there, and saying so beats failing quietly.
     statusEl.className = 'status bad';
-    statusEl.textContent = 'The link could not be copied here — it is the address in the address bar.';
+    statusEl.textContent =
+      'The clipboard was refused here — the link is the address in the address bar, ready to copy by hand.';
     return;
   }
   shareBtn.textContent = 'Copied';
@@ -1782,19 +1795,29 @@ function applyGeometry() {
 
   const facts = geometryFacts(model);
   const m2 = (v) => `${v.toFixed(1)} m²`;
-  $('q-floor').textContent = m2(facts.floor);
-  $('q-exposed').textContent = facts.exposed > 0 ? m2(facts.exposed) : 'None — adiabatic';
-  $('q-volume').textContent = `${facts.volume.toFixed(1)} m³`;
+  // The whole building the engine was handed, not the one storey the
+  // axonometric draws, because these three are what every intensity on the
+  // sheet is divided by and a reader has to be able to check the division.
+  // They move together or not at all: a gross floor area over a single
+  // storey's volume would put this building's ceiling at 1.5 m. The floor
+  // row names the multiplier that made it, since it is the only one of the
+  // three whose cause is not then obvious.
+  $('q-floor').textContent =
+    facts.storeys > 1
+      ? `${m2(facts.grossFloor)} · ${facts.storeys} floors`
+      : m2(facts.floor);
+  $('q-exposed').textContent = facts.grossExposed > 0 ? m2(facts.grossExposed) : 'None — adiabatic';
+  $('q-volume').textContent = `${facts.grossVolume.toFixed(1)} m³`;
   $('q-compact').textContent = Number.isFinite(facts.compactness)
     ? `${facts.compactness.toFixed(3)} m⁻¹`
     : '—';
-  $('q-glazing').textContent = facts.glazing > 0 ? m2(facts.glazing) : 'None';
+  $('q-glazing').textContent = facts.grossGlazing > 0 ? m2(facts.grossGlazing) : 'None';
   // Area and ratio together, the way the overhang row below carries its depth
   // and its projection factor: the area is what was built, the ratio is what it
   // means against the roof it was cut out of.
   $('q-skylight').textContent =
-    facts.roofGlazing > 0
-      ? `${m2(facts.roofGlazing)} · SRR ${facts.srr.toFixed(3)}`
+    facts.grossRoofGlazing > 0
+      ? `${m2(facts.grossRoofGlazing)} · SRR ${facts.srr.toFixed(3)}`
       : 'None';
   // Depth and projection factor together: the depth is what the slider says,
   // the factor is what it means against the opening it shades.
@@ -2030,13 +2053,15 @@ function derivedReadings(facts) {
     // Area and the ratio it makes, both summed off the rooflights the document
     // actually holds — so a grid clamped by its reveal reads as the area it
     // really got rather than the one the slider asked for.
+    // The building's, not one storey's, so a strip and the quantities panel
+    // never letter the same area two ways.
     [
       'skylights',
-      facts.roofGlazing > 0
-        ? `${facts.roofGlazing.toFixed(1)} m² · SRR ${facts.srr.toFixed(3)}`
+      facts.grossRoofGlazing > 0
+        ? `${facts.grossRoofGlazing.toFixed(1)} m² · SRR ${facts.srr.toFixed(3)}`
         : 'None',
     ],
-    ['shading', facts.shadeArea > 0 ? `${facts.shadeArea.toFixed(1)} m²` : 'None'],
+    ['shading', facts.grossShadeArea > 0 ? `${facts.grossShadeArea.toFixed(1)} m²` : 'None'],
     ['solver', `${params.timestep} / hour`],
     ['run', lastHours ? `${lastHours.toLocaleString('en-US')} solved` : `${hours.toLocaleString('en-US')} to solve`],
     // What the plant has to buy to deliver the heat the system moved. Reads an
@@ -3087,7 +3112,8 @@ runBtn.disabled = false;
 runBtn.textContent = 'Run simulation';
 syncAuto();
 syncSweepGate();
-statusEl.textContent = 'Engine compiled and resident. Nothing further is downloaded.';
+statusEl.textContent =
+  'Engine compiled and resident. Nothing further is downloaded until you pick a weather station.';
 
 /**
  * Solve the shape the sliders are showing right now.
@@ -3305,7 +3331,7 @@ async function solve() {
   // design day gets none: twenty-four hours of a sizing condition is not a
   // period anything is billed or benchmarked over, which is the same line the
   // bill draws when it picks the environments it prices.
-  const floorArea = geometryFacts(model).floor;
+  const floorArea = geometryFacts(model).grossFloor;
   const columns = runs.map((r) => ({
     label: r.label,
     noun: r.noun,
@@ -3373,10 +3399,17 @@ async function solve() {
 
   desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt);
 
+  // Denver is named only where Denver is what was solved. A short weather run
+  // — January alone is 744 hours, and 792 with the sizing days kept — falls
+  // into the same narrow-axis branch as a design-day run, so another city's
+  // January was being lettered as Denver's two design days by nothing more
+  // than its hour count. The run kind decides the sentence, not the width.
   $('fig-cap').textContent = hasOutdoor
     ? nn > 900
       ? 'Zone mean air temperature against outdoor drybulb over the full run period. Each column spans the hourly range within it; the model at left is drawn from the surface vertices in the IDF and tinted by the zone mean.'
-      : 'Zone mean air temperature against outdoor drybulb across both Denver design days. The model at left is drawn from the surface vertices in the IDF and tinted by the zone mean.'
+      : capture.annual
+        ? 'Zone mean air temperature against outdoor drybulb over the months in the run. The model at left is drawn from the surface vertices in the IDF and tinted by the zone mean.'
+        : 'Zone mean air temperature against outdoor drybulb across both Denver design days. The model at left is drawn from the surface vertices in the IDF and tinted by the zone mean.'
     : 'Zone mean air temperature over the run. No outdoor drybulb was recorded in the ESO.';
 
   const q = (text, hot) =>
@@ -3397,17 +3430,21 @@ async function solve() {
   const demand = readDemand(eso, floorArea);
   const billedRuns = runs.filter((r) => r.kind === null);
 
-  if (demand?.eui != null) {
+  if (demand?.tedi != null && demand?.cedi != null) {
+    // The redline goes on whichever way this building leans, because that is
+    // the finding — a Denver year asks five times more cooling than heating,
+    // and the pen is the only thing in the sentence that says so. Summing the
+    // two was tried and is gone: a total of the demand side has no published
+    // definition and no benchmark behind it, and the bill's per-m² row is the
+    // figure anyone actually holds a building against.
     finding.append(
       'Holding the setpoints across ',
       billedRuns.length === 1 ? `the ${billedRuns[0].noun}` : `${RUN_TALLY[billedRuns.length]} run periods`,
       ' asks ',
-      q(f1(demand.tedi)),
+      q(f1(demand.tedi), demand.tedi >= demand.cedi),
       ' kWh/m² of heat into the zone and ',
-      q(f1(demand.cedi)),
-      ' kWh/m² back out of it — ',
-      q(f1(demand.eui), true),
-      ' kWh/m² of building energy delivered in all, before any plant efficiency is applied to it below.',
+      q(f1(demand.cedi), demand.cedi > demand.tedi),
+      ' kWh/m² back out of it — the demand the envelope sets, before the plant efficiencies the bill below divides it by.',
     );
   } else if (conditioned) {
     finding.append(
@@ -3415,7 +3452,7 @@ async function solve() {
       q(f1(m.z.min)),
       ' °C and ',
       q(f1(m.z.max), true),
-      ` °C over the ${lead.noun}. Demand intensities need a run period to read over — a sizing day is a condition, not a period — so attach a weather file and TEDI, CEDI and the building EUI join the schedule above.`,
+      ` °C over the ${lead.noun}. Demand intensities need a run period to read over — a sizing day is a condition, not a period — so attach a weather file and TEDI and CEDI join the schedule above.`,
     );
   } else if (Number.isFinite(m.damping)) {
     finding.append(
@@ -3563,7 +3600,7 @@ function buildSample(job, value) {
     applyModel(model, { ...job.snapshot, [job.key]: value }, job.patch, { reporting: job.metric });
     // Each sample's intensity divides by that sample's own floor, which the
     // swept key may itself be moving — the same live read the bill takes.
-    const floorArea = job.metric === 'energy' ? geometryFacts(model).floor : null;
+    const floorArea = job.metric === 'energy' ? geometryFacts(model).grossFloor : null;
     return { idf: writeIdf(model), epw: job.epw, floorArea };
   } finally {
     applyModel(model, params, patching());
@@ -3626,7 +3663,7 @@ function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES } = {}) {
   // What each run is read for. Free-running, the zone's two extremes are the
   // design quantities. With ideal loads in the path and a year to bill, the
   // extremes flatten at the setpoints and the demand the system pays to hold
-  // them there is the reading — TEDI, CEDI and the building EUI.
+  // them there is the reading — TEDI and CEDI.
   const metric = epw && channelState(snapshot, patch).get('system').engaged ? 'energy' : 'extremes';
   const points = samplePoints(control, snapshot[key], n);
   studyScheduler.enqueue(
@@ -3915,7 +3952,7 @@ if (linkError) {
   stopAuto();
   statusEl.className = 'status bad';
   statusEl.textContent =
-    'This scheme skips the sizing days but attaches no weather, so there is nothing to solve. Switch Design days back on in the Run strip, or pick a station.';
+    'This scheme skips the sizing days but attaches no weather, so there is nothing to solve. Set Design days to Run on the Run strip, or pick a station.';
 } else if (autoOn()) {
   pump();
 }

@@ -186,7 +186,7 @@ function runLine(run) {
  */
 function members(run) {
   return [
-    { name: 'model.idf', text: run.idf, note: 'the model, with its sizing periods included' },
+    { name: 'model.idf', text: run.idf, note: 'the model, with its design days written in' },
     run.epw && {
       name: `${run.weatherStem ?? 'weather'}.epw`,
       text: run.epw,
