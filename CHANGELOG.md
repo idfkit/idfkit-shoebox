@@ -163,6 +163,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   seventeen, in the desk's own subheading, in the general notes and in four
   layout comments. It is eighteen now, and says so.
 
+- **The scoreboard's *Chase* marker never said what chasing was.** A bare verb
+  on a small button names the control and explains nothing, and the five copies
+  of it down the board were identical to a screen reader — five buttons reading
+  "Chase", none of them naming the standard they belong to. The board's lede now
+  prints the whole of it in a sentence, which is where an explanation on this
+  sheet goes: a tooltip floats, and a hint that only exists on hover does not
+  exist on a phone at all. The marker carries the same sentence on its `title`
+  and `aria-label`, with the standard's name in it, and both halves flip when it
+  is armed — *Stop chasing Passivhaus Classic: take its line down from beside
+  the drawing*, rather than a tail still describing the state being left.
+
 ### Changed
 
 - **A run that fails can be downloaded.** The bundle used to ride on the

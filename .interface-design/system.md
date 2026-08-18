@@ -196,6 +196,25 @@ and its subject on the sheet is circled with the dashed markup hairline
 reads — the index sheet's rule; retired, they are gone. If a feature changes
 what a step points at or teaches, the note changes with it — see CLAUDE.md.
 
+### Naming a control the reader has never met
+
+A control whose label is a bare verb — **Chase**, **Solo**, **Pin** — tells a
+first reader what it is called and nothing about what it does. Explain it in
+**printed body text at the head of the block it belongs to**, one sentence
+covering every copy of the control, never in a tooltip: nothing on this board
+floats, and a hint that only appears on hover does not exist on a phone. Put
+the same sentence on the control's `title` and `aria-label` — that is what
+makes several identically-worded buttons tell themselves apart when they are
+read aloud, and it is where the standard's or the channel's own name belongs,
+since the visible label has no room for it. A control with two states writes
+two sentences, both halves flipping together: "Stop chasing X: hold its worst
+line up beside the drawing" describes the state being left, not the one the
+press reaches.
+
+Per-control `.why` notes are the wrong instrument here — five copies of one
+definition down a board is noise. Reserve `.why` for what differs per row: the
+arithmetic behind *this* clause, the caveat on *this* reading.
+
 ### Inline pin (`.pin-inline`)
 
 The rail's reading hour is stated in one line of mono type, and that line is

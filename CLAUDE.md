@@ -616,6 +616,15 @@ the conformance by itself, because there was never a flag to go stale.
   building, so it does not violate the no-remembered-standard rule that
   conformance obeys. It stays out of the permalink for the same reason `pinned`
   does — it is how the desk is being read, not what it is.
+- **What "Chase" means is printed above the board, not hovered.** The word on
+  the marker is a verb with no object, and a first reader has no way to guess
+  what pressing it does — but the fix is a sentence in the scoreboard's lede,
+  not a tooltip: nothing on this sheet floats, and a hint that exists only on
+  hover does not exist on a phone at all. The marker's `title` and `aria-label`
+  carry the same sentence, which is what makes five identically-worded buttons
+  distinguishable when they are read aloud; both halves flip together when it is
+  armed, since "Stop chasing … : hold its worst line up beside the drawing"
+  describes the state being left rather than the one the press reaches.
 - **The worst line is ranked by ratio, not by difference.** LETI's energy line
   is 55 kWh/m²·yr and Passivhaus's heating line is 15, so 3 over means something
   different against each while 20 % over means the same against both.

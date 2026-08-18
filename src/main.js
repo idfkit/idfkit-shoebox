@@ -3651,6 +3651,21 @@ function renderScore() {
     const chase = elem('button', 'pin pin-sm');
     chase.type = 'button';
     chase.setAttribute('aria-pressed', String(chased === preset.id));
+    // Five of these markers stand on one board, and the word on each is the
+    // same. Read aloud, "Chase" five times over names the standard for none of
+    // them, so the accessible name carries the standard and what pressing it
+    // does; `title` gives a pointer the same sentence on hover. Neither is
+    // where the explanation actually lives — the lede above the board prints
+    // it, because a hint that only exists on hover is no hint on a phone.
+    // Both halves of the sentence flip together. Keeping the tail fixed read
+    // "Stop chasing …: hold its worst line up beside the drawing", which
+    // describes the state being left rather than the one the press reaches.
+    const says =
+      chased === preset.id
+        ? `Stop chasing ${preset.name}: take its line down from beside the drawing`
+        : `Chase ${preset.name}: hold its worst line up beside the drawing`;
+    chase.setAttribute('aria-label', says);
+    chase.title = says;
     chase.append(elem('i', 'mark'), elem('span', null, chased === preset.id ? 'Chasing' : 'Chase'));
     chase.addEventListener('click', () => {
       chased = chased === preset.id ? null : preset.id;
