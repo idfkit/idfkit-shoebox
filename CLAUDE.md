@@ -722,6 +722,16 @@ is a decision about the desk rather than about any one channel.
   `Enclosure Windows Total Transmitted Solar Radiation Rate`, not the older
   `Zone Windows …`. Check with `describe_object_type` or the `.rdd` rather than
   from memory.
+- **A thermostat's control type number and its `Control 1` object are one
+  statement.** `ZoneControl:Thermostat` resolves the schedule value to a
+  thermostat *type* — 1 `SingleHeating`, 2 `SingleCooling`, 4 `DualSetpoint` —
+  and then looks for a control of that type in its own list. A 1 standing over a
+  `ThermostatSetpoint:DualSetpoint` is not a dual setpoint with its cooling half
+  suppressed, it is a control of a type the zone does not have, and it is a
+  get-input fatal (`..specifies 1 (ThermostatSetpoint:SingleHeating) as the
+  control type. Not valid for this zone.`) that takes the run down before any
+  environment starts, whatever the weather. So `applySystem` picks the number
+  and the object together, and clears all three setpoint types on every apply.
 - **An economizer requires a cooling flow limit**, or EnergyPlus raises a severe
   error. Nothing here is autosized, so the limit is computed from zone volume.
 - **A shading device cannot be hung on `WindowMaterial:SimpleGlazingSystem`**,
