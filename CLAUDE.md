@@ -363,13 +363,36 @@ ideal-loads meters are the output side both demand definitions ask for, so
 TEDI and CEDI were right all along; their companion is simply gone, and the
 per-m² energy figure anyone actually benchmarks is the bill's.
 
-The denominator is a separate matter and is **not** yet right: every intensity
-here divides by one zone's floor polygon while the meters carry the zone
-multiplier, so a multiplier of 3 reports three times the true intensity
-(measured: TEDI 9.6 → 28.8, and the bill's per-m² 77.1 → 231). The rail already
-divides its System term back down through `Term.perBuilding`; the intensities
-do not. See the open issue rather than fixing it in passing — it moves the bill,
-the schedule and every study curve at once.
+**The denominator is the whole building, and `geometryFacts` is where that is
+decided.** Every intensity used to divide by one zone's floor polygon while the
+meters carried the zone multiplier, so a multiplier of 3 reported three times
+the true intensity — TEDI 9.6 → 28.8, the bill's per-m² 77.1 → 231. The rail
+had long since learned this lesson in its own half of the desk, where
+`Term.perBuilding` divides the building-level system term back down.
+
+So `geometryFacts` now returns both: `floor`, `exposed`, `volume`, `glazing`
+and the rest per storey — what the axonometric draws — and `grossFloor`,
+`grossExposed`, `grossVolume`, `grossGlazing`, `grossRoofGlazing`,
+`grossShadeArea` for the building the engine was handed, alongside the
+`storeys` that made it. Three rules hold it together:
+
+- **The multiplier is read off the `Zone` object, never off `params`.**
+  `buildSample` hands this function a document carrying a sweep's overlay, so
+  a fact taken from live parameters would describe the desk instead of the
+  sample. Measured: sweeping the zone multiplier 1× to 30× now draws TEDI flat
+  at 9.6 and CEDI flat at 50.1 across all twenty-one samples, which is the
+  right answer — stacking identical floors buys three times the energy over
+  three times the area.
+- **Everything that divides by an area takes the gross one**: the bill, the
+  schedule's demand columns, the finding, and every study sample.
+- **Every area and volume the page letters is the building's**, in the
+  quantities panel and on the strips alike, so one quantity never appears
+  twice on one page at two sizes. The ratios — window-to-wall,
+  skylight-to-roof, envelope-to-volume — take no multiplier and must never be
+  given one: every term in them scales by the same n. Only the floor row names
+  the multiplier (`696.8 m² · 3 floors`), because it is the one row whose
+  cause is not otherwise obvious, and because a reading the reader cannot
+  check the division of is the thing this sheet exists not to print.
 
 **A plan key's four walls are four subjects, not one.** The `Facade` controls —
 window-to-wall ratio and overhang projection — own a key per wall, so each wall

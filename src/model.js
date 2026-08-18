@@ -1776,6 +1776,20 @@ function reachOff(wallVerts, shadeVerts) {
  * `exposed` counts only surfaces losing heat to outdoors, so bypassing Fabric
  * — which sends every wall adiabatic — correctly reports no exposed envelope
  * at all rather than flattering the compactness.
+ *
+ * Two floor areas, because the desk can ask for more than one storey.
+ * `floor` is the polygon the axonometric draws; `grossFloor` is the building
+ * the engine actually simulated, which is that polygon times the zone
+ * multiplier. Everything that divides *by* an area wants the second: a
+ * multiplier of 3 puts three identical floors on the model and EnergyPlus
+ * multiplies every meter by it, so an intensity over the drawn polygon alone
+ * reported three times what the building really asks — the same trap the
+ * balance rail's `Term.perBuilding` exists to spring, one section along.
+ *
+ * The multiplier is read off the `Zone` object rather than out of `params`,
+ * by the rule the whole sheet is built on: `buildSample` hands this function
+ * a document carrying a sweep's overlay, and a fact taken from live
+ * parameters would describe the desk instead of the sample.
  */
 export function geometryFacts(doc) {
   const surfaces = surfaceGeometry(doc);
@@ -1783,6 +1797,7 @@ export function geometryFacts(doc) {
   const height = Math.max(...zs) - Math.min(...zs);
   const area = (list) => list.reduce((total, s) => total + polygonArea(s.verts), 0);
 
+  const storeys = Number(must(doc, 'Zone', ZONE_NAME).multiplier) || 1;
   const floor = area(surfaces.filter((s) => s.type === 'floor'));
   const exposed = area(surfaces.filter((s) => s.boundary === 'outdoors'));
   const volume = floor * height;
@@ -1825,9 +1840,28 @@ export function geometryFacts(doc) {
   const projection = overhang > 0 && opening > 0 ? overhang / opening : NaN;
 
   return {
+    // Per storey, which is what the drawing shows and what the dimension
+    // lines measure.
     floor,
     exposed,
     volume,
+    // And the whole building the engine was handed — every area and volume
+    // of it, because a page that reported some of them per storey and some
+    // per building would be asking the reader to know which. Reported here
+    // rather than multiplied at each call site, because "the meters are
+    // multiplied and the area is not" is precisely the bug this set exists to
+    // close, and a call site is where it would be reopened.
+    //
+    // The ratios above take no multiplier and must not be given one: every
+    // term in them scales by the same n, so window-to-wall, skylight-to-roof
+    // and envelope-to-volume are what they were.
+    storeys,
+    grossFloor: floor * storeys,
+    grossExposed: exposed * storeys,
+    grossVolume: volume * storeys,
+    grossGlazing: glazing * storeys,
+    grossRoofGlazing: roofGlazing * storeys,
+    grossShadeArea: area(zoneShades) * storeys,
     glazing,
     wwr,
     roofGlazing,
@@ -1837,6 +1871,10 @@ export function geometryFacts(doc) {
     shadeArea: area(zoneShades),
     curbArea: area(curbs),
     contextArea: area(shades.filter((s) => s.context)),
+    // Left per storey deliberately, and it needs no multiplier: stacking n
+    // identical zones multiplies the exposed envelope and the volume by the
+    // same n, so the ratio is what it was. Only the quantities that are not
+    // ratios have to be told about the multiplier.
     compactness: volume > 0 ? exposed / volume : NaN,
   };
 }

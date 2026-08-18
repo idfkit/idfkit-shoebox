@@ -1070,7 +1070,7 @@ function billFrom(run) {
     series,
     params,
     card: rateCard(),
-    floorArea: geometryFacts(model).floor,
+    floorArea: geometryFacts(model).grossFloor,
     hours: run.hours,
     engaged: new Set([...(modelState ?? [])].filter(([, s]) => s.engaged).map(([id]) => id)),
     annual: run.annual,
@@ -1795,19 +1795,29 @@ function applyGeometry() {
 
   const facts = geometryFacts(model);
   const m2 = (v) => `${v.toFixed(1)} m²`;
-  $('q-floor').textContent = m2(facts.floor);
-  $('q-exposed').textContent = facts.exposed > 0 ? m2(facts.exposed) : 'None — adiabatic';
-  $('q-volume').textContent = `${facts.volume.toFixed(1)} m³`;
+  // The whole building the engine was handed, not the one storey the
+  // axonometric draws, because these three are what every intensity on the
+  // sheet is divided by and a reader has to be able to check the division.
+  // They move together or not at all: a gross floor area over a single
+  // storey's volume would put this building's ceiling at 1.5 m. The floor
+  // row names the multiplier that made it, since it is the only one of the
+  // three whose cause is not then obvious.
+  $('q-floor').textContent =
+    facts.storeys > 1
+      ? `${m2(facts.grossFloor)} · ${facts.storeys} floors`
+      : m2(facts.floor);
+  $('q-exposed').textContent = facts.grossExposed > 0 ? m2(facts.grossExposed) : 'None — adiabatic';
+  $('q-volume').textContent = `${facts.grossVolume.toFixed(1)} m³`;
   $('q-compact').textContent = Number.isFinite(facts.compactness)
     ? `${facts.compactness.toFixed(3)} m⁻¹`
     : '—';
-  $('q-glazing').textContent = facts.glazing > 0 ? m2(facts.glazing) : 'None';
+  $('q-glazing').textContent = facts.grossGlazing > 0 ? m2(facts.grossGlazing) : 'None';
   // Area and ratio together, the way the overhang row below carries its depth
   // and its projection factor: the area is what was built, the ratio is what it
   // means against the roof it was cut out of.
   $('q-skylight').textContent =
-    facts.roofGlazing > 0
-      ? `${m2(facts.roofGlazing)} · SRR ${facts.srr.toFixed(3)}`
+    facts.grossRoofGlazing > 0
+      ? `${m2(facts.grossRoofGlazing)} · SRR ${facts.srr.toFixed(3)}`
       : 'None';
   // Depth and projection factor together: the depth is what the slider says,
   // the factor is what it means against the opening it shades.
@@ -2043,13 +2053,15 @@ function derivedReadings(facts) {
     // Area and the ratio it makes, both summed off the rooflights the document
     // actually holds — so a grid clamped by its reveal reads as the area it
     // really got rather than the one the slider asked for.
+    // The building's, not one storey's, so a strip and the quantities panel
+    // never letter the same area two ways.
     [
       'skylights',
-      facts.roofGlazing > 0
-        ? `${facts.roofGlazing.toFixed(1)} m² · SRR ${facts.srr.toFixed(3)}`
+      facts.grossRoofGlazing > 0
+        ? `${facts.grossRoofGlazing.toFixed(1)} m² · SRR ${facts.srr.toFixed(3)}`
         : 'None',
     ],
-    ['shading', facts.shadeArea > 0 ? `${facts.shadeArea.toFixed(1)} m²` : 'None'],
+    ['shading', facts.grossShadeArea > 0 ? `${facts.grossShadeArea.toFixed(1)} m²` : 'None'],
     ['solver', `${params.timestep} / hour`],
     ['run', lastHours ? `${lastHours.toLocaleString('en-US')} solved` : `${hours.toLocaleString('en-US')} to solve`],
     // What the plant has to buy to deliver the heat the system moved. Reads an
@@ -3319,7 +3331,7 @@ async function solve() {
   // design day gets none: twenty-four hours of a sizing condition is not a
   // period anything is billed or benchmarked over, which is the same line the
   // bill draws when it picks the environments it prices.
-  const floorArea = geometryFacts(model).floor;
+  const floorArea = geometryFacts(model).grossFloor;
   const columns = runs.map((r) => ({
     label: r.label,
     noun: r.noun,
@@ -3588,7 +3600,7 @@ function buildSample(job, value) {
     applyModel(model, { ...job.snapshot, [job.key]: value }, job.patch, { reporting: job.metric });
     // Each sample's intensity divides by that sample's own floor, which the
     // swept key may itself be moving — the same live read the bill takes.
-    const floorArea = job.metric === 'energy' ? geometryFacts(model).floor : null;
+    const floorArea = job.metric === 'energy' ? geometryFacts(model).grossFloor : null;
     return { idf: writeIdf(model), epw: job.epw, floorArea };
   } finally {
     applyModel(model, params, patching());
