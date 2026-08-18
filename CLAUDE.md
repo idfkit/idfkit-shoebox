@@ -677,6 +677,40 @@ index, one screen tall, in signal order.
   folds change and the difference is `scrollBy`-ed back after, or closing a strip
   above the one you opened yanks the page under your thumb.
 
+### The schedules on a phone
+
+The results schedule and the bill are the same instrument and fold the same
+way, at their own breakpoint of `620px` — a *second* one, and the only other in
+the stylesheet, because it answers a different question from `--index`. The
+desk stops being a column beside the sheet when the window can no longer carry
+both; a schedule stops being a table when its own columns collide, which
+happens some way further down. A bill of a year's run under a pinned scheme
+wants seven columns — an end use, three bases, a change against each — and at
+390px they ran into one another (`18,456 −3,193$1,090 −$1893,727 −645` was one
+row) while the results schedule pushed its unit column off the sheet entirely.
+
+- **A row folds into a block**: the quantity keeps its own line, and every
+  figure stands on a line of its own under it with the head it was under
+  lettered at its left. Nothing is dropped and nothing scrolls out of sight,
+  which is the same rule the folded strip keeps — a reading that cannot be read
+  is not a reading.
+- **The head a cell carries is `data-head`, set where the cell is built**
+  (`renderSchedule`, `renderBillTable`), so the words over a column and the
+  words beside a figure are one string. `headOf` names the bill's, for the same
+  reason: a figure lettered `Carbon` under a column headed `Carbon (kgCO₂e)`
+  would be a figure whose unit depends on the window width.
+- **`keepTableSemantics` states the table roles outright.** `display: grid` on
+  a `tr` or a `td` drops the implicit table roles in every engine, so without
+  it a screen reader would lose the row and column structure at exactly the
+  width where the figures need it most. The roles are set unconditionally —
+  they are the same ones the elements already carry above the breakpoint.
+- **The breakpoint is a judgement, not a derivation.** The column count is not
+  fixed (the schedule heads one column per environment, and a run can carry
+  eight), so it is set for the case that has to hold rather than computed from
+  a count. Above it, the gutter between one column of figures and the next —
+  `td + td` — is what keeps `Cost` and `Carbon (kgCO₂e)` from running together
+  as the window narrows.
+
 ### The balance rail
 
 The console's signature. Five channel meters are terms of the zone *air* heat
@@ -833,6 +867,16 @@ is a decision about the desk rather than about any one channel.
   `Enclosure Windows Total Transmitted Solar Radiation Rate`, not the older
   `Zone Windows …`. Check with `describe_object_type` or the `.rdd` rather than
   from memory.
+- **A thermostat's control type number and its `Control 1` object are one
+  statement.** `ZoneControl:Thermostat` resolves the schedule value to a
+  thermostat *type* — 1 `SingleHeating`, 2 `SingleCooling`, 4 `DualSetpoint` —
+  and then looks for a control of that type in its own list. A 1 standing over a
+  `ThermostatSetpoint:DualSetpoint` is not a dual setpoint with its cooling half
+  suppressed, it is a control of a type the zone does not have, and it is a
+  get-input fatal (`..specifies 1 (ThermostatSetpoint:SingleHeating) as the
+  control type. Not valid for this zone.`) that takes the run down before any
+  environment starts, whatever the weather. So `applySystem` picks the number
+  and the object together, and clears all three setpoint types on every apply.
 - **An economizer requires a cooling flow limit**, or EnergyPlus raises a severe
   error. Nothing here is autosized, so the limit is computed from zone volume.
 - **A shading device cannot be hung on `WindowMaterial:SimpleGlazingSystem`**,

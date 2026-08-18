@@ -150,6 +150,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **"Heat only" and "Cool only" fatalled the engine.** The System strip's
+  *Available* selector wrote the thermostat's control type number — 1 for
+  heating only, 2 for cooling only — but left the control itself named as the
+  `ThermostatSetpoint:DualSetpoint` the *Always* setting uses. EnergyPlus reads
+  that number as a thermostat *type* and then looks for a control of that type
+  in the zone's own list, so a 1 over a dual setpoint is not a dual setpoint
+  with its cooling half suppressed; it is a control of a type the zone does not
+  have, and the run stops in get-input before any environment starts:
+
+      ** Severe  ** Control Type Schedule=CONTROL TYPE
+      **   ~~~   ** ..specifies 1 (ThermostatSetpoint:SingleHeating) as the
+                     control type. Not valid for this zone.
+      **  Fatal  ** Errors getting Zone Control input data.
+
+  So two of the four settings of that control could not be solved at all, on
+  any weather, on any desk — the sheet reported only that the engine had
+  crashed. Each setting now writes the setpoint object its number names, and
+  the meters say what the labels do: on a Boston 725090 year *Heat only* heats
+  and never cools, *Cool only* the reverse, and *Always* does both.
+
+- **The results schedule and the bill collided on a phone.** Both are tables of
+  right-aligned figures, and a bill of a year's run under a pinned scheme wants
+  seven columns: an end use, three bases and a change against each. At 390 px
+  that is about twice the sheet's width, so the figures ran into one another —
+  `18,456 −3,193$1,090 −$1893,727 −645` was one row of it — and the results
+  schedule pushed its unit column clean off the sheet, which is the one failure
+  a page whose claim is that every figure means something cannot have.
+
+  Below 620 px a row now folds the way the desk's strips fold below `--index`:
+  the quantity keeps its own line, and every figure stands on a line of its own
+  beneath it, carrying the head it was under. Nothing is dropped and nothing
+  scrolls out of sight. The head each cell carries is set where the cell is
+  built, so the words over a column and the words beside a figure are one
+  string and cannot drift, and `keepTableSemantics` states the table roles
+  outright because `display: grid` on a row drops them in every engine — a
+  reader on a screen reader would otherwise lose the structure at exactly the
+  width where the figures need it most. Above the breakpoint the two schedules
+  gain the one thing they were also missing: a gutter between one column of
+  figures and the next, which is what had `COST` and `CARBON (KGCO₂E)` running
+  together into a single head as the window narrowed.
+
 - The window-to-wall ratio counted every opening in the model against the wall
   area alone. With nothing but wall openings in the document that was right by
   accident; with a roof that can be glazed it would have put the rooflights

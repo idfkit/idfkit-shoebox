@@ -1382,6 +1382,8 @@ function applySystem(doc, params, engaged, gainsOn) {
   clear(doc, 'ZoneHVAC:EquipmentList');
   clear(doc, 'ZoneControl:Thermostat');
   clear(doc, 'ThermostatSetpoint:DualSetpoint');
+  clear(doc, 'ThermostatSetpoint:SingleHeating');
+  clear(doc, 'ThermostatSetpoint:SingleCooling');
   clear(doc, 'DesignSpecification:OutdoorAir');
   clear(doc, 'NodeList');
   for (const name of ['Heating Setpoints', 'Cooling Setpoints', 'Control Type', 'System Availability']) {
@@ -1419,25 +1421,62 @@ function applySystem(doc, params, engaged, gainsOn) {
   setpoints('Heating Setpoints', params.heatSet, -1);
   setpoints('Cooling Setpoints', params.coolSet, +1);
 
-  doc.add('ThermostatSetpoint:DualSetpoint', 'Setpoints', {
-    heating_setpoint_temperature_schedule_name: 'Heating Setpoints',
-    cooling_setpoint_temperature_schedule_name: 'Cooling Setpoints',
-  });
+  // Control type 4 is dual setpoint, 1 is heating only, 2 cooling only — and
+  // the number and the setpoint object named beside it are one statement, not
+  // two. EnergyPlus resolves the schedule value to a thermostat *type* and then
+  // looks for a control of that type in this ZoneControl:Thermostat's own list;
+  // a 1 standing over a ThermostatSetpoint:DualSetpoint is not a dual setpoint
+  // with its cooling half suppressed, it is a control of a type the zone does
+  // not have:
+  //
+  //   ** Severe  ** Control Type Schedule=CONTROL TYPE
+  //   **   ~~~   ** ..specifies 1 (ThermostatSetpoint:SingleHeating) as the
+  //                  control type. Not valid for this zone.
+  //   **  Fatal  ** Errors getting Zone Control input data.
+  //
+  // That is a get-input fatal, so it takes the run down before any environment
+  // starts, whatever the weather and whatever else the desk is doing — "Heat
+  // only" and "Cool only" simply could not be solved. Measured on the Boston
+  // 725090 year: both terminated the engine, and both run clean once the
+  // matching single-setpoint object is the one the thermostat names.
+  const thermostat =
+    params.availability === 'HeatingOnly'
+      ? {
+          controlType: 1,
+          type: 'ThermostatSetpoint:SingleHeating',
+          name: 'Heating Only Setpoint',
+          fields: { setpoint_temperature_schedule_name: 'Heating Setpoints' },
+        }
+      : params.availability === 'CoolingOnly'
+        ? {
+            controlType: 2,
+            type: 'ThermostatSetpoint:SingleCooling',
+            name: 'Cooling Only Setpoint',
+            fields: { setpoint_temperature_schedule_name: 'Cooling Setpoints' },
+          }
+        : {
+            controlType: 4,
+            type: 'ThermostatSetpoint:DualSetpoint',
+            name: 'Setpoints',
+            fields: {
+              heating_setpoint_temperature_schedule_name: 'Heating Setpoints',
+              cooling_setpoint_temperature_schedule_name: 'Cooling Setpoints',
+            },
+          };
 
-  // Control type 4 is dual setpoint. 1 is heating only, 2 cooling only.
-  const controlType =
-    params.availability === 'HeatingOnly' ? 1 : params.availability === 'CoolingOnly' ? 2 : 4;
+  doc.add(thermostat.type, thermostat.name, thermostat.fields);
+
   drop(doc, 'Schedule:Constant', 'Control Type');
   doc.add('Schedule:Constant', 'Control Type', {
     schedule_type_limits_name: 'Control Type',
-    hourly_value: controlType,
+    hourly_value: thermostat.controlType,
   });
 
   doc.add('ZoneControl:Thermostat', 'Thermostat', {
     zone_or_zonelist_name: ZONE_NAME,
     control_type_schedule_name: 'Control Type',
-    control_1_object_type: 'ThermostatSetpoint:DualSetpoint',
-    control_1_name: 'Setpoints',
+    control_1_object_type: thermostat.type,
+    control_1_name: thermostat.name,
   });
 
   // Availability. "Occupied" only means anything once there is an occupancy
