@@ -204,6 +204,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   seventeen, in the desk's own subheading, in the general notes and in four
   layout comments. It is eighteen now, and says so.
 
+- The scoreboard and the kept-schemes shelf lost their table semantics on a
+  phone. Both fold to a block per row below 620px, and `display: block` on a
+  `tr` drops the implicit row and cell roles in every engine — so the two
+  tables the register is made of read aloud as loose numbers with no criterion
+  attached to any of them, at exactly the width where the columns are gone and
+  the roles are the only structure left. They now go through the same
+  `keepTableSemantics` the results schedule and the bill do.
+
 - **The scoreboard's *Chase* marker never said what chasing was.** A bare verb
   on a small button names the control and explains nothing, and the five copies
   of it down the board were identical to a screen reader — five buttons reading

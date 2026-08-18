@@ -3743,6 +3743,11 @@ function renderScore() {
     }
   }
   table.append(body);
+  // The register folds to a block per row below 620px exactly as the two
+  // schedules do, so it needs the same repair: `display: block` on a `tr`
+  // drops the implicit row and cell roles, and a scoreboard read aloud without
+  // them is a list of loose numbers with no criterion attached to any of them.
+  keepTableSemantics(table);
   // The board and the chased line are two drawings of one set of readings, so
   // they are lettered in one pass and cannot come to disagree about a margin.
   renderChase();
@@ -3971,6 +3976,7 @@ function renderShelf() {
     );
   }
   table.append(body);
+  keepTableSemantics(table);
 
   const foot = $('shelf-foot');
   foot.textContent = '';
