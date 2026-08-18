@@ -1250,15 +1250,13 @@ export function mountConsole({
     const W = 240;
     const H = 64;
     const energy = study.metric === 'energy';
-    // Which pens the metric takes. Temperatures are the signed pair outright.
-    // TEDI and CEDI keep it deliberately: they are the year's heat asked into
-    // and out of the zone — the rail's signed watts integrated, not a price
-    // or an emission — so warm-in / cold-out encodes exactly the sign it does
-    // everywhere else on the desk. The EUI, a directionless total like every
-    // other energy figure on the sheet, is graphite.
+    // Both metrics are the signed pair, which is why neither needs a third
+    // pen. TEDI and CEDI are the year's heat asked into and out of the zone —
+    // the rail's signed watts integrated, not a price or an emission — so
+    // warm-in / cold-out encodes exactly the sign it does everywhere else on
+    // the desk, exactly as the temperature extremes below do.
     const series = energy
       ? [
-          { sel: (p) => p.eui, pen: 'var(--ink)', name: 'EUI', said: 'building EUI' },
           { sel: (p) => p.tedi, pen: 'var(--warm)', name: 'TEDI', said: 'heating demand TEDI' },
           { sel: (p) => p.cedi, pen: 'var(--cold)', name: 'CEDI', said: 'cooling demand CEDI' },
         ]

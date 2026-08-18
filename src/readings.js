@@ -316,13 +316,45 @@ export function readPeaks(eso, floorArea) {
 /**
  * The demand intensities over one named set of environments.
  *
- * Ideal loads meter as `DistrictHeatingWater` and `DistrictCooling` — heat
- * delivered at a notional 100 % — which is exactly what a demand intensity
- * means: TEDI and CEDI are the envelope's ask, before any plant, so the
- * priced channels stay out of this the way they stay out of `shapeKey`. The
- * EUI sums the bill's building section only, by the bill's own benchmark
- * rule, and refuses to print at all when heating or cooling is missing — a
- * total quietly short its largest term would read as a finding.
+ * The three names are pinned to published definitions rather than to how they
+ * are used in conversation, because two of them are compliance metrics with
+ * numeric targets attached and the third is the most misused acronym in the
+ * field:
+ *
+ *   TEDI — "the annual heating energy demand for space conditioning and
+ *   conditioning of ventilation air … the amount of heating energy that is
+ *   output from any and all types of heating equipment, per unit of Modelled
+ *   Floor Area" (City of Vancouver Energy Modelling Guidelines v3.0). CaGBC
+ *   ZCB-Design v3/v4 gives the same formula — Σ space and ventilation heating
+ *   output ÷ modelled floor area — and states outright that it "is intended to
+ *   represent the heat delivered to the building", counting a heat pump's
+ *   output rather than the electricity it drew. TEDI is therefore *before* any
+ *   efficiency or COP.
+ *
+ *   CEDI — "the annual cooling energy demand for space conditioning and
+ *   conditioning of ventilation air … the amount of cooling output, both
+ *   latent and sensible, from any and all types of cooling equipment per unit
+ *   of Modelled Floor Area … CEDI does not include mechanical efficiencies of
+ *   cooling equipment" (same guidelines, where it is a defined term that
+ *   carries no target). CaGBC defines no cooling metric at all, so Vancouver
+ *   is the authority for this one.
+ *
+ *   EUI — "the sum of all site energy consumed on site (e.g., electricity,
+ *   natural gas, district heat), including all process loads, divided by the
+ *   building modelled floor area" (CaGBC ZCB-Design v3/v4). Metered energy,
+ *   *after* the plant, which is the bill's per-m² row and nothing on the
+ *   demand side. So there is no third reading here. Summing the four building
+ *   end uses before the plant produces a figure with no published definition
+ *   and no benchmark to hold it against — it was drawn for a while as an
+ *   "EUI", 44 % adrift of the bill's own per-m² on a Denver year, which is the
+ *   whole argument against reporting it under any name.
+ *
+ * All of which the ideal-loads meters give directly: `DistrictHeatingWater`
+ * and `DistrictCooling` are heat moved across the zone boundary at a notional
+ * 100 %, which is the output side both definitions ask for, with the outdoor
+ * air the ideal unit conditions already in them. So the priced channels stay
+ * out of this the way they stay out of `shapeKey`: what the plant costs to
+ * meet this demand is the bill's question, and it is answered there.
  *
  * Every field comes back null rather than zero where the meter behind it was
  * never requested, which is what a bypassed System looks like from here: the
@@ -337,22 +369,18 @@ export function readPeaks(eso, floorArea) {
 export function demandOver(eso, environments, floorArea) {
   if (!(floorArea > 0) || !environments?.size) return null;
 
-  const kwh = new Map();
-  for (const use of END_USES) {
-    if (use.group !== 'building') continue;
+  // The meter names come from the end-use declaration rather than being
+  // typed again here, because `bill.js` is where they are kept true against
+  // the version — `Heating:DistrictHeatingWater` was `Heating:DistrictHeating`
+  // not many releases ago. A name that is not in that declaration is a
+  // programming error and says so rather than reading as an absent meter.
+  const kwhOf = (id) => {
+    const use = END_USES.find((u) => u.id === id);
+    if (!use) throw new Error(`no end use is called "${id}"`);
     const joules = meterTotal(eso, use.meter, environments);
-    if (joules != null) kwh.set(use.id, joules * J_TO_KWH);
-  }
-  const heating = kwh.get('heating') ?? null;
-  const cooling = kwh.get('cooling') ?? null;
-  return {
-    tedi: heating == null ? null : heating / floorArea,
-    cedi: cooling == null ? null : cooling / floorArea,
-    eui:
-      heating == null || cooling == null
-        ? null
-        : [...kwh.values()].reduce((a, b) => a + b, 0) / floorArea,
+    return joules == null ? null : (joules * J_TO_KWH) / floorArea;
   };
+  return { tedi: kwhOf('heating'), cedi: kwhOf('cooling') };
 }
 
 /**
