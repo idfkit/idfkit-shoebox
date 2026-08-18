@@ -2322,20 +2322,26 @@
         .schedule td[data-head],
         .bill td[data-head] {
           display: flex;
-          align-items: baseline;
-          justify-content: space-between;
-          gap: 14px;
+          flex-direction: column;
+          align-items: stretch;
+          justify-content: flex-start;
+          gap: 2px;
           padding: 2px 0;
+          min-width: 0;
+          white-space: normal;
+          text-align: right;
         }
         .schedule td[data-head]::before,
         .bill td[data-head]::before {
           content: attr(data-head);
-          flex: 0 1 auto;
+          flex: none;
+          min-width: 0;
           font: 500 9.5px/1.5 var(--cond);
           text-transform: uppercase;
           letter-spacing: 0.11em;
           text-align: left;
           color: var(--ink-3);
+          overflow-wrap: anywhere;
         }
         /* The change keeps its own track, so it stands clear of the figure it
            is a note on rather than running into it. */
