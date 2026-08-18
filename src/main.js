@@ -893,6 +893,28 @@ function deltaText(row, value, base) {
   return `${d > 0 ? '+' : '−'}${row.fmt(Math.abs(d))}`;
 }
 
+/**
+ * Keep a table a table when the stylesheet stops laying it out as one.
+ *
+ * Below `620px` both schedules fold to a block per row (see the media query at
+ * the foot of the stylesheet), and `display: grid` on a `tr` or a `td` drops
+ * the implicit table roles in every engine -- so a reader on a screen reader
+ * would lose the row and column structure at exactly the width where the
+ * figures need it most. The roles are set unconditionally because they are the
+ * same ones the elements already carry above the breakpoint: stating them
+ * costs nothing there and is the whole structure below it.
+ */
+function keepTableSemantics(table) {
+  table.setAttribute('role', 'table');
+  const role = (selector, name) => {
+    for (const el of table.querySelectorAll(selector)) el.setAttribute('role', name);
+  };
+  role('thead, tbody', 'rowgroup');
+  role('tr', 'row');
+  role('th', 'columnheader');
+  role('td', 'cell');
+}
+
 function renderSchedule(columns, baseColumns) {
   const table = $('schedule');
   table.textContent = '';
@@ -942,6 +964,9 @@ function renderSchedule(columns, baseColumns) {
     for (const [i, c] of cols.entries()) {
       const value = c.metrics ? row.at(c.metrics) : NaN;
       const td = tr.insertCell();
+      // The head this figure stands under, carried on the cell so the narrow
+      // layout can letter it beside the figure once the column heads are gone.
+      td.dataset.head = c.label;
       td.textContent = or(value, row.fmt);
       if (!Number.isFinite(value)) td.className = 'void';
       if (base) {
@@ -955,6 +980,7 @@ function renderSchedule(columns, baseColumns) {
     unit.textContent = row.unit || '—';
   }
   table.append(tbody);
+  keepTableSemantics(table);
 }
 
 /* ══ the bill ════════════════════════════════════════════════════════════ */
@@ -990,6 +1016,12 @@ class BillColumn {
     return Number.isFinite(v) ? v : NaN;
   }
 }
+
+// What a column is called over a column of figures. Named once, because the
+// table head and the head each cell carries for the folded layout have to be
+// the same words -- a figure lettered "Carbon" under a column headed
+// "Carbon (kgCO₂e)" is a figure whose unit depends on the window width.
+const headOf = (column) => (column.unit ? `${column.label} (${column.unit})` : column.label);
 
 const group = (v, digits = 0) =>
   v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -1335,7 +1367,7 @@ function renderBillTable(against) {
     hr.append(el);
   };
   th('End use');
-  for (const column of BILL_COLUMNS) th(column.unit ? `${column.label} (${column.unit})` : column.label, against ? 2 : 1);
+  for (const column of BILL_COLUMNS) th(headOf(column), against ? 2 : 1);
   table.append(thead);
 
   const tbody = document.createElement('tbody');
@@ -1354,7 +1386,11 @@ function renderBillTable(against) {
     }
     for (const [i, column] of BILL_COLUMNS.entries()) {
       const v = values[i];
-      cell(tr, Number.isFinite(v) ? column.format(v, bill) : '—', Number.isFinite(v) ? '' : 'void');
+      // Each figure carries its own head, for the same reason the results
+      // schedule's do: below the breakpoint the row folds and the head above
+      // the column is no longer above anything.
+      const td = cell(tr, Number.isFinite(v) ? column.format(v, bill) : '—', Number.isFinite(v) ? '' : 'void');
+      td.dataset.head = headOf(column);
       if (against) cell(tr, base ? billDelta(column, v, base[i]) : '', 'delta');
     }
     return tr;
@@ -1408,6 +1444,7 @@ function renderBillTable(against) {
   });
 
   table.append(tbody);
+  keepTableSemantics(table);
 }
 
 /**
