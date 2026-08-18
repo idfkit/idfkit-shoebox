@@ -873,6 +873,16 @@
         white-space: normal;
         width: 42%;
       }
+      /* A gutter between one column of figures and the next. Right-aligned
+         mono with nothing of its own to the left of it stands flush against
+         the column before it as soon as the sheet narrows — `$1,090` against
+         `−3,193` reads as one figure, and two heads run together into
+         `COST CARBON (KGCO₂E)`. The delta column declares its own below and
+         keeps it. */
+      .schedule td + td,
+      .bill td + td,
+      .schedule th + th,
+      .bill th + th { padding-left: 14px; }
       /* The gap between a reading and its unit was the 46px doing the work,
          which held only while every unit was two characters. `kWh/m²` fills
          the column outright and stood flush against the figure, so the space
@@ -1139,6 +1149,7 @@
         padding-top: 11px;
         color: var(--ink);
       }
+      .bill tr.sum td.delta { color: var(--ink-3); }
       .bill tr.sum td:first-child {
         font: 500 10px/1 var(--cond);
         text-transform: uppercase;
@@ -2239,6 +2250,174 @@
            narrow layout is a presentation rather than a squeeze. */
         body.desk-open .desk-widen { display: none; }
         .rail-key { grid-template-columns: 1fr; }
+      }
+
+      /* ── the two schedules on a phone ─────────────────────────────
+         Seven columns of figures is not a table on a 390px screen, it is a
+         collision: `18,456 −3,193$1,090 −$1893,727 −645` is one row of the
+         bill as it stood, and the results schedule pushed its unit column off
+         the sheet entirely. Nothing about that is fixable by narrowing the
+         type — three bases, each with a change beside it, need six figures a
+         row and the sheet has room for about three.
+
+         So a row folds the way the desk's strips fold below `--index`: the
+         quantity keeps its own line, and every figure stands on a line of its
+         own under it, carrying the head it was under as a label at its left.
+         Nothing is dropped and nothing scrolls out of sight — the rule this
+         sheet is built on is that a reading which cannot be read is not a
+         reading. The head each cell carries is `data-head`, set where the cell
+         is built, so the words over a column and the words beside a figure are
+         the same string and cannot drift.
+
+         620px rather than the desk's 780px because these are two different
+         squeezes: the desk stops being a column beside the sheet when the
+         window can no longer carry both, and a schedule stops being a table
+         when its own columns collide, which happens some way further down. The
+         column count is not fixed — the results schedule heads one column per
+         environment, and a run can now carry eight — so the breakpoint is set
+         for the case that has to hold rather than derived from a count, and it
+         clears every phone in portrait with the widest run on the sheet.
+
+         `display: grid` on a `tr` drops the row's table semantics in every
+         engine, which is why `keepTableSemantics` in main.js states the roles
+         outright. ────────────────────────────────────────────────── */
+      @media (max-width: 620px) {
+        .schedule thead,
+        .bill thead { display: none; }
+
+        .schedule tbody,
+        .bill tbody { display: block; }
+
+        /* Two tracks: the figures down the first, whatever qualifies them —
+           a change against the scheme, a unit — down the second. */
+        .schedule tr,
+        .bill tr {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: baseline;
+          padding: 9px 0;
+          border-bottom: 1px solid var(--rule-soft);
+        }
+        .schedule tr { align-items: start; }
+        .bill tr { grid-template-columns: minmax(0, 1fr); }
+        .schedule tbody tr:last-child,
+        .bill tbody tr:last-child { border-bottom: 0; }
+
+        /* The cells were the rows; their rules would now draw one under every
+           figure, and the rule belongs to the quantity as a whole. The gutter
+           between columns goes with them — there are no columns down here —
+           and is named at the same specificity it was set at, or it would
+           survive the reset. */
+        .schedule td,
+        .bill td,
+        .schedule td + td,
+        .bill td + td { padding: 0; border-bottom: 0; }
+
+        /* The quantity heads its block. In the bill it takes the full width,
+           because the end use is a heading over the three bases beneath it; in
+           the results schedule the unit sits beside it on the same line, since
+           °C qualifies the quantity and not any one environment's reading. */
+        .bill td:first-child { grid-column: 1 / -1; width: auto; padding-bottom: 6px; }
+        .schedule td:first-child { grid-row: 1; grid-column: 1; width: auto; padding-bottom: 4px; }
+        .schedule td.unit { grid-row: 1; grid-column: 2; width: auto; padding-left: 14px; }
+
+        /* A figure and the head it stood under, on one line. */
+        .schedule td[data-head],
+        .bill td[data-head] {
+          display: flex;
+          flex-direction: column;
+          align-items: stretch;
+          justify-content: flex-start;
+          gap: 2px;
+          padding: 2px 0;
+          min-width: 0;
+          white-space: normal;
+          text-align: right;
+        }
+        .schedule td[data-head] { grid-column: 1; }
+        .schedule td[data-head] {
+          flex-direction: row;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 10px;
+        }
+        .schedule td[data-head]::before,
+        .bill td[data-head]::before {
+          content: attr(data-head);
+          flex: none;
+          min-width: 0;
+          font: 500 9.5px/1.5 var(--cond);
+          text-transform: uppercase;
+          letter-spacing: 0.11em;
+          text-align: left;
+          color: var(--ink-3);
+          overflow-wrap: anywhere;
+        }
+        .schedule td[data-head]::before { flex: 1 1 auto; line-height: 1.35; }
+        /* The change keeps its own track, so it stands clear of the figure it
+           is a note on rather than running into it. */
+        .schedule td.delta,
+        .bill td.delta { width: auto; padding: 2px 0 2px 14px; }
+        .schedule td.delta {
+          grid-column: 2;
+          width: 62px;
+          padding: 2px 0 2px 14px;
+          text-align: right;
+          white-space: nowrap;
+        }
+        .bill td.delta {
+          grid-column: 2;
+          width: 62px;
+          padding: 2px 0 2px 14px;
+          text-align: right;
+          white-space: nowrap;
+        }
+
+        .bill td:not(.delta) { grid-column: 1; }
+
+        /* Bill rows stay single-column to avoid collisions, but each metric is
+           compacted back to one line (label left, value right) for rhythm. */
+        .bill tr {
+          grid-template-columns: minmax(0, 1fr) auto;
+          padding: 7px 0;
+        }
+        .bill td:first-child { padding-bottom: 4px; }
+        .bill td[data-head] {
+          flex-direction: row;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 10px;
+        }
+        .bill td[data-head]::before {
+          flex: 1 1 auto;
+          line-height: 1.35;
+        }
+
+        /* A subtotal's rule is the row's now, not each cell's, or it would be
+           drawn three times down the block. */
+        .bill tr.sum { border-top: 1px solid var(--rule); border-bottom: 0; }
+        .bill tr.sum td { border-top: 0; padding-top: 0; }
+        .bill tr.total { border-top: 1px solid var(--rule-firm); }
+        .bill tr.section { padding: 16px 0 0; border-bottom: 0; }
+        .bill tr.section td { padding: 0; }
+        .bill tbody tr.section:first-child { padding-top: 2px; }
+        .schedule tr.group { border-top: 1px solid var(--rule); padding-top: 16px; }
+        .schedule tr.group td { border-top: 0; padding-top: 0; }
+
+        /* The head of the bill: the eyebrow carries the scheme being measured
+           against, which is a whole line of type on its own, so the pin goes
+           under the lede rather than taking half the width away from it. */
+        .bill-head { display: block; }
+        .bill-head .pin { margin-top: 14px; }
+
+        /* The basis is what the whole rule below it is measured in, so it
+           takes the full width rather than a fixed 216px of a line it no
+           longer fits on. */
+        .bar-head { flex-wrap: wrap; gap: 8px; }
+        .bar-head .segments { flex: 1 0 100%; }
+        /* One column: the ranking is the point, and at this width the second
+           column was cut off at the edge of the sheet. */
+        .bar-key { grid-template-columns: minmax(0, 1fr); gap: 0; }
       }
     </style>
   </head>
