@@ -861,7 +861,7 @@ const SCHEDULE_ROWS = [
   { label: 'Damping — zone swing ÷ outdoor swing', unit: '', group: true, at: (m) => m.damping, fmt: f2 },
   { label: 'Thermal lag — outdoor peak to zone peak', unit: 'h', at: (m) => m.lag, fmt: String },
   { label: 'Hours simulated', unit: 'h', at: (m) => m.hours, fmt: (v) => v.toLocaleString('en-US'), nodelta: true },
-  // The three the sweep draws, for the desk as it stands. A study answers
+  // The pair the sweep draws, for the desk as it stands. A study answers
   // "what would this control do to the demand"; without these rows the sheet
   // could not answer "what is the demand", and the curve had no point on it
   // the reader could check against the run in front of them. Same readers,
@@ -877,7 +877,6 @@ const SCHEDULE_ROWS = [
   // partial year reads as itself rather than as nothing.
   { label: 'Thermal energy demand intensity — TEDI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.tedi ?? NaN, fmt: f1 },
   { label: 'Cooling energy demand intensity — CEDI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.cedi ?? NaN, fmt: f1 },
-  { label: 'All four end uses, before plant efficiency', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.total ?? NaN, fmt: f1 },
 ];
 
 /**
@@ -3419,17 +3418,21 @@ async function solve() {
   const demand = readDemand(eso, floorArea);
   const billedRuns = runs.filter((r) => r.kind === null);
 
-  if (demand?.total != null) {
+  if (demand?.tedi != null && demand?.cedi != null) {
+    // The redline goes on whichever way this building leans, because that is
+    // the finding — a Denver year asks five times more cooling than heating,
+    // and the pen is the only thing in the sentence that says so. Summing the
+    // two was tried and is gone: a total of the demand side has no published
+    // definition and no benchmark behind it, and the bill's per-m² row is the
+    // figure anyone actually holds a building against.
     finding.append(
       'Holding the setpoints across ',
       billedRuns.length === 1 ? `the ${billedRuns[0].noun}` : `${RUN_TALLY[billedRuns.length]} run periods`,
       ' asks ',
-      q(f1(demand.tedi)),
+      q(f1(demand.tedi), demand.tedi >= demand.cedi),
       ' kWh/m² of heat into the zone and ',
-      q(f1(demand.cedi)),
-      ' kWh/m² back out of it — ',
-      q(f1(demand.total), true),
-      ' kWh/m² of demand in all, before the plant efficiencies the bill below divides it by.',
+      q(f1(demand.cedi), demand.cedi > demand.tedi),
+      ' kWh/m² back out of it — the demand the envelope sets, before the plant efficiencies the bill below divides it by.',
     );
   } else if (conditioned) {
     finding.append(
@@ -3437,7 +3440,7 @@ async function solve() {
       q(f1(m.z.min)),
       ' °C and ',
       q(f1(m.z.max), true),
-      ` °C over the ${lead.noun}. Demand intensities need a run period to read over — a sizing day is a condition, not a period — so attach a weather file and TEDI, CEDI and their total join the schedule above.`,
+      ` °C over the ${lead.noun}. Demand intensities need a run period to read over — a sizing day is a condition, not a period — so attach a weather file and TEDI and CEDI join the schedule above.`,
     );
   } else if (Number.isFinite(m.damping)) {
     finding.append(
@@ -3648,7 +3651,7 @@ function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES } = {}) {
   // What each run is read for. Free-running, the zone's two extremes are the
   // design quantities. With ideal loads in the path and a year to bill, the
   // extremes flatten at the setpoints and the demand the system pays to hold
-  // them there is the reading — TEDI, CEDI and their total.
+  // them there is the reading — TEDI and CEDI.
   const metric = epw && channelState(snapshot, patch).get('system').engaged ? 'energy' : 'extremes';
   const points = samplePoints(control, snapshot[key], n);
   studyScheduler.enqueue(

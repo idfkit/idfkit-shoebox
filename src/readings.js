@@ -263,18 +263,19 @@ export function readExtremes(eso) {
  *   EUI — "the sum of all site energy consumed on site (e.g., electricity,
  *   natural gas, district heat), including all process loads, divided by the
  *   building modelled floor area" (CaGBC ZCB-Design v3/v4). Metered energy,
- *   *after* the plant. It is therefore not a name anything here may take: the
- *   sheet has no plant to meter, and the figure the bill divides per m² is the
- *   real one. The third field below is the plain sum of the four building end
- *   uses on the demand side, and is named for what it is.
+ *   *after* the plant, which is the bill's per-m² row and nothing on the
+ *   demand side. So there is no third reading here. Summing the four building
+ *   end uses before the plant produces a figure with no published definition
+ *   and no benchmark to hold it against — it was drawn for a while as an
+ *   "EUI", 44 % adrift of the bill's own per-m² on a Denver year, which is the
+ *   whole argument against reporting it under any name.
  *
  * All of which the ideal-loads meters give directly: `DistrictHeatingWater`
  * and `DistrictCooling` are heat moved across the zone boundary at a notional
  * 100 %, which is the output side both definitions ask for, with the outdoor
  * air the ideal unit conditions already in them. So the priced channels stay
- * out of this the way they stay out of `shapeKey`, and the total refuses to
- * print at all when heating or cooling is missing — a sum quietly short its
- * largest term would read as a finding.
+ * out of this the way they stay out of `shapeKey`: what the plant costs to
+ * meet this demand is the bill's question, and it is answered there.
  *
  * Every field comes back null rather than zero where the meter behind it was
  * never requested, which is what a bypassed System looks like from here: the
@@ -289,25 +290,18 @@ export function readExtremes(eso) {
 export function demandOver(eso, environments, floorArea) {
   if (!(floorArea > 0) || !environments?.size) return null;
 
-  const kwh = new Map();
-  for (const use of END_USES) {
-    if (use.group !== 'building') continue;
+  // The meter names come from the end-use declaration rather than being
+  // typed again here, because `bill.js` is where they are kept true against
+  // the version — `Heating:DistrictHeatingWater` was `Heating:DistrictHeating`
+  // not many releases ago. A name that is not in that declaration is a
+  // programming error and says so rather than reading as an absent meter.
+  const kwhOf = (id) => {
+    const use = END_USES.find((u) => u.id === id);
+    if (!use) throw new Error(`no end use is called "${id}"`);
     const joules = meterTotal(eso, use.meter, environments);
-    if (joules != null) kwh.set(use.id, joules * J_TO_KWH);
-  }
-  const heating = kwh.get('heating') ?? null;
-  const cooling = kwh.get('cooling') ?? null;
-  return {
-    tedi: heating == null ? null : heating / floorArea,
-    cedi: cooling == null ? null : cooling / floorArea,
-    // Not an EUI: see the definitions above. The four building end uses on
-    // the demand side, which is what the finding says in a sentence and the
-    // study's third curve draws.
-    total:
-      heating == null || cooling == null
-        ? null
-        : [...kwh.values()].reduce((a, b) => a + b, 0) / floorArea,
+    return joules == null ? null : (joules * J_TO_KWH) / floorArea;
   };
+  return { tedi: kwhOf('heating'), cedi: kwhOf('cooling') };
 }
 
 /**
