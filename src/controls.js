@@ -39,15 +39,161 @@ class Control {
 }
 
 /**
- * A continuous quantity, drawn as a ruled calibration face with a penciled tick.
+ * A named stretch of a scale — the repère a number is read against.
+ *
+ * A calibration face set in W/m²K is a number before it is a decision. 1.8
+ * means nothing until it means *a low-e double unit*, and 5.8 means nothing
+ * until it means *a single sheet of glass*; an architect who knows the second
+ * pair fluently can still be handed the first and have nowhere to stand. So
+ * the scales carry the cases the trade already knows, ruled on the face where
+ * they actually fall, and the desk letters whichever one the reading is
+ * standing in as it is dragged past.
+ *
+ * A landmark is a **band, not a point**, because that is the shape of the
+ * underlying fact: double glazing is 2.7 to 3.0 W/m²K depending on the cavity,
+ * the fill and the spacer, and writing 2.8 would be inventing a precision
+ * nobody published. Where the fact really is one number — an engine default, a
+ * code limit — `to` is left off and the band closes to a point, which draws as
+ * a single hairline rather than a stretch. The two read differently on the
+ * face on purpose: a limit you may not cross and a range you might land
+ * anywhere in are two different kinds of knowledge, the same distinction the
+ * holiday rule draws between a tick and a hollow circle.
+ *
+ * `note` is required, and that is the point of the class rather than an
+ * accident of it. A landmark is the interface making a claim about the world,
+ * and a claim nobody can check is exactly what the rest of this sheet exists
+ * not to print — so every band has to name where it came from, and the note
+ * rides into the mark's `title` and the face's description where a reader can
+ * reach it. A landmark with no source throws at module load, the way a `Side`
+ * with a predicate and no reason does.
  */
-export class Scale extends Control {
+export class Landmark {
+  constructor({ from, to = null, label, phrase = null, note }) {
+    if (!Number.isFinite(from)) throw new Error(`a landmark needs a value: "${label}"`);
+    if (to !== null && !(to >= from)) {
+      throw new Error(`"${label}" runs from ${from} to ${to}, which is backwards`);
+    }
+    if (!label) throw new Error(`a landmark at ${from} has no label`);
+    if (!note) throw new Error(`"${label}" cites nothing — a landmark has to say where it came from`);
+    this.from = from;
+    this.to = to ?? from;
+    this.label = label;
+    // How it reads inside a sentence rather than on its own. "Between low-e
+    // double and triple" wants the label uncapitalised, which is right for
+    // ordinary words and wrong for a name the trade capitalises, so the
+    // lowercasing is a default and never a rule.
+    this.phrase = phrase ?? label.toLowerCase();
+    this.note = note;
+    Object.freeze(this);
+  }
+
+  /** A point, as opposed to a stretch — a code limit rather than a range. */
+  get exact() {
+    return this.from === this.to;
+  }
+
+  holds(v) {
+    return v >= this.from && v <= this.to;
+  }
+
+  /** How the mark reads on its own, which is what its `title` carries. */
+  caption(control) {
+    const where = this.exact
+      ? control.format(this.from)
+      : `${control.format(this.from)} to ${control.format(this.to)}`;
+    return `${this.label} · ${where} — ${this.note}`;
+  }
+}
+
+/**
+ * Read a control's landmarks, or throw naming what is wrong with them.
+ *
+ * Three rules, all enforced here rather than trusted, and the third of them is
+ * the one that had to be found by writing the check.
+ *
+ * A landmark **outside the face** cannot be drawn at all, so the range has to
+ * hold it — and where it does not, the *range* is usually the thing that is
+ * wrong rather than the landmark.
+ *
+ * Two landmarks may **not overlap**. The desk letters the one a reading stands
+ * in, and a value standing in two of them has no single answer; ambiguity is
+ * what this page refuses everywhere else and there is no reason to start here.
+ *
+ * And a landmark has to be **reachable on the control's own step grid**. This
+ * is the quiet one. `input[type=range]` only ever hands back `min + n·step`, so
+ * a band that falls between two of those positions draws on the face, names a
+ * case in its tooltip, and can never once be the reading — the reader is shown
+ * a place they cannot stand. It is not hypothetical: the BLAST infiltration
+ * set is A = 0.606 against a 0.01 step, the DOE-2 wind term is 0.224 against
+ * 0.005, and ASHRAE's lighting allowances are imperial figures that land at
+ * 6.89 and 10.76 W/m² against 0.1. All five were declared as the exact
+ * published numbers, all five drew, and none of them could be reached. They
+ * are declared now as the narrow band the step grid actually makes, with the
+ * published figure in the note, so the rounding is stated rather than absorbed.
+ */
+function readLandmarks(list, control) {
+  const { key, min, max, step } = control;
+  // `format` is reached through the control rather than destructured with the
+  // rest of them, because it is a method and reads `this.zero`, `this.digits`
+  // and `this.unit`. Pulled off the object it loses its receiver, and in a
+  // module — where `this` is undefined rather than the global — every call
+  // below died as `Cannot read properties of undefined (reading 'zero')`
+  // instead of naming the landmark that was wrong. Measured on both the range
+  // and the step-grid throws: the guards still fired, and the sentences this
+  // function exists to write never reached anybody.
+  const format = (v) => control.format(v);
+  const marks = [...list].sort((a, b) => a.from - b.from || a.to - b.to);
+  let previous = null;
+  for (const mark of marks) {
+    if (mark.from < min || mark.to > max) {
+      throw new Error(
+        `${key}: "${mark.label}" lies at ${format(mark.from)}–${format(mark.to)}, outside the face's ${format(min)}–${format(max)}`,
+      );
+    }
+    if (previous && mark.from <= previous.to) {
+      throw new Error(`${key}: "${previous.label}" and "${mark.label}" overlap, so a reading could stand in both`);
+    }
+    // Counted in whole steps rather than by walking the grid, because walking
+    // it accumulates float error over the thousand-odd positions a fine face
+    // has. The epsilon is for the division, not for the physics.
+    const first = Math.ceil((mark.from - min) / step - 1e-9);
+    const last = Math.floor((mark.to - min) / step + 1e-9);
+    if (last < first || min + first * step > max) {
+      throw new Error(
+        `${key}: "${mark.label}" at ${format(mark.from)}–${format(mark.to)} falls between two positions of a ${step} step, so the control can never read it`,
+      );
+    }
+    // The same rule again, against the other thing that can make a mark
+    // unreadable. A `zero` stop silences every band but the one that *is* that
+    // stop, so a band lying wholly at or below it draws and can never be the
+    // reading — which is how the first cut of this went wrong, quietly retiring
+    // the engine's own C = 0 and B = 0 on the Air strip.
+    if (control.zero && mark.to <= 0 && !(mark.exact && mark.from === 0)) {
+      throw new Error(
+        `${key}: "${mark.label}" lies at or below the zero stop, where "${control.zero}" is the only reading, so it can never be read`,
+      );
+    }
+    previous = mark;
+  }
+  return Object.freeze(marks);
+}
+
+/**
+ * A continuous quantity on a ruled face: a number, a range, and the cases that
+ * range is read against.
+ *
+ * Shared by `Scale` and `Facade`, which are one kind of question drawn two
+ * ways — one on a calibration face, four along the edges of a plan. Everything
+ * below this line was written twice before the landmarks arrived and would
+ * have been written a third time; a scale whose bands the plan key did not
+ * know about is exactly the drift `controls.js` exists to prevent.
+ */
+class Ruled extends Control {
   constructor({
     key, label, value, min, max, step,
-    unit = '', digits = 2, zero = null, note = null, needs = null,
+    unit = '', digits = 2, zero = null, note = null, needs = null, landmarks = [],
   }) {
     super({ key, label, value, note, needs });
-    this.kind = 'scale';
     this.min = min;
     this.max = max;
     this.step = step;
@@ -56,7 +202,7 @@ export class Scale extends Control {
     // What the low stop means, when it means something other than "a very small
     // number" — "None" at zero glazing says more than "0.00".
     this.zero = zero;
-    Object.freeze(this);
+    this.landmarks = readLandmarks(landmarks, this);
   }
 
   format(v) {
@@ -67,6 +213,94 @@ export class Scale extends Control {
   /** Where the tick sits on the face, 0 to 1. */
   fraction(v) {
     return (v - this.min) / (this.max - this.min);
+  }
+
+  /**
+   * The landmark a value stands in, or null. Never more than one.
+   *
+   * This is the one reading of where the tick stands, and every surface that
+   * lights a mark or letters a band takes it from here — the face's rule, the
+   * sheet slider's, the plan key's bars and the plan key's legend. Lit from
+   * each mark's own `holds` instead, the four came apart at a zero stop and
+   * the default Air strip drew marks at full graphite over a reading line the
+   * desk had deliberately left blank.
+   *
+   * At a `zero` stop only a landmark *of that stop itself* stands. The
+   * distinction is not fussiness, it is the difference between the two claims
+   * a mark at the bottom of a face can be making. A band that merely reaches
+   * zero on its way up is claiming the quantity in some amount — `infiltration`
+   * has a Passive House band open at 0, and 0 ACH is not a Passive House
+   * envelope, it is a sealed box — so it is suppressed, and the readout's own
+   * `Sealed` is that position's only true landmark. A landmark that *is* the
+   * zero point is claiming the absence itself, which is exactly what the
+   * reader is looking at: `infWind` and `infStack` start at `None` because
+   * C = 0 and B = 0 are the engine's own defaults, and saying so is the whole
+   * value of the mark. Blanket silence here cost both of them — they could be
+   * drawn and never once be read, which is the failure `readLandmarks` throws
+   * over — and split the three coefficients of one equation across two
+   * behaviours on one strip, since `infConstant` carries no `zero` label and
+   * went on reading `DOE-2` at the same position.
+   */
+  landmarkAt(v) {
+    const here = this.landmarks.find((mark) => mark.holds(v)) ?? null;
+    if (this.zero && !(v > 0)) return here?.exact && here.from === v ? here : null;
+    return here;
+  }
+
+  /**
+   * Where the reading stands among the landmarks, as the desk letters it.
+   *
+   * Null when the control carries none, which is a real answer and not a
+   * missing one: most of this desk is quantities nobody has published cases
+   * for, and inventing a band so that every face has one would be the sheet
+   * asserting rather than measuring.
+   *
+   * Null too at a stop that carries a `zero`, and that one was found by
+   * reading the output rather than by reasoning about it. A `zero` label means
+   * the bottom of the face is not a small quantity but the absence of one —
+   * no frame, no mass, no ventilation — so "past a brick leaf" over a wall
+   * with no masonry leaf in it at all is not an approximation, it is a
+   * different statement. The readout beside it already says `None`, which is
+   * that position's own landmark and the only true one.
+   *
+   * "Past" reads correctly at both ends because it is about the face and not
+   * about the quantity: below the lowest band and above the highest you have
+   * gone past the last case anyone named, whichever direction that is. It
+   * deliberately says nothing about better or worse — a lower U-factor is
+   * better and a lower COP is not, and the sheet does not grade designs.
+   */
+  standing(v) {
+    if (!this.landmarks.length) return null;
+    const here = this.landmarkAt(v);
+    if (here) return here.label;
+    // Past the named band, a zero stop says nothing at all. `landmarkAt` has
+    // already let through the one landmark that can stand here — the engine's
+    // own C = 0 — so what is left is the inferred reading, and inferring
+    // "past a brick leaf" over a wall with no masonry in it is a different
+    // statement rather than a rounder one.
+    if (this.zero && !(v > 0)) return null;
+    const above = this.landmarks.find((mark) => mark.from > v);
+    const below = [...this.landmarks].reverse().find((mark) => mark.to < v);
+    if (!below) return `Past ${above.phrase}`;
+    if (!above) return `Past ${below.phrase}`;
+    return `Between ${below.phrase} and ${above.phrase}`;
+  }
+
+  /** The whole set in one string, for the face's description. */
+  landmarkSummary() {
+    if (!this.landmarks.length) return null;
+    return this.landmarks.map((mark) => mark.caption(this)).join('. ');
+  }
+}
+
+/**
+ * A continuous quantity, drawn as a ruled calibration face with a penciled tick.
+ */
+export class Scale extends Ruled {
+  constructor(spec) {
+    super(spec);
+    this.kind = 'scale';
+    Object.freeze(this);
   }
 }
 
@@ -155,35 +389,17 @@ class Side {
  * a study sweeps one key, so the plan key carries four of them rather than a
  * single "the glazing" that no single number in the document corresponds to.
  */
-export class Facade extends Control {
-  constructor({
-    key, label, short, sides, min, max, step,
-    unit = '', digits = 2, zero = null, note = null, needs = null,
-  }) {
+export class Facade extends Ruled {
+  constructor({ key, label, short, sides, ...ruled }) {
     // The plan key owns four keys, not one. `key` names the group.
-    super({ key, label, value: null, note, needs });
+    super({ key, label, value: null, ...ruled });
     this.kind = 'facade';
     // What one wall of it is called when it is drawn on its own, away from the
     // plan key — the sheet's narrow label column has no room for the full name.
     this.short = short ?? label;
     // Drawn in compass order, which is also the order `boxSurfaces` generates.
     this.sides = Object.freeze(sides.map((s) => new Side(s)));
-    this.min = min;
-    this.max = max;
-    this.step = step;
-    this.unit = unit;
-    this.digits = digits;
-    this.zero = zero;
     Object.freeze(this);
-  }
-
-  format(v) {
-    if (this.zero && !(v > 0)) return this.zero;
-    return `${v.toFixed(this.digits)}${this.unit ? ` ${this.unit}` : ''}`;
-  }
-
-  fraction(v) {
-    return (v - this.min) / (this.max - this.min);
   }
 
   keys() {
@@ -913,6 +1129,31 @@ export class Meter {
   }
 }
 
+/**
+ * What the engine made of a channel's declaration, read back off the run.
+ *
+ * A meter says what a channel is contributing; a readout says what it *is*, in
+ * the terms the engine settled on rather than the ones the controls are typed
+ * in. There is one, on Glazing, and it exists because the layered model is the
+ * only place on this desk where you set causes and are given no result: panes,
+ * a coating and a cavity go in, and the U-factor and SHGC that come out are
+ * the two numbers a window is actually specified by. They are computed at
+ * get-input and printed in the tabular report, so the sheet reads them back —
+ * by the rule that nothing here is lettered from a variable when the run holds
+ * the answer.
+ *
+ * It is a reading, so it obeys the readings' rules: an em dash before the
+ * first run and after a failed one, and never a figure the engine did not
+ * produce.
+ */
+export class Readout {
+  constructor({ label, note = null }) {
+    this.label = label;
+    this.note = note;
+    Object.freeze(this);
+  }
+}
+
 /* ══ channels ════════════════════════════════════════════════════════════ */
 
 /**
@@ -933,7 +1174,7 @@ export class Meter {
 export class Channel {
   constructor({
     id, index, name, term, blurb, controls,
-    meter = null, bypassable = true, bypassed = false, requires = null, prices = false,
+    meter = null, readout = null, bypassable = true, bypassed = false, requires = null, prices = false,
   }) {
     this.id = id;
     this.index = index;
@@ -942,6 +1183,7 @@ export class Channel {
     this.blurb = blurb;
     this.controls = Object.freeze(controls);
     this.meter = meter;
+    this.readout = readout;
     this.bypassable = bypassable;
     // This channel prices the run rather than shaping it. Nothing it owns
     // reaches the IDF, so nothing it owns belongs in the solve key either --
@@ -972,6 +1214,911 @@ export class Channel {
     );
   }
 }
+
+/* ══ landmarks ═══════════════════════════════════════════════════════════ */
+
+/**
+ * The cases the faces are read against, declared once and shared where the
+ * same fact serves two controls.
+ *
+ * Kept here rather than inline in `CHANNELS` for two reasons. The rooflight's
+ * glass and the wall's glass are the same physics and must be lettered with
+ * the same bands or the sheet would be teaching two vocabularies for one
+ * material; and a citation is several lines of prose, which inside an already
+ * dense channel declaration would bury the control it belongs to.
+ *
+ * Three rules governed what got declared and what did not.
+ *
+ * **Only where somebody published it.** A landmark is a claim, and most of
+ * this desk is quantities with no published cases at all — a shoebox's width,
+ * a sensor's depth into the plan, a fin's offset from its jamb. Those faces
+ * carry none, and that absence is the honest answer rather than a gap: making
+ * one up so that every slider had a label would be the sheet grading a design
+ * instead of measuring it, which is the failure the em-dash rule exists to
+ * prevent on the other half of the page.
+ *
+ * **A band where the fact is a band, a point where it is a limit.** Double
+ * glazing is a range; a code maximum is a line. Where the line is metric-exact
+ * and lands on the control's step it is declared as a point; where it is a
+ * conversion out of imperial units it is declared as the narrow band the
+ * rounding actually makes, and the note carries the published figure so the
+ * rounding is visible rather than absorbed.
+ *
+ * **Say which way the definition runs when it is not obvious.** The blind's
+ * slat angle is the worked example: 0° and 180° are *closed* and 90° is *open*,
+ * because EnergyPlus measures the angle from the glazing's outward normal and
+ * not from the horizontal. Nothing on a slider labelled 0–180° says that, and
+ * a reader who assumes the other convention gets the shading exactly backwards.
+ */
+
+const ASHRAE_FEN = 'ASHRAE Handbook of Fundamentals, Ch. 15, typical whole-window values.';
+/**
+ * How a landmark that rests on practice rather than on a published figure
+ * opens its note.
+ *
+ * Most of these bands cite a standard, and a reader is entitled to assume the
+ * number came from one. A few cannot: nobody legislates the depth at which an
+ * overhang stops being a reveal and becomes a canopy, and yet those are the
+ * bands an architect reads fastest, because they name the thing you would have
+ * to build. Keeping them means saying which kind of claim they are, or a
+ * convention sits beside an ASHRAE clause looking exactly as authoritative —
+ * which is the sheet asserting under cover of citing.
+ */
+const CONVENTION = 'Convention of practice rather than a published figure.';
+const IO_REF = 'EnergyPlus 26.1 Input Output Reference.';
+
+/* ── glass ─────────────────────────────────────────────────────────────── */
+
+/**
+ * The four generations of window, which is the one scale on this desk that an
+ * architect can already read fluently in words and not at all in W/m²K.
+ *
+ * Whole-window U including the frame's share, which is what a product sheet
+ * quotes and what this control writes into `WindowMaterial:SimpleGlazingSystem`
+ * — the simple model's `u_factor` is defined as the whole assembly's, so the
+ * bands are the assembly's too.
+ */
+const GLASS_U = [
+  new Landmark({
+    from: 0.6, to: 1.0, label: 'Triple, low-e', phrase: 'triple',
+    note: `Two coatings and argon in both cavities. ${ASHRAE_FEN}`,
+  }),
+  new Landmark({
+    from: 1.4, to: 2.0, label: 'Double, low-e', phrase: 'low-e double',
+    note: `One soft coating, argon fill. The centre of gravity of current commercial practice. ${ASHRAE_FEN}`,
+  }),
+  new Landmark({
+    from: 2.6, to: 3.1, label: 'Double, clear', phrase: 'clear double',
+    note: `Air-filled, no coating — the sealed unit as it was built for thirty years. ${ASHRAE_FEN}`,
+  }),
+  new Landmark({
+    from: 5.4, to: 6.0, label: 'Single', phrase: 'single glazing',
+    note: `One sheet of float glass. Roughly ten times the loss of a triple unit. ${ASHRAE_FEN}`,
+  }),
+];
+
+/**
+ * A rooflight is a worse assembly than a wall window of the same generation —
+ * a domed unit has no thermally broken frame to speak of and it faces a sky
+ * that is colder than any wall's surroundings — so it gets its own bands
+ * rather than borrowing the wall's.
+ */
+const ROOFLIGHT_U = [
+  new Landmark({
+    from: 1.2, to: 1.8, label: 'Insulated unit', phrase: 'an insulated rooflight',
+    note: 'A triple-skin or low-e glazed rooflight on a thermally broken kerb. NFRC-rated skylight range.',
+  }),
+  new Landmark({
+    from: 2.4, to: 3.2, label: 'Double dome', phrase: 'a double dome',
+    note: 'Two skins of polycarbonate or acrylic — the standard proprietary rooflight.',
+  }),
+  new Landmark({
+    from: 4.8, to: 6.0, label: 'Single skin', phrase: 'a single skin',
+    note: 'One sheet, no cavity. Condenses on itself in any heated building.',
+  }),
+];
+
+const GLASS_SHGC = [
+  new Landmark({
+    from: 0.05, to: 0.2, label: 'Reflective', phrase: 'reflective glass',
+    note: `A metallic coating. Buys the solar rejection back in daylight and in what the building looks like. ${ASHRAE_FEN}`,
+  }),
+  new Landmark({
+    from: 0.25, to: 0.4, label: 'Solar-control low-e', phrase: 'solar-control low-e',
+    note: `A spectrally selective coating. ASHRAE 90.1-2019 prescriptive SHGC limits fall in this band for the warmer climate zones. ${ASHRAE_FEN}`,
+  }),
+  new Landmark({
+    from: 0.5, to: 0.65, label: 'Low-e, high gain', phrase: 'high-gain low-e',
+    note: `A coating tuned to keep the winter sun, which is what a heating-dominated climate wants. ${ASHRAE_FEN}`,
+  }),
+  new Landmark({
+    from: 0.7, to: 0.86, label: 'Clear glass', phrase: 'clear glass',
+    note: `Uncoated float, single or double. Very nearly all the sun that reaches it. ${ASHRAE_FEN}`,
+  }),
+];
+
+const GLASS_VT = [
+  new Landmark({
+    from: 0.1, to: 0.25, label: 'Reflective', phrase: 'reflective glass',
+    note: `A quarter of the daylight, and the room reads as overcast on a clear day. ${ASHRAE_FEN}`,
+  }),
+  new Landmark({
+    from: 0.35, to: 0.55, label: 'Tinted', phrase: 'tinted glass',
+    note: `Body-tinted glass. It sheds light and heat in roughly equal measure, which is what a selective coating exists to avoid. ${ASHRAE_FEN}`,
+  }),
+  new Landmark({
+    from: 0.6, to: 0.75, label: 'Low-e double', phrase: 'low-e double',
+    note: `A coated unit still passes most of the visible band — that selectivity is the whole point of it. ${ASHRAE_FEN}`,
+  }),
+  new Landmark({
+    from: 0.78, to: 0.9, label: 'Clear', phrase: 'clear glass',
+    note: `Uncoated float. A single sheet reads about 0.90, a clear double about 0.80. ${ASHRAE_FEN}`,
+  }),
+];
+
+/**
+ * The emissivity of the coating on the inboard pane's outward face, which is
+ * the whole mechanism of a low-e unit: the coating cannot stop conduction
+ * across the cavity, it stops the pane *radiating* across it.
+ *
+ * The two coating families are made differently and land in different places,
+ * and the strip used to say the wrong one — it called 0.04 a hard coat, which
+ * is a soft coat's figure by a factor of four.
+ */
+const PANE_EMISS = [
+  new Landmark({
+    from: 0.04, to: 0.1, label: 'Soft coat', phrase: 'a soft coat',
+    note: 'A sputtered silver coating, applied off-line and sealed inside the cavity because it will not survive handling. The best of them reach 0.03.',
+  }),
+  new Landmark({
+    from: 0.15, to: 0.2, label: 'Hard coat', phrase: 'a hard coat',
+    note: 'A pyrolytic coating fired on to the hot ribbon at the float line. Durable enough to face a room, and about four times the emissivity of a soft coat.',
+  }),
+  new Landmark({
+    from: 0.8, to: 0.84, label: 'Uncoated float', phrase: 'uncoated float',
+    note: 'Plain glass radiates like almost every other non-metal: 0.84.',
+  }),
+];
+
+/**
+ * How many sheets of glass, which is the layered model's own half of the
+ * vocabulary the simple model's U-factor face is lettered in.
+ *
+ * The two glazing models ask the same question from opposite ends — one is set
+ * in the assembly's result, the other in its causes — so they have to name the
+ * cases identically or the strip teaches two languages for one window. The
+ * U-values are measured on this desk at the default coating rather than quoted
+ * from anywhere, which is why they are exact.
+ *
+ * `Single` is not here and cannot be: the layered model builds n panes with
+ * n − 1 cavities and the coating lives on a cavity face, so one sheet has
+ * nowhere to put it. A single-glazed opening is the simple model's job, where
+ * its own face carries that band.
+ */
+const PANE_COUNT = [
+  new Landmark({
+    from: 2, label: 'Double', phrase: 'a double unit',
+    note: 'Two sheets and one cavity — the sealed unit as ordinarily built. Measured on the default desk it comes to U 2.67 W/m²K, which is the clear-double band on the simple model\'s own face.',
+  }),
+  new Landmark({
+    from: 3, label: 'Triple', phrase: 'a triple unit',
+    note: 'Measured on the default desk: U 1.73 W/m²K with no coating — which lands in the *low-e double* band, so an uncoated triple buys roughly what a coated double does. That is the argument for spending on the coating before spending on the third sheet.',
+  }),
+  new Landmark({
+    from: 4, label: 'Quadruple', phrase: 'a quadruple unit',
+    note: 'Measured on the default desk: U 1.28 W/m²K uncoated, and 0.93 with a soft coat on the inboard pane. Rare in practice — the weight and the depth of frame it needs are what stop it, not the physics.',
+  }),
+];
+
+/**
+ * The cavity of a sealed unit, which is the one dimension on this desk with an
+ * optimum rather than a direction. Narrow, the panes conduct across the gap;
+ * wide, the fill starts to convect and carries the heat over instead. The
+ * minimum sits between, and past about 20 mm widening the unit buys nothing at
+ * all.
+ */
+const GAP_WIDTH = [
+  new Landmark({
+    from: 0.006, to: 0.009, label: 'Too narrow', phrase: 'a narrow cavity',
+    note: 'Under about 9 mm the panes are close enough to conduct across the fill, and the unit loses most of the benefit of being double.',
+  }),
+  new Landmark({
+    from: 0.012, to: 0.016, label: 'The optimum', phrase: 'the optimum',
+    note: 'Both air and argon reach their lowest conductance between roughly 12 and 16 mm — argon at the narrow end, air at the wide. This desk starts at 13 mm.',
+  }),
+  new Landmark({
+    from: 0.02, to: 0.05, label: 'Convecting', phrase: 'a convecting cavity',
+    note: 'Past about 20 mm the fill circulates and carries heat across the gap, so the unit stops improving however much wider it is made.',
+  }),
+];
+
+/**
+ * `WindowProperty:FrameAndDivider.frame_conductance` is measured inside face to
+ * outside face and excludes the air films, so these are frame conductances and
+ * not the frame U-factors a product sheet quotes — the two differ by about
+ * 0.17 m²K/W of film.
+ */
+const FRAME_COND = [
+  new Landmark({
+    from: 0.8, to: 1.4, label: 'Passive House frame', phrase: 'a Passive House frame',
+    note: 'A deep insulated composite frame, which is what a certified window has to have before its glass matters.',
+  }),
+  new Landmark({
+    from: 1.6, to: 2.6, label: 'Timber or uPVC', phrase: 'timber or uPVC',
+    note: 'A multi-chamber plastic or a solid timber section — inherently poor conductors, so they need no break.',
+  }),
+  new Landmark({
+    from: 3.0, to: 4.5, label: 'Broken aluminium', phrase: 'broken aluminium',
+    note: 'A polyamide strip set between the inner and outer halves of an aluminium section.',
+  }),
+  new Landmark({
+    from: 5.5, to: 12, label: 'Aluminium, no break', phrase: 'unbroken aluminium',
+    note: 'A single metal section right through the wall. NFRC rates such frames at U 8.5 to 11 W/m²K *including* the films; strip the films off, as this field does, and the true conductance is past the top of this face — the stop is as close as the desk gets. At a 10 % frame fraction this alone can undo a low-e unit.',
+  }),
+];
+
+const FRAME_WIDTH = [
+  new Landmark({
+    from: 0.045, to: 0.07, label: 'Slim metal', phrase: 'a slim metal frame',
+    note: 'A 45 to 70 mm aluminium or steel section — the narrowest sightline a window is made with.',
+  }),
+  new Landmark({
+    from: 0.075, to: 0.1, label: 'Standard', phrase: 'a standard frame',
+    note: 'The 75 to 100 mm of a uPVC or timber casement.',
+  }),
+  new Landmark({
+    from: 0.11, to: 0.16, label: 'Insulated frame', phrase: 'an insulated frame',
+    note: 'A deep certified frame. It shades the glass as well as insulating it, which is why the width is a control here and not a constant.',
+  }),
+];
+
+const SKY_CURB = [
+  new Landmark({
+    from: 0.1, to: 0.2, label: 'Proprietary kerb', phrase: 'a proprietary kerb',
+    note: 'The upstand a standard rooflight is bedded on. NRCA asks for at least 200 mm above the finished roof surface so that ponding and snow cannot reach the seal.',
+  }),
+  new Landmark({
+    from: 0.45, to: 1.2, label: 'Monitor', phrase: 'a monitor',
+    note: 'Deep enough to be a piece of roof construction. Measured on this desk: taking the kerb from flush to 1.2 m removes 41 % of the transmitted solar at a 10 % roof ratio.',
+  }),
+];
+
+/* ── the opaque envelope ───────────────────────────────────────────────── */
+
+/**
+ * These faces set the resistance of one `Material:NoMass` layer, not of the
+ * whole construction, so the U-value a band corresponds to is
+ * `1 / (R + 0.17)` for a wall and `1 / (R + 0.14)` for a roof — the surface
+ * films EnergyPlus adds either side. Every figure below has been converted
+ * that way rather than quoted as though the layer were the assembly.
+ */
+const WALL_R = [
+  new Landmark({
+    from: 0.2, to: 0.6, label: 'Uninsulated', phrase: 'an uninsulated wall',
+    note: 'Solid masonry with nothing in it: a 1.3 to 2.7 W/m²K wall once the surface films are counted. Most of the stock built before insulation was required.',
+  }),
+  new Landmark({
+    from: 2.1, to: 2.5, label: 'R-13 stud cavity', phrase: 'a stud cavity',
+    note: 'Imperial R-13 batts between studs, which is 2.29 m²K/W and is the stock example\'s own R13LAYER — about 0.41 W/m²K with the films.',
+  }),
+  new Landmark({
+    from: 3.3, to: 5.0, label: 'Continuous insulation', phrase: 'continuous insulation',
+    note: 'A wrapped layer outside the frame, breaking the bridging: 0.19 to 0.29 W/m²K. Current code practice in cold zones.',
+  }),
+  new Landmark({
+    from: 6.5, to: 10, label: 'Passive House', phrase: 'a Passive House wall',
+    note: 'The Passive House Institute asks for U ≤ 0.15 W/m²K in a cool-temperate climate, which is 6.5 m²K/W of layer once the films are counted.',
+  }),
+];
+
+const ROOF_R = [
+  new Landmark({
+    from: 0.2, to: 0.6, label: 'Uninsulated deck', phrase: 'a bare deck',
+    note: 'Structural deck and a membrane, nothing between. 1.4 to 2.9 W/m²K with the films.',
+  }),
+  new Landmark({
+    from: 5.1, to: 5.5, label: 'R-30 above deck', phrase: 'R-30 above deck',
+    note: 'ASHRAE 90.1-2019 prescriptive insulation entirely above deck for most commercial climate zones: R-30 imperial, 5.28 m²K/W.',
+  }),
+  new Landmark({
+    from: 6.5, to: 7.0, label: 'R-38 above deck', phrase: 'R-38 above deck',
+    note: 'ASHRAE 90.1-2019 for the colder zones: R-38 imperial, 6.69 m²K/W.',
+  }),
+  new Landmark({
+    from: 9, to: 14, label: 'Passive House', phrase: 'a Passive House roof',
+    note: 'U 0.07 to 0.11 W/m²K, comfortably past the Passive House Institute\'s 0.15 — a roof reaches it more cheaply than a wall because nothing is competing for the depth.',
+  }),
+];
+
+const SOLAR_ABS = [
+  new Landmark({
+    from: 0.2, to: 0.35, label: 'White or pale', phrase: 'a pale surface',
+    note: 'Titanium-dioxide white paint, pale render, light stone. ASHRAE Handbook of Fundamentals, surface-property tables.',
+  }),
+  new Landmark({
+    from: 0.45, to: 0.65, label: 'Mid-tone', phrase: 'a mid-tone surface',
+    note: 'Grey render, buff brick, weathered concrete.',
+  }),
+  new Landmark({
+    from: 0.75, to: 0.92, label: 'Dark', phrase: 'a dark surface',
+    note: 'Dark brick, dark paint, oxidised metal. Nearly everything the sun brings is absorbed at the face.',
+  }),
+];
+
+const ROOF_ABS = [
+  new Landmark({
+    from: 0.1, to: 0.3, label: 'Cool roof', phrase: 'a cool roof',
+    note: 'ASHRAE 90.1 asks a cool roof in the warm climate zones for an initial solar reflectance of 0.70 — absorptance 0.30 — or 0.55 aged, tested to CRRC methods. Aged is the honest one: these surfaces darken.',
+  }),
+  new Landmark({
+    from: 0.45, to: 0.65, label: 'Grey membrane', phrase: 'a grey membrane',
+    note: 'A single-ply membrane after a few years of weathering, or ballast.',
+  }),
+  new Landmark({
+    from: 0.85, to: 0.95, label: 'Bitumen', phrase: 'bitumen',
+    note: 'Built-up felt or a dark membrane. Reaches 70 °C on a clear summer afternoon.',
+  }),
+];
+
+const EMITTANCE = [
+  new Landmark({
+    from: 0.05, to: 0.25, label: 'Bare metal', phrase: 'bare metal',
+    note: 'Polished or mill-finish aluminium, galvanised steel. It barely radiates, so it stays warm at night — the reason a foil-faced surface is a radiant barrier.',
+  }),
+  new Landmark({
+    from: 0.85, to: 0.95, label: 'Almost everything else', phrase: 'a non-metallic surface',
+    note: 'Paint, masonry, glass, render, timber. Non-metals sit at 0.90 with remarkably little spread, which is why 0.9 is the field\'s usual default.',
+  }),
+];
+
+const WALL_MASS = [
+  new Landmark({
+    from: 0.09, to: 0.12, label: 'A brick leaf', phrase: 'a brick leaf',
+    note: 'One 102 mm skin of brickwork set inboard of the insulation.',
+  }),
+  new Landmark({
+    from: 0.14, to: 0.22, label: 'Blockwork', phrase: 'blockwork',
+    note: 'A 140 or 200 mm dense block inner leaf — the common way a masonry building gets its mass.',
+  }),
+  new Landmark({
+    from: 0.3, to: 0.4, label: 'Heavy masonry', phrase: 'heavy masonry',
+    note: 'A structural concrete wall. Past about 0.15 m the extra depth stops answering the daily cycle — see the slab.',
+  }),
+];
+
+const SLAB_DEPTH = [
+  new Landmark({
+    from: 0.09, to: 0.11, label: 'Effective depth', phrase: 'the effective depth',
+    note: 'About 0.10 m is the depth conventionally counted as effective on a 24-hour cycle — the CIBSE admittance method\'s figure for dense concrete. The diffusion depth proper, √(2α/ω), is 0.16 m, and the two differ because the deeper material is still responding but by then too little and too late to matter. The stock example\'s 4-inch slab is 0.1015 m, right on the design figure.',
+  }),
+  new Landmark({
+    from: 0.15, to: 0.25, label: 'Structural slab', phrase: 'a structural slab',
+    note: 'A 150 to 250 mm floor plate, which is what a concrete frame actually casts.',
+  }),
+  new Landmark({
+    from: 0.3, to: 0.6, label: 'Deeper than it can use', phrase: 'more than a day reaches',
+    note: 'Real for a transfer deck or a raft, but three times the diurnal depth: the inner two thirds never take part in a daily cycle.',
+  }),
+];
+
+const INTERNAL_MASS = [
+  new Landmark({
+    from: 0.5, to: 1.0, label: 'Lightly fitted', phrase: 'a light fit-out',
+    note: 'Desks, screens, a few partitions — surface area of about half to one times the floor.',
+  }),
+  new Landmark({
+    from: 1.5, to: 2.5, label: 'Furnished office', phrase: 'a furnished office',
+    note: 'The usual modelling assumption for a fitted-out office is internal surface area of roughly twice the floor area.',
+  }),
+];
+
+/* ── air ───────────────────────────────────────────────────────────────── */
+
+/**
+ * Air changes at natural pressure, which is what `ZoneInfiltration:DesignFlowRate`
+ * takes — *not* the ACH50 a blower-door test reports. The rule of thumb that
+ * relates them divides by about 20, so Passive House's 0.6 ACH50 is roughly
+ * 0.03 ACH here; the bands below are already converted.
+ */
+const INFILTRATION = [
+  new Landmark({
+    from: 0.01, to: 0.06, label: 'Passive House', phrase: 'a Passive House envelope',
+    note: 'The Passive House Institute limit is 0.6 air changes an hour at 50 Pa, which the usual n/20 rule makes about 0.03 ACH at natural pressure.',
+  }),
+  new Landmark({
+    from: 0.15, to: 0.35, label: 'Tight, tested', phrase: 'a tested envelope',
+    note: 'A commercial envelope built to an air-tightness specification and tested, roughly 3 to 7 ACH50.',
+  }),
+  new Landmark({
+    from: 0.5, to: 0.9, label: 'Typical new-build', phrase: 'a typical new-build',
+    note: 'Ordinary construction with no tightness testing. This desk starts at 0.5.',
+  }),
+  new Landmark({
+    from: 1.2, to: 3, label: 'Leaky or historic', phrase: 'a leaky envelope',
+    note: 'Single glazing, no continuous barrier, openable everything. The leakage alone outweighs most of what the fabric channels can buy.',
+  }),
+];
+
+/**
+ * The A, B and C of `A + B·|ΔT| + C·v`, whose published sets are the closest
+ * thing this desk has to a landmark that is a citation and nothing else.
+ *
+ * EnergyPlus's own defaults are 1, 0, 0 — a constant flow that answers neither
+ * the weather nor the season, which is where this desk starts. BLAST and DOE-2
+ * each shipped a measured set, and the Input Output Reference gives both along
+ * with what they do: at 0 K and 3.35 m/s the BLAST set returns exactly 1.0, and
+ * at a winter 40 K and 6 m/s it returns 2.75.
+ */
+const INF_CONSTANT = [
+  new Landmark({
+    from: 0, label: 'DOE-2', phrase: 'the DOE-2 set',
+    note: `DOE-2's air-change method used A = 0: leakage entirely wind-driven. ${IO_REF}`,
+  }),
+  new Landmark({
+    from: 0.6, to: 0.61, label: 'BLAST', phrase: 'the BLAST set',
+    note: `BLAST used A = 0.606, with the stack and wind terms carrying the rest; this face's 0.01 step reaches 0.60 and 0.61 either side of it. ${IO_REF}`,
+  }),
+  new Landmark({
+    from: 1, label: 'EnergyPlus default', phrase: 'the EnergyPlus default',
+    note: `A = 1 with B and C at zero is a constant volumetric flow under all conditions, which is the field's default and this desk's. ${IO_REF}`,
+  }),
+];
+
+const INF_STACK = [
+  new Landmark({
+    from: 0, label: 'DOE-2 and EnergyPlus', phrase: 'no stack term',
+    note: `Both the DOE-2 set and the EnergyPlus default leave B at zero. ${IO_REF}`,
+  }),
+  new Landmark({
+    from: 0.036, to: 0.037, label: 'BLAST', phrase: 'the BLAST set',
+    note: `BLAST's temperature term is B = 0.03636 per kelvin, which this face's 0.001 step straddles. ${IO_REF}`,
+  }),
+];
+
+const INF_WIND = [
+  new Landmark({
+    from: 0, label: 'EnergyPlus default', phrase: 'no wind term',
+    note: `C = 0: leakage that does not answer the wind at all. ${IO_REF}`,
+  }),
+  new Landmark({
+    from: 0.115, to: 0.12, label: 'BLAST', phrase: 'the BLAST set',
+    note: `BLAST's velocity term is C = 0.1177 per m/s, which this face's 0.005 step straddles. ${IO_REF}`,
+  }),
+  new Landmark({
+    from: 0.22, to: 0.225, label: 'DOE-2', phrase: 'the DOE-2 set',
+    note: `DOE-2 put the whole of leakage on the wind: C = 0.224, which returns 1.0 at 4.47 m/s. ${IO_REF}`,
+  }),
+];
+
+const VENTILATION = [
+  new Landmark({
+    from: 0.5, to: 1.5, label: 'Background', phrase: 'background ventilation',
+    note: 'Trickle vents and the odd open window — enough for air quality, nothing like enough to cool.',
+  }),
+  new Landmark({
+    from: 3.5, to: 4.5, label: 'Purge', phrase: 'purge ventilation',
+    note: 'Approved Document F asks for a purge capability of about 4 air changes an hour, which is what openable windows are sized on.',
+  }),
+  new Landmark({
+    from: 6, to: 12, label: 'Night flush', phrase: 'a night flush',
+    note: 'Cross-ventilation with the building open. This is the rate at which a slab can actually be emptied overnight.',
+  }),
+];
+
+/**
+ * The Beaufort scale, which is the one wind vocabulary anyone reads without
+ * converting. The top of this face is 40 m/s — force 13, past a hurricane — so
+ * a shutdown wind left at the stop is a window that never closes.
+ */
+const WIND = [
+  new Landmark({
+    from: 1.6, to: 3.3, label: 'Light air · Bft 2', phrase: 'a light air',
+    note: 'Leaves rustle, a vane moves. WMO Beaufort scale.',
+  }),
+  new Landmark({
+    from: 5.5, to: 7.9, label: 'Moderate · Bft 4', phrase: 'a moderate breeze',
+    note: 'Dust and loose paper lift; small branches move. Roughly where an open window starts to be a nuisance. WMO Beaufort scale.',
+  }),
+  new Landmark({
+    from: 10.8, to: 13.8, label: 'Strong · Bft 6', phrase: 'a strong breeze',
+    note: 'Large branches in motion, umbrellas used with difficulty. WMO Beaufort scale.',
+  }),
+];
+
+/* ── what is in the room ───────────────────────────────────────────────── */
+
+const OCCUPANCY = [
+  new Landmark({
+    from: 5.5, to: 7, label: 'Retail floor', phrase: 'a retail floor',
+    note: 'ASHRAE 62.1-2019 Table 6-2 default for retail sales is 15 people per 1,000 ft², which is 6.2 m² each.',
+  }),
+  new Landmark({
+    from: 8, to: 13, label: 'Dense open plan', phrase: 'a dense open plan',
+    note: 'The BCO Guide to Specification designs UK office workplaces at 8 to 13 m² a person.',
+  }),
+  new Landmark({
+    from: 17, to: 21, label: 'Office · 62.1 default', phrase: 'the 62.1 office default',
+    note: 'ASHRAE 62.1-2019 Table 6-2 default occupant density for office space is 5 people per 1,000 ft², which is 18.6 m² each.',
+  }),
+];
+
+/**
+ * Total heat per person, sensible and latent together, which is what
+ * `People.activity_level_schedule` takes. From ASHRAE Handbook of Fundamentals,
+ * Ch. 9, Table 4 — the adjusted figures for a mixed adult population.
+ *
+ * Heavy machine work is 425 W and athletics 525 W, both past the top of this
+ * face; a shoebox held at an office setpoint is not a gymnasium, and widening
+ * the range to reach them would cost the resolution where the answers are.
+ */
+const ACTIVITY = [
+  new Landmark({
+    from: 95, to: 105, label: 'Seated, quiet', phrase: 'sitting quietly',
+    note: 'About 100 W total, 60 of it sensible. ASHRAE Handbook of Fundamentals, Ch. 9, Table 4.',
+  }),
+  new Landmark({
+    from: 115, to: 130, label: 'Office work', phrase: 'office work',
+    note: 'Typing and seated light work, about 120 W. ASHRAE Handbook of Fundamentals, Ch. 9, Table 4. This desk starts here.',
+  }),
+  new Landmark({
+    from: 145, to: 165, label: 'Standing, walking', phrase: 'standing work',
+    note: 'Filing while standing, or walking about a room: 150 to 160 W. ASHRAE Handbook of Fundamentals, Ch. 9, Table 4.',
+  }),
+  new Landmark({
+    from: 210, to: 235, label: 'Light machine work', phrase: 'light machine work',
+    note: 'About 220 W. ASHRAE Handbook of Fundamentals, Ch. 9, Table 4.',
+  }),
+];
+
+/**
+ * Lighting power density, which is the one internal gain that has been
+ * legislated downwards for forty years, so its landmarks are dates as much as
+ * they are numbers. The allowances are ASHRAE 90.1 building-area-method values
+ * converted from W/ft², and each band is as narrow as the rounding to this
+ * control's 0.1 W/m² step allows.
+ */
+const LIGHTING = [
+  new Landmark({
+    from: 4.7, to: 4.9, label: '90.1-2019 warehouse', phrase: 'the warehouse rate',
+    note: 'ASHRAE 90.1-2019 building-area allowance for a warehouse: 0.45 W/ft², which is 4.84 W/m².',
+  }),
+  new Landmark({
+    from: 6.8, to: 7.0, label: '90.1-2019 office', phrase: '90.1-2019 office',
+    note: 'ASHRAE 90.1-2019 building-area allowance for an office: 0.64 W/ft², which is 6.89 W/m². An all-LED installation meets it without trying.',
+  }),
+  new Landmark({
+    from: 10.7, to: 10.9, label: '90.1-2004 office', phrase: '90.1-2004 office',
+    note: 'ASHRAE 90.1-2004 allowed 1.00 W/ft² for an office, which is 10.76 W/m² — 56 % more than the same building is allowed today.',
+  }),
+  new Landmark({
+    from: 16, to: 21.5, label: 'Fluorescent, pre-1990', phrase: 'pre-1990 fluorescent',
+    note: 'T12 lamps on magnetic ballasts ran 1.5 to 2.0 W/ft², which is 16 to 21.5 W/m². At this density the lighting is the heating system.',
+  }),
+];
+
+const EQUIPMENT = [
+  new Landmark({
+    from: 7.5, to: 8.5, label: 'Office receptacles', phrase: 'office receptacle load',
+    note: 'The usual modelling baseline for office plug load is 0.75 W/ft², which is 8.07 W/m². This desk starts at 8.',
+  }),
+  new Landmark({
+    from: 27, to: 54, label: 'Trading floor or lab', phrase: 'a trading floor',
+    note: '2.5 to 5 W/ft². A room at this density is cooling-dominated in every climate there is.',
+  }),
+];
+
+/* ── comfort, light and the system ─────────────────────────────────────── */
+
+const ILLUMINANCE = [
+  new Landmark({
+    from: 100, to: 150, label: 'Circulation', phrase: 'circulation lighting',
+    note: 'EN 12464-1 maintained illuminance for corridors and circulation areas: 100 lx.',
+  }),
+  new Landmark({
+    from: 280, to: 320, label: 'General indoor work', phrase: 'general work',
+    note: 'EN 12464-1: 300 lx for filing, copying, and general indoor tasks.',
+  }),
+  new Landmark({
+    from: 480, to: 520, label: 'Office task', phrase: 'an office task',
+    note: 'EN 12464-1: 500 lx for writing, typing, reading and data processing. This desk starts here.',
+  }),
+  new Landmark({
+    from: 700, to: 1000, label: 'Detailed work', phrase: 'detailed work',
+    note: 'EN 12464-1: 750 lx for technical drawing, 1,000 lx for fine inspection work.',
+  }),
+];
+
+const WORK_PLANE = [
+  new Landmark({
+    from: 0.7, to: 0.85, label: 'Work plane', phrase: 'the work plane',
+    note: 'EN 12464-1 and the IES both take the horizontal work plane at 0.8 m above the floor for seated tasks. This desk starts there.',
+  }),
+];
+
+const HEAT_SET = [
+  new Landmark({
+    from: 10, to: 14, label: 'Frost protection', phrase: 'frost protection',
+    note: 'Enough to keep pipes and finishes intact in an unoccupied building, and nothing like enough for comfort.',
+  }),
+  new Landmark({
+    from: 20, to: 23.5, label: 'ASHRAE 55 winter', phrase: 'the winter comfort band',
+    note: 'ASHRAE 55-2020 operative temperature for 80 % acceptability at 1.0 clo and sedentary activity: about 20 to 23.5 °C.',
+  }),
+];
+
+const COOL_SET = [
+  new Landmark({
+    from: 23, to: 26, label: 'ASHRAE 55 summer', phrase: 'the summer comfort band',
+    note: 'ASHRAE 55-2020 operative temperature for 80 % acceptability at 0.5 clo and sedentary activity: about 23 to 26 °C. This desk starts at the top of it.',
+  }),
+  new Landmark({
+    from: 28, to: 31, label: 'Adaptive, free-running', phrase: 'the adaptive band',
+    note: 'ASHRAE 55 adaptive model, which applies only to occupant-controlled naturally conditioned spaces: the upper 80 % limit reaches about 30 °C at a 30 °C prevailing mean.',
+  }),
+];
+
+const OUTDOOR_AIR = [
+  new Landmark({
+    from: 2.5, label: '62.1 people rate', phrase: 'the 62.1 people rate',
+    note: 'ASHRAE 62.1-2019 breathing-zone rate per person for an office is 5 cfm, which is 2.36 L/s — this face\'s 0.5 step reaches it at 2.5. The area rate is on top of this, so this alone is never the whole requirement.',
+  }),
+  new Landmark({
+    from: 7, to: 10, label: 'Office, all in', phrase: 'a whole office rate',
+    note: 'The 62.1 people and area rates together at the 18.6 m² a person 62.1 assumes come to 7.9 L/s a person (2.36 + 0.3 × 18.6), which is about where EN 16798-1 category II lands too.',
+  }),
+];
+
+const HEAT_RECOVERY = [
+  new Landmark({
+    from: 0.5, to: 0.6, label: '90.1 minimum', phrase: 'the 90.1 minimum',
+    note: 'ASHRAE 90.1-2019 §6.5.6.1 requires at least 50 % enthalpy recovery effectiveness where energy recovery is triggered.',
+  }),
+  new Landmark({
+    from: 0.75, to: 0.9, label: 'Passive House', phrase: 'a Passive House unit',
+    note: 'The Passive House Institute certifies heat recovery units at 75 % effectiveness or better, measured to its own protocol.',
+  }),
+];
+
+/* ── plant ─────────────────────────────────────────────────────────────── */
+
+const BOILER = [
+  new Landmark({
+    from: 0.6, to: 0.72, label: 'Old atmospheric', phrase: 'an old boiler',
+    note: 'A standing-pilot cast-iron boiler over a heating season, standby losses and all.',
+  }),
+  new Landmark({
+    from: 0.8, to: 0.86, label: 'Non-condensing', phrase: 'non-condensing',
+    note: 'ASHRAE 90.1 sets 80 % thermal efficiency as the floor for most gas-fired boilers. This desk starts at 0.85.',
+  }),
+  new Landmark({
+    from: 0.9, to: 1.05, label: 'Condensing', phrase: 'condensing',
+    note: 'Only reached if the return water is cold enough to condense the flue gas — an underfloor or oversized-emitter system, not a rebuilt one. Figures above 1.00 are on net calorific value.',
+  }),
+];
+
+const HEAT_COP = [
+  new Landmark({
+    from: 1.5, to: 2.2, label: 'Air source, deep cold', phrase: 'deep-cold air source',
+    note: 'What an air-source heat pump returns at design condition in a cold climate, before any resistance back-up.',
+  }),
+  new Landmark({
+    from: 2.6, to: 3.4, label: 'Air source, seasonal', phrase: 'seasonal air source',
+    note: 'A seasonal figure for an air-source unit in a mixed climate, averaged over the hours it actually runs. This desk starts at 3.',
+  }),
+  new Landmark({
+    from: 3.8, to: 5.5, label: 'Ground source', phrase: 'ground source',
+    note: 'A ground loop holds its source temperature through the winter, which is the whole of the difference.',
+  }),
+];
+
+const COOL_COP = [
+  new Landmark({
+    from: 2.8, to: 3.5, label: 'Packaged DX', phrase: 'a packaged DX unit',
+    note: 'A rooftop or split direct-expansion unit at rated condition — around the ASHRAE 90.1 minimum for air-cooled equipment.',
+  }),
+  new Landmark({
+    from: 3.8, to: 4.6, label: 'Air-cooled chiller', phrase: 'an air-cooled chiller',
+    note: 'ASHRAE 90.1-2019 minimum full-load COP for an air-cooled screw chiller is about 3.0, and good equipment reaches 4.5.',
+  }),
+  new Landmark({
+    from: 5.5, to: 7, label: 'Water-cooled centrifugal', phrase: 'a centrifugal',
+    note: 'ASHRAE 90.1-2019 asks about 6.1 COP full-load for a large water-cooled centrifugal chiller. It buys that with a cooling tower and its water.',
+  }),
+];
+
+/* ── the grid ──────────────────────────────────────────────────────────── */
+
+/**
+ * Grid carbon intensity, which is the one number on this desk that will move
+ * more over the building's life than anything the building does.
+ */
+const GRID = [
+  new Landmark({
+    from: 0, to: 60, label: 'Hydro or nuclear', phrase: 'hydro or nuclear',
+    note: 'Québec, Norway, Sweden and Ontario sit well under 60 gCO₂e/kWh, and France near the top of it. A heat pump on one of these is very nearly carbon-free heat. These move year to year — check the current figure rather than this one.',
+  }),
+  new Landmark({
+    from: 120, to: 260, label: 'Decarbonising', phrase: 'decarbonising',
+    note: 'Great Britain, Spain, California — grids that have taken most of the coal out and are working on the gas.',
+  }),
+  new Landmark({
+    from: 350, to: 450, label: 'Mixed fossil', phrase: 'mixed fossil',
+    note: 'The US average sits near 370 gCO₂e/kWh, most of it gas with coal behind it.',
+  }),
+  new Landmark({
+    from: 600, to: 900, label: 'Coal-heavy', phrase: 'coal-heavy',
+    note: 'Poland, India, South Africa. Electric heat on a grid like this is worse than the gas boiler it replaced.',
+  }),
+];
+
+/* ── openings ──────────────────────────────────────────────────────────── */
+
+const WWR = [
+  new Landmark({
+    from: 0.1, to: 0.25, label: 'Punched', phrase: 'punched',
+    note: `${CONVENTION} Windows as holes in a wall — the traditional arrangement and, in a heating-dominated climate, usually still the right one.`,
+  }),
+  new Landmark({
+    from: 0.4, label: 'Code limit', phrase: 'the code limit',
+    note: 'ASHRAE 90.1-2019 caps vertical fenestration at 40 % of the gross above-grade wall area on the prescriptive path (§5.5.4.2). Past it the building has to be traded out on performance instead.',
+  }),
+  new Landmark({
+    from: 0.6, to: 0.9, label: 'Curtain wall', phrase: 'curtain wall',
+    note: `${CONVENTION} A glazed envelope. Whatever the glass, the wall is now the weakest surface the building has.`,
+  }),
+];
+
+const SKY_RATIO = [
+  new Landmark({
+    from: 0.03, label: 'Code limit', phrase: 'the code limit',
+    note: 'ASHRAE 90.1-2019 caps skylight fenestration at 3 % of the gross roof area on the prescriptive path (§5.5.4.2), with a wider allowance where daylight controls are fitted.',
+  }),
+  new Landmark({
+    from: 0.04, to: 0.07, label: 'Toplighting', phrase: 'toplighting',
+    note: `${CONVENTION} The range toplighting guidance generally asks for in a single-storey space: enough to hold a daylit illuminance without the gain running away.`,
+  }),
+  new Landmark({
+    from: 0.1, to: 0.3, label: 'Gain dominates', phrase: 'runaway gain',
+    note: `${CONVENTION} A rooflight faces the part of the sky that is never shaded and never off to one side, so past about 10 % the summer gain outruns the light it buys.`,
+  }),
+];
+
+const OVERHANG = [
+  new Landmark({
+    from: 0.2, to: 0.45, label: 'Reveal', phrase: 'a deep reveal',
+    note: `${CONVENTION} What a thick wall gives you for nothing — enough to cut the highest sun off the head of the opening and no more.`,
+  }),
+  new Landmark({
+    from: 0.6, to: 1.0, label: 'Canopy', phrase: 'a canopy',
+    note: `${CONVENTION} A brise-soleil or a projecting hood: a piece of building rather than a detail, and the depth at which a south elevation starts to be genuinely shaded.`,
+  }),
+  new Landmark({
+    from: 1.4, to: 2.2, label: 'Balcony', phrase: 'a balcony',
+    note: `${CONVENTION} Deep enough to stand on, and structure rather than cladding. It shades the floor below it as much as it shades its own opening.`,
+  }),
+];
+
+/* ── the engine's own numbers ──────────────────────────────────────────── */
+
+/**
+ * The blind's slat angle, which is the landmark that most needed writing down.
+ *
+ * `WindowMaterial:Blind.slat_angle` is measured between the glazing's outward
+ * normal and the slat's, so **0° and 180° are closed and 90° is open** — the
+ * opposite of the convention anyone would assume from a slider running 0 to
+ * 180. A reader who takes 0 for "flat and open" gets the shading backwards and
+ * nothing on the face would have told them.
+ */
+const SLAT_ANGLE = [
+  new Landmark({
+    from: 0, label: 'Closed, tipped down', phrase: 'closed one way',
+    note: `At 0° the slats lie parallel to the glazing and the blind is shut. ${IO_REF}`,
+  }),
+  new Landmark({
+    from: 90, label: 'Fully open', phrase: 'fully open',
+    note: `At 90° the slats stand perpendicular to the glazing and the blind is fully open. ${IO_REF}`,
+  }),
+  new Landmark({
+    from: 180, label: 'Closed, tipped up', phrase: 'closed the other way',
+    note: `At 180° the slats are parallel to the glazing again, shut the other way about. ${IO_REF}`,
+  }),
+];
+
+const SLAT_WIDTH = [
+  new Landmark({
+    from: 0.015, to: 0.027, label: 'Mini-blind', phrase: 'a mini-blind',
+    note: 'The 16 to 25 mm slat of an interior venetian blind. This desk starts at 25 mm.',
+  }),
+  new Landmark({
+    from: 0.045, to: 0.06, label: 'Venetian', phrase: 'a venetian blind',
+    note: 'The traditional 50 mm slat.',
+  }),
+  new Landmark({
+    from: 0.08, to: 0.12, label: 'External louvre', phrase: 'an external louvre',
+    note: 'An exterior blade, sized to survive weather rather than to be drawn by a cord.',
+  }),
+];
+
+const SHADOW_FREQ = [
+  new Landmark({
+    from: 1, label: 'Every day', phrase: 'recut every day',
+    note: 'Exact, and the slowest setting on this face — the sun angles are re-cut for all 365 days.',
+  }),
+  new Landmark({
+    from: 20, label: 'EnergyPlus default', phrase: 'the engine default',
+    note: `ShadowCalculation's shading_calculation_update_frequency defaults to 20 days. ${IO_REF}`,
+  }),
+];
+
+const WARMUP_MAX = [
+  new Landmark({
+    from: 25, label: 'EnergyPlus default', phrase: 'the engine default',
+    note: `Building.maximum_number_of_warmup_days defaults to 25. ${IO_REF}`,
+  }),
+];
+
+const LOADS_TOL = [
+  new Landmark({
+    from: 0.04, label: 'EnergyPlus default', phrase: 'the engine default',
+    note: `Building.loads_convergence_tolerance_value defaults to 0.04 W. ${IO_REF}`,
+  }),
+];
+
+const GROUND_REFLECT = [
+  new Landmark({
+    from: 0.05, to: 0.12, label: 'Asphalt', phrase: 'asphalt',
+    note: 'Fresh blacktop reflects almost nothing back at the elevation above it.',
+  }),
+  new Landmark({
+    from: 0.18, to: 0.25, label: 'Grass or soil', phrase: 'grass or soil',
+    note: 'The ordinary ground cover, and the value EnergyPlus assumes when nothing is said: 0.20.',
+  }),
+  new Landmark({
+    from: 0.3, to: 0.45, label: 'Concrete or gravel', phrase: 'a pale hard surface',
+    note: 'A light paved forecourt, which throws a real second sun at the lower storeys.',
+  }),
+  new Landmark({
+    from: 0.6, to: 0.85, label: 'Fresh snow', phrase: 'fresh snow',
+    note: 'A winter ground cover that reflects most of the beam back up at the glazing — worth setting on any building that gets a lying snowpack.',
+  }),
+];
+
+const GROUND_TEMP = [
+  new Landmark({
+    from: 17.5, to: 18.5, label: 'Under a conditioned slab', phrase: 'a conditioned slab',
+    note: `Not undisturbed soil. The Input Output Reference says outright that for a typical commercial building "a reasonable default value is 2 degreeCelsius less than the average indoor space temperature" — 18 °C under a room held at 20. ${IO_REF}`,
+  }),
+];
+
+const STOREY_HEIGHT = [
+  new Landmark({
+    from: 2.4, to: 2.7, label: 'Dwelling', phrase: 'a dwelling',
+    note: `${CONVENTION} From the 2.4 m a habitable room is conventionally held above, up to the 2.7 m a good apartment gets. Codes set their own minima and they differ.`,
+  }),
+  new Landmark({
+    from: 3.0, to: 3.9, label: 'Office', phrase: 'an office',
+    note: `${CONVENTION} Floor to soffit for a commercial plate, with the services and the raised floor already taken out of it above and below.`,
+  }),
+  new Landmark({
+    from: 5.0, to: 9.0, label: 'Industrial', phrase: 'a shed',
+    note: `${CONVENTION} A warehouse or a workshop, where the clear height is set by what has to move through it rather than by anyone standing up in it.`,
+  }),
+];
+
+const STOREYS = [
+  new Landmark({
+    from: 1, to: 4, label: 'Low-rise', phrase: 'low-rise',
+    note: `${CONVENTION} Walk-up height. The envelope still dominates the heat balance at this depth of stack.`,
+  }),
+  new Landmark({
+    from: 5, to: 12, label: 'Mid-rise', phrase: 'mid-rise',
+    note: `${CONVENTION} The ratio of envelope to floor has fallen far enough that the internal gains start to run the building.`,
+  }),
+  new Landmark({
+    from: 13, to: 30, label: 'High-rise', phrase: 'high-rise',
+    note: `${CONVENTION} Almost all the heat balance is now internal gain and glazing — and note that this control stacks identical floors, so nothing about wind, stack effect or plant is stacked with them.`,
+  }),
+];
 
 const ORIENTATIONS = [
   { key: 'wwrN', side: 'north', label: 'N' },
@@ -1023,7 +2170,10 @@ export const CHANNELS = Object.freeze([
     controls: [
       new Scale({ key: 'width', label: 'Width', value: 15.24, min: 4, max: 40, step: 0.01, unit: 'm' }),
       new Scale({ key: 'depth', label: 'Depth', value: 15.24, min: 4, max: 40, step: 0.01, unit: 'm' }),
-      new Scale({ key: 'height', label: 'Height', value: 4.572, min: 2.4, max: 12, step: 0.01, unit: 'm' }),
+      new Scale({
+        key: 'height', label: 'Height', value: 4.572, min: 2.4, max: 12, step: 0.01, unit: 'm',
+        landmarks: STOREY_HEIGHT,
+      }),
       new Scale({
         key: 'multiplier',
         label: 'Zone multiplier',
@@ -1033,6 +2183,7 @@ export const CHANNELS = Object.freeze([
         step: 1,
         digits: 0,
         unit: '×',
+        landmarks: STOREYS,
         note: 'Stands identical floors on this one. Loads scale; the drawing does not.',
       }),
     ],
@@ -1073,7 +2224,7 @@ export const CHANNELS = Object.freeze([
         max: 0.9,
         step: 0.01,
         digits: 2,
-        note: 'Fresh snow reads near 0.7, asphalt near 0.1.',
+        landmarks: GROUND_REFLECT,
       }),
       new Scale({
         key: 'groundTemp',
@@ -1084,8 +2235,9 @@ export const CHANNELS = Object.freeze([
         step: 0.5,
         digits: 1,
         unit: '°C',
+        landmarks: GROUND_TEMP,
         needs: (p) => p.floorBoundary === 'Ground',
-        note: 'Under a conditioned slab, not the undisturbed soil. Only reaches the model with a grounded floor.',
+        note: 'Only reaches the model with a grounded floor.',
       }),
       new Selector({
         key: 'solarDist',
@@ -1130,6 +2282,10 @@ export const CHANNELS = Object.freeze([
       terms: [new Term({ variable: 'Enclosure Windows Total Transmitted Solar Radiation Rate' })],
       note: 'Reaches the air through the surfaces, so it is read here and summed under Fabric.',
     }),
+    readout: new Readout({
+      label: 'As built',
+      note: 'The engine\'s own figures for this assembly, off the run\'s envelope summary: the glass, and under it the whole window wherever there is a frame for the glass to be corrected against. Under the simple model they are the three sliders above, back from the equivalent layer they were turned into; under the layered one they are what the panes, the coating and the cavity came to, and there is nowhere else to read them.',
+    }),
     controls: [
       new Facade({
         key: 'wwr',
@@ -1141,6 +2297,7 @@ export const CHANNELS = Object.freeze([
         step: 0.01,
         digits: 2,
         zero: 'Solid',
+        landmarks: WWR,
       }),
       new Selector({
         key: 'aperture',
@@ -1182,19 +2339,34 @@ export const CHANNELS = Object.freeze([
         max: 6,
         step: 0.01,
         unit: 'W/m²K',
+        landmarks: GLASS_U,
         needs: (p) => !layered(p),
       }),
       new Scale({
         key: 'shgc',
         label: 'SHGC',
         value: 0.4, min: 0.05, max: 0.9, step: 0.01, digits: 2,
+        landmarks: GLASS_SHGC,
         needs: (p) => !layered(p),
       }),
       new Scale({
         key: 'visT',
         label: 'Visible transmittance',
         value: 0.6, min: 0.05, max: 0.9, step: 0.01, digits: 2,
+        landmarks: GLASS_VT,
         needs: (p) => !layered(p),
+      }),
+      new Scale({
+        key: 'panes',
+        label: 'Panes',
+        value: 2,
+        min: 2,
+        max: 4,
+        step: 1,
+        digits: 0,
+        landmarks: PANE_COUNT,
+        needs: layered,
+        note: 'Sheets of glass, with a cavity of the width below between each pair. The simple model has no pane count to give — its three numbers are the whole assembly already — so this is the one place on the desk where a window is built rather than specified.',
       }),
       new Scale({
         key: 'paneEmiss',
@@ -1204,8 +2376,9 @@ export const CHANNELS = Object.freeze([
         max: 0.84,
         step: 0.01,
         digits: 2,
+        landmarks: PANE_EMISS,
         needs: layered,
-        note: 'Inboard pane, outside face. 0.84 is uncoated float; 0.04 is a hard coat.',
+        note: 'Inboard pane, outside face.',
       }),
       new Scale({
         key: 'gapWidth',
@@ -1216,6 +2389,7 @@ export const CHANNELS = Object.freeze([
         step: 0.001,
         digits: 3,
         unit: 'm',
+        landmarks: GAP_WIDTH,
         needs: layered,
       }),
       new Scale({
@@ -1228,6 +2402,7 @@ export const CHANNELS = Object.freeze([
         digits: 3,
         unit: 'm',
         zero: 'None',
+        landmarks: FRAME_WIDTH,
         needs: glazed,
         note: 'Adds a framed perimeter outside the glass, with its own conductance.',
       }),
@@ -1240,6 +2415,7 @@ export const CHANNELS = Object.freeze([
         step: 0.1,
         digits: 1,
         unit: 'W/m²K',
+        landmarks: FRAME_COND,
         needs: (p) => p.frameWidth > 0,
       }),
     ],
@@ -1269,7 +2445,8 @@ export const CHANNELS = Object.freeze([
         step: 0.005,
         digits: 3,
         zero: 'Solid',
-        note: 'Of the gross roof. Daylighting codes ask for 3–6 %; past about 10 % the summer gain runs away from the light.',
+        landmarks: SKY_RATIO,
+        note: 'Of the gross roof.',
       }),
       new Selector({
         key: 'skyForm',
@@ -1303,6 +2480,7 @@ export const CHANNELS = Object.freeze([
         step: 0.01,
         unit: 'm',
         zero: 'Flush',
+        landmarks: SKY_CURB,
         needs: skylit,
         note: 'The upstand a rooflight is bedded on, standing all the way round. It is the roof\'s overhang, and the only shade a horizontal opening gets.',
       }),
@@ -1325,6 +2503,7 @@ export const CHANNELS = Object.freeze([
         max: 6,
         step: 0.01,
         unit: 'W/m²K',
+        landmarks: ROOFLIGHT_U,
         needs: (p) => skylit(p) && !skyAsWalls(p),
         note: 'A domed unit is a worse assembly than a wall window of the same generation, and it loses to a colder sky.',
       }),
@@ -1336,6 +2515,7 @@ export const CHANNELS = Object.freeze([
         max: 0.9,
         step: 0.01,
         digits: 2,
+        landmarks: GLASS_SHGC,
         needs: (p) => skylit(p) && !skyAsWalls(p),
       }),
       new Scale({
@@ -1346,6 +2526,7 @@ export const CHANNELS = Object.freeze([
         max: 0.9,
         step: 0.01,
         digits: 2,
+        landmarks: GLASS_VT,
         needs: (p) => skylit(p) && !skyAsWalls(p),
       }),
     ],
@@ -1366,6 +2547,7 @@ export const CHANNELS = Object.freeze([
         short: 'Overhang',
         sides: SHADE_SIDES,
         min: 0, max: 3, step: 0.01, digits: 2, unit: 'm', zero: 'None',
+        landmarks: OVERHANG,
       }),
       new Scale({
         key: 'ohRise',
@@ -1448,8 +2630,15 @@ export const CHANNELS = Object.freeze([
         needs: (p) => p.shadeControl !== 'AlwaysOn',
         note: 'W/m² on the glass, or °C, depending on what it is watching.',
       }),
-      new Scale({ key: 'slatAngle', label: 'Slat angle', value: 45, min: 0, max: 180, step: 1, digits: 0, unit: '°' }),
-      new Scale({ key: 'slatWidth', label: 'Slat width', value: 0.025, min: 0.01, max: 0.12, step: 0.001, digits: 3, unit: 'm' }),
+      new Scale({
+        key: 'slatAngle', label: 'Slat angle', value: 45, min: 0, max: 180, step: 1, digits: 0, unit: '°',
+        landmarks: SLAT_ANGLE,
+        note: 'Measured from the glazing\'s outward normal, not from the horizontal, so 90° is fully open and both stops are shut.',
+      }),
+      new Scale({
+        key: 'slatWidth', label: 'Slat width', value: 0.025, min: 0.01, max: 0.12, step: 0.001, digits: 3, unit: 'm',
+        landmarks: SLAT_WIDTH,
+      }),
     ],
   }),
 
@@ -1470,21 +2659,30 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'wallR', label: 'Wall resistance', value: 2.290965,
         min: 0.2, max: 10, step: 0.005, unit: 'm²K/W',
-        note: 'The stock R13LAYER is 2.29.',
+        landmarks: WALL_R,
+        note: 'One insulating layer, not the whole build-up: EnergyPlus adds the surface films either side.',
       }),
-      new Scale({ key: 'roofR', label: 'Roof resistance', value: 5.456, min: 0.2, max: 14, step: 0.005, unit: 'm²K/W' }),
+      new Scale({
+        key: 'roofR', label: 'Roof resistance', value: 5.456, min: 0.2, max: 14, step: 0.005, unit: 'm²K/W',
+        landmarks: ROOF_R,
+      }),
       new Scale({
         key: 'wallMass', label: 'Wall mass layer', value: 0,
         min: 0, max: 0.4, step: 0.005, digits: 3, unit: 'm', zero: 'None',
+        landmarks: WALL_MASS,
         note: 'Heavyweight masonry set inboard of the insulation.',
       }),
-      new Scale({ key: 'wallAbs', label: 'Wall absorptance', value: 0.75, min: 0.05, max: 0.95, step: 0.01, digits: 2 }),
+      new Scale({
+        key: 'wallAbs', label: 'Wall absorptance', value: 0.75, min: 0.05, max: 0.95, step: 0.01, digits: 2,
+        landmarks: SOLAR_ABS,
+      }),
       new Scale({
         key: 'roofAbs', label: 'Roof absorptance', value: 0.75, min: 0.05, max: 0.95, step: 0.01, digits: 2,
-        note: 'A cool roof sits near 0.2, a bitumen one near 0.9.',
+        landmarks: ROOF_ABS,
       }),
       new Scale({
         key: 'emittance', label: 'Thermal emittance', value: 0.9, min: 0.05, max: 0.95, step: 0.01, digits: 2,
+        landmarks: EMITTANCE,
         note: 'How well the outer face radiates to the sky at night.',
       }),
       new Selector({
@@ -1523,6 +2721,7 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'slab', label: 'Slab thickness', value: 0.1014984,
         min: 0.02, max: 0.6, step: 0.001, digits: 3, unit: 'm',
+        landmarks: SLAB_DEPTH,
         note: 'Four inches of heavyweight concrete is the stock example.',
       }),
       new Selector({
@@ -1536,6 +2735,7 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'internalMass', label: 'Internal mass', value: 0,
         min: 0, max: 4, step: 0.05, digits: 2, unit: '× floor', zero: 'None',
+        landmarks: INTERNAL_MASS,
         note: 'Partitions and furniture, as a multiple of the floor area.',
       }),
       new Scale({
@@ -1573,26 +2773,32 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'infiltration', label: 'Infiltration', value: 0.5,
         min: 0, max: 3, step: 0.01, digits: 2, unit: 'ACH', zero: 'Sealed',
+        landmarks: INFILTRATION,
+        note: 'Air changes at natural pressure, not the ACH50 a blower door reports — the usual rule divides one by about twenty to get the other.',
       }),
       new Scale({
         key: 'infConstant', label: 'Constant coefficient', value: 1,
         min: 0, max: 1, step: 0.01, digits: 2,
+        landmarks: INF_CONSTANT,
         needs: (p) => p.infiltration > 0,
         note: 'The A of A + B·ΔT + C·v. Move weight off it and on to the two below to make leakage answer the weather.',
       }),
       new Scale({
         key: 'infWind', label: 'Wind coefficient', value: 0,
         min: 0, max: 0.4, step: 0.005, digits: 3, zero: 'None',
+        landmarks: INF_WIND,
         needs: (p) => p.infiltration > 0,
       }),
       new Scale({
         key: 'infStack', label: 'Stack coefficient', value: 0,
         min: 0, max: 0.1, step: 0.001, digits: 3, zero: 'None',
+        landmarks: INF_STACK,
         needs: (p) => p.infiltration > 0,
       }),
       new Scale({
         key: 'ventilation', label: 'Ventilation', value: 0,
         min: 0, max: 12, step: 0.05, digits: 2, unit: 'ACH', zero: 'None',
+        landmarks: VENTILATION,
         note: 'Openable area, as air changes. Night flush lives here.',
       }),
       new Selector({
@@ -1624,7 +2830,9 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'ventMaxWind', label: 'Shut above wind', value: 40,
         min: 1, max: 40, step: 0.5, digits: 1, unit: 'm/s',
+        landmarks: WIND,
         needs: (p) => p.ventilation > 0,
+        note: 'Left at the stop the window never shuts: 40 m/s is past a hurricane.',
       }),
     ],
   }),
@@ -1646,21 +2854,28 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'occupancy', label: 'Occupant density', value: 12,
         min: 4, max: 60, step: 0.5, digits: 1, unit: 'm²/pp',
-        note: 'Open-plan office is near 12; a lecture room near 2.',
+        landmarks: OCCUPANCY,
       }),
       new Scale({
         key: 'activity', label: 'Activity level', value: 120,
         min: 70, max: 400, step: 5, digits: 0, unit: 'W/pp',
-        note: 'Seated work is about 120 W. A gym is three times that.',
+        landmarks: ACTIVITY,
+        note: 'Total heat, sensible and latent together. Heavy machine work is 425 W and athletics 525 W, both past the top of this face.',
       }),
-      new Scale({ key: 'lighting', label: 'Lighting', value: 8, min: 0, max: 30, step: 0.1, digits: 1, unit: 'W/m²', zero: 'Dark' }),
+      new Scale({
+        key: 'lighting', label: 'Lighting', value: 8, min: 0, max: 30, step: 0.1, digits: 1, unit: 'W/m²', zero: 'Dark',
+        landmarks: LIGHTING,
+      }),
       new Scale({
         key: 'lightRadiant', label: 'Lighting radiant fraction', value: 0.42,
         min: 0, max: 0.9, step: 0.01, digits: 2,
         needs: (p) => p.lighting > 0,
         note: 'What goes to the surfaces rather than straight to the air.',
       }),
-      new Scale({ key: 'equipment', label: 'Equipment', value: 8, min: 0, max: 60, step: 0.1, digits: 1, unit: 'W/m²', zero: 'None' }),
+      new Scale({
+        key: 'equipment', label: 'Equipment', value: 8, min: 0, max: 60, step: 0.1, digits: 1, unit: 'W/m²', zero: 'None',
+        landmarks: EQUIPMENT,
+      }),
       new Scale({
         key: 'equipLatent', label: 'Equipment latent fraction', value: 0,
         min: 0, max: 0.6, step: 0.01, digits: 2, zero: 'Dry',
@@ -1725,7 +2940,10 @@ export const CHANNELS = Object.freeze([
           { value: 'Stepped', label: 'Stepped' },
         ],
       }),
-      new Scale({ key: 'dlSetpoint', label: 'Illuminance setpoint', value: 500, min: 100, max: 1000, step: 10, digits: 0, unit: 'lx' }),
+      new Scale({
+        key: 'dlSetpoint', label: 'Illuminance setpoint', value: 500, min: 100, max: 1000, step: 10, digits: 0, unit: 'lx',
+        landmarks: ILLUMINANCE,
+      }),
       new Scale({
         key: 'dlFraction', label: 'Fraction controlled', value: 1,
         min: 0.1, max: 1, step: 0.05, digits: 2,
@@ -1736,7 +2954,10 @@ export const CHANNELS = Object.freeze([
         min: 0.1, max: 0.95, step: 0.01, digits: 2,
         note: 'Across the plan from the south wall. Deep in the room is the honest place to put it.',
       }),
-      new Scale({ key: 'dlHeight', label: 'Sensor height', value: 0.8, min: 0.1, max: 2, step: 0.05, digits: 2, unit: 'm' }),
+      new Scale({
+        key: 'dlHeight', label: 'Sensor height', value: 0.8, min: 0.1, max: 2, step: 0.05, digits: 2, unit: 'm',
+        landmarks: WORK_PLANE,
+      }),
     ],
   }),
 
@@ -1756,8 +2977,14 @@ export const CHANNELS = Object.freeze([
       ],
     }),
     controls: [
-      new Scale({ key: 'heatSet', label: 'Heating setpoint', value: 20, min: 10, max: 26, step: 0.5, digits: 1, unit: '°C' }),
-      new Scale({ key: 'coolSet', label: 'Cooling setpoint', value: 26, min: 18, max: 34, step: 0.5, digits: 1, unit: '°C' }),
+      new Scale({
+        key: 'heatSet', label: 'Heating setpoint', value: 20, min: 10, max: 26, step: 0.5, digits: 1, unit: '°C',
+        landmarks: HEAT_SET,
+      }),
+      new Scale({
+        key: 'coolSet', label: 'Cooling setpoint', value: 26, min: 18, max: 34, step: 0.5, digits: 1, unit: '°C',
+        landmarks: COOL_SET,
+      }),
       new Scale({
         key: 'setback', label: 'Night setback', value: 0,
         min: 0, max: 10, step: 0.5, digits: 1, unit: 'K', zero: 'None',
@@ -1775,6 +3002,7 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'outdoorAir', label: 'Outdoor air', value: 0,
         min: 0, max: 20, step: 0.5, digits: 1, unit: 'L/s·pp', zero: 'None',
+        landmarks: OUTDOOR_AIR,
         note: 'Air the system has to condition, as opposed to the openings above.',
       }),
       new Selector({
@@ -1789,6 +3017,7 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'heatRecovery', label: 'Heat recovery', value: 0,
         min: 0, max: 0.9, step: 0.01, digits: 2, zero: 'None',
+        landmarks: HEAT_RECOVERY,
         needs: (p) => p.outdoorAir > 0,
         note: 'Sensible effectiveness on the outdoor air stream.',
       }),
@@ -1857,16 +3086,19 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'heatEfficiency', label: 'Seasonal efficiency', value: 0.85,
         min: 0.5, max: 1.05, step: 0.01, digits: 2,
+        landmarks: BOILER,
         needs: (p) => p.heatSource !== 'HeatPump',
         note: 'Fuel in against useful heat out, across the season.',
       }),
       new Scale({
         key: 'heatCOP', label: 'Seasonal COP', value: 3, min: 1.5, max: 5.5, step: 0.1, digits: 1,
+        landmarks: HEAT_COP,
         needs: (p) => p.heatSource === 'HeatPump',
         note: 'Heat delivered per unit of electricity, across the season.',
       }),
       new Scale({
         key: 'coolCOP', label: 'Cooling COP', value: 3.5, min: 2, max: 7, step: 0.1, digits: 1,
+        landmarks: COOL_COP,
         note: 'The chiller is electric whatever the heat runs on.',
       }),
     ],
@@ -1907,7 +3139,7 @@ export const CHANNELS = Object.freeze([
       }),
       new Scale({
         key: 'gridFactor', label: 'Grid intensity', value: 200, min: 0, max: 900, step: 5, digits: 0,
-        unit: 'gCO₂e/kWh', needs: (p) => p.factorBasis === 'Assumed',
+        unit: 'gCO₂e/kWh', landmarks: GRID, needs: (p) => p.factorBasis === 'Assumed',
         note: 'The building will outlive the grid it was designed against. Wind this down to find out what it costs then.',
       }),
     ],
@@ -1954,6 +3186,7 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'shadowFreq', label: 'Shadow recalculation', value: 20,
         min: 1, max: 60, step: 1, digits: 0, unit: 'days',
+        landmarks: SHADOW_FREQ,
         note: 'How often the sun angles are re-cut. Every day is exact and slow.',
       }),
       new Selector({
@@ -1964,8 +3197,14 @@ export const CHANNELS = Object.freeze([
         ],
       }),
       new Scale({ key: 'warmupMin', label: 'Warmup, minimum', value: 6, min: 1, max: 25, step: 1, digits: 0, unit: 'days' }),
-      new Scale({ key: 'warmupMax', label: 'Warmup, maximum', value: 30, min: 5, max: 60, step: 1, digits: 0, unit: 'days' }),
-      new Scale({ key: 'loadsTol', label: 'Loads tolerance', value: 0.04, min: 0.001, max: 0.2, step: 0.001, digits: 3 }),
+      new Scale({
+        key: 'warmupMax', label: 'Warmup, maximum', value: 30, min: 5, max: 60, step: 1, digits: 0, unit: 'days',
+        landmarks: WARMUP_MAX,
+      }),
+      new Scale({
+        key: 'loadsTol', label: 'Loads tolerance', value: 0.04, min: 0.001, max: 0.2, step: 0.001, digits: 3,
+        landmarks: LOADS_TOL,
+      }),
       new Scale({ key: 'tempTol', label: 'Temperature tolerance', value: 0.004, min: 0.001, max: 0.05, step: 0.001, digits: 3, unit: 'K' }),
     ],
   }),
