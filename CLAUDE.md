@@ -231,6 +231,55 @@ lettering rather than the arithmetic:
   environment made it: a design day is 24 hours out of 8,808 and gives up its
   label, a one-month run period is half of a two-month axis and keeps it.
 
+### Glazing (channel 03)
+
+Two models of the same window, and the strip only ever shows one of them: the
+simple one is three numbers off a product sheet, the layered one is an assembly
+built out of panes.
+
+- **The layered unit is built from a pane count, not fixed at double.**
+  `applyGlazing` writes `panes` sheets of 6 mm clear float with `panes - 1` air
+  cavities between them and hands the `Construction` `2n - 1` layers. Measured
+  on the default desk (13 mm air, uncoated): U 2.675 at two panes, 1.732 at
+  three, 1.285 at four, and 0.932 at four with a 0.04 coating. The coating goes
+  on the *cavity* face of the inboard pane — surface 3 in a double, 5 in a
+  triple — which is `front_side_infrared_hemispherical_emissivity` on that one
+  material and 0.84 everywhere else.
+- **`PANE_MAX` is a constant read off the control**, exactly as `SKY_MAX` is
+  and for the same reason: the applier sweeps every pane and cavity name on
+  every apply so a unit that has gone from four panes to two takes its
+  abandoned layers out of the document, and a literal here would leave orphans
+  the first time the slider was widened. Verified: a document taken from four
+  panes to two serializes byte-identically to one built at two.
+- **The engine's own U-factor and SHGC are read back off the run.** The layered
+  model is the only place on this desk where you set causes and are handed no
+  result, so the Glazing strip carries a `Readout` — a second block beside the
+  meter, lettering what EnergyPlus computed for the assembly. It is a reading
+  like any other: an em dash before the first run, taken down with the rest by
+  `clearReadings`, and null rather than zero when the channel is out.
+- **The tabular report is the only route to those figures.** The .eio carries
+  the same numbers under `WindowConstruction` and would be the cheaper parse,
+  but the engine hands back .eso, .mtr, .rdd, .mdd, .csv and `eplustbl.htm` and
+  no .eio at all; the .sql holds them and costs a `sql.js` dependency to open.
+  So `glassProperties` in `readings.js` parses the htm — DOM-free, like the
+  rest of that module, and **by column head rather than by position**, because
+  the table has grown columns between versions (the NFRC assembly trio is newer
+  than the glass one) and a counted index would silently read the wrong one.
+- **It reads the row for a named construction, never the table's own "Total or
+  Average".** That row is area-weighted across every exterior opening in the
+  building, so with rooflights on their own glass it averages two different
+  windows into a number no assembly has — measured, 1.732 and 2.603 averaging
+  to neither. Every surface built of one construction reports the same three
+  figures, so the first row carrying the name is the assembly exactly.
+  `WINDOW_CONSTRUCTION` is exported from `model.js` so the name is not typed
+  twice.
+- **The whole-window line appears only where there is a frame.** EnergyPlus
+  fills the Assembly U-factor / SHGC / VT cells only for an opening carrying a
+  `WindowProperty:FrameAndDivider`; with none they arrive empty, and
+  `Number('')` is 0, which would have printed a U-factor of zero over every
+  frameless window. The reader treats an empty cell and a lone hyphen as
+  absent.
+
 ### Skylights (channel 04)
 
 Roof glazing is its own channel rather than a fifth face on the Glazing strip's

@@ -1129,6 +1129,31 @@ export class Meter {
   }
 }
 
+/**
+ * What the engine made of a channel's declaration, read back off the run.
+ *
+ * A meter says what a channel is contributing; a readout says what it *is*, in
+ * the terms the engine settled on rather than the ones the controls are typed
+ * in. There is one, on Glazing, and it exists because the layered model is the
+ * only place on this desk where you set causes and are given no result: panes,
+ * a coating and a cavity go in, and the U-factor and SHGC that come out are
+ * the two numbers a window is actually specified by. They are computed at
+ * get-input and printed in the tabular report, so the sheet reads them back —
+ * by the rule that nothing here is lettered from a variable when the run holds
+ * the answer.
+ *
+ * It is a reading, so it obeys the readings' rules: an em dash before the
+ * first run and after a failed one, and never a figure the engine did not
+ * produce.
+ */
+export class Readout {
+  constructor({ label, note = null }) {
+    this.label = label;
+    this.note = note;
+    Object.freeze(this);
+  }
+}
+
 /* ══ channels ════════════════════════════════════════════════════════════ */
 
 /**
@@ -1149,7 +1174,7 @@ export class Meter {
 export class Channel {
   constructor({
     id, index, name, term, blurb, controls,
-    meter = null, bypassable = true, bypassed = false, requires = null, prices = false,
+    meter = null, readout = null, bypassable = true, bypassed = false, requires = null, prices = false,
   }) {
     this.id = id;
     this.index = index;
@@ -1158,6 +1183,7 @@ export class Channel {
     this.blurb = blurb;
     this.controls = Object.freeze(controls);
     this.meter = meter;
+    this.readout = readout;
     this.bypassable = bypassable;
     // This channel prices the run rather than shaping it. Nothing it owns
     // reaches the IDF, so nothing it owns belongs in the solve key either --
@@ -1351,6 +1377,36 @@ const PANE_EMISS = [
   new Landmark({
     from: 0.8, to: 0.84, label: 'Uncoated float', phrase: 'uncoated float',
     note: 'Plain glass radiates like almost every other non-metal: 0.84.',
+  }),
+];
+
+/**
+ * How many sheets of glass, which is the layered model's own half of the
+ * vocabulary the simple model's U-factor face is lettered in.
+ *
+ * The two glazing models ask the same question from opposite ends — one is set
+ * in the assembly's result, the other in its causes — so they have to name the
+ * cases identically or the strip teaches two languages for one window. The
+ * U-values are measured on this desk at the default coating rather than quoted
+ * from anywhere, which is why they are exact.
+ *
+ * `Single` is not here and cannot be: the layered model builds n panes with
+ * n − 1 cavities and the coating lives on a cavity face, so one sheet has
+ * nowhere to put it. A single-glazed opening is the simple model's job, where
+ * its own face carries that band.
+ */
+const PANE_COUNT = [
+  new Landmark({
+    from: 2, label: 'Double', phrase: 'a double unit',
+    note: 'Two sheets and one cavity — the sealed unit as ordinarily built. Measured on the default desk it comes to U 2.67 W/m²K, which is the clear-double band on the simple model\'s own face.',
+  }),
+  new Landmark({
+    from: 3, label: 'Triple', phrase: 'a triple unit',
+    note: 'Measured on the default desk: U 1.73 W/m²K with no coating — which lands in the *low-e double* band, so an uncoated triple buys roughly what a coated double does. That is the argument for spending on the coating before spending on the third sheet.',
+  }),
+  new Landmark({
+    from: 4, label: 'Quadruple', phrase: 'a quadruple unit',
+    note: 'Measured on the default desk: U 1.28 W/m²K uncoated, and 0.93 with a soft coat on the inboard pane. Rare in practice — the weight and the depth of frame it needs are what stop it, not the physics.',
   }),
 ];
 
@@ -2226,6 +2282,10 @@ export const CHANNELS = Object.freeze([
       terms: [new Term({ variable: 'Enclosure Windows Total Transmitted Solar Radiation Rate' })],
       note: 'Reaches the air through the surfaces, so it is read here and summed under Fabric.',
     }),
+    readout: new Readout({
+      label: 'As built',
+      note: 'The engine\'s own figures for this assembly, off the run\'s envelope summary: the glass, and under it the whole window wherever there is a frame for the glass to be corrected against. Under the simple model they are the three sliders above, back from the equivalent layer they were turned into; under the layered one they are what the panes, the coating and the cavity came to, and there is nowhere else to read them.',
+    }),
     controls: [
       new Facade({
         key: 'wwr',
@@ -2295,6 +2355,18 @@ export const CHANNELS = Object.freeze([
         value: 0.6, min: 0.05, max: 0.9, step: 0.01, digits: 2,
         landmarks: GLASS_VT,
         needs: (p) => !layered(p),
+      }),
+      new Scale({
+        key: 'panes',
+        label: 'Panes',
+        value: 2,
+        min: 2,
+        max: 4,
+        step: 1,
+        digits: 0,
+        landmarks: PANE_COUNT,
+        needs: layered,
+        note: 'Sheets of glass, with a cavity of the width below between each pair. The simple model has no pane count to give — its three numbers are the whole assembly already — so this is the one place on the desk where a window is built rather than specified.',
       }),
       new Scale({
         key: 'paneEmiss',

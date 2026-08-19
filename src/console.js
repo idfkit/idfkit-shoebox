@@ -262,12 +262,15 @@ export function mountConsole({
     for (const control of channel.controls) body.append(buildControl(control, channel));
     fold.append(body);
 
+    const readout = buildReadout(channel);
+    if (readout) fold.append(readout.node);
+
     const meter = buildMeter(channel);
     if (meter) fold.append(meter.node);
     strip.append(fold);
 
     strips.set(channel.id, {
-      strip, note, patch, solo: soloBtn, meter, body, toggle, read, fold,
+      strip, note, patch, solo: soloBtn, meter, readout, body, toggle, read, fold,
       mark: channel.bypassable ? mark : null,
     });
     return strip;
@@ -1525,6 +1528,35 @@ export function mountConsole({
 
   /* ── meters ──────────────────────────────────────────────────────────── */
 
+  /**
+   * The channel's own declaration, as the engine settled it.
+   *
+   * Above the meter rather than below it, and inside the fold: what a window
+   * came to is a detail of working the strip, whereas the meter reading is
+   * half of what the folded index row is for. The value opens as an em dash
+   * and stays one until a run has produced the figures — there is no
+   * arithmetic here that could stand in for them.
+   */
+  function buildReadout(channel) {
+    if (!channel.readout) return null;
+    const node = el('div', 'readout');
+    const head = el('div', 'readout-head');
+    head.append(el('span', 'readout-label', channel.readout.label));
+    const value = el('b', 'readout-value', '—');
+    head.append(value);
+    node.append(head);
+    // The second line is the whole window including its frame, and it is
+    // absent far more often than not — the engine computes it only where
+    // there is a frame to correct the glass against — so it is built hidden
+    // and stays that way rather than standing as a row of em dashes under
+    // every frameless opening.
+    const sub = el('p', 'readout-sub');
+    sub.hidden = true;
+    node.append(sub);
+    if (channel.readout.note) node.append(el('p', 'meter-note', channel.readout.note));
+    return { node, value, sub };
+  }
+
   function buildMeter(channel) {
     if (!channel.meter) return null;
     const node = el('div', 'meter');
@@ -1646,9 +1678,24 @@ export function mountConsole({
      * whose series the ESO did not carry. Null is lettered as an em dash and
      * kept out of the rail — a meter with nothing behind it must not read zero,
      * because zero is a measurement and this is the absence of one.
+     *
+     * `readouts` is a map of channel id to `{ text, sub }` — what the engine
+     * made of that channel's declaration, and an optional second line. It
+     * rides along here rather than on a method of its own because it has the
+     * same life as the readings: both are read off the last run, both are
+     * re-lettered on every apply, and a readout left standing while the
+     * meters were cleared would describe a run the strips no longer report.
      */
-    setReadings(readings, derived, at = null) {
+    setReadings(readings, derived, at = null, readouts = null) {
       reading = at;
+      for (const channel of CHANNELS) {
+        const here = strips.get(channel.id);
+        if (!here.readout) continue;
+        const found = readouts?.get(channel.id) ?? null;
+        here.readout.value.textContent = found?.text ?? '—';
+        here.readout.sub.textContent = found?.sub ?? '';
+        here.readout.sub.hidden = !found?.sub;
+      }
       const magnitudes = [...readings.values()].filter((v) => Number.isFinite(v)).map(Math.abs);
       const scale = Math.max(1, ...magnitudes);
 
