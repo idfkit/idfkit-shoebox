@@ -27,6 +27,7 @@ import {
   phraseFor,
 } from './controls.js';
 import { mountConsole } from './console.js';
+import { quantityField } from './field.js';
 import { mountTour } from './tour.js';
 import { COARSE_SAMPLES, SWEEP_SAMPLES, samplePoints, sampleOrder } from './study.js';
 import { createEnginePool, poolLimit } from './pool.js';
@@ -1937,8 +1938,25 @@ function buildSliders() {
     });
     input.setAttribute('aria-label', label.textContent);
 
-    const value = document.createElement('output');
-    value.htmlFor = `dim-${key}`;
+    // The number is the other way to set the dimension: a box with nothing
+    // drawn around it, in the place the reading already stood. Width runs 4 to
+    // 40 m across the slider's ~200 px, so an exact 12.00 m was previously a
+    // hundred presses of an arrow key away. See `field.js`.
+    const value = quantityField({
+      control,
+      name: label.textContent,
+      read: () => params[key],
+      // Typing an exact dimension is taking hold of one, and note 2 now says
+      // so outright — so it files the same square the drag does. Filed here
+      // rather than in `commit` for the reason the listener below is: commit
+      // is also the path a programmatic change takes, and only a reader can
+      // fill a marker. The guard is the console's: a box left at the number
+      // it already held resolves nothing.
+      write: (v) => {
+        if (params[key] !== v) tour?.note('drag');
+        commit(key, v, true);
+      },
+    });
 
     // The landmarks the console's calibration faces carry, on the sheet's own
     // sliders. Three of these five have them; the two plan dimensions do not,
@@ -1977,7 +1995,7 @@ function buildSliders() {
 
     const show = () => {
       const v = params[key];
-      value.textContent = control.format(v);
+      value.show();
       const said = control.standing(v);
       input.setAttribute('aria-valuetext', said ? `${control.format(v)}, ${said}` : control.format(v));
       if (standing) {
@@ -2003,7 +2021,7 @@ function buildSliders() {
     });
     input.addEventListener('change', () => commit(key, Number(input.value), true));
 
-    row.append(label, input, value);
+    row.append(label, input, value.node);
     if (rule) row.append(rule, standing);
     host.append(row);
     syncSlider[key] = () => {

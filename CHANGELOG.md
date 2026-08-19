@@ -23,6 +23,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `new Date()` evaluated in the browser, which lettered "Issued" with the day
   the page happened to be opened: a drawing dated by whoever picked it up.
 
+- **Every number a slider carries is now a box you can type in.** The five
+  seventy-six scales on the desk, the eight walls of its two plan keys and the
+  five dimensions under the drawing — which are five of those same controls,
+  drawn twice — all letter their value exactly as before, and every one of them
+  is now also the way to set it: click the number, type, Enter. A slider cannot
+  say an exact figure — width runs 4 to 40 m across about 200 px, which is
+  0.18 m to the pixel — so 12.00 m was a hundred presses of an arrow key away.
+
+  Nothing is drawn around the box. No border, no fill, no spinner, no focus
+  ring: the number reads as the lettering it always was, and the only thing
+  that says it can be edited is the I-beam the cursor becomes over it. A sheet
+  made of hairlines cannot afford eighty more rectangles to say the same thing.
+
+  A typed value is brought onto the control's own face — clamped to the stops
+  and snapped to the step, then rounded to the step's own decimals, because
+  `0 + 3 * 0.05` is 0.15000000000000002 and that number would ride the
+  permalink and be written into the IDF exactly as it stands. Anything that is
+  not a number is refused whole and the model's own value comes back, the way a
+  bad link is: no half-reading of `12abc`. The unit and the zero word are
+  accepted, since they are what the box says when it is not being typed in —
+  `12 m` means 12 m, and `Solid` closes a wall.
+
+  Two quieter rules keep it honest. Focus shows the value itself rather than
+  its lettering, because a height of 4.572 m reads as `4.57 m` on a face ruled
+  to two places and a reader who touched the box and left it alone would have
+  silently trimmed 2 mm off the building — and the box compares what it gave
+  against what it got back, so a touch-and-leave commits nothing whatever.
+  And a redraw never types over the reader: a study tick landing or a station
+  attaching redraws every face on the desk, and the one being edited is left
+  alone until it is let go.
+
 - **The layered glazing model has a pane count, and the window says what it
   came to.** Two things were missing from the same strip. The layered model
   built a double unit and only a double unit — there was no way to ask for a
