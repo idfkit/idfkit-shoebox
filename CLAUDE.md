@@ -127,11 +127,26 @@ result, only explain one.
   imperial figures landing at 6.89 and 10.76 W/m² against 0.1. They are
   declared now as the narrow band the rounding actually makes, with the
   published figure in the note.
-- **A `zero` stop is silent.** `standing()` returns null there, because a
-  `zero` label means the bottom of the face is the *absence* of the quantity —
-  no frame, no mass, no ventilation — and "past a brick leaf" over a wall with
-  no masonry leaf is a different statement, not a rounder one. The readout's
-  own `None` is that position's only true landmark.
+- **`landmarkAt` is the one reading of where the tick stands**, and every
+  surface that lights a mark or letters a band takes it from there — the face's
+  rule, the sheet slider's, the plan key's bars and its legend. Lit from each
+  mark's own `holds` instead, the four came apart at a zero stop and the
+  default Air strip drew marks at full graphite over a line left blank.
+- **At a `zero` stop, only a landmark *of that stop* stands.** The distinction
+  is the difference between the two claims a mark at the bottom of a face can
+  make. A band that merely reaches zero on its way up is claiming the quantity
+  in some amount — `infiltration` has a Passive House band open at 0, and 0 ACH
+  is a sealed box and not a Passive House envelope — so it is suppressed, and
+  the readout's own `Sealed` is that position's only true landmark; `standing`
+  stays silent past it too, since "past a brick leaf" over a wall with no
+  masonry is a different statement rather than a rounder one. A landmark that
+  *is* the zero point is claiming the absence itself, which is what the reader
+  is looking at: `infWind` and `infStack` start at `None` because C = 0 and
+  B = 0 are the engine's own defaults, and saying so is the whole value of the
+  mark. Blanket silence cost both of them and split the three coefficients of
+  one equation across two behaviours on one strip, since `infConstant` carries
+  no `zero` label and went on reading `DOE-2` at the same position. The fourth
+  `readLandmarks` rule throws for a band left permanently unreadable this way.
 - **Only where somebody published it.** Most of the desk carries none: nobody
   publishes the width a shoebox ought to be. That absence is the honest answer,
   and the same rule as the em dash on the drawing.

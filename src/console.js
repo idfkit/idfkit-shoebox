@@ -406,8 +406,16 @@ export function mountConsole({
       // Which band the reading stands in is a tone, not a hue: the one you are
       // in comes up to full graphite and the rest stay at ghost weight, the
       // same move the balance rail makes to tell its segments apart.
+      //
+      // Which band that is comes from `landmarkAt` rather than from each
+      // mark's own `holds`, so the rule that lights a mark and the rule that
+      // letters the line under it are one rule. They were two, and at a zero
+      // stop they disagreed: `infWind` and `infStack` start at `None` with the
+      // engine's own zero declared as a landmark, so the face drew that mark
+      // at full graphite over a reading the desk had deliberately left blank.
       sync(v) {
-        for (const { mark, pip } of marks) pip.classList.toggle('here', mark.holds(v));
+        const here = control.landmarkAt(v);
+        for (const { mark, pip } of marks) pip.classList.toggle('here', mark === here);
       },
     };
   }
@@ -784,7 +792,10 @@ export function mountConsole({
         // in the legend, at the bar you would reach for — the row-wide `idle`
         // the other kinds use cannot say "this one and not those three".
         bar.group.classList.toggle('idle', !bar.side.reaches(params));
-        for (const { mark, pen } of bar.marks) pen.classList.toggle('here', mark.holds(v));
+        // The band this wall stands in, read the one way the whole desk reads
+        // it — see `buildMarks`, where the two rules first came apart.
+        const here = control.landmarkAt(v);
+        for (const { mark, pen } of bar.marks) pen.classList.toggle('here', mark === here);
       }
       for (const read of reads) {
         const v = params[read.side.key];

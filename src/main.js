@@ -1974,10 +1974,14 @@ function buildSliders() {
       const said = control.standing(v);
       input.setAttribute('aria-valuetext', said ? `${control.format(v)}, ${said}` : control.format(v));
       if (standing) {
+        // One reading of where the tick stands, used by both the words and the
+        // rule under them. Read per mark instead, the two came apart at a zero
+        // stop — see `landmarkAt` in controls.js.
+        const here = control.landmarkAt(v);
         standing.textContent = said ?? '';
         standing.title = said ?? '';
-        standing.classList.toggle('between', !control.landmarkAt(v));
-        for (const { mark, pip } of marks) pip.classList.toggle('here', mark.holds(v));
+        standing.classList.toggle('between', !here);
+        for (const { mark, pip } of marks) pip.classList.toggle('here', mark === here);
       }
     };
     show();

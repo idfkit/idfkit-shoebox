@@ -131,7 +131,17 @@ export class Landmark {
  * are declared now as the narrow band the step grid actually makes, with the
  * published figure in the note, so the rounding is stated rather than absorbed.
  */
-function readLandmarks(list, { key, min, max, step, format }) {
+function readLandmarks(list, control) {
+  const { key, min, max, step } = control;
+  // `format` is reached through the control rather than destructured with the
+  // rest of them, because it is a method and reads `this.zero`, `this.digits`
+  // and `this.unit`. Pulled off the object it loses its receiver, and in a
+  // module — where `this` is undefined rather than the global — every call
+  // below died as `Cannot read properties of undefined (reading 'zero')`
+  // instead of naming the landmark that was wrong. Measured on both the range
+  // and the step-grid throws: the guards still fired, and the sentences this
+  // function exists to write never reached anybody.
+  const format = (v) => control.format(v);
   const marks = [...list].sort((a, b) => a.from - b.from || a.to - b.to);
   let previous = null;
   for (const mark of marks) {
@@ -151,6 +161,16 @@ function readLandmarks(list, { key, min, max, step, format }) {
     if (last < first || min + first * step > max) {
       throw new Error(
         `${key}: "${mark.label}" at ${format(mark.from)}–${format(mark.to)} falls between two positions of a ${step} step, so the control can never read it`,
+      );
+    }
+    // The same rule again, against the other thing that can make a mark
+    // unreadable. A `zero` stop silences every band but the one that *is* that
+    // stop, so a band lying wholly at or below it draws and can never be the
+    // reading — which is how the first cut of this went wrong, quietly retiring
+    // the engine's own C = 0 and B = 0 on the Air strip.
+    if (control.zero && mark.to <= 0 && !(mark.exact && mark.from === 0)) {
+      throw new Error(
+        `${key}: "${mark.label}" lies at or below the zero stop, where "${control.zero}" is the only reading, so it can never be read`,
       );
     }
     previous = mark;
@@ -195,9 +215,36 @@ class Ruled extends Control {
     return (v - this.min) / (this.max - this.min);
   }
 
-  /** The landmark a value stands in, or null. Never more than one. */
+  /**
+   * The landmark a value stands in, or null. Never more than one.
+   *
+   * This is the one reading of where the tick stands, and every surface that
+   * lights a mark or letters a band takes it from here — the face's rule, the
+   * sheet slider's, the plan key's bars and the plan key's legend. Lit from
+   * each mark's own `holds` instead, the four came apart at a zero stop and
+   * the default Air strip drew marks at full graphite over a reading line the
+   * desk had deliberately left blank.
+   *
+   * At a `zero` stop only a landmark *of that stop itself* stands. The
+   * distinction is not fussiness, it is the difference between the two claims
+   * a mark at the bottom of a face can be making. A band that merely reaches
+   * zero on its way up is claiming the quantity in some amount — `infiltration`
+   * has a Passive House band open at 0, and 0 ACH is not a Passive House
+   * envelope, it is a sealed box — so it is suppressed, and the readout's own
+   * `Sealed` is that position's only true landmark. A landmark that *is* the
+   * zero point is claiming the absence itself, which is exactly what the
+   * reader is looking at: `infWind` and `infStack` start at `None` because
+   * C = 0 and B = 0 are the engine's own defaults, and saying so is the whole
+   * value of the mark. Blanket silence here cost both of them — they could be
+   * drawn and never once be read, which is the failure `readLandmarks` throws
+   * over — and split the three coefficients of one equation across two
+   * behaviours on one strip, since `infConstant` carries no `zero` label and
+   * went on reading `DOE-2` at the same position.
+   */
   landmarkAt(v) {
-    return this.landmarks.find((mark) => mark.holds(v)) ?? null;
+    const here = this.landmarks.find((mark) => mark.holds(v)) ?? null;
+    if (this.zero && !(v > 0)) return here?.exact && here.from === v ? here : null;
+    return here;
   }
 
   /**
@@ -224,9 +271,14 @@ class Ruled extends Control {
    */
   standing(v) {
     if (!this.landmarks.length) return null;
-    if (this.zero && !(v > 0)) return null;
     const here = this.landmarkAt(v);
     if (here) return here.label;
+    // Past the named band, a zero stop says nothing at all. `landmarkAt` has
+    // already let through the one landmark that can stand here — the engine's
+    // own C = 0 — so what is left is the inferred reading, and inferring
+    // "past a brick leaf" over a wall with no masonry in it is a different
+    // statement rather than a rounder one.
+    if (this.zero && !(v > 0)) return null;
     const above = this.landmarks.find((mark) => mark.from > v);
     const below = [...this.landmarks].reverse().find((mark) => mark.to < v);
     if (!below) return `Past ${above.phrase}`;

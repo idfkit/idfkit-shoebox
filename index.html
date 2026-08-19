@@ -711,18 +711,24 @@
         color: var(--ink);
         text-align: right;
       }
-      /* The landmark rule and its reading sit under the slider they belong to,
-         in the slider's own column: placed explicitly, because auto-placement
-         would drop them into the label column and rule the marks against the
-         wrong width. A dimension with no landmarks has neither element and is
-         exactly the row it always was. */
-      /* The rule is ruled against the slider and so must sit in the slider's
-         own column; the reading is about the whole row and takes all three,
-         because this column is 160px and "Between an office and an industrial
-         shed" clipped to "Between an..." there, which is a reading that has
-         stopped being one. */
-      .dim-marks { grid-column: 2; margin-top: 0; }
-      .dim-standing { grid-column: 1 / -1; margin-top: 3px; }
+      /* The landmark rule and its reading sit under the slider they belong to.
+         The rule is ruled against the slider and so must take the slider's own
+         column, placed explicitly because auto-placement would drop it into the
+         label column and rule the marks against the wrong width; the reading is
+         about the whole row and takes all three, because that column is 160px
+         and "Between an office and a shed" clipped to "Between an..." there,
+         which is a reading that has stopped being one. A dimension with no
+         landmarks has neither element and is exactly the row it always was.
+
+         Written as descendants of `.dim` for the margins' sake. These two
+         classes are shared with the console's faces, whose rules are declared
+         several hundred lines further down and carry margins of their own; at
+         one class each the two blocks tie on specificity and the later one
+         wins, so a plain `.dim-marks` here set a margin that never took. The
+         extra class is what makes the row's own spacing — the grid gap does the
+         work above the rule — outrank the shared default. */
+      .dim .dim-marks { grid-column: 2; margin-top: 0; }
+      .dim .dim-standing { grid-column: 1 / -1; margin-top: 3px; }
 
       /* A slider drawn as a dimension line: a hairline track, a graphite tick
          for the thumb. Same square marker the run ledger uses. */
