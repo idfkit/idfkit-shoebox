@@ -391,12 +391,18 @@ function renderAxon(meanC) {
   );
   defs.append(hatch);
   root.append(defs);
+  // Deaf to the pointer, because it stands over the face it describes and the
+  // face is a control. A filled polygon takes clicks by default, so the hatch
+  // laid over an adiabatic surface swallowed every click on it: the surface
+  // could be sent adiabatic and never brought back, since the first flip put
+  // this on top of the only thing that would have flipped it back.
   const cut = (screen, opacity) =>
     svg('polygon', {
       points: screen.map((p) => p.join(',')).join(' '),
       fill: 'url(#axon-adiabatic)',
       opacity,
       stroke: 'none',
+      'pointer-events': 'none',
     });
   // A surface facing away is hatched under the wireframe, so it reads at the
   // weight the far side of the box reads at and never as the nearest thing in
@@ -443,6 +449,11 @@ function renderAxon(meanC) {
   // Filled with the paper itself rather than a tint — the wall is carrying the
   // temperature colour, and glass has to stay legible against any of it — then
   // struck through on the diagonal, the way glass is marked in elevation.
+  // Deaf to the pointer for the same reason the hatch is: an opening is cut
+  // into a surface and stands in front of it, and a wall at 0.9 glazing is
+  // nearly all glass — a click that landed on the light and stopped there
+  // would take the drawing's own control away from the walls most worth
+  // flipping.
   for (const win of WINDOWS) {
     const screen = win.verts.map(draw);
     const points = screen.map((p) => p.join(',')).join(' ');
@@ -455,6 +466,7 @@ function renderAxon(meanC) {
         'stroke-width': 0.9,
         'stroke-linejoin': 'round',
         'vector-effect': 'non-scaling-stroke',
+        'pointer-events': 'none',
       }),
     );
     root.append(
@@ -462,6 +474,7 @@ function renderAxon(meanC) {
         x1: screen[1][0], y1: screen[1][1], x2: screen[3][0], y2: screen[3][1],
         stroke: 'var(--ink-3)', 'stroke-width': 0.6, opacity: 0.7,
         'vector-effect': 'non-scaling-stroke',
+        'pointer-events': 'none',
       }),
     );
   }
@@ -480,6 +493,12 @@ function renderAxon(meanC) {
         'stroke-width': 0.9,
         'stroke-linejoin': 'round',
         'vector-effect': 'non-scaling-stroke',
+        // Deaf, like the hatch and the glass: one rule for the whole drawing,
+        // which is that the six surfaces are the only things in it a pointer
+        // can be on. A shade hangs on the wall it shelters and stands nearest
+        // the eye, so anything else leaves dead patches over the surfaces it
+        // covers.
+        'pointer-events': 'none',
       }),
     );
   }
