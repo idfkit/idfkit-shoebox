@@ -13,6 +13,7 @@ import {
   shadeGeometry,
   surfaceGeometry,
   WALLS,
+  WINDOW_CONSTRUCTION,
   windowGeometry,
 } from './model.js';
 import {
@@ -53,6 +54,7 @@ import {
   dayExtremeNear,
   demandOver,
   environmentRuns,
+  glassProperties,
   hourly,
   pinAt,
   readDemand,
@@ -1115,7 +1117,7 @@ function reprice() {
   if (!lastRun) return;
   bill = billFrom(lastRun);
   renderBill();
-  desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt);
+  desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt, readouts());
 }
 
 /**
@@ -1668,6 +1670,10 @@ function clearReadings() {
   lastReadFrom = null;
   lastAt = null;
   lastReadings = new Map();
+  // The window's computed figures go with the rest: they are a reading off a
+  // run, and a U-factor left standing over a fatal would be the one number on
+  // the strip claiming a run that did not happen.
+  lastGlass = null;
   renderBill();
   syncPin();
   // The bundle stays. It is not a reading — it is the run itself, and the two
@@ -1866,7 +1872,7 @@ function applyGeometry() {
   desk?.setState(modelState);
   syncStudies();
   syncRunSub();
-  desk?.setReadings(engagedReadings(), derivedReadings(facts), lastAt);
+  desk?.setReadings(engagedReadings(), derivedReadings(facts), lastAt, readouts());
   markStale();
 }
 
@@ -2133,6 +2139,37 @@ function derivedReadings(facts) {
   ]);
 }
 
+/**
+ * The window's own performance, as the last run computed it — or null before
+ * there has been one, and after one that failed.
+ *
+ * Kept here rather than derived on demand because the tabular report it comes
+ * out of is 340 kB of markup: parsing it once per run costs nothing, parsing
+ * it on every apply of the desk would put a scan of it inside a drag.
+ */
+let lastGlass = null;
+
+/**
+ * The readouts, which is one strip: what the engine made of the glazing.
+ *
+ * Two lines where the opening carries a frame. The first is the glass, which
+ * is what the layered controls above it build and what the simple model's
+ * three sliders describe. The second is the whole window by the NFRC method —
+ * the engine fills those cells only where there is a frame, because with none
+ * there is nothing for the glass figures to be corrected against, and it is
+ * the frame that makes them differ.
+ */
+function readouts() {
+  const glass = lastGlass;
+  if (!glass) return new Map();
+  const trio = (t) =>
+    `U ${or(t.u, (v) => v.toFixed(2))} W/m²K · SHGC ${or(t.shgc, (v) => v.toFixed(2))} · VT ${or(t.vt, (v) => v.toFixed(2))}`;
+  const framed = Number.isFinite(glass.assembly.u);
+  return new Map([
+    ['glazing', { text: trio(glass), sub: framed ? `Whole window · ${trio(glass.assembly)}` : null }],
+  ]);
+}
+
 /** Anchor a variable name so one meter cannot pick up another's series. */
 const exactly = (name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 
@@ -2242,7 +2279,7 @@ function pinFromPlate(index, snap) {
  * the marker on one instant while the strips reported another.
  */
 function reletterReading() {
-  desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt);
+  desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt, readouts());
   renderTrace();
   updatePermalink();
 }
@@ -3347,6 +3384,12 @@ async function solve() {
   // have shown the old result as current for the length of an annual run.
   for (const el of resultPanels()) el.classList.remove('stale');
 
+  // What the engine made of the glazing, off the tabular report this run
+  // wrote. Read here rather than beside the ESO because the Glazing strip is
+  // lettered from `setReadings` at the foot of this function, with the
+  // meters, and the two describe the same run.
+  lastGlass = glassProperties(wrote.html, WINDOW_CONSTRUCTION);
+
   const hasOutdoor = outPts.length > 0;
   const nn = hasOutdoor ? Math.min(zonePts.length, outPts.length) : zonePts.length;
   const zone = zonePts.slice(0, nn).map((p) => p.value);
@@ -3434,7 +3477,7 @@ async function solve() {
   syncPin();
   renderBill();
 
-  desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt);
+  desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt, readouts());
 
   // Denver is named only where Denver is what was solved. A short weather run
   // — January alone is 744 hours, and 792 with the sizing days kept — falls
