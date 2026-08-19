@@ -4157,6 +4157,34 @@ const standardCards = new Map();
  * the accordion carries one line saying so rather than a second copy of the
  * scoreboard that would have to be kept agreeing with the first.
  */
+/*
+ * Whether the register starts folded, asked of the stylesheet rather than of a
+ * `matchMedia` string here — the arrangement `console.js` uses for `--index`,
+ * and the reason is the same: a breakpoint written twice is a bug that exists
+ * at exactly one window size.
+ *
+ * The desk is a column of viewport height with one scroller between two fixed
+ * blocks, so a short screen takes its room out of the only part that can give:
+ * measured on an iPad in landscape, the eighteen channels had 104px of a 736px
+ * desk to scroll 12,000 in, while the register above them held 323. Folded,
+ * the head is 135px and the channels get 429.
+ *
+ * It acts only when the flag *changes*, so a reader who opened the register on
+ * a short desk keeps it open through every resize that does not cross the
+ * threshold — the fold is the layout's opening position, not a policy about
+ * what the reader is allowed to look at.
+ */
+let registerFolded = null;
+
+function relayoutRegister() {
+  const host = document.querySelector('.presets');
+  if (!host) return;
+  const fold = getComputedStyle(host).getPropertyValue('--fold').trim() === '1';
+  if (fold === registerFolded) return;
+  registerFolded = fold;
+  host.open = !fold;
+}
+
 function buildStandards() {
   const host = $('presets');
   host.textContent = '';
@@ -4250,8 +4278,14 @@ const f1c = (v) => v.toFixed(1);
  * and the one score table are written.
  */
 function syncStandards() {
+  // What the register says when it is folded shut. A folded strip keeps its
+  // reading and only its controls go behind the fold; the register is held to
+  // the same rule, and the fact worth carrying at that size is the one the
+  // chips inside would have given — whether this desk is built to anything.
+  const built = [];
   for (const { preset, chip, verdict, clauses } of standardCards.values()) {
     const c = conformance(params, bypass, preset);
+    if (c.built) built.push(preset.name);
     if (c.built === null) {
       chip.textContent = 'targets only';
       chip.className = 'preset-state';
@@ -4292,6 +4326,16 @@ function syncStandards() {
       clauses.append(body);
     }
   }
+
+  const state = $('presets-state');
+  const total = standardCards.size;
+  state.textContent = built.length
+    ? built.length === 1
+      ? `built to ${built[0]}`
+      : `built to ${built.length} of ${total}`
+    : `${total} standards`;
+  state.classList.toggle('met', built.length > 0);
+
   renderScore();
 }
 
@@ -4643,6 +4687,8 @@ $('save-scheme').addEventListener('click', saveScheme);
 readShelf();
 buildStandards();
 renderRegister();
+relayoutRegister();
+window.addEventListener('resize', relayoutRegister);
 
 /* ══ the run ═════════════════════════════════════════════════════════════ */
 

@@ -1007,18 +1007,44 @@ the conformance by itself, because there was never a flag to go stale.
   `Measure.comparableWith` restates the bill's own refusal on flat data: same
   kind of run, same currency, same end uses, or no delta at all.
 
-### The index sheet (narrow screens)
+### The index sheet (no room for a column)
 
-Below the `780px` breakpoint the desk stops being a column beside the drawing and
-becomes a page of its own, where eighteen strips end to end is about ten screens
-with nothing in them to say which one you are in. So the strips fold to a line
-each — number, name, reading, patch marker — and the console becomes its own
-index, one screen tall, in signal order.
+At `780px` wide **or `600px` tall** the desk stops being a column beside the
+drawing and becomes a page of its own, where eighteen strips end to end is about
+ten screens with nothing in them to say which one you are in. So the strips fold
+to a line each — number, name, reading, patch marker — and the console becomes
+its own index, one screen tall, in signal order.
 
+- **The shortage has two directions, and the second one was missed for a
+  while.** The desk is `100vh` minus a margin, with a fixed head and a fixed
+  rail either side of its only scroller, so a *short* window takes its room out
+  of the eighteen channels and out of nothing else — the same failure as the
+  phone's, turned ninety degrees. Measured with the register folded, the head is
+  181px and the rail 172, so a phone held sideways at 390pt left the channels
+  3px of scroller. Below 600 no amount of folding rescues the column, so the
+  height clause sends the desk under the sheet where the phone already goes.
 - **The breakpoint is declared once**, in the media query, as `--index` on
   `.strips`. `console.js` reads that flag back rather than repeating the number
   as a `matchMedia` string. Layout is CSS's decision; the module only asks which
   one it got.
+- **Between the two, the register folds instead.** From 600 to 1000px tall the
+  column still works but is short, and the head is where the room is: measured
+  on an iPad in landscape, the register was taking 323 of the head's 458px while
+  the channels had 104px to scroll 12,000 in. Folded, the head is 181 and the
+  channels get 381. `.presets` is a `<details>` carrying its own `--fold` flag,
+  read back by `main.js` exactly as `--index` is, and acted on only when the
+  flag *changes* — a reader who opens the register on a short desk keeps it open
+  through every resize that does not cross the threshold, because the fold is
+  the layout's opening position and not a policy about what they may look at.
+  Closed it still reads, by the folded strip's own rule: the summary carries
+  `built to Passivhaus Classic`, or `5 standards` where none is.
+- **"Widen the window" is not said to a thumb.** That note shows between 781 and
+  1180px, addressed to a laptop that can be dragged wider; a tablet in landscape
+  is already as wide as it goes, and the sentence was two lines of red type
+  telling the reader to do something they cannot — taken out of the head of the
+  very column it was complaining is short. `pointer: coarse` is the honest test
+  a stylesheet has: it names no device, it says there is no window manager under
+  the reader's thumb.
 - **Closed a row reads, open it is worked.** The folded row keeps the reading and
   the armed marker, because "readable without opening anything" is the rule the
   desk exists to honour; only the controls go behind the fold. The blocked note

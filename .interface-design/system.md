@@ -478,6 +478,25 @@ scroll — whatever the column count, the rail is the desk's footer. Below
 `780px` it stops being a column, stacks under the sheet, gives up the sticky
 foot, and folds to the index sheet below.
 
+**A fixed block either side of a scroller makes the window's height a budget,
+and the scroller pays all of it.** A panel built this way looks fine on the
+screen it was designed on and is unusable two hundred pixels shorter: measured
+here, an iPad in landscape gave the eighteen channels 104px of a 736px desk to
+scroll 12,000 in, because the head and the footer are `flex: none` and the
+middle is the only thing that can give. Budget it deliberately, in this order:
+
+1. **Fold the head's optional instrument**, on a height threshold, by the same
+   closed-a-row-reads rule as the sections below it. The register cost 323 of
+   the head's 458px; folded, the channels go from 104px to 381.
+2. **Below the height where folding cannot rescue it, stop being a column** —
+   the same escape the narrow breakpoint already takes. Put the height clause in
+   the *same* media query rather than a new one: it is one question, "can this
+   window hold a column", asked in two directions.
+3. **Never answer a squeeze with an instruction the reader cannot follow.**
+   "Widen the window" is addressed to a window manager; under `pointer: coarse`
+   there isn't one, and the note is then two lines of red type taken out of the
+   very column it says is short.
+
 ### The index sheet
 
 Where a panel is too long to navigate on the screen it has, fold its sections to

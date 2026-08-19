@@ -492,6 +492,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   seventeen, in the desk's own subheading, in the general notes and in four
   layout comments. It is eighteen now, and says so.
 
+- **The console was unusable on a tablet in landscape.** The desk is a column
+  of viewport height with a fixed head and a fixed rail either side of its one
+  scroller, so a short window took its room out of the eighteen channels and
+  out of nothing else. Measured on an iPad at 768pt: the head was 458px, the
+  rail 172, and the channels were left **104px** — 14 % of the desk — to scroll
+  12,147px of controls in. A phone held sideways at 390pt got 3px.
+
+  Three changes, in the order the room is worth taking back. The register folds
+  on a short desk, since it was holding 323 of the head's 458px and is the one
+  block on the desk you reach for occasionally rather than constantly — closed
+  it still reads, carrying *built to Passivhaus Classic* or *5 standards*, by
+  the same rule that keeps a folded strip a reading. Below 600px tall, where no
+  amount of folding rescues a column, the desk goes under the sheet and becomes
+  its own index sheet — the escape the phone breakpoint already takes, since it
+  is one question asked in two directions rather than two questions. And
+  *Widen the window* is no longer said to a touch device, which has no window to
+  widen and was losing two lines of the head to being told so.
+
+  The channels now get 381px on an iPad 9.7 in landscape (was 104), 433 on an
+  iPad Air (was 156), 513 on a 1440×900 laptop (was 298), and 710 on a phone in
+  landscape (was 3). A desk tall enough to hold the register open — an iPad Pro
+  12.9, a desktop — is unchanged.
+
 - The scoreboard and the kept-schemes shelf lost their table semantics on a
   phone. Both fold to a block per row below 620px, and `display: block` on a
   `tr` drops the implicit row and cell roles in every engine — so the two

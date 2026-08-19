@@ -1551,6 +1551,68 @@
         max-width: 560px;
         margin-top: 7px;
       }
+      /* The register's own summary, lettered as the eyebrow it replaces and
+         marked with the same +/− the presets inside it use, so the fold and
+         the folds within it read as one instrument rather than two. */
+      .presets > summary {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        width: fit-content;
+        padding: 2px 2px 2px 0;
+        cursor: pointer;
+        list-style: none;
+        font: 500 10px/1.4 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+      .presets > summary::-webkit-details-marker { display: none; }
+      .presets > summary::before {
+        content: "+";
+        flex: none;
+        width: 1ch;
+        font-family: var(--mono);
+        color: var(--ink-ghost);
+      }
+      .presets[open] > summary::before { content: "−"; }
+      /* Closed, the register still reads — the folded strip's rule, applied to
+         the block that folds above them. The one fact worth carrying at this
+         size is whether the desk is built to anything, since that is what the
+         chips inside would have said. */
+      .presets-state {
+        font: 400 10px/1.4 var(--mono);
+        font-variant-numeric: tabular-nums;
+        text-transform: none;
+        letter-spacing: 0;
+        font-style: normal;
+        color: var(--ink-ghost);
+      }
+      .presets-state.met { color: var(--ink-2); }
+      .presets[open] > summary .presets-state { display: none; }
+      .presets > summary:hover { color: var(--ink-2); }
+      .presets > summary:focus-visible {
+        outline: 2px solid var(--rule-focus);
+        outline-offset: 2px;
+      }
+      /* Whether the register should start folded, decided by the stylesheet and
+         read back by `main.js` — the same arrangement `--index` uses, and for
+         the same reason: a media query and a `matchMedia` string that disagree
+         is a bug that exists at one window size, which is the size nobody
+         tests at.
+
+         The threshold is a height, because the squeeze is vertical: the desk is
+         `100vh` minus a margin, and the head and the rail are fixed blocks
+         either side of the only scroller on it. Measured on the stock desk, the
+         head is 458px with the register open and 135px with it closed, and the
+         rail is about 172 — so an iPad in landscape at 768pt was giving the
+         eighteen channels 104px, and 1000px of window height is where they get
+         back a screen's worth. It is asked of width too, because below the
+         index breakpoint the desk is its own page and scrolls freely: there is
+         no squeeze there to relieve. */
+      @media (min-width: 781px) and (max-height: 1000px) {
+        .presets { --fold: 1; }
+      }
       .presets-note {
         margin: 9px 0 0;
         max-width: 52ch;
@@ -2152,6 +2214,17 @@
       .desk-widen { display: none; margin: 8px 0 0; font: 400 11.5px/1.45 var(--sans); color: var(--redline); }
       @media (max-width: 1180px) {
         body.desk-open .desk-widen { display: block; }
+      }
+      /* Except where there is no window to widen. Between 781 and 1180px this
+         note is addressed to a laptop that can be dragged wider; a tablet in
+         landscape is already as wide as it goes, and the sentence is then two
+         lines of red type telling the reader to do something they cannot do —
+         taken out of the head of the very column it is complaining is short.
+         A coarse pointer is the honest test available to a stylesheet: it does
+         not name a device, it says the reader has no window manager under their
+         thumb. */
+      @media (pointer: coarse) {
+        body.desk-open .desk-widen { display: none; }
       }
 
       /* `--index` is the switch between the desk's two presentations. It is
@@ -3108,7 +3181,19 @@
       }
       .rail-note.loose { color: var(--ink-3); }
 
-      @media (max-width: 780px) {
+      /* The desk stops being a column beside the sheet when the window cannot
+         hold one — and that shortage has two directions, not one.
+         `max-width: 780px` is the horizontal case, the phone, where there is no
+         width to take a column of. The height clause is the same failure turned
+         ninety degrees: the desk is `100vh` minus a margin with a fixed head
+         and a fixed rail either side of its only scroller, so a short window
+         takes its room out of the eighteen channels and nothing else.
+         Measured with the register folded, the head is 181px and the rail 172,
+         so at 390pt — a phone held sideways — the channels were left 3px. Below
+         600 the column cannot be made to work by folding anything, so the desk
+         goes under the sheet and becomes its own index sheet, which is what
+         this block already does for the phone. */
+      @media (max-width: 780px), (max-height: 600px) {
         body { padding: 20px 12px 48px; }
         .head { grid-template-columns: 1fr; padding: 24px; }
         .body { grid-template-columns: 1fr; }
@@ -3780,14 +3865,21 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
                *over* the desk — it writes only the controls it has an opinion
                about — and whether the desk still meets one is measured off the
                controls on every apply, never remembered. -->
-          <div class="presets">
-            <p class="eyebrow">Build it to</p>
+          <!-- A fold, for the reason a strip is one below `--index`: the desk is
+               a column of fixed viewport height with a scroller between two
+               fixed blocks, and on a short screen the register was taking 323
+               of the head's 458px while the eighteen channels — the thing the
+               desk is for — were left 104px to scroll 12,000 in. Closed it
+               still reads, which is the rule; open it is worked. `main.js`
+               sets the state from the stylesheet's own flag. -->
+          <details class="presets" open>
+            <summary>Build it to<i class="presets-state" id="presets-state"></i></summary>
             <div id="presets"></div>
             <p class="presets-note">
               A standard writes only what it has an opinion about; the rest of the desk stays
               yours. Conformance is measured off the controls, never remembered.
             </p>
-          </div>
+          </details>
         </div>
         <p class="desk-widen">
           The sheet is being squeezed. Widen the window to work the desk and read the drawing at
