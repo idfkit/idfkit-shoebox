@@ -74,6 +74,7 @@ controls.js  declares every control (typed classes) and groups them into Channel
      +--> model.js   one applier per channel writes the IDF objects
      +--> console.js draws the strips from the same declaration
      +--> main.js    owns `params`, wires gestures, schedules solves, reads the ESO
+     +--> field.js   the editable number both of those surfaces letter a value with
 ```
 
 `src/controls.js` is the single source of truth. A control exists once, as a
@@ -193,6 +194,37 @@ result, only explain one.
   normal*, so 0° and 180° are **closed** and 90° is **open** — the opposite of
   what a 0–180° slider suggests. Nothing on the face said so, and a reader
   assuming the other convention got the shading exactly backwards.
+
+### The margin numbers (src/field.js)
+
+Every number a slider carries is also the way to set it: a text input with the
+box taken off, lettering exactly as the `output` it replaced. A slider alone
+cannot say an exact figure — width runs 4 to 40 m across about 200 px, which is
+0.18 m to the pixel — so 12.00 m used to be a hundred presses of an arrow key.
+
+- **The two halves live where their twins live.** `quantityField` in
+  `field.js` is DOM and nothing else; the parsing is `Ruled.parse` in
+  `controls.js`, beside the `format` it undoes — one copy for a scale and a
+  plan key alike, as `format` and `fraction` already were, so a unit or
+  a stop changed in the declaration changes what the box will accept. Both
+  surfaces call the one function: the console's scales and plan-key legends,
+  and the sheet's five dimensions.
+- **A typed value is brought onto the control's own face** — clamped to the
+  stops, snapped to the step, and rounded to the step's own decimals, because
+  `0 + 3 * 0.05` is 0.15000000000000002 and that number would ride the
+  permalink and be written into the IDF as it stands. Anything that is not a
+  number is refused whole and the model's own value comes back, the way a bad
+  link is refused: no half-reading of `12abc`.
+- **Focus shows the value, blur shows the lettering.** The unit is not part of
+  what you are changing, and the lettering is lossy where a control's step is
+  finer than the digits it is drawn to (`height` defaults to 4.572 m and reads
+  `4.57 m`; `wallR` steps by 0.005 and reads to two places). Offered its own
+  lettering to edit, a reader who touched the box and left it alone would have
+  trimmed 2 mm off the building — so the box compares what it gave against what
+  it got back and **commits nothing when they are the same**.
+- **A redraw never types over the reader.** `show()` returns early while the
+  field holds focus, because a study tick, a landing solve or a station attach
+  redraws every face on the desk and one of them may be being typed into.
 
 ### `applyModel` (src/model.js)
 
@@ -1104,6 +1136,31 @@ Opening a pull request publishes a preview at `shoebox.idfkit.com/<number>/`
   never remove one. This mirrors the Vite proxy deliberately: a picker that
   works on localhost and 404s in production is the exact failure the arrangement
   exists to prevent.
+- **The sheet stamps its own revision, and the sha is the common case.** The
+  title block's Sheet cell reads `E-01 · Rev 0.2.0` on a tagged build and
+  `E-01 · Rev 0.2.0+cd5881e` on everything else, because this page is published
+  from `main` far more often than it is tagged and a reading is only worth
+  arguing with when you know which issue of the drawing produced it.
+  `scripts/revision.mjs` resolves it — `git describe --tags --exact-match` for
+  the tag, `package.json` plus the short sha as semver build metadata otherwise
+  — and `vite.config.js` freezes the result in as `__SHEET_REVISION__`; a page
+  served as static files from a bucket cannot ask what produced it, so the
+  answer has to be baked in where it is produced. `src/version.js` is the only
+  module that reads that name, guarded with `typeof` so the throwaway Node
+  harnesses can still import anything under `src/`.
+  - **A missing sha means "tagged", so a build that could not read its own
+    revision must not look like one**: it stamps `+unknown` rather than
+    dropping the metadata.
+  - **Both workflows check out with `fetch-tags: true`.** The checkout is
+    shallow and carries no tags otherwise, so a release would stamp itself with
+    a sha — the one build that is supposed not to.
+  - **The preview passes `SHOEBOX_SHA`**, for the same reason its comment
+    slices `pull_request.head.sha`: a `pull_request` checkout is the merge
+    commit, which is in nobody's branch.
+  - The date beside it is the revision's, off the commit, not `new Date()` in
+    the reader's browser — which is what it used to be, and which dated the
+    drawing by whoever picked it up.
+
 - **`scripts/deploy.mjs` compresses; CloudFront is not trusted to.** The edge
   compresses only objects between 1 KB and 10 MB whose content type is on its
   list. The engine binary (28.40 MiB) and schema (9.88 MiB) exceed the ceiling,

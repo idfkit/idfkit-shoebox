@@ -11,6 +11,7 @@ import {
   runDays,
   serializeHolidays,
 } from './controls.js';
+import { quantityField } from './field.js';
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -437,11 +438,19 @@ export function mountConsole({
     const head = el('div', 'ctl-head');
     const label = el('label', null, control.label);
     label.htmlFor = `k-${control.key}`;
-    const value = el('output', 'ctl-value');
-    value.htmlFor = `k-${control.key}`;
+    // The reading is also the way to set it — see `field.js`. It carries no
+    // `htmlFor` of its own: an editable field is its own control, not an
+    // output of the face beside it, and it names itself for the reader.
+    const value = quantityField({
+      control,
+      name: control.label,
+      read: () => params[control.key],
+      write: (v) => onChange(control.key, v, true),
+      className: 'ctl-value',
+    });
 
     const studyBtn = studyOffer(control.key, control.label, control, channel);
-    head.append(label, ...(studyBtn ? [studyBtn] : []), value);
+    head.append(label, ...(studyBtn ? [studyBtn] : []), value.node);
 
     const face = el('div', 'face');
     const ruling = el('i', 'face-rule');
@@ -479,7 +488,7 @@ export function mountConsole({
     const redraw = () => {
       const v = params[control.key];
       input.value = String(v);
-      value.textContent = control.format(v);
+      value.show();
       // The landmark rides in the spoken value, not only in the drawing. A
       // reader who cannot see the marks hears "1.80 W/m²K, low-e double" as
       // the arrow keys walk the face, which is the whole of what the rule
@@ -747,8 +756,16 @@ export function mountConsole({
     const reads = control.sides.map((side) => {
       const item = el('div', 'plan-read');
       item.append(el('span', null, side.label));
-      const out = el('b');
-      item.append(out);
+      // One wall's number, typed where it is lettered. A plan key is dragged
+      // along a 48-unit bar, which is coarser than any of the four scales it
+      // stands for, so this is the only way to set a wall exactly.
+      const out = quantityField({
+        control,
+        name: labelFor(side.key),
+        read: () => params[side.key],
+        write: (v) => onChange(side.key, v, true),
+      });
+      item.append(out.node);
       // A legend column is about fifty pixels wide, which holds a band's name
       // and cannot hold a sentence. So the cell letters the landmark the wall
       // is standing in and stays blank between two — unlike a calibration
@@ -803,7 +820,7 @@ export function mountConsole({
       }
       for (const read of reads) {
         const v = params[read.side.key];
-        read.out.textContent = control.format(v);
+        read.out.show();
         if (read.stand) {
           const said = control.standing(v);
           read.stand.textContent = control.landmarkAt(v)?.label ?? '';

@@ -698,18 +698,21 @@
       .dim:last-child { margin-bottom: 0; }
       /* a ratio, not a length: ruled off from the three lengths above it */
       .dim.group { margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--rule-soft); }
-      .dim.group output { color: var(--ink); }
+      .dim.group .num-field { color: var(--ink); }
       .dim label {
         font: 500 9.5px/1 var(--cond);
         text-transform: uppercase;
         letter-spacing: 0.11em;
         color: var(--ink-3);
       }
-      .dim output {
+      .dim .num-field {
         font: 400 11.5px/1 var(--mono);
         font-variant-numeric: tabular-nums;
         color: var(--ink);
         text-align: right;
+        /* The column is 62px and set; the field fills it rather than sizing
+           itself, so five dimensions letter to one right margin. */
+        width: 100%;
       }
       /* The landmark rule and its reading sit under the slider they belong to.
          The rule is ruled against the slider and so must take the slider's own
@@ -1263,6 +1266,12 @@
         color: var(--ink-3);
       }
       .titleblock b.flag { color: var(--redline); }
+      /* The revision links to the commit or release it names. Underlined in the
+         rule hairline rather than in the ink, the way the bill's citations are:
+         a title block is read as a block of facts, and a cell that advertised
+         itself in link blue would be the loudest thing on a quiet sheet. */
+      .titleblock b a { color: inherit; text-decoration-color: var(--rule); }
+      .titleblock b a:hover { color: var(--ink-3); }
 
       /* ── field notes ────────────────────────────────────────────── */
 
@@ -1617,6 +1626,32 @@
         letter-spacing: 0.11em;
         color: var(--ink-3);
       }
+      /* A reading that is also the way to set it (src/field.js). Every number
+         it letters was an `output` before, and it has to letter identically —
+         so the box, the border, the fill and the padding a browser gives an
+         input are all taken back off, and what is left is the lettering of
+         whatever it stands in for. The I-beam is the whole affordance: the one
+         thing that says this number can be typed into, and the only thing this
+         sheet can afford to say it with. A focus ring is deliberately not
+         drawn — a focused text box shows a caret in it, which is a truer
+         indicator than an outline and does not put a rectangle on a sheet made
+         of hairlines. Not `all: unset`, which would re-declare `display` and
+         defeat the `hidden` attribute the way it once did on `.link`. */
+      .num-field {
+        font: inherit;
+        color: inherit;
+        letter-spacing: inherit;
+        text-align: inherit;
+        background: none;
+        border: 0;
+        border-radius: 0;
+        padding: 0;
+        margin: 0;
+        min-width: 0;
+        cursor: text;
+      }
+      .num-field:focus { outline: none; }
+      .num-field::selection { background: var(--redline-wash); }
       .ctl-value {
         font: 400 11px/1.3 var(--mono);
         font-variant-numeric: tabular-nums;
@@ -1871,10 +1906,18 @@
         letter-spacing: 0.11em;
         color: var(--ink-3);
       }
-      .plan-read b {
+      /* The plan key's reading is an editable field; the boundary key's is a
+         word, and a word is not typed into — the button around it is the
+         control. One rule for both, so a legend entry reads the same whether
+         the value beneath a wall is a number you can set or a state you can
+         flip. */
+      .plan-read .num-field,
+      .face-read b {
         font: 400 10px/1.2 var(--mono);
         font-variant-numeric: tabular-nums;
         color: var(--ink);
+        text-align: center;
+        width: 100%;
       }
       /* The landmark rule along a wall's bar, and the same bands' names under
          the number in the legend. The bar's marks are ghost hairlines that
@@ -2796,7 +2839,11 @@
         <div><span>Output variables</span><b id="t-vars">—</b><i>Recorded to the ESO</i></div>
         <div><span>Severe / warnings</span><b id="t-err">—</b><i>From eplusout.err</i></div>
         <div><span>Exit code</span><b id="t-exit">—</b><i>0 is a clean run</i></div>
-        <div><span>Sheet</span><b>E-01 · Rev A</b><i id="t-date">—</i></div>
+        <!-- The revision cell is where a drawing has always said which issue of
+             itself you are reading, so it is where this page says which build it
+             is. `Rev` is lettered by `src/main.js` from the stamp `vite.config.js`
+             froze in, and links to the release or the commit that produced it. -->
+        <div><span>Sheet</span><b id="t-rev">E-01</b><i id="t-date">—</i></div>
       </div>
 
       <details class="notes" id="notes">
