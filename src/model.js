@@ -1,5 +1,7 @@
 import { IDFDocument, parseIdf } from '@idfkit/core';
 import {
+  ADIABATIC,
+  BOUNDARY_KEYS,
   CHANNELS,
   controlFor,
   DAYS_IN_MONTH,
@@ -60,11 +62,39 @@ export const WALLS = Object.freeze([
   { name: 'Zn001:Wall002', side: 'east', label: 'E', wwr: 'wwrE', overhang: 'ohE' },
   { name: 'Zn001:Wall003', side: 'north', label: 'N', wwr: 'wwrN', overhang: 'ohN' },
   { name: 'Zn001:Wall004', side: 'west', label: 'W', wwr: 'wwrW', overhang: 'ohW' },
-].map(Object.freeze));
+].map((wall) => Object.freeze({ ...wall, boundary: BOUNDARY_KEYS[wall.side] })));
 
 export { DEFAULT_PARAMETERS };
 
 export const ROOF = 'Zn001:Roof001';
+export const FLOOR = 'Zn001:Flr001';
+
+/**
+ * Which parameter decides each surface's boundary condition.
+ *
+ * Assembled from `BOUNDARY_KEYS` rather than written out again, and asserted
+ * against the control declarations at module load, because the failure of a
+ * misspelled key here is exactly the kind this file refuses everywhere else:
+ * `params.wallBoundryN` is `undefined`, `undefined` is not `Outdoors`, and the
+ * wall would go quietly adiabatic on a desk whose key says it is not.
+ */
+const BOUNDARY_OF = new Map([
+  ...WALLS.map((wall) => [wall.name, wall.boundary]),
+  [ROOF, BOUNDARY_KEYS.roof],
+  [FLOOR, BOUNDARY_KEYS.floor],
+]);
+for (const key of BOUNDARY_OF.values()) controlFor(key); // throws naming an unowned key
+
+/**
+ * Which parameter a surface of the drawing belongs to, by name.
+ *
+ * The axonometric flips a surface by clicking it, and the name on the polygon
+ * is what it has: the drawing is projected from `BuildingSurface:Detailed`
+ * vertices and knows nothing about compass points. Null for a surface no
+ * boundary control owns, so a caller has something to refuse rather than a
+ * key that quietly sets nothing.
+ */
+export const boundaryKeyFor = (name) => BOUNDARY_OF.get(name) ?? null;
 
 const CONTEXT_SHADE = 'Context:Obstruction';
 const FRAME = 'WINDOW FRAME';
@@ -175,6 +205,10 @@ function planPoints({ width, depth, northAxis }) {
 }
 
 function boxSurfaces(params) {
+  // The boundary conditions here are the document's starting state and nothing
+  // more: `applyFabric` writes every surface's real one on every apply, the
+  // first of which happens before `buildModel` returns. They are the stock
+  // example's, so the file this builds reads as that file until the desk moves.
   const { height } = params;
   const plan = planPoints(params);
   const walls = plan.map(([ax, ay], i) => {
@@ -199,7 +233,7 @@ function boxSurfaces(params) {
   return [
     ...walls,
     {
-      name: 'Zn001:Flr001',
+      name: FLOOR,
       type: 'Floor',
       construction: 'FLOOR',
       boundary: 'Adiabatic',
@@ -749,12 +783,20 @@ export function channelState(params, bypass) {
   // strips are declared in physical order, which is the order those
   // dependencies run in, so a channel can only ever ask about one above it.
   const on = (id) => Boolean(state.get(id)?.engaged);
+  // And a reader for the patch bay itself, which carries no such restriction:
+  // being bypassed is an input to this loop rather than something the loop
+  // decides, so it can be asked of any channel in any order. That is what lets
+  // Glazing -- declared four strips above Fabric -- refuse to write openings
+  // into a building whose every surface has just gone adiabatic, which for as
+  // long as `on` was the only reader was a fatal the desk advertised as a
+  // feature.
+  const patchedOut = (id) => Boolean(bypass[id]);
   for (const channel of CHANNELS) {
-    const off = channel.bypassable && Boolean(bypass[channel.id]);
-    const blocked = !off && channel.requires && !channel.requires.test(params, on);
+    const out = channel.bypassable && patchedOut(channel.id);
+    const blocked = !out && channel.requires && !channel.requires.test(params, on, patchedOut);
     state.set(channel.id, {
-      engaged: !off && !blocked,
-      bypassed: off,
+      engaged: !out && !blocked,
+      bypassed: out,
       blocked: blocked ? channel.requires.reason : null,
     });
   }
@@ -875,23 +917,45 @@ function applyFabric(doc, params, engaged) {
     doc.add('Construction', 'R13WALL', { outside_layer: 'R13LAYER' });
   }
 
+  // Each surface takes the state its own face of the boundary key is set to,
+  // and bypass sends all six the same way: bypass is not a very large
+  // R-value, it is no path at all — every surface stops seeing anything.
+  //
+  // One loop with no branch on surface type, because the type never decided
+  // this. What differs between a wall and a floor is which two states its face
+  // offers, and that lives in the declaration where the reader sets it.
   for (const surface of doc.all('BuildingSurface:Detailed').toArray()) {
-    const type = String(surface.surface_type).toLowerCase();
-    const outdoors = type === 'wall' || type === 'roof';
-    if (outdoors) {
-      // Bypass is not a very large R-value, it is no path at all: the surface
-      // stops seeing outdoors entirely.
-      surface.outside_boundary_condition = engaged ? 'Outdoors' : 'Adiabatic';
-      surface.sun_exposure = engaged ? 'SunExposed' : 'NoSun';
-      surface.wind_exposure = engaged && params.windExposure === 'WindExposed' ? 'WindExposed' : 'NoWind';
-    } else if (type === 'floor') {
-      const grounded = engaged && params.floorBoundary === 'Ground';
-      surface.outside_boundary_condition = grounded ? 'Ground' : 'Adiabatic';
-      surface.sun_exposure = 'NoSun';
-      surface.wind_exposure = 'NoWind';
-    }
+    const key = BOUNDARY_OF.get(String(surface.name));
+    if (!key) throw new Error(`no boundary control owns the surface ${surface.name}`);
+    const boundary = engaged ? params[key] : ADIABATIC;
+    surface.outside_boundary_condition = boundary;
+    // Only a surface open to the weather sees sun or wind. A grounded floor is
+    // exposed to neither, and an adiabatic surface has no outside to be
+    // exposed to.
+    const outdoors = boundary === 'Outdoors';
+    surface.sun_exposure = outdoors ? 'SunExposed' : 'NoSun';
+    surface.wind_exposure =
+      outdoors && params.windExposure === 'WindExposed' ? 'WindExposed' : 'NoWind';
   }
 }
+
+/**
+ * Whether a surface can carry an opening, asked of the document.
+ *
+ * EnergyPlus refuses a `FenestrationSurface:Detailed` or a
+ * `Shading:Zone:Detailed` whose base surface is adiabatic — a severe naming
+ * the subsurface, then `** Fatal ** GetSurfaceData: Errors discovered` — so
+ * every channel that cuts into a surface asks this first.
+ *
+ * Read off the document rather than off `params`, and that is the whole
+ * arrangement: `applyFabric` has already written the boundaries by the time
+ * these run, so one question covers both ways a surface loses its outside —
+ * its own face of the key set to adiabatic, and the Fabric channel patched
+ * out, which no parameter records at all.
+ */
+const opensOutdoors = (doc, name) =>
+  String(must(doc, 'BuildingSurface:Detailed', name).outside_boundary_condition).toLowerCase() ===
+  'outdoors';
 
 const SLAB_MATERIALS = Object.freeze({
   Heavy: { conductivity: 1.729577, density: 2242.585, specific_heat: 836.8 },
@@ -1043,7 +1107,7 @@ function applyGlazing(doc, params, engaged) {
   // crossing zero in either direction is handled in one place.
   for (const wall of wallPlan(params)) {
     const name = `${wall.name}:Win001`;
-    const opening = engaged ? apertureOn(wall, params) : null;
+    const opening = engaged && opensOutdoors(doc, wall.name) ? apertureOn(wall, params) : null;
     const existing = doc.get('FenestrationSurface:Detailed', name);
     if (!opening) {
       if (existing) doc.remove(existing);
@@ -1090,7 +1154,7 @@ function applySkylights(doc, params, engaged) {
     doc.add('Construction', SKY_CON, { outside_layer: SKY_GLASS });
   }
 
-  const lights = engaged ? skylightsOn(params) : [];
+  const lights = engaged && opensOutdoors(doc, ROOF) ? skylightsOn(params) : [];
   for (let i = 0; i < SKY_MAX; i += 1) {
     const name = `${ROOF}:Sky${String(i + 1).padStart(3, '0')}`;
     const light = lights[i];
@@ -1141,7 +1205,10 @@ function applySkylights(doc, params, engaged) {
 /** 05 — overhangs and fins, cut from the openings' own numbers. */
 function applyShading(doc, params, engaged, glazingOn) {
   for (const wall of wallPlan(params)) {
-    const opening = glazingOn ? apertureOn(wall, params) : null;
+    // The same question `applyGlazing` asked, and it has to be the same one:
+    // this channel writes shades for the opening that channel wrote, so a wall
+    // it skipped is a wall with nothing to shade.
+    const opening = glazingOn && opensOutdoors(doc, wall.name) ? apertureOn(wall, params) : null;
     const shades = [];
     if (engaged && opening) {
       const over = overhangOn(opening, wall, params);
@@ -1906,14 +1973,21 @@ export function geometryFacts(doc) {
   const roofLights = windows.filter((w) => hostType.get(w.host) === 'roof');
   const glazing = area(windows.filter((w) => hostType.get(w.host) === 'wall'));
   const walls = surfaces.filter((s) => s.type === 'wall');
-  const wallArea = area(walls);
+  // Over the walls that have an outside, which is the area a window-to-wall
+  // ratio has always been measured against: an adiabatic wall is a party wall,
+  // it is not part of anyone's exterior envelope, and it can carry no opening
+  // here for the reason `opensOutdoors` sets out. Left in the denominator it
+  // would report a ratio no setting of the sliders could ever reach — three
+  // walls glazed to 1.0 against four walls of denominator reads 0.75 — and
+  // that is a number about no part of the building.
+  const wallArea = area(walls.filter((s) => s.boundary === 'outdoors'));
   const wwr = wallArea > 0 ? glazing / wallArea : NaN;
 
   // Against the gross roof, which is what a skylight-to-roof ratio is measured
   // over: the rooflights are subsurfaces and the roof polygon still holds the
   // area they sit in.
   const roofGlazing = area(roofLights);
-  const roofArea = area(surfaces.filter((s) => s.type === 'roof'));
+  const roofArea = area(surfaces.filter((s) => s.type === 'roof' && s.boundary === 'outdoors'));
   const srr = roofArea > 0 ? roofGlazing / roofArea : NaN;
 
   // How far a shade reaches off the wall plane, and that reach against the
@@ -1958,6 +2032,12 @@ export function geometryFacts(doc) {
       label: wall.label,
       length: edgeLength(surface.verts),
       area: face,
+      // Read off the surface rather than off the boundary key, for the same
+      // reason the bearing is read off the normal: what the document holds is
+      // what the engine was handed, and an adiabatic wall is a party wall
+      // rather than a blank one — a distinction a sentence about this
+      // building has to be able to make.
+      boundary: surface.boundary,
       glazing: glass,
       ratio: face > 0 ? glass / face : NaN,
       // Off the vertices, so it is the way this wall is really looking rather
@@ -1971,6 +2051,12 @@ export function geometryFacts(doc) {
       projection: reach > 0 && head > 0 ? reach / head : NaN,
     };
   }).filter(Boolean);
+
+  // The other two surfaces' boundaries, so a reader of these facts can tell a
+  // slab on ground from a floating one and a party roof from an exposed one
+  // without going back to the document for it.
+  const roofFace = surfaces.find((s) => s.type === 'roof');
+  const floorFace = surfaces.find((s) => s.type === 'floor');
 
   const southFace = faces.find((f) => f.side === 'south');
   const overhang = southFace?.overhang ?? 0;
@@ -2012,6 +2098,8 @@ export function geometryFacts(doc) {
     // which is 21.55 m across for a 15.24 m square turned 45°.
     height,
     faces,
+    roofBoundary: roofFace?.boundary ?? null,
+    floorBoundary: floorFace?.boundary ?? null,
     contextArea: area(shades.filter((s) => s.context)),
     // Left per storey deliberately, and it needs no multiplier: stacking n
     // identical zones multiplies the exposed envelope and the volume by the

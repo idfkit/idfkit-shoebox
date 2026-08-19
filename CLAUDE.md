@@ -31,7 +31,18 @@ model changes should be checked outside the browser first:
 1. Write a throwaway Node script that imports `src/model.js`, builds the document
    at several console positions, and writes each IDF to disk. Outside the
    browser the schema comes from `localBundle()` in `@idfkit/schemas/node`, not
-   from `httpSource('/schemas/')`.
+   from `httpSource('/schemas/')` — and it wants the full version string,
+   `load('26.1.0')`.
+
+   Where no EnergyPlus is installed — a CI box, a container — the staged engine
+   runs the same models under Node without one. `public/energyplus/energyplus.js`
+   is an emscripten build that detects Node, so `require`-ing it after setting
+   `global.Module` to `{ noInitialRun: true, locateFile }` gives you `FS` and
+   `callMain(['-d', '/output', '-w', '/weather.epw', '/input.idf'])` — the same
+   call the worker makes — and `/output/eplusout.err`, `.eso` and `.mtr` to read
+   back. It latches onto whatever `global.Module` held when the script was first
+   evaluated and EnergyPlus's `main` is not re-entrant, so clear the require
+   cache between runs. A design day is about 0.6 s.
 2. Assert idempotence: `applyModel` runs on every parameter change, so applying
    it three times must produce byte-identical output.
 3. Run each IDF through `load_model` then `validate_model`,
@@ -63,6 +74,7 @@ controls.js  declares every control (typed classes) and groups them into Channel
      +--> model.js   one applier per channel writes the IDF objects
      +--> console.js draws the strips from the same declaration
      +--> main.js    owns `params`, wires gestures, schedules solves, reads the ESO
+     +--> field.js   the editable number both of those surfaces letter a value with
 ```
 
 `src/controls.js` is the single source of truth. A control exists once, as a
@@ -89,6 +101,14 @@ the desk fails loudly at mount. `permalink.js`'s `readValue` is the quieter one:
 its numeric regex runs *before* the per-kind switch, so a branch added inside
 the switch is unreachable and every link carrying that key is refused as "not a
 number". A non-numeric kind is taught above the regex, beside `selector`.
+
+A kind that owns *more than one key* — `Facade`, `Profile`, `Boundary` — has
+three more places to be taught, all in `controls.js`: `Channel.keys()`, the
+`INDEX` that `controlFor` reads, and the `DEFAULT_PARAMETERS` loop, which skips
+the multi-key kinds and takes their defaults either from `LOOSE` or, as
+`Boundary` does, from the sub-objects themselves. `labelFor`, `phraseFor` and
+`formatValue` then have to know what one of those sub-objects is called, since
+each of them switches on the third field `controlFor` returns.
 
 **Every parameter is a scalar, and four separate mechanisms rely on it**:
 `commit`'s `params[key] !== value` guard, `encodeState`'s identity diff against
@@ -174,6 +194,37 @@ result, only explain one.
   normal*, so 0° and 180° are **closed** and 90° is **open** — the opposite of
   what a 0–180° slider suggests. Nothing on the face said so, and a reader
   assuming the other convention got the shading exactly backwards.
+
+### The margin numbers (src/field.js)
+
+Every number a slider carries is also the way to set it: a text input with the
+box taken off, lettering exactly as the `output` it replaced. A slider alone
+cannot say an exact figure — width runs 4 to 40 m across about 200 px, which is
+0.18 m to the pixel — so 12.00 m used to be a hundred presses of an arrow key.
+
+- **The two halves live where their twins live.** `quantityField` in
+  `field.js` is DOM and nothing else; the parsing is `Ruled.parse` in
+  `controls.js`, beside the `format` it undoes — one copy for a scale and a
+  plan key alike, as `format` and `fraction` already were, so a unit or
+  a stop changed in the declaration changes what the box will accept. Both
+  surfaces call the one function: the console's scales and plan-key legends,
+  and the sheet's five dimensions.
+- **A typed value is brought onto the control's own face** — clamped to the
+  stops, snapped to the step, and rounded to the step's own decimals, because
+  `0 + 3 * 0.05` is 0.15000000000000002 and that number would ride the
+  permalink and be written into the IDF as it stands. Anything that is not a
+  number is refused whole and the model's own value comes back, the way a bad
+  link is refused: no half-reading of `12abc`.
+- **Focus shows the value, blur shows the lettering.** The unit is not part of
+  what you are changing, and the lettering is lossy where a control's step is
+  finer than the digits it is drawn to (`height` defaults to 4.572 m and reads
+  `4.57 m`; `wallR` steps by 0.005 and reads to two places). Offered its own
+  lettering to edit, a reader who touched the box and left it alone would have
+  trimmed 2 mm off the building — so the box compares what it gave against what
+  it got back and **commits nothing when they are the same**.
+- **A redraw never types over the reader.** `show()` returns early while the
+  field holds focus, because a study tick, a landing solve or a station attach
+  redraws every face on the desk and one of them may be being typed into.
 
 ### `applyModel` (src/model.js)
 
@@ -325,6 +376,107 @@ plan key, because almost nothing about it is the wall question rotated.
   place on the desk where two engaged channels deliberately do not compose, and
   it is stated rather than discovered.
 
+### The six boundaries (channel 07)
+
+Which of the box's six surfaces are adiabatic is a control. `Boundary` is a
+control kind of its own, owning a `Face` per surface, and the whole reason it
+is not six `Selector`s is that the second state is not the same question six
+times: a wall or a roof opens onto `Outdoors`, a floor onto `Ground`. Two
+states and no third makes the gesture a flip rather than a choice.
+
+- **The floor's old `floorBoundary` selector is the sixth face**, under the
+  same key, with the same two options and the same default. That is deliberate
+  and it is what keeps the link format still at `v1`: adding the five new keys
+  is free under delta encoding, whereas renaming that one would have cost a
+  `LINK_VERSION` bump and the first entry in `MIGRATIONS`.
+- **The key is a plan with a section drawn through it.** The four walls are the
+  edges of the plan and turn with north, as the glazing key's bars do; the roof
+  and the floor are the two surfaces a plan cannot show at all — it is a
+  horizontal cut and they are what it cuts through — so they are drawn as the
+  section they would appear in, roof over floor, inside the square. An
+  adiabatic surface is a doubled line, which is how a plan has always drawn a
+  party wall; open to the weather is a single hairline.
+- **The legend entries are the buttons.** The six marks in the drawing are
+  pointer targets and nothing else, so the whole key would otherwise be
+  unreachable from a keyboard. They needed `min-width: 0; min-height: 0` to
+  escape the page's 168 × 46 button slab — three of those minimums in a grid
+  track is 504 px of column in a 330 px console, which puts the sixth surface
+  off the side of the desk.
+- **A surface can also be flipped by clicking it on the axonometric, and only
+  three of the six can ever be.** The viewpoint is fixed at +x −y +z and
+  `square()` un-turns the geometry before projecting, so the faces that come
+  forward are always the same three — the roof, the y = 0 wall and the x = w
+  wall — however far the building has been turned. The drawing is therefore
+  the shortcut for the surfaces you can see and the key is the complete
+  control, which is also why the strip carries the reading. The click is
+  refused entirely while Fabric is bypassed: the model sends all six adiabatic
+  whatever the parameters say, so a click would move a parameter and not move
+  the drawing.
+- **Adiabatic surfaces are hatched in the axonometric**, poché'd the way a
+  section hatches what it cuts, and the three facing away are hatched under the
+  wireframe so they read faintly through the translucent faces rather than as
+  the nearest thing in the drawing. A doubled outline was tried first, for
+  consistency with the key: inset inside a filled face it makes a rim, and the
+  box turns into an open tray.
+
+### The opening that had nowhere to go
+
+EnergyPlus refuses a `FenestrationSurface:Detailed` or a
+`Shading:Zone:Detailed` whose base surface is adiabatic, and stops the run:
+
+    ** Severe ** FenestrationSurface:Detailed="ZN001:WALL001:WIN001",
+                 invalid Building Surface Name="ZN001:WALL001".
+    ** Fatal  ** GetSurfaceData: Errors discovered, program terminates.
+
+Before the boundary key that was a live defect: bypassing Fabric sent every
+surface adiabatic and fatalled any desk with a window on it, so the flask the
+Fabric strip advertises was only reachable with Glazing, Shading and Skylights
+patched out by hand. Measured at `cd5881e`: the stock desk with Fabric out
+exits 1 on the three severes above. The same desk now runs clean. Two
+mechanisms, and they answer different halves of it:
+
+- **`applyGlazing`, `applySkylights` and `applyShading` ask the document, not
+  `params`.** `opensOutdoors(doc, name)` reads the boundary `applyFabric` has
+  already written — the appliers run in that order — so one question covers
+  both ways a surface loses its outside: its own face of the key, and the
+  Fabric channel being patched out, which no parameter records at all. An
+  opening is simply not written where it cannot stand.
+- **`channelState` hands `requires.test` a third argument.** `(params, on,
+  off)`, where `off(id)` reads the patch bay directly. `on` can only ask about
+  channels already decided, which is why this was previously called unfixable:
+  Fabric is declared at 07, below the three channels that need to ask about it.
+  But being bypassed is an *input* to that loop rather than something the loop
+  decides, so it can be asked of any channel in any order. Glazing and
+  Skylights use it to block themselves, each with its own sentence, instead of
+  handing the engine objects it would reject.
+
+Everything downstream follows from the same fact rather than being told
+separately: a wall's `Side.needs` on the glazing key greys it and says *The
+north wall is adiabatic, so there is nothing outside it to open onto*, and
+`Side.unreached` grew the ability to be a function of the parameters because
+the overhang key's walls now have two ways to reach nothing and one sentence
+could not say which. `glazed()` and `skylit()` ask whether the opening can
+exist at all, so Blinds and Daylight — which are gated on those — go out with
+it.
+
+**The ratio denominators count only surfaces with an outside.** A
+window-to-wall ratio has always been measured over the exterior wall area, and
+an adiabatic wall is a party wall that can carry no opening here: left in, three
+walls glazed to 1.0 against four walls of denominator would report 0.75, a
+number no setting of the sliders can reach and about no part of the building.
+Skylight-to-roof is the same. `exposed` already counted only `Outdoors`
+surfaces, so compactness and the quantities panel needed nothing.
+
+**A nearly sealed box may not converge in warmup, and that is the building
+talking.** One exposed surface against a concrete slab has a time constant
+longer than the 30 warmup days `buildModel` asks for, and EnergyPlus says
+`** Severe ** CheckWarmupConvergence: … did not converge after 30 warmup days`.
+Measured on four adiabatic walls with rooflights in the exposed roof: the run
+completes, the results are written, and the title block reports the severes as
+it reports every other one. It is not an input error and there is nothing to
+fix in the model — raising the warmup limit would cost every run on the desk to
+flatter one corner of it.
+
 ### Channels that price rather than simulate
 
 `Plant` and `Tariff` carry `prices: true`. Nothing they own reaches the IDF, so:
@@ -338,9 +490,11 @@ plan key, because almost nothing about it is the wall question rotated.
 - They have no applier in `applyModel`. Their meters are `derived`, fed through
   `derivedReadings` like the geometry ones.
 
-`Channel.requires.test` is handed `(params, on)` where `on(id)` reads whether an
-earlier channel is engaged, so Plant can require System. Channels are declared in
-physical order, which is the order those dependencies run in.
+`Channel.requires.test` is handed `(params, on, off)`. `on(id)` reads whether an
+earlier channel is engaged, so Plant can require System; channels are declared in
+physical order, which is the order those dependencies run in, so a channel can
+only ever ask `on` about one above it. `off(id)` reads the patch bay itself and
+carries no such restriction — see "The opening that had nowhere to go".
 
 ### The bill (src/bill.js, src/rates.js)
 
@@ -573,6 +727,12 @@ the finding's own clauses.
   layered unit to `landmarkAt(panes).phrase` rather than to the word "double":
   a literal there is how a paragraph goes on calling a triple a double the day
   the pane count arrives.
+- **Which surfaces have an outside is part of the description.** A wall or a
+  roof set adiabatic is the model saying there is another heated space on the
+  far side, and a paragraph that only ever said what was *glazed* would letter
+  a party wall as solid — true of the drawing and silent about the reason. It
+  is read off each surface's own boundary in the document, ranked above any
+  slider and below a channel flip.
 - **It is captured before the await**, beside `capture` and the IDF, off the
   snapshot the run was written from. Lettered after, a slider turned during a
   0.7 s annual run would have the sentence describing one building over another
@@ -844,6 +1004,62 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   hour. Clicking the held hour again releases it, so the plate can undo its own
   gesture. `renderTrace` therefore runs **after** `readAt` in `solve` — drawn
   first it would post the previous run's instant.
+- **The marker drags, and the listeners are on `.trace` rather than on the
+  `<svg>`.** Every step of a drag re-letters the reading, which redraws the
+  plate, which throws away the SVG the gesture started on — and any pointer
+  capture held on it, so the drag would end silently on its first frame. The
+  host survives; `plateField` carries the last render's hit test (the viewBox
+  width, the field inside the gutters, the point count and whether the axis is
+  too coarse for a click to mean an hour) so an event can be mapped back to an
+  index. Two rules that are not obvious: a press that never travels is still a
+  **click** and toggles, while a drag that ends where it began must not release
+  the pin it just placed (`hold`); and the address bar is left alone until the
+  release, the rule every gesture here follows — `endGesture` is not used
+  because a pin is not a shape, so the suppression is passed down instead.
+  `setPin` / `releasePin` are the one pair every route goes through.
+- **The hour also has a picker, and it lives on the sheet.** `renderWhen` draws
+  a bar between the plate and its caption carrying the instant, the hold, and
+  two ways of naming another one. It is on the sheet rather than only on the
+  rail for the reason the plate grew its marker: the rail is inside a console
+  you have to open, and the hour is the most movable thing about every figure
+  on the page.
+
+  Half of it is **named instants** (`INSTANTS` in `readings.js`) — the hours the
+  field already has words for. EnergyPlus's own Component Load Summary reports
+  at the *time of the peak load*, heating and cooling apart, and every sizing
+  report names that time, so **peak heating** and **peak cooling** are the two
+  a modeller arrives with; a results tool's period list (DesignBuilder's is the
+  familiar one) offers summer and winter *design* weeks read off the weather
+  file's own statistics, which translates to an instant as the **hottest** and
+  **coldest outdoor** hour; the zone's own **warmest** and **coolest** belong
+  beside them because a free-running desk has no heating or cooling rate at
+  all; and **peak solar gain** is the hour every glazing and shading control on
+  the desk is arguing about. Each is found by `argmax` over the ESO in hand,
+  over *every* environment the run came back with — deliberately not the billed
+  ones `readExtremes` uses, because a reader asking for the peak heating hour
+  of a run handed a winter design day means that day, and the offer letters
+  which environment it landed in so nothing is hidden. `Instant.holds` is the
+  honesty gate: an `argmax` always returns something, so "peak heating" over a
+  run that never called for heat would hand back the least-cooled hour under a
+  label claiming the opposite. Where it fails, or where the series is not in
+  the run at all, the offer is **refused with its reason in place of its
+  stamp** rather than falling back to a neighbour.
+
+  The other half is a **calendar bounded by the run**. A date field was
+  rejected once, on the argument that it invites February the 30th and hour 25
+  purely to meet a refusal message — but that was an objection to a *free*
+  field, and every option here is walked out of the run's own timestamps
+  (`runCalendar`), so there is nothing left to refuse. It earns its place
+  because the gesture cannot reach everywhere: an annual plate at ten hours to
+  the pixel is physically unable to name 15:00 on 14 February, and a pointer is
+  not the keyboard's instrument at all. Coarse to fine — choosing an
+  environment lands on its own worst hour, a month or a day on that day's
+  extreme, and only the hour field names an hour.
+
+  Both halves are cached on the ESO's identity (`offersFor`, `calendarFor`):
+  the bar is rebuilt on every frame of a plate drag, and seven argmaxes over
+  8,760 hours per frame would be the one expensive thing in a gesture that is
+  otherwise array indexing.
 - **The pin is a calendar stamp, not an index.** `{ kind, month, day, hour }`,
   where kind is `year` / `winter` / `summer` — by environment *kind* because
   the index is not a property of the desk (keeping the sizing days renumbers
@@ -857,26 +1073,6 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   `params` (anything there starts a run) and re-letters from the ESO already
   held, exactly as `reprice` does for a tariff. It is `pinnedHour`, not
   `pinned` — the bill has held a pinned *scheme* since long before this.
-
-## Known defect: bypassing Fabric fatals any run that has an opening
-
-Patching out **Fabric** sends every wall and the roof to `Adiabatic`, and
-EnergyPlus refuses a `FenestrationSurface:Detailed` or a `Shading:Zone:Detailed`
-whose base surface is adiabatic:
-
-    ** Severe ** FenestrationSurface:Detailed="ZN001:WALL001:WIN001",
-                 invalid Building Surface Name="ZN001:WALL001".
-    ** Fatal  ** GetSurfaceData: Errors discovered, program terminates.
-
-So the flask the Fabric strip advertises is only reachable with Glazing,
-Shading and Skylights all out as well. This predates the Skylights channel —
-measured on the default desk at `main`, one wall window is enough to produce it
-— and Skylights only adds more of the same severes. It is not fixable through
-`Channel.requires` as the desk currently stands: `channelState` hands `on(id)`
-only the channels already decided, in declaration order, and Fabric is declared
-at 07, below all three of the channels that would need to ask about it. Fixing
-it means either reordering that graph or giving `requires` a second pass, which
-is a decision about the desk rather than about any one channel.
 
 ## Invariants that fail quietly
 
@@ -1065,6 +1261,31 @@ Opening a pull request publishes a preview at `shoebox.idfkit.com/<number>/`
   never remove one. This mirrors the Vite proxy deliberately: a picker that
   works on localhost and 404s in production is the exact failure the arrangement
   exists to prevent.
+- **The sheet stamps its own revision, and the sha is the common case.** The
+  title block's Sheet cell reads `E-01 · Rev 0.2.0` on a tagged build and
+  `E-01 · Rev 0.2.0+cd5881e` on everything else, because this page is published
+  from `main` far more often than it is tagged and a reading is only worth
+  arguing with when you know which issue of the drawing produced it.
+  `scripts/revision.mjs` resolves it — `git describe --tags --exact-match` for
+  the tag, `package.json` plus the short sha as semver build metadata otherwise
+  — and `vite.config.js` freezes the result in as `__SHEET_REVISION__`; a page
+  served as static files from a bucket cannot ask what produced it, so the
+  answer has to be baked in where it is produced. `src/version.js` is the only
+  module that reads that name, guarded with `typeof` so the throwaway Node
+  harnesses can still import anything under `src/`.
+  - **A missing sha means "tagged", so a build that could not read its own
+    revision must not look like one**: it stamps `+unknown` rather than
+    dropping the metadata.
+  - **Both workflows check out with `fetch-tags: true`.** The checkout is
+    shallow and carries no tags otherwise, so a release would stamp itself with
+    a sha — the one build that is supposed not to.
+  - **The preview passes `SHOEBOX_SHA`**, for the same reason its comment
+    slices `pull_request.head.sha`: a `pull_request` checkout is the merge
+    commit, which is in nobody's branch.
+  - The date beside it is the revision's, off the commit, not `new Date()` in
+    the reader's browser — which is what it used to be, and which dated the
+    drawing by whoever picked it up.
+
 - **`scripts/deploy.mjs` compresses; CloudFront is not trusted to.** The edge
   compresses only objects between 1 KB and 10 MB whose content type is on its
   list. The engine binary (28.40 MiB) and schema (9.88 MiB) exceed the ceiling,

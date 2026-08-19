@@ -163,6 +163,33 @@ function unitOf(panes) {
   return named ? [named.phrase] : [q(String(panes)), ' panes'];
 }
 
+/**
+ * The surfaces that have been shut, in the words a drawing uses for them.
+ *
+ * A slab on ground is a path that never sleeps and reads as its own move; an
+ * adiabatic wall or roof is the model saying there is another heated space on
+ * the far side of it. Both are read off the boundary the document holds rather
+ * than off the key that set it, and the default desk — four exposed walls, an
+ * exposed roof and a floating slab — says nothing at all.
+ */
+function closures(facts) {
+  const shut = facts.faces.filter((f) => f.boundary === 'adiabatic');
+  const parts = [];
+
+  if (shut.length === facts.faces.length && facts.faces.length > 0) {
+    parts.push(['every wall adiabatic']);
+  } else if (shut.length) {
+    parts.push([
+      'the ',
+      series(shut.map((f) => facing(f.bearing))),
+      shut.length > 1 ? ' walls adiabatic' : ' wall adiabatic',
+    ]);
+  }
+  if (facts.roofBoundary === 'adiabatic') parts.push(['an adiabatic roof']);
+  if (facts.floorBoundary === 'ground') parts.push(['a slab on ground']);
+  return parts.length ? series(parts) : [];
+}
+
 /* ══ the clauses ═════════════════════════════════════════════════════════ */
 
 /** Clauses joined the way a sentence joins them: commas, then "and". */
@@ -333,10 +360,19 @@ function moves(doc, params, facts, state) {
     const both = [
       wall ? ['walls at R ', num('wallR', params.wallR)] : null,
       roof ? [wall ? 'roof R ' : 'the roof at R ', num('roofR', params.roofR)] : null,
-      params.floorBoundary === 'Ground' ? ['a slab on ground'] : null,
     ].filter(Boolean);
-    say('fabric', moved(params, ['wallR', 'roofR', 'floorBoundary']), series(both));
+    say('fabric', moved(params, ['wallR', 'roofR']), series(both));
   }
+
+  // Which surfaces have an outside at all, which is a statement about what
+  // this building *is* rather than about how well it is built: three exposed
+  // walls and a party wall is one bay of a longer building, and a paragraph
+  // that only ever said what was glazed would describe that fourth wall as
+  // solid — true of the drawing, and silent about the reason. Read off the
+  // document, so it says what the engine was handed however the boundary got
+  // there. Ranked above any slider and below a channel flip: the surfaces are
+  // all still in the path, but what is on the other side of them has changed.
+  say('boundaries', 1.1, closures(facts));
 
   if (flipped(state, 'mass') === 'out') {
     say('mass', FLIP.removed, ['the slab swapped for a massless layer']);
@@ -467,7 +503,7 @@ const MOVE_WORDS = 36;
  * goes.
  */
 const READING_ORDER = Object.freeze([
-  'terrain', 'turn', 'fabric', 'mass', 'glass', 'air', 'gains', 'daylight',
+  'terrain', 'turn', 'boundaries', 'fabric', 'mass', 'glass', 'air', 'gains', 'daylight',
   'blinds', 'system', 'context', 'grounds', 'solar',
 ]);
 

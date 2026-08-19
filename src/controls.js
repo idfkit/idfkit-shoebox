@@ -39,6 +39,57 @@ class Control {
 }
 
 /**
+ * How many decimals a step is written to, which is the resolution any value
+ * of that control may honestly carry.
+ */
+const decimalsOf = (step) => (String(step).split('.')[1] ?? '').length;
+
+/**
+ * A number typed into the margin, brought onto the control's own face.
+ *
+ * Clamped to the stops and snapped to the step, because the face is what the
+ * value means here: a projection of 4 m on a control that stops at 3 is not a
+ * building this desk can draw, and a value off the step grid would sit between
+ * two positions the slider can return to. Neither is a silent substitution —
+ * the box re-letters itself from the model the instant the edit lands, so what
+ * was made of what you typed is the next thing you read.
+ *
+ * The rounding at the end is not cosmetic. Binary floating point turns
+ * `0 + 3 * 0.05` into 0.15000000000000002, and that number would ride the
+ * permalink and be written into the IDF exactly as it stands.
+ */
+function onFace(control, n) {
+  const held = Math.min(control.max, Math.max(control.min, n));
+  const stops = Math.round((held - control.min) / control.step);
+  return Number((control.min + stops * control.step).toFixed(decimalsOf(control.step)));
+}
+
+/**
+ * Read a value back out of a quantity's own lettering.
+ *
+ * The inverse of `format`, and deliberately strict: `null` for anything that
+ * is not a number, so the field can put the model's value back rather than
+ * invent one out of "abc". The unit is accepted because it is what the box
+ * says when it is not being typed in, and a reader who selects all and
+ * retypes "12 m" means 12 m. The zero word is accepted for the same reason —
+ * "None" is what that stop reads as, so it has to be a thing you can say.
+ */
+function readQuantity(control, text) {
+  const said = String(text).trim();
+  if (!said) return null;
+  if (control.zero && said.toLowerCase() === control.zero.toLowerCase()) {
+    return onFace(control, 0);
+  }
+  const unit = control.unit.toLowerCase();
+  const bare = unit && said.toLowerCase().endsWith(unit)
+    ? said.slice(0, said.length - unit.length).trim()
+    : said;
+  if (!/^[+-]?(\d+(\.\d+)?|\.\d+)$/.test(bare)) return null;
+  const n = Number(bare);
+  return Number.isFinite(n) ? onFace(control, n) : null;
+}
+
+/**
  * A named stretch of a scale — the repère a number is read against.
  *
  * A calibration face set in W/m²K is a number before it is a decision. 1.8
@@ -215,6 +266,11 @@ class Ruled extends Control {
     return (v - this.min) / (this.max - this.min);
   }
 
+  /** What a reader typing in the margin means, or null if it is not a number. */
+  parse(text) {
+    return readQuantity(this, text);
+  }
+
   /**
    * The landmark a value stands in, or null. Never more than one.
    *
@@ -354,7 +410,8 @@ export class Bearing extends Control {
  * setting this wall's number reaches the model at all. `unreached` is the
  * sentence for when it does not — the four walls of a plan key are set from
  * one control, so a single row-wide note could not say which of them is
- * inert.
+ * inert. It is a sentence, or a function of the parameters when the wall has
+ * more than one way to fall out of the model — see `reasonFor`.
  */
 class Side {
   constructor({ key, side, label, needs = null, unreached = null }) {
@@ -373,6 +430,22 @@ class Side {
   /** Whether this wall's number is reaching the model as the desk stands. */
   reaches(params) {
     return this.needs ? Boolean(this.needs(params)) : true;
+  }
+
+  /**
+   * Why it is reaching nothing, in the wall's own words.
+   *
+   * `unreached` may be a sentence or a function of the parameters, because a
+   * wall can now be inert for either of two reasons: an overhang is cut from
+   * the opening it shelters, and an opening needs a wall with an outside to be
+   * cut into. One sentence covering both would name the wrong cause half the
+   * time, and the whole reason this lives per wall rather than per row is that
+   * a note which cannot say *which* is not worth printing.
+   */
+  reasonFor(params) {
+    const said = typeof this.unreached === 'function' ? this.unreached(params) : this.unreached;
+    if (this.needs && !said) throw new Error(`${this.key} gives no reason for reaching nothing`);
+    return said;
   }
 }
 
@@ -404,6 +477,109 @@ export class Facade extends Ruled {
 
   keys() {
     return this.sides.map((s) => s.key);
+  }
+}
+
+/* ── the six surfaces ──────────────────────────────────────────────────── */
+
+/**
+ * The state a surface is in when the model stops at its inside face.
+ *
+ * Named once rather than written out six times because it is the only state
+ * all six surfaces share: what a surface opens onto when it is *not* adiabatic
+ * differs — a wall or a roof onto the weather, a floor onto the ground.
+ */
+export const ADIABATIC = 'Adiabatic';
+
+/**
+ * One surface of the box: what is on the other side of it.
+ *
+ * A two-state question, but not a `Selector`, because the second state is not
+ * the same question twice: the opposite of an adiabatic floor is the ground,
+ * and the opposite of an adiabatic wall is the weather. So the pair is
+ * declared per surface, which is also what lets the key be drawn as one
+ * gesture — a tap flips a surface between its own two states, and there is
+ * never a third to choose from.
+ *
+ * A face carries its own default as well, which a `Facade`'s walls do not: the
+ * four openings of a plan key all start from one declaration, whereas the six
+ * surfaces disagree about where they start. The stock model floats its slab
+ * and exposes everything else, and that is the desk this page has always
+ * opened on.
+ */
+export class Face {
+  constructor({ key, face, label, open, value }) {
+    if (!key) throw new Error('a surface of the boundary key needs a parameter key');
+    if (open === ADIABATIC) throw new Error(`${key} would have adiabatic as both its states`);
+    if (value !== open && value !== ADIABATIC) {
+      throw new Error(`${key} cannot start at ${value}, which is not one of its two states`);
+    }
+    this.key = key;
+    this.face = face; // 'north' … 'west' | 'roof' | 'floor', as the model names it
+    this.label = label; // how the key and its legend letter it
+    this.open = open; // 'Outdoors', or 'Ground' under a floor
+    this.value = value;
+    Object.freeze(this);
+  }
+
+  /** Whether this surface is stopping the model, as the desk stands. */
+  shut(v) {
+    return v === ADIABATIC;
+  }
+
+  /** The other of its two states. With two, the gesture is the whole control. */
+  flip(v) {
+    return this.shut(v) ? this.open : ADIABATIC;
+  }
+
+  format(v) {
+    if (v !== this.open && v !== ADIABATIC) throw new Error(`${this.key} has no state ${v}`);
+    // The engine's own words, which are also the reader's: `Outdoors`,
+    // `Ground`, `Adiabatic`. Nothing is gained by translating a term that
+    // appears verbatim in the IDF the sheet will hand you.
+    return v;
+  }
+}
+
+/**
+ * The six surfaces of the box, drawn as one key rather than six rows.
+ *
+ * Which surfaces are adiabatic is one decision about a building — a party
+ * wall, a floor over a heated space, one bay cut out of a longer terrace — and
+ * six rows reading `Adiabatic / Outdoors` would make it six unrelated
+ * switches. Set on a plan with a section through the middle of it, each
+ * surface is toggled at the place it stands, which is the same argument the
+ * `Facade` plan key makes about the four window-to-wall ratios.
+ *
+ * Every face is nevertheless its own parameter: `applyFabric` writes them one
+ * at a time, and a wall that has gone adiabatic has to be able to say so on
+ * its own account to the channels that were going to cut an opening into it.
+ */
+export class Boundary extends Control {
+  constructor({ key, label, faces, note = null, needs = null }) {
+    // The key names the group; the six faces own the parameters, as a plan
+    // key's four walls do.
+    super({ key, label, value: null, note, needs });
+    this.kind = 'boundary';
+    this.faces = Object.freeze(faces.map((f) => new Face(f)));
+    Object.freeze(this);
+  }
+
+  keys() {
+    return this.faces.map((f) => f.key);
+  }
+
+  faceFor(key) {
+    const found = this.faces.find((f) => f.key === key);
+    if (!found) throw new Error(`no surface of ${this.key} owns "${key}"`);
+    return found;
+  }
+
+  format(v) {
+    if (v !== ADIABATIC && v !== 'Outdoors' && v !== 'Ground') {
+      throw new Error(`${this.key} has no state ${v}`);
+    }
+    return v;
   }
 }
 
@@ -1210,7 +1386,11 @@ export class Channel {
   /** Every parameter key this channel owns, plan keys expanded. */
   keys() {
     return this.controls.flatMap((c) =>
-      c.kind === 'facade' ? c.keys() : c.kind === 'profile' ? [c.from, c.to] : [c.key],
+      c.kind === 'facade' || c.kind === 'boundary'
+        ? c.keys()
+        : c.kind === 'profile'
+          ? [c.from, c.to]
+          : [c.key],
     );
   }
 }
@@ -2120,12 +2300,59 @@ const STOREYS = [
   }),
 ];
 
-const ORIENTATIONS = [
-  { key: 'wwrN', side: 'north', label: 'N' },
-  { key: 'wwrE', side: 'east', label: 'E' },
-  { key: 'wwrS', side: 'south', label: 'S' },
-  { key: 'wwrW', side: 'west', label: 'W' },
-];
+/**
+ * The four walls, with every parameter key that belongs to one.
+ *
+ * `model.js` keeps its own table of the same walls, because that one carries
+ * the surface names the document uses and this file may not import the model.
+ * Within this file, though, one table: the plan key's ratios, the shading
+ * key's projections and the boundary key's states are three questions asked of
+ * the same four walls, and three separate lists is how the north wall's
+ * overhang ends up asking about the east wall's glass.
+ */
+const WALL_FACES = Object.freeze([
+  { face: 'north', label: 'N', wwr: 'wwrN', overhang: 'ohN', boundary: 'wallBoundaryN' },
+  { face: 'east', label: 'E', wwr: 'wwrE', overhang: 'ohE', boundary: 'wallBoundaryE' },
+  { face: 'south', label: 'S', wwr: 'wwrS', overhang: 'ohS', boundary: 'wallBoundaryS' },
+  { face: 'west', label: 'W', wwr: 'wwrW', overhang: 'ohW', boundary: 'wallBoundaryW' },
+].map(Object.freeze));
+
+/**
+ * Which parameter carries each surface's boundary condition.
+ *
+ * Read here rather than off the `Boundary` control below, because four
+ * channels ask this question before that control is ever drawn: whether an
+ * opening can be cut into a wall, whether an overhang can hang on it, whether
+ * a rooflight has a roof with an outside. The control's faces are built from
+ * this same table, so there is one list of six keys and not two.
+ */
+export const BOUNDARY_KEYS = Object.freeze({
+  ...Object.fromEntries(WALL_FACES.map((w) => [w.face, w.boundary])),
+  roof: 'roofBoundary',
+  floor: 'floorBoundary',
+});
+
+/** Whether a surface has anything on the other side of it, as the desk stands. */
+export const opensOut = (params, face) => params[BOUNDARY_KEYS[face]] !== ADIABATIC;
+
+/**
+ * An adiabatic wall has no outside, and EnergyPlus refuses a subsurface cut
+ * into one — `** Severe ** FenestrationSurface:Detailed=…, invalid Building
+ * Surface Name=…`, and then a fatal that takes the whole run down before any
+ * environment starts. So `applyGlazing` writes no opening there, and a ratio
+ * set on that wall reaches no object in the document: the same silent state
+ * the overhang note below exists to refuse, arrived at from the other end.
+ */
+const noOutside = (wall) =>
+  `The ${wall} wall is adiabatic, so there is nothing outside it to open onto.`;
+
+const ORIENTATIONS = WALL_FACES.map(({ face, label, wwr }) => ({
+  key: wwr,
+  side: face,
+  label,
+  needs: (p) => opensOut(p, face),
+  unreached: noOutside(face),
+}));
 
 /**
  * An overhang is cut from the opening it shelters — `applyShading` asks
@@ -2138,20 +2365,28 @@ const ORIENTATIONS = [
 const noOpening = (wall) =>
   `The ${wall} wall has no opening, so an overhang there hangs on nothing.`;
 
-const SHADE_SIDES = [
-  { key: 'ohN', side: 'north', label: 'N', needs: (p) => p.wwrN > 0, unreached: noOpening('north') },
-  { key: 'ohE', side: 'east', label: 'E', needs: (p) => p.wwrE > 0, unreached: noOpening('east') },
-  { key: 'ohS', side: 'south', label: 'S', needs: (p) => p.wwrS > 0, unreached: noOpening('south') },
-  { key: 'ohW', side: 'west', label: 'W', needs: (p) => p.wwrW > 0, unreached: noOpening('west') },
-];
+const SHADE_SIDES = WALL_FACES.map(({ face, label, wwr, overhang }) => ({
+  key: overhang,
+  side: face,
+  label,
+  // Two ways for this one to reach nothing, and the note has to say which:
+  // the wall can be solid, or it can have no outside for an opening to be in.
+  // Hence a function here where the ratios above carry a sentence.
+  needs: (p) => opensOut(p, face) && p[wwr] > 0,
+  unreached: (p) => (opensOut(p, face) ? noOpening(face) : noOutside(face)),
+}));
 
-const glazed = (p) => p.wwrN > 0 || p.wwrE > 0 || p.wwrS > 0 || p.wwrW > 0;
+// An opening exists where the ratio is off zero *and* the wall it would be cut
+// into has an outside — the applier writes exactly that set, so every
+// precondition asking "is there any glass" has to ask the same question or it
+// will engage a channel that has nothing to work on.
+const glazed = (p) => WALL_FACES.some(({ face, wwr }) => opensOut(p, face) && p[wwr] > 0);
 const layered = (p) => p.glazingModel === 'Layered';
 // Roof glazing is deliberately a separate question from wall glazing: the two
 // channels own different holes in different surfaces, and everything that
 // depends on "is there glass here" has to say which glass it means. Fins and
 // frames are a wall opening's business; daylight is either one's.
-const skylit = (p) => p.skyRatio > 0;
+const skylit = (p) => p.skyRatio > 0 && opensOut(p, 'roof');
 // Whether the rooflights are built of the walls' own assembly. It matters
 // beyond the Skylights strip: a blind can only be hung on the layered
 // construction, so a rooflight glazed in its own simple unit is one the Blinds
@@ -2277,6 +2512,20 @@ export const CHANNELS = Object.freeze([
     term: 'Q☼→',
     blurb:
       'The openings, wall by wall. Punched lights keep their proportion at any ratio; a ribbon spends the same area on width instead.',
+    requires: {
+      // A window is cut into a wall, so it needs a wall with an outside to be
+      // cut into. Both ways of losing them all are asked here: every wall set
+      // adiabatic on the Fabric strip's key, and the Fabric channel itself
+      // patched out, which sends all six surfaces the same way.
+      //
+      // `off` reads the patch bay rather than the decided state, which is what
+      // makes this precondition legal at all: Fabric is declared four strips
+      // below this one, so `on('fabric')` would be asking about a channel that
+      // has not been decided yet. Being bypassed is an input to that decision
+      // and can be read in any order — see `channelState`.
+      test: (p, on, off) => !off('fabric') && WALL_FACES.some(({ face }) => opensOut(p, face)),
+      reason: 'Needs a wall with an outside — every wall of this box is adiabatic.',
+    },
     meter: new Meter({
       label: 'Transmitted solar',
       terms: [new Term({ variable: 'Enclosure Windows Total Transmitted Solar Radiation Rate' })],
@@ -2429,6 +2678,14 @@ export const CHANNELS = Object.freeze([
     blurb:
       'The other way in. A rooflight faces the one part of the sky that is never behind a neighbour and never off to one side, so it collects hardest exactly when the building least wants it — and a curb is the only overhang it will ever have.',
     bypassed: true,
+    requires: {
+      // The same precondition as Glazing, asked of the one surface this
+      // channel opens. A curb is a `Shading:Zone:Detailed` on the roof and the
+      // engine refuses that on an adiabatic base surface exactly as it refuses
+      // the rooflight itself, so both go out together with the boundary.
+      test: (p, on, off) => !off('fabric') && opensOut(p, 'roof'),
+      reason: 'Needs a roof with an outside to cut a rooflight into.',
+    },
     // Read off the roof rather than out of the ESO. The transmitted-solar
     // series the Glazing strip reads is the enclosure's total, walls and roof
     // together, so repeating it here would say nothing about the rooflights in
@@ -2648,7 +2905,7 @@ export const CHANNELS = Object.freeze([
     name: 'Fabric',
     term: 'Q↔',
     blurb:
-      'The opaque envelope. Bypassed, every surface goes adiabatic and the box becomes a flask — the cleanest way there is to see what the other channels are worth, though Glazing, Skylights and Shading have to come out with it: EnergyPlus refuses an opening cut into an adiabatic wall and stops the run.',
+      'The opaque envelope, and which of the six surfaces are in it. Bypassed, every surface goes adiabatic and the box becomes a flask — the cleanest way there is to see what the other channels are worth. Glazing, Skylights and Shading come out with it, and say so: an opening needs a surface with an outside to be cut into.',
     meter: new Meter({
       label: 'Surface convection to air',
       rail: true,
@@ -2685,13 +2942,20 @@ export const CHANNELS = Object.freeze([
         landmarks: EMITTANCE,
         note: 'How well the outer face radiates to the sky at night.',
       }),
-      new Selector({
-        key: 'floorBoundary', label: 'Floor boundary', value: 'Adiabatic',
-        note: 'The stock model floats the slab. Grounding it opens a path that never sleeps.',
-        options: [
-          { value: 'Adiabatic', label: 'Adiabatic' },
-          { value: 'Ground', label: 'Ground' },
+      new Boundary({
+        key: 'boundaries',
+        label: 'Surface boundaries',
+        faces: [
+          ...WALL_FACES.map(({ face, label, boundary }) => ({
+            key: boundary, face, label, open: 'Outdoors', value: 'Outdoors',
+          })),
+          { key: 'roofBoundary', face: 'roof', label: 'Roof', open: 'Outdoors', value: 'Outdoors' },
+          // The stock model floats its slab, which is where this desk has
+          // always opened. Grounding it opens a path that never sleeps.
+          { key: 'floorBoundary', face: 'floor', label: 'Floor', open: 'Ground', value: 'Adiabatic' },
         ],
+        note:
+          'Adiabatic stops the model at the inside face: a party wall, a floor over a heated space, one bay of a longer building. Such a surface carries no opening — the engine refuses a window cut into a surface with no outside — so glazing, rooflights and shading come off it with the boundary.',
       }),
       new Selector({
         key: 'windExposure', label: 'Wind exposure', value: 'WindExposed',
@@ -3302,6 +3566,15 @@ export const DEFAULT_PARAMETERS = Object.freeze(
   CHANNELS.reduce(
     (all, channel) => {
       for (const control of channel.controls) {
+        // A boundary key owns six parameters and carries all six defaults,
+        // which a plan key cannot do: its four walls take theirs from `LOOSE`
+        // below because the ratios have no per-wall declaration to hold one,
+        // whereas the six surfaces of the box disagree about where they start
+        // and each face says so itself.
+        if (control.kind === 'boundary') {
+          for (const face of control.faces) all[face.key] = face.value;
+          continue;
+        }
         if (control.kind === 'facade' || control.kind === 'profile') continue;
         all[control.key] = control.value;
       }
@@ -3330,6 +3603,8 @@ for (const channel of CHANNELS) {
   for (const control of channel.controls) {
     if (control.kind === 'facade') {
       for (const side of control.sides) INDEX.set(side.key, { channel, control, side });
+    } else if (control.kind === 'boundary') {
+      for (const face of control.faces) INDEX.set(face.key, { channel, control, face });
     } else if (control.kind === 'profile') {
       INDEX.set(control.from, { channel, control });
       INDEX.set(control.to, { channel, control });
@@ -3348,13 +3623,16 @@ export function controlFor(key) {
 
 /** How a value reads, for any key, wherever it is being lettered. */
 export function formatValue(key, value) {
-  const { control } = controlFor(key);
-  return control.format(value);
+  const { control, face } = controlFor(key);
+  // A surface knows its own two states; the control it belongs to only knows
+  // the union of six surfaces' states, and would let a floor read `Outdoors`.
+  return face ? face.format(value) : control.format(value);
 }
 
 /** A label the sheet can use for a key it draws on its own. */
 export function labelFor(key) {
-  const { control, side } = controlFor(key);
+  const { control, side, face } = controlFor(key);
+  if (face) return `${face.label} boundary`;
   return side ? `${control.short} ${side.label}` : control.label;
 }
 
@@ -3367,8 +3645,14 @@ export function labelFor(key) {
  * because every caller sets it mid-sentence.
  */
 export function phraseFor(key) {
-  const { control, side } = controlFor(key);
+  const { control, side, face } = controlFor(key);
   const said = control.label.toLowerCase();
+  // A surface names itself rather than the group: "the north wall's boundary",
+  // and for the two horizontal ones "the roof's boundary" — not "the roof
+  // wall's", which is what the plan key's phrasing would have made of it.
+  if (face) return face.face === 'roof' || face.face === 'floor'
+    ? `the ${face.face}'s boundary`
+    : `the ${face.face} wall's boundary`;
   return side ? `the ${side.side} wall's ${said}` : said;
 }
 
