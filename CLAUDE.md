@@ -31,7 +31,18 @@ model changes should be checked outside the browser first:
 1. Write a throwaway Node script that imports `src/model.js`, builds the document
    at several console positions, and writes each IDF to disk. Outside the
    browser the schema comes from `localBundle()` in `@idfkit/schemas/node`, not
-   from `httpSource('/schemas/')`.
+   from `httpSource('/schemas/')` — and it wants the full version string,
+   `load('26.1.0')`.
+
+   Where no EnergyPlus is installed — a CI box, a container — the staged engine
+   runs the same models under Node without one. `public/energyplus/energyplus.js`
+   is an emscripten build that detects Node, so `require`-ing it after setting
+   `global.Module` to `{ noInitialRun: true, locateFile }` gives you `FS` and
+   `callMain(['-d', '/output', '-w', '/weather.epw', '/input.idf'])` — the same
+   call the worker makes — and `/output/eplusout.err`, `.eso` and `.mtr` to read
+   back. It latches onto whatever `global.Module` held when the script was first
+   evaluated and EnergyPlus's `main` is not re-entrant, so clear the require
+   cache between runs. A design day is about 0.6 s.
 2. Assert idempotence: `applyModel` runs on every parameter change, so applying
    it three times must produce byte-identical output.
 3. Run each IDF through `load_model` then `validate_model`,
@@ -82,6 +93,14 @@ the desk fails loudly at mount. `permalink.js`'s `readValue` is the quieter one:
 its numeric regex runs *before* the per-kind switch, so a branch added inside
 the switch is unreachable and every link carrying that key is refused as "not a
 number". A non-numeric kind is taught above the regex, beside `selector`.
+
+A kind that owns *more than one key* — `Facade`, `Profile`, `Boundary` — has
+three more places to be taught, all in `controls.js`: `Channel.keys()`, the
+`INDEX` that `controlFor` reads, and the `DEFAULT_PARAMETERS` loop, which skips
+the multi-key kinds and takes their defaults either from `LOOSE` or, as
+`Boundary` does, from the sub-objects themselves. `labelFor`, `phraseFor` and
+`formatValue` then have to know what one of those sub-objects is called, since
+each of them switches on the third field `controlFor` returns.
 
 **Every parameter is a scalar, and four separate mechanisms rely on it**:
 `commit`'s `params[key] !== value` guard, `encodeState`'s identity diff against
@@ -194,6 +213,107 @@ plan key, because almost nothing about it is the wall question rotated.
   place on the desk where two engaged channels deliberately do not compose, and
   it is stated rather than discovered.
 
+### The six boundaries (channel 07)
+
+Which of the box's six surfaces are adiabatic is a control. `Boundary` is a
+control kind of its own, owning a `Face` per surface, and the whole reason it
+is not six `Selector`s is that the second state is not the same question six
+times: a wall or a roof opens onto `Outdoors`, a floor onto `Ground`. Two
+states and no third makes the gesture a flip rather than a choice.
+
+- **The floor's old `floorBoundary` selector is the sixth face**, under the
+  same key, with the same two options and the same default. That is deliberate
+  and it is what keeps the link format still at `v1`: adding the five new keys
+  is free under delta encoding, whereas renaming that one would have cost a
+  `LINK_VERSION` bump and the first entry in `MIGRATIONS`.
+- **The key is a plan with a section drawn through it.** The four walls are the
+  edges of the plan and turn with north, as the glazing key's bars do; the roof
+  and the floor are the two surfaces a plan cannot show at all — it is a
+  horizontal cut and they are what it cuts through — so they are drawn as the
+  section they would appear in, roof over floor, inside the square. An
+  adiabatic surface is a doubled line, which is how a plan has always drawn a
+  party wall; open to the weather is a single hairline.
+- **The legend entries are the buttons.** The six marks in the drawing are
+  pointer targets and nothing else, so the whole key would otherwise be
+  unreachable from a keyboard. They needed `min-width: 0; min-height: 0` to
+  escape the page's 168 × 46 button slab — three of those minimums in a grid
+  track is 504 px of column in a 330 px console, which puts the sixth surface
+  off the side of the desk.
+- **A surface can also be flipped by clicking it on the axonometric, and only
+  three of the six can ever be.** The viewpoint is fixed at +x −y +z and
+  `square()` un-turns the geometry before projecting, so the faces that come
+  forward are always the same three — the roof, the y = 0 wall and the x = w
+  wall — however far the building has been turned. The drawing is therefore
+  the shortcut for the surfaces you can see and the key is the complete
+  control, which is also why the strip carries the reading. The click is
+  refused entirely while Fabric is bypassed: the model sends all six adiabatic
+  whatever the parameters say, so a click would move a parameter and not move
+  the drawing.
+- **Adiabatic surfaces are hatched in the axonometric**, poché'd the way a
+  section hatches what it cuts, and the three facing away are hatched under the
+  wireframe so they read faintly through the translucent faces rather than as
+  the nearest thing in the drawing. A doubled outline was tried first, for
+  consistency with the key: inset inside a filled face it makes a rim, and the
+  box turns into an open tray.
+
+### The opening that had nowhere to go
+
+EnergyPlus refuses a `FenestrationSurface:Detailed` or a
+`Shading:Zone:Detailed` whose base surface is adiabatic, and stops the run:
+
+    ** Severe ** FenestrationSurface:Detailed="ZN001:WALL001:WIN001",
+                 invalid Building Surface Name="ZN001:WALL001".
+    ** Fatal  ** GetSurfaceData: Errors discovered, program terminates.
+
+Before the boundary key that was a live defect: bypassing Fabric sent every
+surface adiabatic and fatalled any desk with a window on it, so the flask the
+Fabric strip advertises was only reachable with Glazing, Shading and Skylights
+patched out by hand. Measured at `cd5881e`: the stock desk with Fabric out
+exits 1 on the three severes above. The same desk now runs clean. Two
+mechanisms, and they answer different halves of it:
+
+- **`applyGlazing`, `applySkylights` and `applyShading` ask the document, not
+  `params`.** `opensOutdoors(doc, name)` reads the boundary `applyFabric` has
+  already written — the appliers run in that order — so one question covers
+  both ways a surface loses its outside: its own face of the key, and the
+  Fabric channel being patched out, which no parameter records at all. An
+  opening is simply not written where it cannot stand.
+- **`channelState` hands `requires.test` a third argument.** `(params, on,
+  off)`, where `off(id)` reads the patch bay directly. `on` can only ask about
+  channels already decided, which is why this was previously called unfixable:
+  Fabric is declared at 07, below the three channels that need to ask about it.
+  But being bypassed is an *input* to that loop rather than something the loop
+  decides, so it can be asked of any channel in any order. Glazing and
+  Skylights use it to block themselves, each with its own sentence, instead of
+  handing the engine objects it would reject.
+
+Everything downstream follows from the same fact rather than being told
+separately: a wall's `Side.needs` on the glazing key greys it and says *The
+north wall is adiabatic, so there is nothing outside it to open onto*, and
+`Side.unreached` grew the ability to be a function of the parameters because
+the overhang key's walls now have two ways to reach nothing and one sentence
+could not say which. `glazed()` and `skylit()` ask whether the opening can
+exist at all, so Blinds and Daylight — which are gated on those — go out with
+it.
+
+**The ratio denominators count only surfaces with an outside.** A
+window-to-wall ratio has always been measured over the exterior wall area, and
+an adiabatic wall is a party wall that can carry no opening here: left in, three
+walls glazed to 1.0 against four walls of denominator would report 0.75, a
+number no setting of the sliders can reach and about no part of the building.
+Skylight-to-roof is the same. `exposed` already counted only `Outdoors`
+surfaces, so compactness and the quantities panel needed nothing.
+
+**A nearly sealed box may not converge in warmup, and that is the building
+talking.** One exposed surface against a concrete slab has a time constant
+longer than the 30 warmup days `buildModel` asks for, and EnergyPlus says
+`** Severe ** CheckWarmupConvergence: … did not converge after 30 warmup days`.
+Measured on four adiabatic walls with rooflights in the exposed roof: the run
+completes, the results are written, and the title block reports the severes as
+it reports every other one. It is not an input error and there is nothing to
+fix in the model — raising the warmup limit would cost every run on the desk to
+flatter one corner of it.
+
 ### Channels that price rather than simulate
 
 `Plant` and `Tariff` carry `prices: true`. Nothing they own reaches the IDF, so:
@@ -207,9 +327,11 @@ plan key, because almost nothing about it is the wall question rotated.
 - They have no applier in `applyModel`. Their meters are `derived`, fed through
   `derivedReadings` like the geometry ones.
 
-`Channel.requires.test` is handed `(params, on)` where `on(id)` reads whether an
-earlier channel is engaged, so Plant can require System. Channels are declared in
-physical order, which is the order those dependencies run in.
+`Channel.requires.test` is handed `(params, on, off)`. `on(id)` reads whether an
+earlier channel is engaged, so Plant can require System; channels are declared in
+physical order, which is the order those dependencies run in, so a channel can
+only ever ask `on` about one above it. `off(id)` reads the patch bay itself and
+carries no such restriction — see "The opening that had nowhere to go".
 
 ### The bill (src/bill.js, src/rates.js)
 
@@ -663,26 +785,6 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   `params` (anything there starts a run) and re-letters from the ESO already
   held, exactly as `reprice` does for a tariff. It is `pinnedHour`, not
   `pinned` — the bill has held a pinned *scheme* since long before this.
-
-## Known defect: bypassing Fabric fatals any run that has an opening
-
-Patching out **Fabric** sends every wall and the roof to `Adiabatic`, and
-EnergyPlus refuses a `FenestrationSurface:Detailed` or a `Shading:Zone:Detailed`
-whose base surface is adiabatic:
-
-    ** Severe ** FenestrationSurface:Detailed="ZN001:WALL001:WIN001",
-                 invalid Building Surface Name="ZN001:WALL001".
-    ** Fatal  ** GetSurfaceData: Errors discovered, program terminates.
-
-So the flask the Fabric strip advertises is only reachable with Glazing,
-Shading and Skylights all out as well. This predates the Skylights channel —
-measured on the default desk at `main`, one wall window is enough to produce it
-— and Skylights only adds more of the same severes. It is not fixable through
-`Channel.requires` as the desk currently stands: `channelState` hands `on(id)`
-only the channels already decided, in declaration order, and Fabric is declared
-at 07, below all three of the channels that would need to ask about it. Fixing
-it means either reordering that graph or giving `requires` a second pass, which
-is a decision about the desk rather than about any one channel.
 
 ## Invariants that fail quietly
 

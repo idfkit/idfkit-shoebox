@@ -2,6 +2,7 @@ import { createEnergyPlus } from '@idfkit/engine';
 import { httpSource, SchemaBundle, writeIdf } from '@idfkit/core';
 import {
   applyModel,
+  boundaryKeyFor,
   buildModel,
   channelState,
   designConditionsFrom,
@@ -202,16 +203,29 @@ function renderAxon(meanC) {
   };
   const draw = (v) => project(square(v));
 
+  // Adiabatic surfaces, poché'd like a cut in a section drawing. Collected for
+  // every surface rather than only the three the viewpoint shows: the three
+  // behind read through the translucent faces along with the wireframe, and a
+  // north wall that has left the envelope has to be visible without turning
+  // the building to find it.
+  const poche = [];
+
   for (const s of SURFACES) {
     const screen = s.verts.map(draw);
     pts.push(...screen);
     for (let i = 0; i < screen.length; i++) edges.push([screen[i], screen[(i + 1) % screen.length]]);
     const n = normal(s.verts.map(square));
     const facing = n[0] * VIEW[0] + n[1] * VIEW[1] + n[2] * VIEW[2];
-    if (facing > 1e-6) {
+    const front = facing > 1e-6;
+    if (front) {
       // Top face reads brightest, then the +x wall, then the +y wall.
-      faces.push({ screen, alpha: 0.1 + 0.2 * Math.max(0, n[2]) + 0.07 * Math.max(0, n[0]) });
+      faces.push({
+        surface: s,
+        screen,
+        alpha: 0.1 + 0.2 * Math.max(0, n[2]) + 0.07 * Math.max(0, n[0]),
+      });
     }
+    if (s.boundary === 'adiabatic') poche.push({ screen, front });
   }
 
   // The overhang is drawn last but measured now: it stands outside the box, so
@@ -349,22 +363,81 @@ function renderAxon(meanC) {
   // The wireframe underlay first, so the near faces sit on top of it.
   const wire = svg('g', { stroke: 'var(--ink-ghost)', 'stroke-width': 0.6, opacity: 0.55 });
   for (const [p, q] of edges) wire.append(line(p, q));
+  /*
+   * The hatch an adiabatic surface is filled with.
+   *
+   * A doubled outline was tried first — the party-wall convention the console's
+   * boundary key uses — and it reads wrongly here: inset inside a filled face
+   * it makes a rim, and the box turns into an open tray. Hatching is what a
+   * drawing does to a surface that is cut rather than seen, which is exactly
+   * what an adiabatic surface is: the model stops at its inside face.
+   *
+   * Spaced in `unit`s rather than user units so the hatch is the same density
+   * on a 4 m box and a 40 m one, since the drawing is scaled to fit either.
+   */
+  const defs = svg('defs');
+  const hatch = svg('pattern', {
+    id: 'axon-adiabatic',
+    width: unit * 3.6,
+    height: unit * 3.6,
+    patternUnits: 'userSpaceOnUse',
+    patternTransform: 'rotate(45)',
+  });
+  hatch.append(
+    svg('line', {
+      x1: 0, y1: 0, x2: 0, y2: unit * 3.6,
+      stroke: 'var(--ink-3)', 'stroke-width': unit * 0.5,
+    }),
+  );
+  defs.append(hatch);
+  root.append(defs);
+  const cut = (screen, opacity) =>
+    svg('polygon', {
+      points: screen.map((p) => p.join(',')).join(' '),
+      fill: 'url(#axon-adiabatic)',
+      opacity,
+      stroke: 'none',
+    });
+  // A surface facing away is hatched under the wireframe, so it reads at the
+  // weight the far side of the box reads at and never as the nearest thing in
+  // the drawing.
+  for (const l of poche) if (!l.front) wire.append(cut(l.screen, 0.35));
   root.append(wire);
 
   const fill = meanC == null ? 'var(--ink-3)' : tint(meanC);
+  // A surface can be flipped by clicking it, but only while the Fabric channel
+  // is in the path: patched out, the model sends all six adiabatic whatever
+  // the parameters say, and a click that moved a parameter without moving the
+  // drawing would be the sheet telling the reader something untrue about what
+  // it had just done. The strip says why, which is where that belongs.
+  const flippable = modelState?.get('fabric')?.engaged ?? false;
   for (const f of faces) {
-    root.append(
-      svg('polygon', {
-        points: f.screen.map((p) => p.join(',')).join(' '),
-        fill,
-        'fill-opacity': meanC == null ? f.alpha * 0.35 : f.alpha,
-        stroke: 'var(--ink)',
-        'stroke-width': 0.9,
-        'stroke-linejoin': 'round',
-        'vector-effect': 'non-scaling-stroke',
-      }),
-    );
+    const poly = svg('polygon', {
+      points: f.screen.map((p) => p.join(',')).join(' '),
+      fill,
+      'fill-opacity': meanC == null ? f.alpha * 0.35 : f.alpha,
+      stroke: 'var(--ink)',
+      'stroke-width': 0.9,
+      'stroke-linejoin': 'round',
+      'vector-effect': 'non-scaling-stroke',
+    });
+    const key = flippable ? boundaryKeyFor(f.surface.name) : null;
+    if (key) {
+      const { face } = controlFor(key);
+      const state = params[key];
+      poly.style.cursor = 'pointer';
+      poly.classList.add('axon-face');
+      const said = phraseFor(key);
+      const title = svg('title');
+      title.textContent =
+        `${said[0].toUpperCase()}${said.slice(1)} is ${face.format(state)}. ` +
+        `Click for ${face.flip(state)}.`;
+      poly.append(title);
+      poly.addEventListener('click', () => commit(key, face.flip(params[key]), true));
+    }
+    root.append(poly);
   }
+  for (const l of poche) if (l.front) root.append(cut(l.screen, 0.9));
 
   // Glazing, drawn after the walls so it reads as an opening cut into one.
   // Filled with the paper itself rather than a tint — the wall is carrying the
