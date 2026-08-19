@@ -87,6 +87,13 @@ so the two surfaces cannot drift.
 channel's applier in `model.js`. Do not add markup, defaults, or label strings
 anywhere else. `DEFAULT_PARAMETERS` is derived from the declaration.
 
+**To add a landmark** — the named cases a scale is read against — declare it in
+the `LANDMARKS` section of `controls.js` and hang it on the control with
+`landmarks:`. Nothing else is needed: `console.js` rules it under the
+calibration face, the plan key rules it along each wall's bar, and the sheet's
+own sliders read the same declaration. See "Landmarks" below for the rules a
+declaration has to meet, all of which throw at module load.
+
 **To add a control *kind*** — rarer, and it has two gates that fail in opposite
 directions. `console.js`'s `buildControl` throws for a kind it cannot draw, so
 the desk fails loudly at mount. `permalink.js`'s `readValue` is the quieter one:
@@ -111,6 +118,81 @@ last of those would alias an array default straight into live `params` — and
 drift with no symptom until a shared link came back wrong. A list-valued control
 carries canonical text and parses at the boundaries; `Days` is the worked
 example.
+
+### Landmarks (src/controls.js)
+
+A `Scale` or a `Facade` may carry `landmarks`: the published cases its number
+is read against, so that `1.80 W/m²K` also reads as *double, low-e* and a
+reader who does not yet think in W/m²K has somewhere to stand. They reach no
+IDF object — a throwaway harness asserted the document is byte-identical at six
+desk positions before and after they were added — so nothing here can move a
+result, only explain one.
+
+- **A landmark is a band, not a point**, because that is the shape of the fact:
+  double glazing is 2.7 to 3.0 W/m²K depending on cavity, fill and spacer.
+  Leaving `to` off closes the band to a point, which is for a *limit* — a code
+  maximum, an engine default — and draws differently from a range on purpose.
+- **`note` is required**, and that is the point of the class. A landmark is the
+  interface making a claim about the world, and a claim nobody can check is
+  what the rest of this sheet exists not to print. The note carries the source
+  and rides into the mark's `title` and the face's `aria-description`.
+- **A convention says that it is one.** 136 of the 149 cite a standard; 13
+  cannot, because nobody legislates the depth at which an overhang stops being
+  a reveal and becomes a canopy — and those are the bands an architect reads
+  fastest, since they name the thing you would have to build. They open with
+  the `CONVENTION` prefix, or a convention would sit beside an ASHRAE clause
+  looking exactly as authoritative, which is the sheet asserting under cover of
+  citing.
+- **Anything derived is arithmetic somebody can redo, so it has to be right.**
+  A note that converts an R-value to a U-value, or an imperial figure to SI,
+  is checkable and five of them were wrong on the first pass: the wall and roof
+  uninsulated bands understated their U-values (the roof's films are 0.14, not
+  the wall's 0.17), the Passive House roof band quoted 0.10–0.15 for what is
+  really 0.07–0.11, the 62.1 people rate cited 2.36 L/s from a band that
+  started at 2.5, and the slab's "diurnal depth" gave the CIBSE effective
+  figure of 0.10 m under the name of the diffusion depth, which is 0.16 m.
+- **Three rules throw at module load** (`readLandmarks`): inside the face's
+  range, no two overlapping, and — the one that had to be found by writing the
+  check — **reachable on the control's own step grid**. `input[type=range]`
+  only ever returns `min + n·step`, so a band falling between two positions
+  draws, names a case in its tooltip, and can never once be the reading. Five
+  did exactly that: the BLAST constant 0.606 against a 0.01 step, the DOE-2
+  wind term 0.224 against 0.005, and ASHRAE's lighting allowances, which are
+  imperial figures landing at 6.89 and 10.76 W/m² against 0.1. They are
+  declared now as the narrow band the rounding actually makes, with the
+  published figure in the note.
+- **`landmarkAt` is the one reading of where the tick stands**, and every
+  surface that lights a mark or letters a band takes it from there — the face's
+  rule, the sheet slider's, the plan key's bars and its legend. Lit from each
+  mark's own `holds` instead, the four came apart at a zero stop and the
+  default Air strip drew marks at full graphite over a line left blank.
+- **At a `zero` stop, only a landmark *of that stop* stands.** The distinction
+  is the difference between the two claims a mark at the bottom of a face can
+  make. A band that merely reaches zero on its way up is claiming the quantity
+  in some amount — `infiltration` has a Passive House band open at 0, and 0 ACH
+  is a sealed box and not a Passive House envelope — so it is suppressed, and
+  the readout's own `Sealed` is that position's only true landmark; `standing`
+  stays silent past it too, since "past a brick leaf" over a wall with no
+  masonry is a different statement rather than a rounder one. A landmark that
+  *is* the zero point is claiming the absence itself, which is what the reader
+  is looking at: `infWind` and `infStack` start at `None` because C = 0 and
+  B = 0 are the engine's own defaults, and saying so is the whole value of the
+  mark. Blanket silence cost both of them and split the three coefficients of
+  one equation across two behaviours on one strip, since `infConstant` carries
+  no `zero` label and went on reading `DOE-2` at the same position. The fourth
+  `readLandmarks` rule throws for a band left permanently unreadable this way.
+- **Only where somebody published it.** Most of the desk carries none: nobody
+  publishes the width a shoebox ought to be. That absence is the honest answer,
+  and the same rule as the em dash on the drawing.
+- **`phrase` is kept apart from `label`** for the reason `noun` is kept apart
+  from `label` on an environment: the face letters `Double, low-e` on its own
+  and says "between low-e double and clear double" in a sentence, and one
+  string cannot do both.
+- The blind's **slat angle** is the landmark that most needed writing down.
+  `WindowMaterial:Blind.slat_angle` is measured from the *glazing's outward
+  normal*, so 0° and 180° are **closed** and 90° is **open** — the opposite of
+  what a 0–180° slider suggests. Nothing on the face said so, and a reader
+  assuming the other convention got the shading exactly backwards.
 
 ### `applyModel` (src/model.js)
 
@@ -167,6 +249,55 @@ lettering rather than the arithmetic:
 - **The chart letters a band by how wide it lands**, not by what kind of
   environment made it: a design day is 24 hours out of 8,808 and gives up its
   label, a one-month run period is half of a two-month axis and keeps it.
+
+### Glazing (channel 03)
+
+Two models of the same window, and the strip only ever shows one of them: the
+simple one is three numbers off a product sheet, the layered one is an assembly
+built out of panes.
+
+- **The layered unit is built from a pane count, not fixed at double.**
+  `applyGlazing` writes `panes` sheets of 6 mm clear float with `panes - 1` air
+  cavities between them and hands the `Construction` `2n - 1` layers. Measured
+  on the default desk (13 mm air, uncoated): U 2.675 at two panes, 1.732 at
+  three, 1.285 at four, and 0.932 at four with a 0.04 coating. The coating goes
+  on the *cavity* face of the inboard pane — surface 3 in a double, 5 in a
+  triple — which is `front_side_infrared_hemispherical_emissivity` on that one
+  material and 0.84 everywhere else.
+- **`PANE_MAX` is a constant read off the control**, exactly as `SKY_MAX` is
+  and for the same reason: the applier sweeps every pane and cavity name on
+  every apply so a unit that has gone from four panes to two takes its
+  abandoned layers out of the document, and a literal here would leave orphans
+  the first time the slider was widened. Verified: a document taken from four
+  panes to two serializes byte-identically to one built at two.
+- **The engine's own U-factor and SHGC are read back off the run.** The layered
+  model is the only place on this desk where you set causes and are handed no
+  result, so the Glazing strip carries a `Readout` — a second block beside the
+  meter, lettering what EnergyPlus computed for the assembly. It is a reading
+  like any other: an em dash before the first run, taken down with the rest by
+  `clearReadings`, and null rather than zero when the channel is out.
+- **The tabular report is the only route to those figures.** The .eio carries
+  the same numbers under `WindowConstruction` and would be the cheaper parse,
+  but the engine hands back .eso, .mtr, .rdd, .mdd, .csv and `eplustbl.htm` and
+  no .eio at all; the .sql holds them and costs a `sql.js` dependency to open.
+  So `glassProperties` in `readings.js` parses the htm — DOM-free, like the
+  rest of that module, and **by column head rather than by position**, because
+  the table has grown columns between versions (the NFRC assembly trio is newer
+  than the glass one) and a counted index would silently read the wrong one.
+- **It reads the row for a named construction, never the table's own "Total or
+  Average".** That row is area-weighted across every exterior opening in the
+  building, so with rooflights on their own glass it averages two different
+  windows into a number no assembly has — measured, 1.732 and 2.603 averaging
+  to neither. Every surface built of one construction reports the same three
+  figures, so the first row carrying the name is the assembly exactly.
+  `WINDOW_CONSTRUCTION` is exported from `model.js` so the name is not typed
+  twice.
+- **The whole-window line appears only where there is a frame.** EnergyPlus
+  fills the Assembly U-factor / SHGC / VT cells only for an opening carrying a
+  `WindowProperty:FrameAndDivider`; with none they arrive empty, and
+  `Number('')` is 0, which would have printed a U-factor of zero over every
+  frameless window. The reader treats an empty cell and a lone hyphen as
+  absent.
 
 ### Skylights (channel 04)
 
@@ -612,7 +743,7 @@ next visit, and setting it aside folds it to a one-line row that still reads.
   than none — treat updating the general notes as part of any feature's
   definition of done, and check them whenever a modification to the
   onboarding itself is requested.
-- **Bump the storage key** (`shoebox-general-notes-v1`) whenever the steps
+- **Bump the storage key** (`shoebox-general-notes-v2`) whenever the steps
   change meaning, so a returning reader gets the new sheet rather than stale
   ticks against notes they never read.
 - Completion only ever comes from the genuine event: the solve note from the

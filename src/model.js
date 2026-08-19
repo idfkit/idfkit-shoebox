@@ -41,6 +41,15 @@ import { END_USES } from './bill.js';
 export const ZONE_NAME = 'ZONE ONE';
 export const SOUTH_WALL = 'Zn001:Wall001'; // the y = 0 wall; north_axis is 0, so it faces south
 export const SOUTH_WINDOW = 'Zn001:Wall001:Win001';
+/**
+ * The walls' glazing assembly, whichever of the two models built it.
+ *
+ * Exported because the sheet reads the engine's own U-factor and SHGC for it
+ * back out of the run's envelope summary, which is a table indexed by
+ * construction name — and a name repeated in a reader and in the applier is a
+ * name that will one day be changed in only one of them.
+ */
+export const WINDOW_CONSTRUCTION = 'WINDOW';
 
 /**
  * The four walls, in the order the plan loop generates them.
@@ -110,6 +119,16 @@ const SKY_COUNT = controlFor('skyCount').control;
  * forty-eight curb faces in the document that nothing would otherwise delete.
  */
 const SKY_MAX = SKY_COUNT.max ** 2;
+/**
+ * The most sheets a layered unit can carry, read off the control that owns the
+ * stop for the same reason `SKY_COUNT` is: `applyGlazing` sweeps every pane and
+ * cavity name on every apply so a unit that has shrunk takes its abandoned
+ * layers out of the document, and a literal here would leave orphans behind
+ * the first time the slider was widened.
+ */
+const PANE_MAX = controlFor('panes').control.max;
+const paneName = (i) => `GLZ-PANE-${i}`;
+const cavityName = (i) => `GLZ-CAVITY-${i}`;
 const BLIND = 'WINDOW BLIND';
 const INTERNAL_MASS = 'Internal Mass';
 const INTERNAL_MASS_CON = 'INTERNALMASS';
@@ -671,7 +690,7 @@ export function buildModel(schema, parameters = DEFAULT_PARAMETERS, bypass = DEF
   doc.add('Construction', 'R13WALL', { outside_layer: 'R13LAYER' });
   doc.add('Construction', 'FLOOR', { outside_layer: 'C5 - 4 IN HW CONCRETE' });
   doc.add('Construction', 'ROOF31', { outside_layer: 'R31LAYER' });
-  doc.add('Construction', 'WINDOW', { outside_layer: 'DOUBLE GLAZING' });
+  doc.add('Construction', WINDOW_CONSTRUCTION, { outside_layer: 'DOUBLE GLAZING' });
 
   doc.add('Zone', ZONE_NAME, {
     direction_of_relative_north: 0,
@@ -1000,59 +1019,78 @@ function applyMass(doc, params, engaged) {
     : 'ConductionTransferFunction';
 }
 
+/**
+ * One sheet of 6 mm clear float, as the layered model builds them.
+ *
+ * Every pane in the stack is the same glass; what the pane count buys is the
+ * cavities between them, which is where a multiple-glazed unit's resistance
+ * actually is. `emissivity` is the *outside* face of the sheet — the one
+ * looking into the cavity outboard of it — and only the inboard pane is ever
+ * handed anything but bare float.
+ */
+const pane = (emissivity) => ({
+  optical_data_type: 'SpectralAverage',
+  thickness: 0.006,
+  solar_transmittance_at_normal_incidence: 0.775,
+  front_side_solar_reflectance_at_normal_incidence: 0.071,
+  back_side_solar_reflectance_at_normal_incidence: 0.071,
+  visible_transmittance_at_normal_incidence: 0.881,
+  front_side_visible_reflectance_at_normal_incidence: 0.08,
+  back_side_visible_reflectance_at_normal_incidence: 0.08,
+  infrared_transmittance_at_normal_incidence: 0,
+  front_side_infrared_hemispherical_emissivity: emissivity,
+  back_side_infrared_hemispherical_emissivity: 0.84,
+  conductivity: 1.0,
+});
+
 /** 03 — the openings, and what they are made of. */
 function applyGlazing(doc, params, engaged) {
   // The assembly, rebuilt from scratch: a construction's layer count is its
-  // identity, and the two models do not have the same number of layers.
-  drop(doc, 'Construction', 'WINDOW');
+  // identity, and neither the two models nor two pane counts have the same
+  // number of layers. The sweep runs to the pane control's top stop rather
+  // than to the live count, for the reason `SKY_MAX` does: a unit that has
+  // just gone from four panes to two would otherwise leave two sheets and two
+  // cavities in the document that nothing references and nothing removes.
+  drop(doc, 'Construction', WINDOW_CONSTRUCTION);
   drop(doc, 'WindowMaterial:SimpleGlazingSystem', 'DOUBLE GLAZING');
-  drop(doc, 'WindowMaterial:Glazing', 'GLZ-OUTER');
-  drop(doc, 'WindowMaterial:Glazing', 'GLZ-INNER');
-  drop(doc, 'WindowMaterial:Gas', 'GLZ-CAVITY');
+  for (let i = 1; i <= PANE_MAX; i += 1) {
+    drop(doc, 'WindowMaterial:Glazing', paneName(i));
+    drop(doc, 'WindowMaterial:Gas', cavityName(i));
+  }
 
   if (params.glazingModel === 'Layered') {
-    doc.add('WindowMaterial:Glazing', 'GLZ-OUTER', {
-      optical_data_type: 'SpectralAverage',
-      thickness: 0.006,
-      solar_transmittance_at_normal_incidence: 0.775,
-      front_side_solar_reflectance_at_normal_incidence: 0.071,
-      back_side_solar_reflectance_at_normal_incidence: 0.071,
-      visible_transmittance_at_normal_incidence: 0.881,
-      front_side_visible_reflectance_at_normal_incidence: 0.08,
-      back_side_visible_reflectance_at_normal_incidence: 0.08,
-      infrared_transmittance_at_normal_incidence: 0,
-      front_side_infrared_hemispherical_emissivity: 0.84,
-      back_side_infrared_hemispherical_emissivity: 0.84,
-      conductivity: 1.0,
-    });
-    doc.add('WindowMaterial:Gas', 'GLZ-CAVITY', { gas_type: 'Air', thickness: params.gapWidth });
-    doc.add('WindowMaterial:Glazing', 'GLZ-INNER', {
-      optical_data_type: 'SpectralAverage',
-      thickness: 0.006,
-      solar_transmittance_at_normal_incidence: 0.775,
-      front_side_solar_reflectance_at_normal_incidence: 0.071,
-      back_side_solar_reflectance_at_normal_incidence: 0.071,
-      visible_transmittance_at_normal_incidence: 0.881,
-      front_side_visible_reflectance_at_normal_incidence: 0.08,
-      back_side_visible_reflectance_at_normal_incidence: 0.08,
-      infrared_transmittance_at_normal_incidence: 0,
-      // The coating sits on surface 3 — the cavity face of the inboard pane.
-      front_side_infrared_hemispherical_emissivity: params.paneEmiss,
-      back_side_infrared_hemispherical_emissivity: 0.84,
-      conductivity: 1.0,
-    });
-    doc.add('Construction', 'WINDOW', {
-      outside_layer: 'GLZ-OUTER',
-      layer_2: 'GLZ-CAVITY',
-      layer_3: 'GLZ-INNER',
-    });
+    const panes = params.panes;
+    // Outboard to inboard, alternating sheet and cavity, which is the order a
+    // `Construction` reads its layers in. The coating sits on the cavity face
+    // of the inboard pane — surface 3 in a double unit, surface 5 in a triple
+    // — because that is the surface a low-e hard coat is actually laid on and
+    // the one it does the most from.
+    const layers = [];
+    for (let i = 1; i <= panes; i += 1) {
+      if (i > 1) {
+        doc.add('WindowMaterial:Gas', cavityName(i - 1), {
+          gas_type: 'Air',
+          thickness: params.gapWidth,
+        });
+        layers.push(cavityName(i - 1));
+      }
+      doc.add('WindowMaterial:Glazing', paneName(i), pane(i === panes ? params.paneEmiss : 0.84));
+      layers.push(paneName(i));
+    }
+    doc.add(
+      'Construction',
+      WINDOW_CONSTRUCTION,
+      Object.fromEntries(
+        layers.map((name, i) => [i === 0 ? 'outside_layer' : `layer_${i + 1}`, name]),
+      ),
+    );
   } else {
     doc.add('WindowMaterial:SimpleGlazingSystem', 'DOUBLE GLAZING', {
       u_factor: params.uFactor,
       solar_heat_gain_coefficient: params.shgc,
       visible_transmittance: params.visT,
     });
-    doc.add('Construction', 'WINDOW', { outside_layer: 'DOUBLE GLAZING' });
+    doc.add('Construction', WINDOW_CONSTRUCTION, { outside_layer: 'DOUBLE GLAZING' });
   }
 
   drop(doc, 'WindowProperty:FrameAndDivider', FRAME);
@@ -1080,7 +1118,7 @@ function applyGlazing(doc, params, engaged) {
       existing ??
       doc.add('FenestrationSurface:Detailed', name, {
         surface_type: 'Window',
-        construction_name: 'WINDOW',
+        construction_name: WINDOW_CONSTRUCTION,
         building_surface_name: wall.name,
         view_factor_to_ground: 0.5,
         multiplier: 1,
@@ -1140,7 +1178,7 @@ function applySkylights(doc, params, engaged) {
         view_factor_to_ground: 0,
         multiplier: 1,
       });
-    target.construction_name = own ? SKY_CON : 'WINDOW';
+    target.construction_name = own ? SKY_CON : WINDOW_CONSTRUCTION;
     target.number_of_vertices = light.verts.length;
     for (const [field, value] of Object.entries(windowVertexFields(light.verts))) {
       target.set(field, value);
@@ -1231,7 +1269,7 @@ function applyBlinds(doc, params, engaged) {
   const windows = doc
     .all('FenestrationSurface:Detailed')
     .toArray()
-    .filter((w) => String(w.construction_name) === 'WINDOW')
+    .filter((w) => String(w.construction_name) === WINDOW_CONSTRUCTION)
     .map((w) => String(w.name));
   if (!windows.length) return;
 
