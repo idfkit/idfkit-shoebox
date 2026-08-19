@@ -11,6 +11,10 @@ import {
   runDays,
   serializeHolidays,
 } from './controls.js';
+// The rail's own units, from the module that owns reading a run. One
+// definition: a second copy here would be the first thing to drift the day a
+// figure changed precision on one surface and not the other.
+import { watts } from './readings.js';
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -50,15 +54,6 @@ const el = (tag, className, text) => {
 };
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-
-/** Watts, at a precision that reads on a strip rather than in a report. */
-function watts(w) {
-  if (!Number.isFinite(w)) return '—';
-  const abs = Math.abs(w);
-  if (abs >= 10000) return `${(w / 1000).toFixed(1)} kW`;
-  if (abs >= 1000) return `${(w / 1000).toFixed(2)} kW`;
-  return `${w.toFixed(0)} W`;
-}
 
 /* ══ mounting ════════════════════════════════════════════════════════════ */
 

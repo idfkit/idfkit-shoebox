@@ -186,6 +186,240 @@ export const stampText = (points, at) => {
   return t ? `${String(t.hour ?? 0).padStart(2, '0')}:00, ${t.day} ${MONTHS[t.month - 1]}` : null;
 };
 
+/** Anchor a variable name so one meter cannot pick up another's series. */
+export const exactly = (name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+
+/** Watts, at a precision that reads on a strip rather than in a report. */
+export function watts(w) {
+  if (!Number.isFinite(w)) return '—';
+  const abs = Math.abs(w);
+  if (abs >= 10000) return `${(w / 1000).toFixed(1)} kW`;
+  if (abs >= 1000) return `${(w / 1000).toFixed(2)} kW`;
+  return `${w.toFixed(0)} W`;
+}
+
+/* ══ the hours worth reading at ══════════════════════════════════════════ */
+
+/**
+ * One named instant, found in a run rather than named on a calendar.
+ *
+ * These exist because "which hour" is a question the field already has stock
+ * answers to, and a reader who has to hunt for them along a curve is being
+ * asked to rediscover their own conventions:
+ *
+ *  - **The two peaks are EnergyPlus's own organising instants.** The Component
+ *    Load Summary tables report at the *time of the peak load*, heating and
+ *    cooling separately, and every sizing report names that time; a modeller
+ *    arriving at this plate already has "peak heating" and "peak cooling" as
+ *    the two hours a design is argued at.
+ *  - **The weather-side pair is the other convention they carry.** A results
+ *    tool's period list (DesignBuilder's is the familiar one) offers a summer
+ *    and a winter *design* week — the hottest and the coldest in the file,
+ *    read off its own statistics — beside typical weeks of each. Those are
+ *    weeks and this is an instant, so what survives the translation is the
+ *    hottest and the coldest outdoor hour, which is what a design week is
+ *    picked to contain.
+ *  - **The zone's own extremes belong beside them** because this sheet's
+ *    subject is the zone, not the weather: on a free-running desk there is no
+ *    heating or cooling rate to peak at all, and the warmest and coolest hours
+ *    inside the building are the only peaks there are.
+ *  - **The transmitted-solar peak** is the one gain with an hour of its own
+ *    worth going to, and the hour every glazing and shading decision on the
+ *    desk is arguing about.
+ *
+ * Everything is found in the ESO in hand and nothing is computed from
+ * `params`, by the sheet's rule: the desk may have moved since the solve, and
+ * an offer lettered off live parameters would name an hour the run does not
+ * contain.
+ *
+ * `holds` is the honesty gate. An `argmax` always returns something, so a
+ * "peak heating" over a run that never called for heat would hand back the
+ * least-cooled hour of the year under a label claiming the opposite. Where the
+ * extreme does not hold, the offer is refused with `never` — the same refusal
+ * `Channel.requires` makes, for the same reason.
+ */
+export class Instant {
+  constructor({ id, label, blurb, variable = null, perBuilding = false, better, holds = () => true, letter, missing, never }) {
+    this.id = id;
+    this.label = label;
+    this.blurb = blurb;
+    // Null means the zone mean air temperature the caller already holds: it is
+    // the series every run carries and the one the plate is drawn from, so
+    // asking the ESO for it a second time would be a second parse of the same
+    // numbers under a name that could drift from the plate's.
+    this.variable = variable;
+    // Reported at building level, already multiplied by the zone multiplier —
+    // see `Term.perBuilding`. It does not move the argmax, since the multiplier
+    // is constant over a run, but it does move the figure the offer letters,
+    // and an offer reading three times the rail's watts would be the drift the
+    // read-back rule exists to prevent.
+    this.perBuilding = perBuilding;
+    this.better = better;
+    this.holds = holds;
+    this.letter = letter;
+    // Why the series is not in this run at all — a channel that is out of the
+    // path takes its output variable with it.
+    this.missing = missing;
+    // Why the extreme that was found is not the thing the label names.
+    this.never = never;
+    Object.freeze(this);
+  }
+}
+
+const SYSTEM_RATE = 'Zone Air Heat Balance System Air Transfer Rate';
+const NO_SYSTEM =
+  'The System strip is out of the path, so this run metered no heating or cooling rate.';
+
+export const INSTANTS = Object.freeze([
+  new Instant({
+    id: 'heating',
+    label: 'Peak heating',
+    blurb: 'The hour the ideal unit put the most heat into the zone air.',
+    variable: SYSTEM_RATE,
+    perBuilding: true,
+    better: (v, best) => v > best,
+    holds: (v) => v > 0,
+    letter: watts,
+    missing: NO_SYSTEM,
+    never: 'Nothing in this run called for heating.',
+  }),
+  new Instant({
+    id: 'cooling',
+    label: 'Peak cooling',
+    blurb: 'The hour the ideal unit took the most heat out of the zone air.',
+    variable: SYSTEM_RATE,
+    perBuilding: true,
+    better: (v, best) => v < best,
+    holds: (v) => v < 0,
+    letter: watts,
+    missing: NO_SYSTEM,
+    never: 'Nothing in this run called for cooling.',
+  }),
+  new Instant({
+    id: 'warmest',
+    label: 'Warmest zone',
+    blurb: 'The highest zone mean air temperature in the run.',
+    better: (v, best) => v > best,
+    letter: (v) => `${v.toFixed(1)} °C`,
+  }),
+  new Instant({
+    id: 'coolest',
+    label: 'Coolest zone',
+    blurb: 'The lowest zone mean air temperature in the run.',
+    better: (v, best) => v < best,
+    letter: (v) => `${v.toFixed(1)} °C`,
+  }),
+  new Instant({
+    id: 'hottest',
+    label: 'Hottest outdoor',
+    blurb: 'The highest outdoor drybulb in the run — the hour a design week is picked to contain.',
+    variable: 'Site Outdoor Air Drybulb Temperature',
+    better: (v, best) => v > best,
+    letter: (v) => `${v.toFixed(1)} °C`,
+    missing: 'This run carried no outdoor drybulb series.',
+  }),
+  new Instant({
+    id: 'coldest',
+    label: 'Coldest outdoor',
+    blurb: 'The lowest outdoor drybulb in the run.',
+    variable: 'Site Outdoor Air Drybulb Temperature',
+    better: (v, best) => v < best,
+    letter: (v) => `${v.toFixed(1)} °C`,
+    missing: 'This run carried no outdoor drybulb series.',
+  }),
+  new Instant({
+    id: 'solar',
+    label: 'Peak solar gain',
+    blurb: 'The hour the most solar came through the glass.',
+    variable: 'Enclosure Windows Total Transmitted Solar Radiation Rate',
+    better: (v, best) => v > best,
+    holds: (v) => v > 0,
+    letter: watts,
+    missing: 'Glazing, Skylights and Blinds are all out of the path, so no transmitted solar was metered.',
+    never: 'No solar reached the glass in this run.',
+  }),
+]);
+
+/**
+ * Where one named instant lands in a run, or why it does not land at all.
+ *
+ * Searched over **every** environment the run came back with, not over the
+ * billed ones `readExtremes` uses. The two rules differ because the questions
+ * do: an intensity read over a year must not have forty-eight hours of design
+ * weather folded into it, whereas a reader asking for the peak heating hour of
+ * a run that was handed a winter design day means that day — it is what a
+ * design day is for. Nothing is hidden by the wider search, because the offer
+ * letters the environment it landed in.
+ *
+ * Returns `{ instant, at, value, pin, reason }`. `at` is null with a reason
+ * whenever the offer cannot be made, and the caller greys the offer and says
+ * the reason rather than falling back to a neighbouring hour — the pin has
+ * refused that substitution since it was built.
+ */
+export function findInstant(instant, points, runs, eso) {
+  const series = instant.variable ? hourly(eso, exactly(instant.variable)) : points;
+  if (!series.length) {
+    return { instant, at: null, reason: instant.missing ?? 'This run did not carry that series.' };
+  }
+  // Same length or nothing: an hourly series that does not span the same
+  // environments cannot be indexed by the same `at`, and an off-by-one here
+  // would put every meter on the desk at an hour nobody chose. Said apart from
+  // `missing`, because a series that is present and short is a different fact
+  // from one that was never requested, and only one of the two is explained by
+  // a channel being out of the path.
+  if (series.length !== points.length) {
+    return {
+      instant,
+      at: null,
+      reason: 'That series does not span the same hours as this run, so the two cannot be read at one instant.',
+    };
+  }
+  let at = null;
+  let best = null;
+  for (const run of runs) {
+    for (let i = run.start; i <= run.end; i += 1) {
+      const v = series[i].value;
+      if (at == null || instant.better(v, best)) {
+        at = i;
+        best = v;
+      }
+    }
+  }
+  if (at == null) return { instant, at: null, reason: 'This run carried no hours.' };
+  if (!instant.holds(best)) {
+    return { instant, at: null, reason: instant.never ?? 'That extreme is not in this run.' };
+  }
+  return { instant, at, value: best, pin: pinAt(points, runs, at) };
+}
+
+/** Every offer, in the order the chips stand. */
+export const instantOffers = (points, runs, eso) =>
+  INSTANTS.map((instant) => findInstant(instant, points, runs, eso));
+
+/* ══ naming an instant outright ══════════════════════════════════════════ */
+
+/**
+ * The calendar a run actually contains, as the picker's own options.
+ *
+ * Built by walking the timestamps rather than by counting days from a begin
+ * date, for the reason everything else here reads the run instead of the desk:
+ * a run period is whatever came back, and a picker offering 31 September or
+ * hour 24 would exist only to be refused. Bounded this way it cannot express
+ * an instant the run does not hold, which is the objection that kept a date
+ * field off this sheet in the first place.
+ */
+export function runCalendar(points, run) {
+  const months = new Map(); // month number -> Map(day -> Map(hour -> index))
+  for (let i = run.start; i <= run.end; i += 1) {
+    const t = points[i].timestamp;
+    if (!months.has(t.month)) months.set(t.month, new Map());
+    const days = months.get(t.month);
+    if (!days.has(t.day)) days.set(t.day, new Map());
+    days.get(t.day).set(t.hour ?? 0, i);
+  }
+  return months;
+}
+
 /**
  * The zone series with its environment runs — the one prelude both readers
  * below share, so "which hours count" cannot drift between them. Returns null

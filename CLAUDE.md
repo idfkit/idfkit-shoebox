@@ -650,6 +650,62 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   hour. Clicking the held hour again releases it, so the plate can undo its own
   gesture. `renderTrace` therefore runs **after** `readAt` in `solve` — drawn
   first it would post the previous run's instant.
+- **The marker drags, and the listeners are on `.trace` rather than on the
+  `<svg>`.** Every step of a drag re-letters the reading, which redraws the
+  plate, which throws away the SVG the gesture started on — and any pointer
+  capture held on it, so the drag would end silently on its first frame. The
+  host survives; `plateField` carries the last render's hit test (the viewBox
+  width, the field inside the gutters, the point count and whether the axis is
+  too coarse for a click to mean an hour) so an event can be mapped back to an
+  index. Two rules that are not obvious: a press that never travels is still a
+  **click** and toggles, while a drag that ends where it began must not release
+  the pin it just placed (`hold`); and the address bar is left alone until the
+  release, the rule every gesture here follows — `endGesture` is not used
+  because a pin is not a shape, so the suppression is passed down instead.
+  `setPin` / `releasePin` are the one pair every route goes through.
+- **The hour also has a picker, and it lives on the sheet.** `renderWhen` draws
+  a bar between the plate and its caption carrying the instant, the hold, and
+  two ways of naming another one. It is on the sheet rather than only on the
+  rail for the reason the plate grew its marker: the rail is inside a console
+  you have to open, and the hour is the most movable thing about every figure
+  on the page.
+
+  Half of it is **named instants** (`INSTANTS` in `readings.js`) — the hours the
+  field already has words for. EnergyPlus's own Component Load Summary reports
+  at the *time of the peak load*, heating and cooling apart, and every sizing
+  report names that time, so **peak heating** and **peak cooling** are the two
+  a modeller arrives with; a results tool's period list (DesignBuilder's is the
+  familiar one) offers summer and winter *design* weeks read off the weather
+  file's own statistics, which translates to an instant as the **hottest** and
+  **coldest outdoor** hour; the zone's own **warmest** and **coolest** belong
+  beside them because a free-running desk has no heating or cooling rate at
+  all; and **peak solar gain** is the hour every glazing and shading control on
+  the desk is arguing about. Each is found by `argmax` over the ESO in hand,
+  over *every* environment the run came back with — deliberately not the billed
+  ones `readExtremes` uses, because a reader asking for the peak heating hour
+  of a run handed a winter design day means that day, and the offer letters
+  which environment it landed in so nothing is hidden. `Instant.holds` is the
+  honesty gate: an `argmax` always returns something, so "peak heating" over a
+  run that never called for heat would hand back the least-cooled hour under a
+  label claiming the opposite. Where it fails, or where the series is not in
+  the run at all, the offer is **refused with its reason in place of its
+  stamp** rather than falling back to a neighbour.
+
+  The other half is a **calendar bounded by the run**. A date field was
+  rejected once, on the argument that it invites February the 30th and hour 25
+  purely to meet a refusal message — but that was an objection to a *free*
+  field, and every option here is walked out of the run's own timestamps
+  (`runCalendar`), so there is nothing left to refuse. It earns its place
+  because the gesture cannot reach everywhere: an annual plate at ten hours to
+  the pixel is physically unable to name 15:00 on 14 February, and a pointer is
+  not the keyboard's instrument at all. Coarse to fine — choosing an
+  environment lands on its own worst hour, a month or a day on that day's
+  extreme, and only the hour field names an hour.
+
+  Both halves are cached on the ESO's identity (`offersFor`, `calendarFor`):
+  the bar is rebuilt on every frame of a plate drag, and seven argmaxes over
+  8,760 hours per frame would be the one expensive thing in a gesture that is
+  otherwise array indexing.
 - **The pin is a calendar stamp, not an index.** `{ kind, month, day, hour }`,
   where kind is `year` / `winter` / `summer` — by environment *kind* because
   the index is not a property of the desk (keeping the sizing days renumbers
