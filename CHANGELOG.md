@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The sheet says which build of itself you are reading.** The title block's
   Sheet cell has always carried a revision, and it was the string `Rev A`,
   hand-lettered and never once true. It now carries the build: `E-01 · Rev
-  0.2.0` on a tagged release, and `E-01 · Rev 0.1.0+cd5881e` on the far more
+  0.2.0` on a tagged release, and `E-01 · Rev 0.2.0+cd5881e` on the far more
   common case of a deploy from `main` with no tag on it, the sha being semver's
   build metadata — the same declared version, this particular build of it. It
   links to the release or the commit it names, so a reader who thinks a number

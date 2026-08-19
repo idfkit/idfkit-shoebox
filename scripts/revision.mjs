@@ -8,7 +8,7 @@
  * off the source rather than declared by hand, under one rule:
  *
  *   - HEAD carries a tag  ->  `0.2.0`, the release's own name and nothing else;
- *   - anything else       ->  `0.1.0+cd5881e`, the version being worked toward
+ *   - anything else       ->  `0.2.0+cd5881e`, the version being worked toward
  *                             with the commit that was built.
  *
  * The `+` is semver's build metadata, which is exactly what a sha is: the same

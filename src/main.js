@@ -3067,7 +3067,7 @@ async function attachFromLink(linked) {
  *
  * Everything else in that block describes the run; this one cell describes the
  * drawing, which is what a revision cell is for. It reads `E-01 · Rev 0.2.0` on
- * a tagged release and `E-01 · Rev 0.1.0+cd5881e` on a build published from
+ * a tagged release and `E-01 · Rev 0.2.0+cd5881e` on a build published from
  * main without one, and the version clicks through to the release or the commit
  * it names — a reader who wants to say "this number looks wrong" can now say
  * which sheet the number was on.

@@ -873,7 +873,7 @@ Opening a pull request publishes a preview at `shoebox.idfkit.com/<number>/`
   exists to prevent.
 - **The sheet stamps its own revision, and the sha is the common case.** The
   title block's Sheet cell reads `E-01 · Rev 0.2.0` on a tagged build and
-  `E-01 · Rev 0.1.0+cd5881e` on everything else, because this page is published
+  `E-01 · Rev 0.2.0+cd5881e` on everything else, because this page is published
   from `main` far more often than it is tagged and a reading is only worth
   arguing with when you know which issue of the drawing produced it.
   `scripts/revision.mjs` resolves it — `git describe --tags --exact-match` for

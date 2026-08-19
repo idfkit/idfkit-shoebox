@@ -16,7 +16,7 @@
 const stamp = typeof __SHEET_REVISION__ === 'undefined' ? null : __SHEET_REVISION__;
 
 /**
- * `version` is `0.2.0` on a tagged release and `0.1.0+cd5881e` on everything
+ * `version` is `0.2.0` on a tagged release and `0.2.0+cd5881e` on everything
  * else; see `scripts/revision.mjs` for why. `commit` is the full sha, because
  * the seven characters shown are for reading and the forty are for linking.
  */
