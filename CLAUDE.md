@@ -679,6 +679,75 @@ and the rest per storey — what the axonometric draws — and `grossFloor`,
   cause is not otherwise obvious, and because a reading the reader cannot
   check the division of is the thing this sheet exists not to print.
 
+### The description (src/describe.js)
+
+The paragraph under the plate opens with the building and closes with the
+reading: two sentences about the desk the reader drew, then the one sentence
+that says what drawing it that way did. The description half is generated, not
+written — `describeDesk` returns a token list (strings, and `{ q }` for the
+quantities the sheet letters in its mono face) that `solve` appends ahead of
+the finding's own clauses.
+
+- **What to say is decided by difference.** Ninety-odd controls, and room for
+  three, so the moves are ranked by how far each sits from its own default —
+  the same identity diff `encodeState` takes to decide what a permalink must
+  carry, for the same reason: what the reader changed is what the reader
+  designed. `moved()` scores a scalar by its own travel (`Control.fraction`),
+  and the `FLIP` table scores a channel being patched in or out **above
+  anything a slider can reach**. That table is not decoration: a pane
+  emissivity taken the whole way across its range scores 1.00, and before the
+  flips outranked it the paragraph described the glass of a building whose
+  ideal unit it never mentioned.
+- **Ranking chooses; declaration order reads.** `READING_ORDER` re-sorts the
+  three that won, because "which three" and "in what order" are different
+  questions — left in rank order the clauses composed by luck, and a site
+  clause, a mechanism and a caveat about the whole run do not join in any
+  order you please.
+- **Every move is a noun phrase**, so one lead-in governs all of them however
+  they land, and none carries a comma of its own — a clause with a comma turns
+  the series' last "and" into an ambiguity about which half it governs. The
+  desk that changed exactly one thing is not a rare desk, which is why the
+  lead-in cannot be a verb agreeing with a plural.
+- **The compass words are measured, not named.** `turn()` puts the orientation
+  into the vertices and leaves every wall's name where it was, so on a building
+  turned 40° the wall called south faces south-east. `geometryFacts` now
+  returns `faces` — per wall: its length, area, glazing, ratio, overhang,
+  projection and **bearing off its own outward normal** — and the description
+  letters the bearing beside the word wherever the box is off the cardinals.
+  Reading the plan key's name instead would have the sheet stating the one
+  thing about a turned desk that is flatly untrue.
+- **A setting is described by the object it reached, not by its own value.**
+  *Available* is not a modifier on a unit that has two setpoints: at "Heat
+  only" `applySystem` writes a `ThermostatSetpoint:SingleHeating` and the
+  cooling setpoint reaches nothing, so the clause is read off the thermostat
+  object in the document — as is the availability schedule, since "Occupied"
+  falls back to `AlwaysOn` with Gains out of the path. The same rule takes the
+  wall glazing's U-factor and SHGC out of the sentence on a roof-only desk
+  whose rooflights are glazed in their own unit. The same reflex sends the
+  layered unit to `landmarkAt(panes).phrase` rather than to the word "double":
+  a literal there is how a paragraph goes on calling a triple a double the day
+  the pane count arrives.
+- **Which surfaces have an outside is part of the description.** A wall or a
+  roof set adiabatic is the model saying there is another heated space on the
+  far side, and a paragraph that only ever said what was *glazed* would letter
+  a party wall as solid — true of the drawing and silent about the reason. It
+  is read off each surface's own boundary in the document, ranked above any
+  slider and below a channel flip.
+- **It is captured before the await**, beside `capture` and the IDF, off the
+  snapshot the run was written from. Lettered after, a slider turned during a
+  0.7 s annual run would have the sentence describing one building over another
+  building's chart.
+- **Nothing is said that is not measured.** No typology — 12 m²/person is a
+  number, not "an office"; no assembly names — an R-value is not "a cavity
+  wall"; and no verdict, because "well insulated" has no measurement behind it
+  and no benchmark on this page to earn it. Areas, ratios and reaches come off
+  the document, so a channel patched out from under a control reads as what the
+  document holds: a building with Glazing bypassed is described as solid,
+  because it is.
+- The module is DOM-free and free of the network — the station arrives as
+  `place: { name, zone }`, already read — so the Node harness can assert the
+  sentences over documents it builds itself.
+
 **A plan key's four walls are four subjects, not one.** The `Facade` controls —
 window-to-wall ratio and overhang projection — own a key per wall, so each wall
 carries its own Study offer in the legend under the plan and its own curve, and
@@ -1046,6 +1115,62 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   hour. Clicking the held hour again releases it, so the plate can undo its own
   gesture. `renderTrace` therefore runs **after** `readAt` in `solve` — drawn
   first it would post the previous run's instant.
+- **The marker drags, and the listeners are on `.trace` rather than on the
+  `<svg>`.** Every step of a drag re-letters the reading, which redraws the
+  plate, which throws away the SVG the gesture started on — and any pointer
+  capture held on it, so the drag would end silently on its first frame. The
+  host survives; `plateField` carries the last render's hit test (the viewBox
+  width, the field inside the gutters, the point count and whether the axis is
+  too coarse for a click to mean an hour) so an event can be mapped back to an
+  index. Two rules that are not obvious: a press that never travels is still a
+  **click** and toggles, while a drag that ends where it began must not release
+  the pin it just placed (`hold`); and the address bar is left alone until the
+  release, the rule every gesture here follows — `endGesture` is not used
+  because a pin is not a shape, so the suppression is passed down instead.
+  `setPin` / `releasePin` are the one pair every route goes through.
+- **The hour also has a picker, and it lives on the sheet.** `renderWhen` draws
+  a bar between the plate and its caption carrying the instant, the hold, and
+  two ways of naming another one. It is on the sheet rather than only on the
+  rail for the reason the plate grew its marker: the rail is inside a console
+  you have to open, and the hour is the most movable thing about every figure
+  on the page.
+
+  Half of it is **named instants** (`INSTANTS` in `readings.js`) — the hours the
+  field already has words for. EnergyPlus's own Component Load Summary reports
+  at the *time of the peak load*, heating and cooling apart, and every sizing
+  report names that time, so **peak heating** and **peak cooling** are the two
+  a modeller arrives with; a results tool's period list (DesignBuilder's is the
+  familiar one) offers summer and winter *design* weeks read off the weather
+  file's own statistics, which translates to an instant as the **hottest** and
+  **coldest outdoor** hour; the zone's own **warmest** and **coolest** belong
+  beside them because a free-running desk has no heating or cooling rate at
+  all; and **peak solar gain** is the hour every glazing and shading control on
+  the desk is arguing about. Each is found by `argmax` over the ESO in hand,
+  over *every* environment the run came back with — deliberately not the billed
+  ones `readExtremes` uses, because a reader asking for the peak heating hour
+  of a run handed a winter design day means that day, and the offer letters
+  which environment it landed in so nothing is hidden. `Instant.holds` is the
+  honesty gate: an `argmax` always returns something, so "peak heating" over a
+  run that never called for heat would hand back the least-cooled hour under a
+  label claiming the opposite. Where it fails, or where the series is not in
+  the run at all, the offer is **refused with its reason in place of its
+  stamp** rather than falling back to a neighbour.
+
+  The other half is a **calendar bounded by the run**. A date field was
+  rejected once, on the argument that it invites February the 30th and hour 25
+  purely to meet a refusal message — but that was an objection to a *free*
+  field, and every option here is walked out of the run's own timestamps
+  (`runCalendar`), so there is nothing left to refuse. It earns its place
+  because the gesture cannot reach everywhere: an annual plate at ten hours to
+  the pixel is physically unable to name 15:00 on 14 February, and a pointer is
+  not the keyboard's instrument at all. Coarse to fine — choosing an
+  environment lands on its own worst hour, a month or a day on that day's
+  extreme, and only the hour field names an hour.
+
+  Both halves are cached on the ESO's identity (`offersFor`, `calendarFor`):
+  the bar is rebuilt on every frame of a plate drag, and seven argmaxes over
+  8,760 hours per frame would be the one expensive thing in a gesture that is
+  otherwise array indexing.
 - **The pin is a calendar stamp, not an index.** `{ kind, month, day, hour }`,
   where kind is `year` / `winter` / `summer` — by environment *kind* because
   the index is not a property of the desk (keeping the sizing days renumbers

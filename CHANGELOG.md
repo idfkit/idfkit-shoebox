@@ -9,6 +9,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The reading hour drags, and it has a picker.** The plate's marker could be
+  placed with a click; it can now be taken hold of and moved along the curve,
+  with every meter on the rail, the balance total and the stamp under the plate
+  re-lettering as it travels. Nothing is simulated — the run is already in hand
+  and the hour is only a way of reading it — so a drag across a Denver year
+  costs a re-read of an array rather than 8,760 hours of engine time. A press
+  that never travels is still a click and still toggles the hour it names; a
+  drag that ends where it began keeps the pin it just placed; and the address
+  bar updates on release, never per frame, like every other gesture here.
+
+  Under the plate there is now a bar carrying the instant, the hold, and two
+  ways of naming another one. **Named hours** first, because "which hour" is a
+  question the field already has stock answers to: EnergyPlus reports its own
+  component loads at the *time of the peak load*, heating and cooling apart, so
+  **peak heating** and **peak cooling** are the two a modeller arrives with; a
+  results tool's period list offers summer and winter design weeks read off the
+  weather file's statistics, which becomes the **hottest** and **coldest
+  outdoor** hour; the zone's own **warmest** and **coolest** stand beside them
+  because a free-running desk has no heating or cooling rate at all; and **peak
+  solar gain** is the hour every glazing and shading control on the desk is
+  arguing about. Each is found in the run that came back and letters the
+  environment it landed in, with the value it reads there — on Denver's design
+  days, peak heating at 24:00 on 21 December is 5.91 kW and peak cooling at
+  15:00 on 21 July is 2.18 kW.
+
+  An offer the run cannot make **states its reason where its stamp would have
+  been** and cannot be pressed. Bypass the System strip and both peaks say so
+  rather than quietly handing back the least-cooled hour of the year under a
+  label claiming the opposite — an `argmax` always returns something, which is
+  exactly why it needs a gate.
+
+  Then a **calendar**, every option of it walked out of the run's own
+  timestamps, so it cannot name an hour the run does not hold. A date field was
+  rejected when the marker was built, on the argument that it invites February
+  the 30th and hour 25 purely to meet a refusal message; that was an objection
+  to a free field, and there is nothing left here to refuse. It earns its place
+  because the gesture cannot reach everywhere — an annual plate at ten hours to
+  the pixel is physically unable to name 15:00 on 14 February, and a pointer is
+  not the keyboard's instrument at all. It works coarse to fine: an environment
+  opens at its own worst hour, a month or a day at that day's extreme, and only
+  the hour field names an hour.
+
+  The bar sits on the sheet rather than only on the rail for the reason the
+  plate grew its marker in the first place: the rail is inside a console you
+  have to open, and the hour is the single most movable thing about every
+  figure on the page. It also says, on the sheet, when a pin could not be found
+  in the new run and was released — until now the marker simply went from
+  filled to hollow, which is not an explanation.
+
 - **Any of the six surfaces can be made adiabatic**, on a key of their own at
   the foot of the Fabric strip. A shoebox is almost never a free-standing
   object: it is one bay of a terrace, a middle floor of a stack, a corner unit
@@ -156,6 +205,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and 180° are closed and 90° is fully open — the opposite of what a slider
   running 0 to 180 suggests, and nothing on the face said so. Both stops and
   the middle are landmarked, and the strip states the convention.
+
+- **The finding says what the building is before it says what the run made of
+  it.** The paragraph under the plate was a reading with no subject: it opened
+  *With no heating or cooling anywhere in this model, the envelope alone takes
+  the summer design day's 15.1 °C outdoor swing down to 4.4 °C in the zone* over
+  a desk of eighteen strips, none of which it named. It now opens with the
+  shoebox — *A single storey of 232.3 m², 15.24 m square and 4.57 m tall,
+  glazed 0.20 south under a 0.60 m overhang* — and then reads it.
+
+  What the second sentence carries is decided by difference: a desk has ninety
+  controls and a paragraph has room for three, so the moves are ranked by how
+  far each sits from its own default, and a channel patched into the path
+  outranks any slider — *With 0.50 ACH of leakage, gains of 16.0 W/m² over
+  08:00–18:00 at 12.0 m²/person and an ideal unit holding 20.0–26.0 °C.*
+
+  **Every compass word is measured rather than named.** `turn()` puts the
+  orientation into the vertices and leaves the wall names alone, so on a
+  building turned 40° the wall the plan calls south faces south-east; the
+  description reads each wall's bearing off its own outward normal and letters
+  it beside the word — *glazed 0.45 south-west (220°) and 0.30 north-east
+  (40°)*. Areas, ratios and overhang reaches are read off the document too, so
+  a channel patched out from under a control describes what the document holds
+  and not what the slider still says: with Fabric and Mass out, the sentence is
+  *solid on every face. With every surface adiabatic and the slab swapped for a
+  massless layer.*
+
+  Which surfaces have an outside at all is part of it: a wall or roof set
+  adiabatic reads as *the north wall adiabatic*, since three exposed walls and
+  a party wall is one bay of a longer building and a paragraph that only said
+  what was glazed would letter that fourth wall as solid.
+
+  A setting is described by the object it reached rather than by its own value,
+  which is a sharper rule than it sounds: *Available* is not a modifier on a
+  unit that has two setpoints, so at "Heat only" — where the model holds a
+  `ThermostatSetpoint:SingleHeating` and the cooling setpoint reaches nothing —
+  the sentence reads *an ideal unit heating to 20.0 °C*, and "Occupied" claims
+  occupied hours only when Gains is in the path to give it a band to follow.
+
+  Nothing else is claimed that is not measured — no typology, no assembly names
+  and no verdict — for the reason the rest of the sheet gives an em dash: 12 m²
+  per person is a number, and "an open-plan office" is a building this model
+  was never given.
 
 - **Each wall of a plan key can be swept.** The window-to-wall ratio and the
   overhang projection were the two controls on the desk a study could not be
@@ -338,6 +429,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against 0.1) were all of them. They are declared now as the narrow band the
   step grid actually makes, with the published figure in the note, and
   `readLandmarks` throws at module load for any that is not reachable.
+
+- **A fin was read as an overhang.** A wall carries up to three shades and the
+  overhang is written first, so the quantities panel took the first shade on
+  the south wall and reported its reach — which on any elevation carrying fins
+  and no overhang is a *fin's* depth, lettered as `Overhang, south 0.40 m ·
+  PF 0.29` over a window with nothing above its head. The overhang sits at one
+  height and a fin runs sill to head, so the two are told apart by their own
+  geometry now rather than by which was written first.
 
 - **"Heat only" and "Cool only" fatalled the engine.** The System strip's
   *Available* selector wrote the thermostat's control type number — 1 for

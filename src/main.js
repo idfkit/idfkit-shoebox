@@ -28,6 +28,7 @@ import {
   phraseFor,
 } from './controls.js';
 import { mountConsole } from './console.js';
+import { describeDesk } from './describe.js';
 import { quantityField } from './field.js';
 import { mountTour } from './tour.js';
 import { COARSE_SAMPLES, SWEEP_SAMPLES, samplePoints, sampleOrder } from './study.js';
@@ -51,21 +52,27 @@ import {
 } from './weather.js';
 import { holidayList, parseEpwCalendar, parseEpwStartDay } from './epw.js';
 import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
+import { mountChangelog } from './changelog.js';
+import CHANGELOG_SOURCE from '../CHANGELOG.md?raw';
 import {
   MONTHS,
   NEUTRAL_C,
   dayExtremeNear,
   demandOver,
   environmentRuns,
+  exactly,
   glassProperties,
   hourly,
+  instantOffers,
   pinAt,
   readDemand,
   readExtremes,
   readOverheat,
   readPeaks,
   resolvePin,
+  runCalendar,
   stampText,
+  watts,
   worstHour,
 } from './readings.js';
 import {
@@ -858,35 +865,140 @@ function renderTrace() {
   /*
    * ── choosing the hour
    *
-   * Point at the moment you want explained. The alternative was a date field
-   * on the rail, which is precise and asks the reader to type "14 February,
-   * 15:00" at a picture of 14 February that is already on the screen — and
-   * which invites February the 30th and hour 25 purely to meet a refusal
-   * message. The curve is the instrument; clicking it is reading back off the
-   * model in the same sense everything else here is.
+   * Point at the moment you want explained. The curve is the instrument, and
+   * pointing at it is reading back off the model in the same sense everything
+   * else here is.
    *
-   * Snapping is decided by the axis's own resolution rather than by run kind,
-   * because the resolution is what the reader is actually up against and it
-   * moves with the window: an annual run at ten hours to the pixel cannot
-   * mean an hour, a design day at five pixels to the hour can.
+   * This used to be the *only* way to choose an hour, on the argument that a
+   * date field asks the reader to type "14 February, 15:00" at a picture of 14
+   * February already on the screen, and invites February the 30th and hour 25
+   * purely to meet a refusal message. Half of that still holds and half of it
+   * never did. The objection was to a *free* date field validated by refusal;
+   * a picker whose every option is walked out of the run's own timestamps
+   * cannot express an hour the run does not contain, so there is nothing left
+   * to refuse. And the gesture has a reach it cannot argue its way out of: an
+   * annual plate at ten hours to the pixel is physically unable to name 15:00
+   * on 14 February, and a pointer is not the keyboard's instrument at all.
+   * Both routes now stand, under `renderWhen` — the curve for the hour you can
+   * see, the picker for the hour you can name.
    */
-  if (reading) {
-    const hoursPerPixel = n / inner.w;
-    root.style.cursor = 'crosshair';
-    root.addEventListener('click', (event) => {
-      const box = root.getBoundingClientRect();
-      if (!box.width) return;
-      // The viewBox is `0 0 w H` against a width of 100 %, so a client pixel
-      // is `w / box.width` user units — read per click rather than cached,
-      // since the plate resizes with the window and the desk opening.
-      const px = (event.clientX - box.left) * (w / box.width);
-      const i = Math.round(((px - PAD.l) / inner.w) * (n - 1));
-      if (i < 0 || i > n - 1) return; // the gutters are not part of the field
-      pinFromPlate(i, hoursPerPixel > 1);
-    });
-  }
+  // Where the field the marker travels in ended up, so the gesture below can
+  // hit-test it. Read off the render rather than measured on demand, because
+  // this function is the only thing that knows where it put the field — and
+  // it redraws on every step of a drag, including the ones that drag makes.
+  plateField = reading
+    ? {
+        root,
+        w,
+        innerW: inner.w,
+        n,
+        // Snapping is decided by the axis's own resolution rather than by run
+        // kind, because the resolution is what the reader is actually up
+        // against and it moves with the window: an annual run at ten hours to
+        // the pixel cannot mean an hour, a design day at five pixels to the
+        // hour can.
+        snap: n / inner.w > 1,
+      }
+    : null;
+  host.classList.toggle('pickable', Boolean(reading));
 
   host.append(root);
+}
+
+/*
+ * ── choosing the hour by hand
+ *
+ * Point at the moment you want explained, and keep pointing: press on the
+ * curve and the marker follows the pointer, with every meter on the desk, the
+ * rail's total and the bar under the plate re-lettering as it goes. Nothing is
+ * simulated — the run is already in hand and the hour is only a way of reading
+ * it, so a drag here costs a re-read of an array and not a solve.
+ *
+ * Three details this arrangement turns on:
+ *
+ *  - **The listeners are on the host, not on the SVG.** Every step of the drag
+ *    re-letters the reading, which redraws the plate, which throws away the
+ *    `<svg>` the gesture started on — and with it any pointer capture held on
+ *    it, so the drag would end silently on its first frame. `.trace` survives
+ *    the redraw; the SVG inside it is looked up per event through
+ *    `plateField.root` for the box to measure against.
+ *  - **A press that never travels is still a click**, and a click toggles the
+ *    hour it names, so the plate can undo its own gesture. A drag must not:
+ *    letting go where you started after travelling out and back would
+ *    otherwise release the pin the drag had just placed.
+ *  - **The address bar is left alone until the release**, the rule every other
+ *    gesture on this page follows. `endGesture` is not used because a pin is
+ *    not a shape — it starts no solve, sets no results baseline and re-queues
+ *    no study — so the suppression is passed down instead.
+ */
+let plateField = null;
+let plateDrag = null; // { pointerId, at, moved, frame }
+
+/** Which point of the plotted series a client x lands on, or null. */
+function plateIndexAt(clientX, { clamped = false } = {}) {
+  if (!plateField) return null;
+  const box = plateField.root.getBoundingClientRect();
+  if (!box.width) return null;
+  const { w, innerW, n } = plateField;
+  // The viewBox is `0 0 w H` against a width of 100 %, so a client pixel is
+  // `w / box.width` user units — read per event rather than cached, since the
+  // plate resizes with the window and with the desk opening.
+  const px = (clientX - box.left) * (w / box.width);
+  const i = Math.round(((px - PAD.l) / innerW) * (n - 1));
+  // A press outside the field is not a pick: the gutters carry the axis labels
+  // and the curve names, and the left one is where the pointer rests on its
+  // way to the temperature scale. Once a drag is under way the same overshoot
+  // means the end of the axis, so it clamps instead.
+  if (i < 0 || i > n - 1) return clamped ? Math.min(n - 1, Math.max(0, i)) : null;
+  return i;
+}
+
+{
+  const host = $('trace');
+
+  host.addEventListener('pointerdown', (event) => {
+    if (!plateField || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    const at = plateIndexAt(event.clientX);
+    if (at == null) return;
+    plateDrag = { pointerId: event.pointerId, at, moved: false, frame: 0 };
+    host.setPointerCapture(event.pointerId);
+    host.classList.add('dragging');
+    // Keeps a press on the curve from starting a text selection across the
+    // sheet. Vertical scrolling on a touch screen is left alone by
+    // `touch-action: pan-y`, which is a decision the stylesheet makes.
+    event.preventDefault();
+  });
+
+  host.addEventListener('pointermove', (event) => {
+    if (!plateDrag || event.pointerId !== plateDrag.pointerId) return;
+    const at = plateIndexAt(event.clientX, { clamped: true });
+    if (at == null || at === plateDrag.at) return;
+    plateDrag.at = at;
+    plateDrag.moved = true;
+    // One re-read per frame. Pointer events are coalesced to the frame in most
+    // engines already, but a drag across an annual plate at ten hours to the
+    // pixel is a thousand distinct hours and the rail is rebuilt at each one.
+    if (plateDrag.frame) return;
+    plateDrag.frame = requestAnimationFrame(() => {
+      if (!plateDrag) return;
+      plateDrag.frame = 0;
+      pinFromPlate(plateDrag.at, plateField?.snap ?? false, { hold: true, address: false });
+    });
+  });
+
+  const release = (event) => {
+    if (!plateDrag || event.pointerId !== plateDrag.pointerId) return;
+    const { at, moved, frame } = plateDrag;
+    if (frame) cancelAnimationFrame(frame);
+    plateDrag = null;
+    host.classList.remove('dragging');
+    if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
+    // `hold` on a drag, so letting go where you started does not release the
+    // pin that drag placed; a press that never moved is a click and toggles.
+    pinFromPlate(at, plateField?.snap ?? false, { hold: moved });
+  };
+  host.addEventListener('pointerup', release);
+  host.addEventListener('pointercancel', release);
 }
 
 let resizeTimer;
@@ -1808,6 +1920,10 @@ function clearReadings() {
   // the strip claiming a run that did not happen.
   lastGlass = null;
   renderBill();
+  // The hour bar goes with the instant it was lettering. It is not hidden by
+  // `markStale` -- that dims -- and a picker still standing over a cleared
+  // plate would offer to move meters that are no longer reading anything.
+  renderWhen();
   syncPin();
   // The bundle stays. It is not a reading — it is the run itself, and the two
   // paths through here are a run that failed and a link that was refused. The
@@ -1921,17 +2037,18 @@ function syncStudies() {
   }
 }
 
-// The four blocks a run letters: the plate, the sentence under it, the results
-// schedule and the bill. They dim together and they are replaced together, so
-// the list is stated once rather than repeated at each site that handles them.
-// Everything that describes the last run and therefore goes pale when the desk
-// moves past it. The register contributes two of these and withholds a third:
-// the scoreboard's margins and the kept schemes' deltas are readings, so they
-// dim with the plate and the bill, while the console's conformance chips are
+// The blocks a run letters: the plate, the hour bar under it, the sentence, the
+// results schedule and the bill, and the register's two readings. They dim
+// together and they are replaced together, so the list is stated once rather
+// than repeated at each site that handles them.
+//
+// The register contributes two of these and withholds a third: the
+// scoreboard's margins and the kept schemes' deltas are readings, so they dim
+// with the plate and the bill, while the console's conformance chips are
 // measurements of the desk as it stands and are true the instant a control
 // moves — dimming those would say the opposite of what they mean.
 const resultPanels = () =>
-  [$('trace'), $('finding'), $('schedule'), $('bill'), $('score'), $('shelf-table'), $('chase')];
+  [$('trace'), $('when'), $('finding'), $('schedule'), $('bill'), $('score'), $('shelf-table'), $('chase')];
 
 // Results describe a shape. Once the shape moves, they describe a building that
 // is no longer on the sheet, so say so rather than letting them sit there.
@@ -2385,9 +2502,6 @@ function readouts() {
   ]);
 }
 
-/** Anchor a variable name so one meter cannot pick up another's series. */
-const exactly = (name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
-
 /**
  * Everything the instant is chosen from, kept so the pin can be turned without
  * asking the engine for anything. The ESO is already held for the bill; this
@@ -2451,12 +2565,38 @@ function readAt(points, runs, leadIndex, eso) {
  */
 function toggleHourPin() {
   if (!lastReadFrom) return;
+  const { points, runs, leadIndex } = lastReadFrom;
+  if (pinnedHour) return releasePin();
+  const taken = pinAt(points, runs, worstHour(points, runs[leadIndex]));
+  if (!taken) return; // no stamp to pin; leave the desk exactly as it was
+  setPin(taken);
+}
+
+/** Are two stamps the same instant? */
+const samePin = (a, b) =>
+  Boolean(a && b && a.kind === b.kind && a.month === b.month && a.day === b.day && a.hour === b.hour);
+
+/**
+ * Hold one instant, off the run already in hand.
+ *
+ * The one setter every route goes through -- the rail's button, the plate's
+ * drag, the named instants and the calendar picker -- so there is no path that
+ * can move the hour without moving the marker, the meters and the address with
+ * it. `address` is false only for the frames inside a drag; see the gesture.
+ */
+function setPin(pin, { address = true } = {}) {
+  if (!lastReadFrom || !pin) return;
   const { points, runs, leadIndex, eso } = lastReadFrom;
-  if (pinnedHour) pinnedHour = null;
-  else {
-    pinnedHour = pinAt(points, runs, worstHour(points, runs[leadIndex]));
-    if (!pinnedHour) return; // no stamp to pin; leave the desk exactly as it was
-  }
+  pinnedHour = pin;
+  readAt(points, runs, leadIndex, eso);
+  reletterReading({ address });
+}
+
+/** Let the run choose its own hour again. */
+function releasePin() {
+  if (!lastReadFrom) return;
+  const { points, runs, leadIndex, eso } = lastReadFrom;
+  pinnedHour = null;
   readAt(points, runs, leadIndex, eso);
   reletterReading();
 }
@@ -2468,22 +2608,18 @@ function toggleHourPin() {
  * own gesture: a reader who found the pin by pointing at the curve should not
  * have to go and find the rail's button to let go of it again.
  */
-function pinFromPlate(index, snap) {
+function pinFromPlate(index, snap, { hold = false, address = true } = {}) {
   if (!lastReadFrom) return;
-  const { points, runs, leadIndex, eso } = lastReadFrom;
+  const { points, runs } = lastReadFrom;
   const at = snap ? dayExtremeNear(points, runs, index) : index;
   if (at == null) return;
   const taken = pinAt(points, runs, at);
   if (!taken) return;
-  const same =
-    pinnedHour &&
-    pinnedHour.kind === taken.kind &&
-    pinnedHour.month === taken.month &&
-    pinnedHour.day === taken.day &&
-    pinnedHour.hour === taken.hour;
-  pinnedHour = same ? null : taken;
-  readAt(points, runs, leadIndex, eso);
-  reletterReading();
+  // `hold` is what tells a drag apart from a click. A drag that happens to end
+  // on the hour it began has still travelled, and releasing there would take
+  // down the pin it just spent the gesture placing.
+  if (!hold && samePin(pinnedHour, taken)) return releasePin();
+  setPin(taken, { address });
 }
 
 /**
@@ -2493,10 +2629,320 @@ function pinFromPlate(index, snap) {
  * one hour, and a route that moved the hour without moving all three would put
  * the marker on one instant while the strips reported another.
  */
-function reletterReading() {
+function reletterReading({ address = true } = {}) {
   desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt, readouts());
+  renderWhen();
   renderTrace();
-  updatePermalink();
+  // Held back for the frames inside a plate drag, the rule every gesture on
+  // this page follows: the address is a reading and it updates when you let go.
+  if (address) updatePermalink();
+}
+
+/* ══ the hour bar ════════════════════════════════════════════════════════ */
+
+/**
+ * The bar under the plate: which instant the desk is reading, and the two ways
+ * of naming another one.
+ *
+ * It sits on the sheet rather than on the rail because of the desk's own rule.
+ * The rail states the hour and holds it, but the rail is inside a console you
+ * have to open, and the hour is the single most movable thing about every
+ * figure on the page — the plate grew its marker for exactly that reason. The
+ * marker says *when*; this says when, and what else you could ask for.
+ *
+ * Rebuilt whole on every reading, like the rail, so a drag re-letters it in
+ * step with everything else. Focus is handed back by id afterwards: the node
+ * that took the keystroke is detached by the time the handler returns, and a
+ * reader stepping through the hours with the keyboard would otherwise be
+ * dropped on the body at every step.
+ */
+const el = (tag, className, text) => {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+};
+
+/**
+ * The named instants of the run in hand, found once.
+ *
+ * Keyed on the ESO's own identity: a solve parses a new one, and nothing else
+ * can change where a peak lands. Without this the seven argmaxes — up to
+ * 8,760 hours each, plus a variable lookup apiece — would run on every frame
+ * of a plate drag, in a gesture that is otherwise array indexing and nothing
+ * more.
+ */
+let offersCache = null;
+function offersFor(points, runs, eso) {
+  if (offersCache?.eso !== eso) offersCache = { eso, offers: instantOffers(points, runs, eso) };
+  return offersCache.offers;
+}
+
+/** One environment's calendar, on the same terms and for the same reason. */
+let calendarCache = null;
+function calendarFor(points, run, eso) {
+  if (calendarCache?.eso !== eso || calendarCache.key !== run.key) {
+    calendarCache = { eso, key: run.key, calendar: runCalendar(points, run) };
+  }
+  return calendarCache.calendar;
+}
+
+// Whether the picker is unfolded. Kept for the session rather than reset per
+// solve: a reader working the hour is working it across runs, and a panel that
+// closed itself every time the engine came back would be unusable during
+// auto-solve, where a run lands every second or so.
+let whenOpen = false;
+
+function renderWhen() {
+  const host = $('when');
+  // Which control had the keyboard, so it can have it back after the rebuild.
+  const refocus = document.activeElement?.closest?.('#when') ? document.activeElement.id : null;
+  host.textContent = '';
+
+  if (!lastReadFrom || !lastAt) {
+    host.hidden = true;
+    return;
+  }
+  host.hidden = false;
+
+  const { points, runs, leadIndex, eso, at } = lastReadFrom;
+  const held = Boolean(pinnedHour);
+
+  // ── the line that says when, and holds it
+  const row = el('div', 'when-row');
+  const pin = el('button', 'pin pin-inline');
+  pin.type = 'button';
+  pin.id = 'when-pin';
+  pin.setAttribute('aria-pressed', String(held));
+  pin.title = held
+    ? 'Release the hour and read the worst one in each run again'
+    : 'Hold this hour, so the meters keep reading it as the desk changes';
+  pin.append(el('i', 'mark'), el('span', null, `${held ? 'Held at' : 'Read at'} ${lastAt.text}`));
+  pin.addEventListener('click', () => {
+    toggleHourPin();
+    $('when-pin')?.focus();
+  });
+  row.append(pin);
+
+  const open = el('button', 'link', whenOpen ? 'Close' : 'Choose the hour');
+  open.type = 'button';
+  open.id = 'when-open';
+  open.setAttribute('aria-expanded', String(whenOpen));
+  open.setAttribute('aria-controls', 'when-panel');
+  open.addEventListener('click', () => {
+    whenOpen = !whenOpen;
+    renderWhen();
+    $('when-open')?.focus();
+  });
+  row.append(open);
+  host.append(row);
+
+  // A pin that could not be found is released, and the sheet says which hour
+  // went missing -- the plate's marker simply going from filled to hollow is
+  // not an explanation, and this bar is the one place on the sheet that can
+  // give one without opening the desk.
+  if (lastAt.released) {
+    host.append(
+      el(
+        'p',
+        'when-note',
+        `${lastAt.released} is not in this run, so the pin was released and the meters are reading the worst hour again.`,
+      ),
+    );
+  }
+
+  if (whenOpen) host.append(whenPanel(points, runs, leadIndex, eso, at, held));
+
+  if (refocus) $(refocus)?.focus();
+}
+
+/**
+ * One offer: a named hour, the instant it lands on, and what it reads there.
+ *
+ * A refused offer states its reason in place of its stamp and cannot be
+ * pressed. There is no fallback to a neighbouring instant, for the reason the
+ * pin has refused one since it was built: a meter quietly reading an hour
+ * nobody asked for, under a label claiming to be the peak of something, is
+ * worse than a chip that says why it is empty.
+ */
+function offerChip({ id, label, sub, where, blurb, active, refused, take }) {
+  const chip = el('button', refused ? 'when-offer refused' : 'when-offer');
+  chip.type = 'button';
+  chip.id = `when-offer-${id}`;
+  if (blurb) chip.title = blurb;
+  chip.append(el('b', null, label), el('span', null, sub));
+  if (where) chip.append(el('i', null, where));
+  if (refused) {
+    chip.disabled = true;
+    return chip;
+  }
+  chip.setAttribute('aria-pressed', String(active));
+  chip.addEventListener('click', () => {
+    take();
+    $(chip.id)?.focus();
+  });
+  return chip;
+}
+
+/** One bounded select, with its own eyebrow. */
+function whenField(id, label, options, value, onChange) {
+  const wrap = el('label', 'when-field');
+  wrap.append(el('span', 'eyebrow', label));
+  const select = el('select');
+  select.id = id;
+  for (const option of options) {
+    const node = el('option', null, option.label);
+    node.value = option.value;
+    if (option.value === value) node.selected = true;
+    select.append(node);
+  }
+  // A design day is one day in one month: the field still stands, because the
+  // reader has to be able to see what it is fixed at, but there is nothing in
+  // it to choose.
+  select.disabled = options.length < 2;
+  select.addEventListener('change', () => onChange(select.value));
+  wrap.append(select);
+  return wrap;
+}
+
+/**
+ * The panel: the hours a modeller already has words for, then the calendar.
+ *
+ * Both halves are walked out of the run's own timestamps and nothing else, so
+ * neither can name an instant this run does not hold. That is what makes a
+ * date control admissible here at all — the objection to one was never to
+ * precision, it was to a free field that exists to be refused.
+ */
+function whenPanel(points, runs, leadIndex, eso, at, held) {
+  const panel = el('div', 'when-panel');
+  panel.id = 'when-panel';
+
+  panel.append(el('p', 'eyebrow', 'Go to'));
+  const offers = el('div', 'when-offers');
+  offers.setAttribute('role', 'group');
+  offers.setAttribute('aria-label', 'Named hours in this run');
+
+  // The run's own choice, made legible. It was always the default and was
+  // never stated as a choice anywhere, so the only way to get back to it was
+  // to know that the rail's marker toggled.
+  const freeAt = worstHour(points, runs[leadIndex]);
+  offers.append(
+    offerChip({
+      id: 'free',
+      label: "The run's own hour",
+      blurb: `The hour the lead environment is furthest from ${NEUTRAL_C} °C — where the meters read when nothing is held.`,
+      sub: `${stampText(points, freeAt)} · ${Math.abs(points[freeAt].value - NEUTRAL_C).toFixed(1)} K off ${NEUTRAL_C} °C`,
+      where: runs.length > 1 ? runs[leadIndex].label : null,
+      active: !held,
+      take: () => releasePin(),
+    }),
+  );
+
+  for (const offer of offersFor(points, runs, eso)) {
+    const { instant } = offer;
+    const landed = offer.at == null ? null : runs.find((r) => offer.at >= r.start && offer.at <= r.end);
+    offers.append(
+      offerChip({
+        id: instant.id,
+        label: instant.label,
+        blurb: instant.blurb,
+        sub:
+          offer.at == null
+            ? offer.reason
+            : `${stampText(points, offer.at)} · ${instant.letter(
+                // Divided back down where the series is reported at building
+                // level, so an offer and the rail term behind it letter one
+                // number. See `Term.perBuilding`.
+                offer.value / (instant.perBuilding ? params.multiplier : 1),
+              )}`,
+        where: landed && runs.length > 1 ? landed.label : null,
+        active: samePin(pinnedHour, offer.pin),
+        refused: offer.at == null,
+        take: () => setPin(offer.pin),
+      }),
+    );
+  }
+  panel.append(offers);
+
+  // ── the calendar
+  const here = runs.find((r) => at >= r.start && at <= r.end) ?? runs[0];
+  const calendar = calendarFor(points, here, eso);
+  const stamp = points[at].timestamp;
+
+  /**
+   * Land on a day, at the hour of it worth reading.
+   *
+   * Coarse to fine: choosing a month or a day leaves the hour to
+   * `dayExtremeNear`, the same rule a click on an annual plate already
+   * follows, so every step of the picker lands somewhere that means
+   * something rather than at midnight. Only the hour field names an hour.
+   */
+  const goTo = (month, day, hour) => {
+    const days = calendar.get(month);
+    if (!days) return;
+    const on = days.has(day) ? day : [...days.keys()][0];
+    const hours = days.get(on);
+    if (!hours) return;
+    const index =
+      hour != null && hours.has(hour)
+        ? hours.get(hour)
+        : dayExtremeNear(points, runs, [...hours.values()][0]);
+    const taken = index == null ? null : pinAt(points, runs, index);
+    if (taken) setPin(taken);
+  };
+
+  panel.append(el('p', 'eyebrow', 'Or name one'));
+  const exact = el('div', 'when-exact');
+  exact.append(
+    whenField(
+      'when-env',
+      'Environment',
+      runs.map((r, i) => ({ value: String(i), label: r.label })),
+      String(runs.indexOf(here)),
+      (v) => {
+        // A new environment is a new weather story, so it opens where it is
+        // hardest rather than at its first midnight -- the same instant the
+        // run would have chosen for itself had that environment led.
+        const next = runs[Number(v)];
+        const taken = next && pinAt(points, runs, worstHour(points, next));
+        if (taken) setPin(taken);
+      },
+    ),
+    whenField(
+      'when-month',
+      'Month',
+      [...calendar.keys()].map((m) => ({ value: String(m), label: MONTHS[m - 1] })),
+      String(stamp.month),
+      (v) => goTo(Number(v), stamp.day, null),
+    ),
+    whenField(
+      'when-day',
+      'Day',
+      [...(calendar.get(stamp.month)?.keys() ?? [])].map((d) => ({ value: String(d), label: String(d) })),
+      String(stamp.day),
+      (v) => goTo(stamp.month, Number(v), null),
+    ),
+    whenField(
+      'when-hour',
+      'Hour',
+      [...(calendar.get(stamp.month)?.get(stamp.day)?.keys() ?? [])].map((h) => ({
+        value: String(h),
+        label: `${String(h).padStart(2, '0')}:00`,
+      })),
+      String(stamp.hour ?? 0),
+      (v) => goTo(stamp.month, stamp.day, Number(v)),
+    ),
+  );
+  panel.append(exact);
+
+  panel.append(
+    el(
+      'p',
+      'when-hint',
+      'Every option here is walked out of this run’s own timestamps, so nothing offered is an hour the run does not hold. The plate’s marker is the same instant — press it and drag.',
+    ),
+  );
+  return panel;
 }
 
 /**
@@ -4233,6 +4679,11 @@ $('t-rev').textContent = 'E-01 · Rev ';
 }
 $('t-date').textContent = `Issued ${REVISION.date ?? '—'}`;
 
+// The revisions block is CHANGELOG.md itself, mounted once at boot the same
+// way the title block's own revision cell is lettered once above — the file
+// does not change under a running page, so there is nothing here to redraw.
+mountChangelog($('changelog-body'), CHANGELOG_SOURCE);
+
 // Start the ~28 MB WASM download immediately; the schema bundle is small and
 // arrives first, which is what lets the sheet draw itself before the engine is
 // ready. Both are loaded once and reused across runs.
@@ -4355,6 +4806,20 @@ async function solve() {
     location: $('t-location').textContent,
     permalink: schemeUrl(snapshot),
   };
+  // The building this run is of, read here rather than after the await for the
+  // same reason everything else in `capture` is: the finding opens with a
+  // description, and a slider turned during a 0.7 s annual run would have that
+  // sentence describing a building the chart under it never solved. The
+  // document is the one the IDF is about to be written from, so the sentence
+  // and the file agree by construction.
+  const described = describeDesk({
+    doc: model,
+    params: snapshot,
+    state: modelState,
+    place: station?.url
+      ? { name: siteName(station), zone: climateZone(station) === '—' ? null : climateZone(station) }
+      : null,
+  });
   const live = continuous();
   quiet = live;
 
@@ -4575,9 +5040,11 @@ async function solve() {
   lastHours = nn;
   readAt(points, runs, leadIndex, eso);
 
-  // The plate is drawn after the hour is known, not before: it now carries the
-  // marker for that hour, and drawing it first would post a marker for the
-  // previous run's instant for the rest of this function.
+  // The plate and the bar under it are drawn after the hour is known, not
+  // before: they carry the marker and the stamp for that hour, and drawing
+  // them first would post the previous run's instant for the rest of this
+  // function.
+  renderWhen();
   renderTrace();
 
   // The end-use meters ride in on the same ESO -- `Output:Meter` writes to both
@@ -4635,6 +5102,10 @@ async function solve() {
     Object.assign(document.createElement('span'), { className: hot ? 'q hot' : 'q', textContent: text });
   const finding = $('finding');
   finding.textContent = '';
+  // The description first, then what the run made of it. Two sentences about
+  // the same building: the first is what the reader drew, the second is the
+  // only thing on this sheet that says what drawing it that way did.
+  for (const token of described) finding.append(typeof token === 'string' ? token : q(token.q));
   const m = lead.metrics;
   // Whether an ideal unit was in the path, read off the run and not off the
   // desk: these meters exist only when the System strip is engaged, and the
@@ -4666,8 +5137,13 @@ async function solve() {
       ' kWh/m² back out of it — the demand the envelope sets, before the plant efficiencies the bill below divides it by.',
     );
   } else if (conditioned) {
+    // The setpoints are in the description above, so this says what the unit
+    // actually held rather than restating them: under an unmet hour the two
+    // are different numbers, and that difference is the reading. It does not
+    // say "holds" either, for the plainer reason that the sentence before it
+    // has just said "holding".
     finding.append(
-      'An ideal unit holds the zone between ',
+      'The zone sits between ',
       q(f1(m.z.min)),
       ' °C and ',
       q(f1(m.z.max), true),
