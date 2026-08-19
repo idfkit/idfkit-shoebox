@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The sheet says which build of itself you are reading.** The title block's
+  Sheet cell has always carried a revision, and it was the string `Rev A`,
+  hand-lettered and never once true. It now carries the build: `E-01 · Rev
+  0.2.0` on a tagged release, and `E-01 · Rev 0.1.0+cd5881e` on the far more
+  common case of a deploy from `main` with no tag on it, the sha being semver's
+  build metadata — the same declared version, this particular build of it. It
+  links to the release or the commit it names, so a reader who thinks a number
+  looks wrong can now say which drawing the number was on, and the run bundle's
+  manifest carries the same line beside the EnergyPlus version.
+
+  The date under it is the revision's, taken off the commit. It used to be
+  `new Date()` evaluated in the browser, which lettered "Issued" with the day
+  the page happened to be opened: a drawing dated by whoever picked it up.
+
 - **Each wall of a plan key can be swept.** The window-to-wall ratio and the
   overhang projection were the two controls on the desk a study could not be
   taken of, which is the wrong two: an elevation is where orientation stops

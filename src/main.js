@@ -31,6 +31,7 @@ import { COARSE_SAMPLES, SWEEP_SAMPLES, samplePoints, sampleOrder } from './stud
 import { createEnginePool, poolLimit } from './pool.js';
 import { createStudyScheduler, makeStudyJob } from './scheduler.js';
 import { runBundle } from './bundle.js';
+import { REVISION, revisionHref } from './version.js';
 import { END_USES, GROUPS, computeBill, meterTotal } from './bill.js';
 import { assume, isRate, placeName, resolveRates } from './rates.js';
 import {
@@ -3061,7 +3062,38 @@ async function attachFromLink(linked) {
 
 /* ══ the run ═════════════════════════════════════════════════════════════ */
 
-$('t-date').textContent = `Issued ${new Date().toLocaleDateString('en-CA')}`;
+/*
+ * The sheet's own revision, lettered into the title block once at boot.
+ *
+ * Everything else in that block describes the run; this one cell describes the
+ * drawing, which is what a revision cell is for. It reads `E-01 · Rev 0.2.0` on
+ * a tagged release and `E-01 · Rev 0.1.0+cd5881e` on a build published from
+ * main without one, and the version clicks through to the release or the commit
+ * it names — a reader who wants to say "this number looks wrong" can now say
+ * which sheet the number was on.
+ *
+ * The date is the revision's, not the reader's. It used to be `new Date()`
+ * evaluated in the browser, which lettered "Issued" with the day the page was
+ * opened: a drawing dated by whoever picked it up. A build that could not read
+ * its own revision has no date to state and prints the em dash the rest of the
+ * sheet uses for a missing measurement.
+ */
+$('t-rev').textContent = 'E-01 · Rev ';
+{
+  const href = revisionHref();
+  const stamp = document.createElement(href ? 'a' : 'span');
+  stamp.textContent = REVISION.version ?? '—';
+  if (href) {
+    stamp.href = href;
+    stamp.target = '_blank';
+    stamp.rel = 'noreferrer';
+    stamp.title = REVISION.tag
+      ? `Released as ${REVISION.tag}`
+      : `Built from commit ${REVISION.commit}`;
+  }
+  $('t-rev').append(stamp);
+}
+$('t-date').textContent = `Issued ${REVISION.date ?? '—'}`;
 
 // Start the ~28 MB WASM download immediately; the schema bundle is small and
 // arrives first, which is what lets the sheet draw itself before the engine is

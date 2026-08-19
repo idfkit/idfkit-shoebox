@@ -36,6 +36,7 @@
  */
 
 import { controlFor, isWholeYear } from './controls.js';
+import { REVISION } from './version.js';
 
 const enc = new TextEncoder();
 
@@ -225,6 +226,11 @@ function manifest(run, list) {
   const dash = (value, format) => (value == null ? '—' : format(value));
   const rows = [
     ['EnergyPlus', run.version],
+    // Which build of the page derived the numbers this bundle is offered
+    // against. The IDF and the EPW below reproduce the run in any
+    // EnergyPlus; this line is what reproduces the *sheet*, months later,
+    // when the two disagree and the question is which of them moved.
+    ['Sheet', dash(REVISION.version, (v) => `shoebox ${v}`)],
     ['Run', runLine(run)],
     [
       'Weather',
