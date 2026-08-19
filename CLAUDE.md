@@ -1034,6 +1034,31 @@ Opening a pull request publishes a preview at `shoebox.idfkit.com/<number>/`
   never remove one. This mirrors the Vite proxy deliberately: a picker that
   works on localhost and 404s in production is the exact failure the arrangement
   exists to prevent.
+- **The sheet stamps its own revision, and the sha is the common case.** The
+  title block's Sheet cell reads `E-01 · Rev 0.2.0` on a tagged build and
+  `E-01 · Rev 0.2.0+cd5881e` on everything else, because this page is published
+  from `main` far more often than it is tagged and a reading is only worth
+  arguing with when you know which issue of the drawing produced it.
+  `scripts/revision.mjs` resolves it — `git describe --tags --exact-match` for
+  the tag, `package.json` plus the short sha as semver build metadata otherwise
+  — and `vite.config.js` freezes the result in as `__SHEET_REVISION__`; a page
+  served as static files from a bucket cannot ask what produced it, so the
+  answer has to be baked in where it is produced. `src/version.js` is the only
+  module that reads that name, guarded with `typeof` so the throwaway Node
+  harnesses can still import anything under `src/`.
+  - **A missing sha means "tagged", so a build that could not read its own
+    revision must not look like one**: it stamps `+unknown` rather than
+    dropping the metadata.
+  - **Both workflows check out with `fetch-tags: true`.** The checkout is
+    shallow and carries no tags otherwise, so a release would stamp itself with
+    a sha — the one build that is supposed not to.
+  - **The preview passes `SHOEBOX_SHA`**, for the same reason its comment
+    slices `pull_request.head.sha`: a `pull_request` checkout is the merge
+    commit, which is in nobody's branch.
+  - The date beside it is the revision's, off the commit, not `new Date()` in
+    the reader's browser — which is what it used to be, and which dated the
+    drawing by whoever picked it up.
+
 - **`scripts/deploy.mjs` compresses; CloudFront is not trusted to.** The edge
   compresses only objects between 1 KB and 10 MB whose content type is on its
   list. The engine binary (28.40 MiB) and schema (9.88 MiB) exceed the ceiling,

@@ -1266,6 +1266,12 @@
         color: var(--ink-3);
       }
       .titleblock b.flag { color: var(--redline); }
+      /* The revision links to the commit or release it names. Underlined in the
+         rule hairline rather than in the ink, the way the bill's citations are:
+         a title block is read as a block of facts, and a cell that advertised
+         itself in link blue would be the loudest thing on a quiet sheet. */
+      .titleblock b a { color: inherit; text-decoration-color: var(--rule); }
+      .titleblock b a:hover { color: var(--ink-3); }
 
       /* ── field notes ────────────────────────────────────────────── */
 
@@ -2782,7 +2788,11 @@
         <div><span>Output variables</span><b id="t-vars">—</b><i>Recorded to the ESO</i></div>
         <div><span>Severe / warnings</span><b id="t-err">—</b><i>From eplusout.err</i></div>
         <div><span>Exit code</span><b id="t-exit">—</b><i>0 is a clean run</i></div>
-        <div><span>Sheet</span><b>E-01 · Rev A</b><i id="t-date">—</i></div>
+        <!-- The revision cell is where a drawing has always said which issue of
+             itself you are reading, so it is where this page says which build it
+             is. `Rev` is lettered by `src/main.js` from the stamp `vite.config.js`
+             froze in, and links to the release or the commit that produced it. -->
+        <div><span>Sheet</span><b id="t-rev">E-01</b><i id="t-date">—</i></div>
       </div>
 
       <details class="notes" id="notes">

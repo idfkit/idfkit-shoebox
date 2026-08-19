@@ -38,6 +38,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-tags: true
 
       - uses: actions/setup-node@v7
         with:
@@ -51,7 +53,14 @@ jobs:
       # the schema bundle and the station index against `import.meta.env.BASE_URL`
       # for the same reason. Built at the default `/`, a preview would silently
       # load the published site's 50 MB of staged assets and report on those.
+      #
+      # `SHOEBOX_SHA` for the same reason the comment below slices the head sha
+      # rather than `context.sha`: a `pull_request` checkout is the merge commit,
+      # so a revision stamp taken from the working tree would name a commit that
+      # exists in nobody's branch. The preview's title block names the head.
       - run: npm run build -- --base=/${{ github.event.number }}/
+        env:
+          SHOEBOX_SHA: ${{ github.event.pull_request.head.sha }}
 
       - uses: aws-actions/configure-aws-credentials@v6
         with:
