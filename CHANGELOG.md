@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Any of the six surfaces can be made adiabatic**, on a key of their own at
+  the foot of the Fabric strip. A shoebox is almost never a free-standing
+  object: it is one bay of a terrace, a middle floor of a stack, a corner unit
+  with two party walls. Until now this desk could only say so about the floor,
+  and every other surface was exposed whether the building it stood for was or
+  not.
+
+  The key is a plan with a section drawn through it. The four walls are the
+  edges of the plan and turn with north, exactly as the glazing key's bars do;
+  the roof and the floor are the two surfaces a plan cannot show — it is a
+  horizontal cut and they are what it cuts through — so they are drawn as the
+  section they would appear in, roof over floor, inside the square. Adiabatic
+  is a doubled line, the way a party wall is drawn on any plan, and open to the
+  weather is a single hairline. **The axonometric is the same control**: the
+  three faces the viewpoint shows can be clicked to flip them, and every
+  adiabatic surface is hatched like a cut — faintly, through the box, for the
+  three facing away.
+
+  On Denver's two design days, with the ideal unit and the internal gains in
+  the path: the stock free-standing box carries 511.0 m² of exposed envelope
+  at an A/V of 0.481 and asks for 82.5 kWh of heat. Take the east and west
+  walls out as party walls and it is 371.6 m², 0.350 and 39.6 kWh — a little
+  over half the heating for a building nobody moved a millimetre. Take the roof
+  out instead, as a middle floor, and it is 47.8 kWh. Take all four walls out
+  and the heating is 0.0 kWh against 99.0 kWh of cooling: a top-lit core, which
+  is a real building and not one this page could previously describe at all.
+
+  An adiabatic surface has no outside, and the engine refuses an opening cut
+  into one, so the wall that goes out takes its glass, its overhang and its
+  fins with it — the glazing key greys that wall and says *The north wall is
+  adiabatic, so there is nothing outside it to open onto*, and Skylights
+  blocks itself when the roof goes. The window-to-wall and skylight-to-roof
+  ratios now divide by the surfaces that have an outside, which is what those
+  ratios have always been measured over.
+
 - **The sheet says which build of itself you are reading.** The title block's
   Sheet cell has always carried a revision, and it was the string `Rev A`,
   hand-lettered and never once true. It now carries the build: `E-01 · Rev
@@ -262,6 +297,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   more stamp.
 
 ### Fixed
+
+- **Bypassing Fabric fatalled any desk with an opening on it.** Patching that
+  channel out sends every surface adiabatic, and EnergyPlus refuses a
+  `FenestrationSurface:Detailed` or a `Shading:Zone:Detailed` whose base
+  surface is one:
+
+      ** Severe ** FenestrationSurface:Detailed="ZN001:WALL001:WIN001",
+                   invalid Building Surface Name="ZN001:WALL001".
+      ** Fatal  ** GetSurfaceData: Errors discovered, program terminates.
+
+  One wall window was enough — the desk ships with one — so the flask the
+  Fabric strip advertises was only reachable by patching Glazing, Shading and
+  Skylights out by hand first, and reaching for it any other way stopped the
+  run. It was recorded as unfixable through `Channel.requires`, on the grounds
+  that a precondition can only ask about channels already decided and Fabric is
+  declared at 07, below all three that would need to ask. That was the wrong
+  reading of the machinery: being *bypassed* is an input to that loop rather
+  than something the loop decides, so it can be asked of any channel in any
+  order. `requires.test` now takes an `off(id)` beside its `on(id)`, and
+  Glazing and Skylights refuse themselves with a sentence each instead. The
+  appliers ask the document as well — the boundary `applyFabric` has already
+  written, rather than a parameter — so an opening is never written where it
+  cannot stand, however it came to be there.
 
 - **The low-e coating note named the wrong coating.** The Glazing strip said
   "0.04 is a hard coat"; 0.04 is a *soft* coat's emissivity. A pyrolytic hard
