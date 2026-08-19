@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The layered glazing model has a pane count, and the window says what it
+  came to.** Two things were missing from the same strip. The layered model
+  built a double unit and only a double unit — there was no way to ask for a
+  triple — and neither model would tell you the one pair of numbers a window is
+  actually specified by, because the layered one is set in causes (panes, a
+  coating, a cavity) and the simple one hides its equivalent layer.
+
+  **Panes** is a slider from 2 to 4, and it writes real sheets: *n* panes of
+  6 mm clear float with *n* − 1 air cavities between them, the low-e coating
+  staying on the cavity face of the inboard pane wherever that now falls —
+  surface 3 in a double, 5 in a triple. On the default desk it is worth more
+  than any other control on the strip: U 2.68 W/m²K at two panes, 1.73 at
+  three, 1.29 at four, and 0.93 with a hard coat on the fourth.
+
+  **As built** is the answer, read off the run rather than computed here. It
+  stands under the controls and above the transmitted-solar meter, and letters
+  the U-factor, SHGC and visible transmittance EnergyPlus itself worked out for
+  the assembly, from the envelope summary the run already writes. Where the
+  opening carries a frame it adds a second line for the whole window by the
+  NFRC method, since that is where the frame's own conductance lands and the
+  glass figures stop being the window's. It obeys the readings' rules like
+  everything else on the sheet: an em dash before the first run, and nothing at
+  all where the channel is out. Under the simple model it reads back the three
+  sliders above it, which is the quiet confirmation that the equivalent layer
+  is what you asked for.
+
 - **Each wall of a plan key can be swept.** The window-to-wall ratio and the
   overhang projection were the two controls on the desk a study could not be
   taken of, which is the wrong two: an elevation is where orientation stops
