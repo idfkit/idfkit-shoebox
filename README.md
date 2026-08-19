@@ -30,6 +30,11 @@ First load downloads and compiles the ~28 MB binary; after that it is cached.
 
 ## Deploying
 
+> [!NOTE]  
+> Curious users are not expected to take action with anything with this section.
+> It is there so that I can remember how I deployed this thing in the future
+> when I will eventually have forgotten!
+
 The site is an S3 bucket behind CloudFront at `shoebox.idfkit.com`, defined as a
 CDK app in `infra/`. Pushing to `main` publishes it: the workflow in
 `.github/workflows/deploy.yml` mints a short-lived OIDC token, trades it for the
