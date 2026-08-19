@@ -117,6 +117,21 @@ result, only explain one.
   interface making a claim about the world, and a claim nobody can check is
   what the rest of this sheet exists not to print. The note carries the source
   and rides into the mark's `title` and the face's `aria-description`.
+- **A convention says that it is one.** 136 of the 149 cite a standard; 13
+  cannot, because nobody legislates the depth at which an overhang stops being
+  a reveal and becomes a canopy — and those are the bands an architect reads
+  fastest, since they name the thing you would have to build. They open with
+  the `CONVENTION` prefix, or a convention would sit beside an ASHRAE clause
+  looking exactly as authoritative, which is the sheet asserting under cover of
+  citing.
+- **Anything derived is arithmetic somebody can redo, so it has to be right.**
+  A note that converts an R-value to a U-value, or an imperial figure to SI,
+  is checkable and five of them were wrong on the first pass: the wall and roof
+  uninsulated bands understated their U-values (the roof's films are 0.14, not
+  the wall's 0.17), the Passive House roof band quoted 0.10–0.15 for what is
+  really 0.07–0.11, the 62.1 people rate cited 2.36 L/s from a band that
+  started at 2.5, and the slab's "diurnal depth" gave the CIBSE effective
+  figure of 0.10 m under the name of the diffusion depth, which is 0.16 m.
 - **Three rules throw at module load** (`readLandmarks`): inside the face's
   range, no two overlapping, and — the one that had to be found by writing the
   check — **reachable on the control's own step grid**. `input[type=range]`

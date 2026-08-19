@@ -1226,6 +1226,19 @@ export class Channel {
  */
 
 const ASHRAE_FEN = 'ASHRAE Handbook of Fundamentals, Ch. 15, typical whole-window values.';
+/**
+ * How a landmark that rests on practice rather than on a published figure
+ * opens its note.
+ *
+ * Most of these bands cite a standard, and a reader is entitled to assume the
+ * number came from one. A few cannot: nobody legislates the depth at which an
+ * overhang stops being a reveal and becomes a canopy, and yet those are the
+ * bands an architect reads fastest, because they name the thing you would have
+ * to build. Keeping them means saying which kind of claim they are, or a
+ * convention sits beside an ASHRAE clause looking exactly as authoritative —
+ * which is the sheet asserting under cover of citing.
+ */
+const CONVENTION = 'Convention of practice rather than a published figure.';
 const IO_REF = 'EnergyPlus 26.1 Input Output Reference.';
 
 /* ── glass ─────────────────────────────────────────────────────────────── */
@@ -1384,7 +1397,7 @@ const FRAME_COND = [
   }),
   new Landmark({
     from: 5.5, to: 12, label: 'Aluminium, no break', phrase: 'unbroken aluminium',
-    note: 'A single metal section right through the wall. At a 10 % frame fraction this alone can undo a low-e unit.',
+    note: 'A single metal section right through the wall. NFRC rates such frames at U 8.5 to 11 W/m²K *including* the films; strip the films off, as this field does, and the true conductance is past the top of this face — the stop is as close as the desk gets. At a 10 % frame fraction this alone can undo a low-e unit.',
   }),
 ];
 
@@ -1426,7 +1439,7 @@ const SKY_CURB = [
 const WALL_R = [
   new Landmark({
     from: 0.2, to: 0.6, label: 'Uninsulated', phrase: 'an uninsulated wall',
-    note: 'Solid masonry with nothing in it: a 1.3 to 2.2 W/m²K wall. Most of the stock built before insulation was required.',
+    note: 'Solid masonry with nothing in it: a 1.3 to 2.7 W/m²K wall once the surface films are counted. Most of the stock built before insulation was required.',
   }),
   new Landmark({
     from: 2.1, to: 2.5, label: 'R-13 stud cavity', phrase: 'a stud cavity',
@@ -1445,7 +1458,7 @@ const WALL_R = [
 const ROOF_R = [
   new Landmark({
     from: 0.2, to: 0.6, label: 'Uninsulated deck', phrase: 'a bare deck',
-    note: 'Structural deck and a membrane, nothing between. 1.3 to 2.2 W/m²K.',
+    note: 'Structural deck and a membrane, nothing between. 1.4 to 2.9 W/m²K with the films.',
   }),
   new Landmark({
     from: 5.1, to: 5.5, label: 'R-30 above deck', phrase: 'R-30 above deck',
@@ -1457,14 +1470,14 @@ const ROOF_R = [
   }),
   new Landmark({
     from: 9, to: 14, label: 'Passive House', phrase: 'a Passive House roof',
-    note: 'U ≤ 0.10 to 0.15 W/m²K, which a roof reaches more cheaply than a wall because nothing is competing for the depth.',
+    note: 'U 0.07 to 0.11 W/m²K, comfortably past the Passive House Institute\'s 0.15 — a roof reaches it more cheaply than a wall because nothing is competing for the depth.',
   }),
 ];
 
 const SOLAR_ABS = [
   new Landmark({
     from: 0.2, to: 0.35, label: 'White or pale', phrase: 'a pale surface',
-    note: 'Titanium-dioxide white paint, pale render, light stone. ASHRAE Handbook of Fundamentals, Ch. 26 surface properties.',
+    note: 'Titanium-dioxide white paint, pale render, light stone. ASHRAE Handbook of Fundamentals, surface-property tables.',
   }),
   new Landmark({
     from: 0.45, to: 0.65, label: 'Mid-tone', phrase: 'a mid-tone surface',
@@ -1478,8 +1491,8 @@ const SOLAR_ABS = [
 
 const ROOF_ABS = [
   new Landmark({
-    from: 0.1, to: 0.35, label: 'Cool roof', phrase: 'a cool roof',
-    note: 'A CRRC-rated cool roof membrane: initial solar reflectance ≥ 0.65, which is absorptance ≤ 0.35. ASHRAE 90.1 credits one in the warm zones.',
+    from: 0.1, to: 0.3, label: 'Cool roof', phrase: 'a cool roof',
+    note: 'ASHRAE 90.1 asks a cool roof in the warm climate zones for an initial solar reflectance of 0.70 — absorptance 0.30 — or 0.55 aged, tested to CRRC methods. Aged is the honest one: these surfaces darken.',
   }),
   new Landmark({
     from: 0.45, to: 0.65, label: 'Grey membrane', phrase: 'a grey membrane',
@@ -1519,8 +1532,8 @@ const WALL_MASS = [
 
 const SLAB_DEPTH = [
   new Landmark({
-    from: 0.09, to: 0.11, label: 'Diurnal depth', phrase: 'the diurnal depth',
-    note: 'About 0.10 m is as far as a 24-hour temperature swing reaches into dense concrete, so depth beyond this buys seasonal storage and nothing daily. The stock example\'s 4-inch slab is 0.1015 m, right on it.',
+    from: 0.09, to: 0.11, label: 'Effective depth', phrase: 'the effective depth',
+    note: 'About 0.10 m is the depth conventionally counted as effective on a 24-hour cycle — the CIBSE admittance method\'s figure for dense concrete. The diffusion depth proper, √(2α/ω), is 0.16 m, and the two differ because the deeper material is still responding but by then too little and too late to matter. The stock example\'s 4-inch slab is 0.1015 m, right on the design figure.',
   }),
   new Landmark({
     from: 0.15, to: 0.25, label: 'Structural slab', phrase: 'a structural slab',
@@ -1553,7 +1566,7 @@ const INTERNAL_MASS = [
  */
 const INFILTRATION = [
   new Landmark({
-    from: 0, to: 0.06, label: 'Passive House', phrase: 'a Passive House envelope',
+    from: 0.01, to: 0.06, label: 'Passive House', phrase: 'a Passive House envelope',
     note: 'The Passive House Institute limit is 0.6 air changes an hour at 50 Pa, which the usual n/20 rule makes about 0.03 ACH at natural pressure.',
   }),
   new Landmark({
@@ -1790,12 +1803,12 @@ const COOL_SET = [
 
 const OUTDOOR_AIR = [
   new Landmark({
-    from: 2.5, to: 3.0, label: '62.1 people rate', phrase: 'the 62.1 people rate',
-    note: 'ASHRAE 62.1-2019 breathing-zone rate per person for an office is 5 cfm, which is 2.36 L/s. The area rate is on top of this.',
+    from: 2.5, label: '62.1 people rate', phrase: 'the 62.1 people rate',
+    note: 'ASHRAE 62.1-2019 breathing-zone rate per person for an office is 5 cfm, which is 2.36 L/s — this face\'s 0.5 step reaches it at 2.5. The area rate is on top of this, so this alone is never the whole requirement.',
   }),
   new Landmark({
     from: 7, to: 10, label: 'Office, all in', phrase: 'a whole office rate',
-    note: 'The 62.1 people and area rates together at office density come to roughly 8.5 L/s a person, which is also EN 16798-1 category II.',
+    note: 'The 62.1 people and area rates together at the 18.6 m² a person 62.1 assumes come to 7.9 L/s a person (2.36 + 0.3 × 18.6), which is about where EN 16798-1 category II lands too.',
   }),
 ];
 
@@ -1866,7 +1879,7 @@ const COOL_COP = [
 const GRID = [
   new Landmark({
     from: 0, to: 60, label: 'Hydro or nuclear', phrase: 'hydro or nuclear',
-    note: 'Québec, Norway, France and Ontario all sit under 60 gCO₂e/kWh. A heat pump on one of these is very nearly carbon-free heat.',
+    note: 'Québec, Norway, Sweden and Ontario sit well under 60 gCO₂e/kWh, and France near the top of it. A heat pump on one of these is very nearly carbon-free heat. These move year to year — check the current figure rather than this one.',
   }),
   new Landmark({
     from: 120, to: 260, label: 'Decarbonising', phrase: 'decarbonising',
@@ -1887,45 +1900,45 @@ const GRID = [
 const WWR = [
   new Landmark({
     from: 0.1, to: 0.25, label: 'Punched', phrase: 'punched',
-    note: 'Windows as holes in a wall — the traditional and, for a heating-dominated climate, usually the right one.',
+    note: `${CONVENTION} Windows as holes in a wall — the traditional arrangement and, in a heating-dominated climate, usually still the right one.`,
   }),
   new Landmark({
     from: 0.4, label: 'Code limit', phrase: 'the code limit',
-    note: 'ASHRAE 90.1-2019 §5.5.4.2 caps vertical fenestration at 40 % of the gross above-grade wall area on the prescriptive path. Past it the building has to be traded out on performance.',
+    note: 'ASHRAE 90.1-2019 caps vertical fenestration at 40 % of the gross above-grade wall area on the prescriptive path (§5.5.4.2). Past it the building has to be traded out on performance instead.',
   }),
   new Landmark({
     from: 0.6, to: 0.9, label: 'Curtain wall', phrase: 'curtain wall',
-    note: 'A glazed envelope. Whatever the glass, the wall is now the weakest surface the building has.',
+    note: `${CONVENTION} A glazed envelope. Whatever the glass, the wall is now the weakest surface the building has.`,
   }),
 ];
 
 const SKY_RATIO = [
   new Landmark({
     from: 0.03, label: 'Code limit', phrase: 'the code limit',
-    note: 'ASHRAE 90.1-2019 §5.5.4.2 caps skylight fenestration at 3 % of the gross roof area on the prescriptive path.',
+    note: 'ASHRAE 90.1-2019 caps skylight fenestration at 3 % of the gross roof area on the prescriptive path (§5.5.4.2), with a wider allowance where daylight controls are fitted.',
   }),
   new Landmark({
     from: 0.04, to: 0.07, label: 'Toplighting', phrase: 'toplighting',
-    note: 'The range daylighting guidance asks for in a single-storey space: enough to hold a daylit illuminance without the gain running away.',
+    note: `${CONVENTION} The range toplighting guidance generally asks for in a single-storey space: enough to hold a daylit illuminance without the gain running away.`,
   }),
   new Landmark({
     from: 0.1, to: 0.3, label: 'Gain dominates', phrase: 'runaway gain',
-    note: 'A rooflight faces the part of the sky that is never shaded and never off to one side, so past about 10 % the summer gain outruns the light it buys.',
+    note: `${CONVENTION} A rooflight faces the part of the sky that is never shaded and never off to one side, so past about 10 % the summer gain outruns the light it buys.`,
   }),
 ];
 
 const OVERHANG = [
   new Landmark({
     from: 0.2, to: 0.45, label: 'Reveal', phrase: 'a deep reveal',
-    note: 'What a thick wall gives you for nothing. Enough to cut the highest sun off the head of the opening and no more.',
+    note: `${CONVENTION} What a thick wall gives you for nothing — enough to cut the highest sun off the head of the opening and no more.`,
   }),
   new Landmark({
     from: 0.6, to: 1.0, label: 'Canopy', phrase: 'a canopy',
-    note: 'A brise-soleil or a projecting hood — a piece of building rather than a detail, and the depth at which a south elevation starts to be genuinely shaded.',
+    note: `${CONVENTION} A brise-soleil or a projecting hood: a piece of building rather than a detail, and the depth at which a south elevation starts to be genuinely shaded.`,
   }),
   new Landmark({
     from: 1.4, to: 2.2, label: 'Balcony', phrase: 'a balcony',
-    note: 'Deep enough to stand on, and structure rather than cladding. It shades the floor below it as much as it shades its own opening.',
+    note: `${CONVENTION} Deep enough to stand on, and structure rather than cladding. It shades the floor below it as much as it shades its own opening.`,
   }),
 ];
 
@@ -2024,30 +2037,30 @@ const GROUND_TEMP = [
 const STOREY_HEIGHT = [
   new Landmark({
     from: 2.4, to: 2.7, label: 'Dwelling', phrase: 'a dwelling',
-    note: 'The 2.4 m minimum habitable ceiling height most codes set, up to the 2.7 m a good apartment gets.',
+    note: `${CONVENTION} From the 2.4 m a habitable room is conventionally held above, up to the 2.7 m a good apartment gets. Codes set their own minima and they differ.`,
   }),
   new Landmark({
     from: 3.0, to: 3.9, label: 'Office', phrase: 'an office',
-    note: 'Floor to soffit for a commercial floor plate, with the services and the raised floor taken out of it above and below.',
+    note: `${CONVENTION} Floor to soffit for a commercial plate, with the services and the raised floor already taken out of it above and below.`,
   }),
   new Landmark({
     from: 5.0, to: 9.0, label: 'Industrial', phrase: 'a shed',
-    note: 'A warehouse or a workshop, where the clear height is set by what has to move through it.',
+    note: `${CONVENTION} A warehouse or a workshop, where the clear height is set by what has to move through it rather than by anyone standing up in it.`,
   }),
 ];
 
 const STOREYS = [
   new Landmark({
     from: 1, to: 4, label: 'Low-rise', phrase: 'low-rise',
-    note: 'Walk-up height. The envelope still dominates the heat balance at this depth of stack.',
+    note: `${CONVENTION} Walk-up height. The envelope still dominates the heat balance at this depth of stack.`,
   }),
   new Landmark({
     from: 5, to: 12, label: 'Mid-rise', phrase: 'mid-rise',
-    note: 'The ratio of envelope to floor has fallen far enough that the internal gains start to run the building.',
+    note: `${CONVENTION} The ratio of envelope to floor has fallen far enough that the internal gains start to run the building.`,
   }),
   new Landmark({
     from: 13, to: 30, label: 'High-rise', phrase: 'high-rise',
-    note: 'Almost all the heat balance is now internal gain and glazing. Note that this control stacks identical floors: nothing about wind, stack effect or plant is stacked with them.',
+    note: `${CONVENTION} Almost all the heat balance is now internal gain and glazing — and note that this control stacks identical floors, so nothing about wind, stack effect or plant is stacked with them.`,
   }),
 ];
 
