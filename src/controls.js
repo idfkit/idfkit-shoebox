@@ -913,6 +913,31 @@ export class Meter {
   }
 }
 
+/**
+ * What the engine made of a channel's declaration, read back off the run.
+ *
+ * A meter says what a channel is contributing; a readout says what it *is*, in
+ * the terms the engine settled on rather than the ones the controls are typed
+ * in. There is one, on Glazing, and it exists because the layered model is the
+ * only place on this desk where you set causes and are given no result: panes,
+ * a coating and a cavity go in, and the U-factor and SHGC that come out are
+ * the two numbers a window is actually specified by. They are computed at
+ * get-input and printed in the tabular report, so the sheet reads them back —
+ * by the rule that nothing here is lettered from a variable when the run holds
+ * the answer.
+ *
+ * It is a reading, so it obeys the readings' rules: an em dash before the
+ * first run and after a failed one, and never a figure the engine did not
+ * produce.
+ */
+export class Readout {
+  constructor({ label, note = null }) {
+    this.label = label;
+    this.note = note;
+    Object.freeze(this);
+  }
+}
+
 /* ══ channels ════════════════════════════════════════════════════════════ */
 
 /**
@@ -933,7 +958,7 @@ export class Meter {
 export class Channel {
   constructor({
     id, index, name, term, blurb, controls,
-    meter = null, bypassable = true, bypassed = false, requires = null, prices = false,
+    meter = null, readout = null, bypassable = true, bypassed = false, requires = null, prices = false,
   }) {
     this.id = id;
     this.index = index;
@@ -942,6 +967,7 @@ export class Channel {
     this.blurb = blurb;
     this.controls = Object.freeze(controls);
     this.meter = meter;
+    this.readout = readout;
     this.bypassable = bypassable;
     // This channel prices the run rather than shaping it. Nothing it owns
     // reaches the IDF, so nothing it owns belongs in the solve key either --
@@ -1130,6 +1156,10 @@ export const CHANNELS = Object.freeze([
       terms: [new Term({ variable: 'Enclosure Windows Total Transmitted Solar Radiation Rate' })],
       note: 'Reaches the air through the surfaces, so it is read here and summed under Fabric.',
     }),
+    readout: new Readout({
+      label: 'As built',
+      note: 'The engine\'s own figures for this assembly, off the run\'s envelope summary: the glass, and under it the whole window wherever there is a frame for the glass to be corrected against. Under the simple model they are the three sliders above, back from the equivalent layer they were turned into; under the layered one they are what the panes, the coating and the cavity came to, and there is nowhere else to read them.',
+    }),
     controls: [
       new Facade({
         key: 'wwr',
@@ -1195,6 +1225,17 @@ export const CHANNELS = Object.freeze([
         label: 'Visible transmittance',
         value: 0.6, min: 0.05, max: 0.9, step: 0.01, digits: 2,
         needs: (p) => !layered(p),
+      }),
+      new Scale({
+        key: 'panes',
+        label: 'Panes',
+        value: 2,
+        min: 2,
+        max: 4,
+        step: 1,
+        digits: 0,
+        needs: layered,
+        note: 'Sheets of glass, with a cavity of the width below between each pair. The simple model has no pane count to give — its three numbers are the whole assembly already — so this is the one place on the desk where a window is built rather than specified.',
       }),
       new Scale({
         key: 'paneEmiss',
