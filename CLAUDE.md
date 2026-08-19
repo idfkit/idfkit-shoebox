@@ -63,6 +63,7 @@ controls.js  declares every control (typed classes) and groups them into Channel
      +--> model.js   one applier per channel writes the IDF objects
      +--> console.js draws the strips from the same declaration
      +--> main.js    owns `params`, wires gestures, schedules solves, reads the ESO
+     +--> field.js   the editable number both of those surfaces letter a value with
 ```
 
 `src/controls.js` is the single source of truth. A control exists once, as a
@@ -174,6 +175,37 @@ result, only explain one.
   normal*, so 0° and 180° are **closed** and 90° is **open** — the opposite of
   what a 0–180° slider suggests. Nothing on the face said so, and a reader
   assuming the other convention got the shading exactly backwards.
+
+### The margin numbers (src/field.js)
+
+Every number a slider carries is also the way to set it: a text input with the
+box taken off, lettering exactly as the `output` it replaced. A slider alone
+cannot say an exact figure — width runs 4 to 40 m across about 200 px, which is
+0.18 m to the pixel — so 12.00 m used to be a hundred presses of an arrow key.
+
+- **The two halves live where their twins live.** `quantityField` in
+  `field.js` is DOM and nothing else; the parsing is `Ruled.parse` in
+  `controls.js`, beside the `format` it undoes — one copy for a scale and a
+  plan key alike, as `format` and `fraction` already were, so a unit or
+  a stop changed in the declaration changes what the box will accept. Both
+  surfaces call the one function: the console's scales and plan-key legends,
+  and the sheet's five dimensions.
+- **A typed value is brought onto the control's own face** — clamped to the
+  stops, snapped to the step, and rounded to the step's own decimals, because
+  `0 + 3 * 0.05` is 0.15000000000000002 and that number would ride the
+  permalink and be written into the IDF as it stands. Anything that is not a
+  number is refused whole and the model's own value comes back, the way a bad
+  link is refused: no half-reading of `12abc`.
+- **Focus shows the value, blur shows the lettering.** The unit is not part of
+  what you are changing, and the lettering is lossy where a control's step is
+  finer than the digits it is drawn to (`height` defaults to 4.572 m and reads
+  `4.57 m`; `wallR` steps by 0.005 and reads to two places). Offered its own
+  lettering to edit, a reader who touched the box and left it alone would have
+  trimmed 2 mm off the building — so the box compares what it gave against what
+  it got back and **commits nothing when they are the same**.
+- **A redraw never types over the reader.** `show()` returns early while the
+  field holds focus, because a study tick, a landing solve or a station attach
+  redraws every face on the desk and one of them may be being typed into.
 
 ### `applyModel` (src/model.js)
 
