@@ -2,6 +2,7 @@ import { createEnergyPlus } from '@idfkit/engine';
 import { httpSource, SchemaBundle, writeIdf } from '@idfkit/core';
 import {
   applyModel,
+  boundaryKeyFor,
   buildModel,
   channelState,
   designConditionsFrom,
@@ -27,11 +28,13 @@ import {
   phraseFor,
 } from './controls.js';
 import { mountConsole } from './console.js';
+import { quantityField } from './field.js';
 import { mountTour } from './tour.js';
 import { COARSE_SAMPLES, SWEEP_SAMPLES, samplePoints, sampleOrder } from './study.js';
 import { createEnginePool, poolLimit } from './pool.js';
 import { createStudyScheduler, makeStudyJob } from './scheduler.js';
 import { runBundle } from './bundle.js';
+import { REVISION, revisionHref } from './version.js';
 import { END_USES, GROUPS, computeBill, meterTotal } from './bill.js';
 import { assume, isRate, placeName, resolveRates } from './rates.js';
 import {
@@ -208,16 +211,29 @@ function renderAxon(meanC) {
   };
   const draw = (v) => project(square(v));
 
+  // Adiabatic surfaces, poché'd like a cut in a section drawing. Collected for
+  // every surface rather than only the three the viewpoint shows: the three
+  // behind read through the translucent faces along with the wireframe, and a
+  // north wall that has left the envelope has to be visible without turning
+  // the building to find it.
+  const poche = [];
+
   for (const s of SURFACES) {
     const screen = s.verts.map(draw);
     pts.push(...screen);
     for (let i = 0; i < screen.length; i++) edges.push([screen[i], screen[(i + 1) % screen.length]]);
     const n = normal(s.verts.map(square));
     const facing = n[0] * VIEW[0] + n[1] * VIEW[1] + n[2] * VIEW[2];
-    if (facing > 1e-6) {
+    const front = facing > 1e-6;
+    if (front) {
       // Top face reads brightest, then the +x wall, then the +y wall.
-      faces.push({ screen, alpha: 0.1 + 0.2 * Math.max(0, n[2]) + 0.07 * Math.max(0, n[0]) });
+      faces.push({
+        surface: s,
+        screen,
+        alpha: 0.1 + 0.2 * Math.max(0, n[2]) + 0.07 * Math.max(0, n[0]),
+      });
     }
+    if (s.boundary === 'adiabatic') poche.push({ screen, front });
   }
 
   // The overhang is drawn last but measured now: it stands outside the box, so
@@ -355,27 +371,97 @@ function renderAxon(meanC) {
   // The wireframe underlay first, so the near faces sit on top of it.
   const wire = svg('g', { stroke: 'var(--ink-ghost)', 'stroke-width': 0.6, opacity: 0.55 });
   for (const [p, q] of edges) wire.append(line(p, q));
+  /*
+   * The hatch an adiabatic surface is filled with.
+   *
+   * A doubled outline was tried first — the party-wall convention the console's
+   * boundary key uses — and it reads wrongly here: inset inside a filled face
+   * it makes a rim, and the box turns into an open tray. Hatching is what a
+   * drawing does to a surface that is cut rather than seen, which is exactly
+   * what an adiabatic surface is: the model stops at its inside face.
+   *
+   * Spaced in `unit`s rather than user units so the hatch is the same density
+   * on a 4 m box and a 40 m one, since the drawing is scaled to fit either.
+   */
+  const defs = svg('defs');
+  const hatch = svg('pattern', {
+    id: 'axon-adiabatic',
+    width: unit * 3.6,
+    height: unit * 3.6,
+    patternUnits: 'userSpaceOnUse',
+    patternTransform: 'rotate(45)',
+  });
+  hatch.append(
+    svg('line', {
+      x1: 0, y1: 0, x2: 0, y2: unit * 3.6,
+      stroke: 'var(--ink-3)', 'stroke-width': unit * 0.5,
+    }),
+  );
+  defs.append(hatch);
+  root.append(defs);
+  // Deaf to the pointer, because it stands over the face it describes and the
+  // face is a control. A filled polygon takes clicks by default, so the hatch
+  // laid over an adiabatic surface swallowed every click on it: the surface
+  // could be sent adiabatic and never brought back, since the first flip put
+  // this on top of the only thing that would have flipped it back.
+  const cut = (screen, opacity) =>
+    svg('polygon', {
+      points: screen.map((p) => p.join(',')).join(' '),
+      fill: 'url(#axon-adiabatic)',
+      opacity,
+      stroke: 'none',
+      'pointer-events': 'none',
+    });
+  // A surface facing away is hatched under the wireframe, so it reads at the
+  // weight the far side of the box reads at and never as the nearest thing in
+  // the drawing.
+  for (const l of poche) if (!l.front) wire.append(cut(l.screen, 0.35));
   root.append(wire);
 
   const fill = meanC == null ? 'var(--ink-3)' : tint(meanC);
+  // A surface can be flipped by clicking it, but only while the Fabric channel
+  // is in the path: patched out, the model sends all six adiabatic whatever
+  // the parameters say, and a click that moved a parameter without moving the
+  // drawing would be the sheet telling the reader something untrue about what
+  // it had just done. The strip says why, which is where that belongs.
+  const flippable = modelState?.get('fabric')?.engaged ?? false;
   for (const f of faces) {
-    root.append(
-      svg('polygon', {
-        points: f.screen.map((p) => p.join(',')).join(' '),
-        fill,
-        'fill-opacity': meanC == null ? f.alpha * 0.35 : f.alpha,
-        stroke: 'var(--ink)',
-        'stroke-width': 0.9,
-        'stroke-linejoin': 'round',
-        'vector-effect': 'non-scaling-stroke',
-      }),
-    );
+    const poly = svg('polygon', {
+      points: f.screen.map((p) => p.join(',')).join(' '),
+      fill,
+      'fill-opacity': meanC == null ? f.alpha * 0.35 : f.alpha,
+      stroke: 'var(--ink)',
+      'stroke-width': 0.9,
+      'stroke-linejoin': 'round',
+      'vector-effect': 'non-scaling-stroke',
+    });
+    const key = flippable ? boundaryKeyFor(f.surface.name) : null;
+    if (key) {
+      const { face } = controlFor(key);
+      const state = params[key];
+      poly.style.cursor = 'pointer';
+      poly.classList.add('axon-face');
+      const said = phraseFor(key);
+      const title = svg('title');
+      title.textContent =
+        `${said[0].toUpperCase()}${said.slice(1)} is ${face.format(state)}. ` +
+        `Click for ${face.flip(state)}.`;
+      poly.append(title);
+      poly.addEventListener('click', () => commit(key, face.flip(params[key]), true));
+    }
+    root.append(poly);
   }
+  for (const l of poche) if (l.front) root.append(cut(l.screen, 0.9));
 
   // Glazing, drawn after the walls so it reads as an opening cut into one.
   // Filled with the paper itself rather than a tint — the wall is carrying the
   // temperature colour, and glass has to stay legible against any of it — then
   // struck through on the diagonal, the way glass is marked in elevation.
+  // Deaf to the pointer for the same reason the hatch is: an opening is cut
+  // into a surface and stands in front of it, and a wall at 0.9 glazing is
+  // nearly all glass — a click that landed on the light and stopped there
+  // would take the drawing's own control away from the walls most worth
+  // flipping.
   for (const win of WINDOWS) {
     const screen = win.verts.map(draw);
     const points = screen.map((p) => p.join(',')).join(' ');
@@ -388,6 +474,7 @@ function renderAxon(meanC) {
         'stroke-width': 0.9,
         'stroke-linejoin': 'round',
         'vector-effect': 'non-scaling-stroke',
+        'pointer-events': 'none',
       }),
     );
     root.append(
@@ -395,6 +482,7 @@ function renderAxon(meanC) {
         x1: screen[1][0], y1: screen[1][1], x2: screen[3][0], y2: screen[3][1],
         stroke: 'var(--ink-3)', 'stroke-width': 0.6, opacity: 0.7,
         'vector-effect': 'non-scaling-stroke',
+        'pointer-events': 'none',
       }),
     );
   }
@@ -413,6 +501,12 @@ function renderAxon(meanC) {
         'stroke-width': 0.9,
         'stroke-linejoin': 'round',
         'vector-effect': 'non-scaling-stroke',
+        // Deaf, like the hatch and the glass: one rule for the whole drawing,
+        // which is that the six surfaces are the only things in it a pointer
+        // can be on. A shade hangs on the wall it shelters and stands nearest
+        // the eye, so anything else leaves dead patches over the surfaces it
+        // covers.
+        'pointer-events': 'none',
       }),
     );
   }
@@ -2050,8 +2144,25 @@ function buildSliders() {
     });
     input.setAttribute('aria-label', label.textContent);
 
-    const value = document.createElement('output');
-    value.htmlFor = `dim-${key}`;
+    // The number is the other way to set the dimension: a box with nothing
+    // drawn around it, in the place the reading already stood. Width runs 4 to
+    // 40 m across the slider's ~200 px, so an exact 12.00 m was previously a
+    // hundred presses of an arrow key away. See `field.js`.
+    const value = quantityField({
+      control,
+      name: label.textContent,
+      read: () => params[key],
+      // Typing an exact dimension is taking hold of one, and note 2 now says
+      // so outright — so it files the same square the drag does. Filed here
+      // rather than in `commit` for the reason the listener below is: commit
+      // is also the path a programmatic change takes, and only a reader can
+      // fill a marker. The guard is the console's: a box left at the number
+      // it already held resolves nothing.
+      write: (v) => {
+        if (params[key] !== v) tour?.note('drag');
+        commit(key, v, true);
+      },
+    });
 
     // The landmarks the console's calibration faces carry, on the sheet's own
     // sliders. Three of these five have them; the two plan dimensions do not,
@@ -2090,7 +2201,7 @@ function buildSliders() {
 
     const show = () => {
       const v = params[key];
-      value.textContent = control.format(v);
+      value.show();
       const said = control.standing(v);
       input.setAttribute('aria-valuetext', said ? `${control.format(v)}, ${said}` : control.format(v));
       if (standing) {
@@ -2116,7 +2227,7 @@ function buildSliders() {
     });
     input.addEventListener('change', () => commit(key, Number(input.value), true));
 
-    row.append(label, input, value);
+    row.append(label, input, value.node);
     if (rule) row.append(rule, standing);
     host.append(row);
     syncSlider[key] = () => {
@@ -3590,7 +3701,38 @@ async function attachFromLink(linked) {
 
 /* ══ the run ═════════════════════════════════════════════════════════════ */
 
-$('t-date').textContent = `Issued ${new Date().toLocaleDateString('en-CA')}`;
+/*
+ * The sheet's own revision, lettered into the title block once at boot.
+ *
+ * Everything else in that block describes the run; this one cell describes the
+ * drawing, which is what a revision cell is for. It reads `E-01 · Rev 0.2.0` on
+ * a tagged release and `E-01 · Rev 0.2.0+cd5881e` on a build published from
+ * main without one, and the version clicks through to the release or the commit
+ * it names — a reader who wants to say "this number looks wrong" can now say
+ * which sheet the number was on.
+ *
+ * The date is the revision's, not the reader's. It used to be `new Date()`
+ * evaluated in the browser, which lettered "Issued" with the day the page was
+ * opened: a drawing dated by whoever picked it up. A build that could not read
+ * its own revision has no date to state and prints the em dash the rest of the
+ * sheet uses for a missing measurement.
+ */
+$('t-rev').textContent = 'E-01 · Rev ';
+{
+  const href = revisionHref();
+  const stamp = document.createElement(href ? 'a' : 'span');
+  stamp.textContent = REVISION.version ?? '—';
+  if (href) {
+    stamp.href = href;
+    stamp.target = '_blank';
+    stamp.rel = 'noreferrer';
+    stamp.title = REVISION.tag
+      ? `Released as ${REVISION.tag}`
+      : `Built from commit ${REVISION.commit}`;
+  }
+  $('t-rev').append(stamp);
+}
+$('t-date').textContent = `Issued ${REVISION.date ?? '—'}`;
 
 // Start the ~28 MB WASM download immediately; the schema bundle is small and
 // arrives first, which is what lets the sheet draw itself before the engine is

@@ -58,6 +58,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the new run and was released — until now the marker simply went from
   filled to hollow, which is not an explanation.
 
+- **Any of the six surfaces can be made adiabatic**, on a key of their own at
+  the foot of the Fabric strip. A shoebox is almost never a free-standing
+  object: it is one bay of a terrace, a middle floor of a stack, a corner unit
+  with two party walls. Until now this desk could only say so about the floor,
+  and every other surface was exposed whether the building it stood for was or
+  not.
+
+  The key is a plan with a section drawn through it. The four walls are the
+  edges of the plan and turn with north, exactly as the glazing key's bars do;
+  the roof and the floor are the two surfaces a plan cannot show — it is a
+  horizontal cut and they are what it cuts through — so they are drawn as the
+  section they would appear in, roof over floor, inside the square. Adiabatic
+  is a doubled line, the way a party wall is drawn on any plan, and open to the
+  weather is a single hairline. **The axonometric is the same control**: the
+  three faces the viewpoint shows can be clicked to flip them, and every
+  adiabatic surface is hatched like a cut — faintly, through the box, for the
+  three facing away.
+
+  On Denver's two design days, with the ideal unit and the internal gains in
+  the path: the stock free-standing box carries 511.0 m² of exposed envelope
+  at an A/V of 0.481 and asks for 82.5 kWh of heat. Take the east and west
+  walls out as party walls and it is 371.6 m², 0.350 and 39.6 kWh — a little
+  over half the heating for a building nobody moved a millimetre. Take the roof
+  out instead, as a middle floor, and it is 47.8 kWh. Take all four walls out
+  and the heating is 0.0 kWh against 99.0 kWh of cooling: a top-lit core, which
+  is a real building and not one this page could previously describe at all.
+
+  An adiabatic surface has no outside, and the engine refuses an opening cut
+  into one, so the wall that goes out takes its glass, its overhang and its
+  fins with it — the glazing key greys that wall and says *The north wall is
+  adiabatic, so there is nothing outside it to open onto*, and Skylights
+  blocks itself when the roof goes. The window-to-wall and skylight-to-roof
+  ratios now divide by the surfaces that have an outside, which is what those
+  ratios have always been measured over.
+
+- **The sheet says which build of itself you are reading.** The title block's
+  Sheet cell has always carried a revision, and it was the string `Rev A`,
+  hand-lettered and never once true. It now carries the build: `E-01 · Rev
+  0.2.0` on a tagged release, and `E-01 · Rev 0.2.0+cd5881e` on the far more
+  common case of a deploy from `main` with no tag on it, the sha being semver's
+  build metadata — the same declared version, this particular build of it. It
+  links to the release or the commit it names, so a reader who thinks a number
+  looks wrong can now say which drawing the number was on, and the run bundle's
+  manifest carries the same line beside the EnergyPlus version.
+
+  The date under it is the revision's, taken off the commit. It used to be
+  `new Date()` evaluated in the browser, which lettered "Issued" with the day
+  the page happened to be opened: a drawing dated by whoever picked it up.
+
+- **Every number a slider carries is now a box you can type in.** The five
+  seventy-six scales on the desk, the eight walls of its two plan keys and the
+  five dimensions under the drawing — which are five of those same controls,
+  drawn twice — all letter their value exactly as before, and every one of them
+  is now also the way to set it: click the number, type, Enter. A slider cannot
+  say an exact figure — width runs 4 to 40 m across about 200 px, which is
+  0.18 m to the pixel — so 12.00 m was a hundred presses of an arrow key away.
+
+  Nothing is drawn around the box. No border, no fill, no spinner, no focus
+  ring: the number reads as the lettering it always was, and the only thing
+  that says it can be edited is the I-beam the cursor becomes over it. A sheet
+  made of hairlines cannot afford eighty more rectangles to say the same thing.
+
+  A typed value is brought onto the control's own face — clamped to the stops
+  and snapped to the step, then rounded to the step's own decimals, because
+  `0 + 3 * 0.05` is 0.15000000000000002 and that number would ride the
+  permalink and be written into the IDF exactly as it stands. Anything that is
+  not a number is refused whole and the model's own value comes back, the way a
+  bad link is: no half-reading of `12abc`. The unit and the zero word are
+  accepted, since they are what the box says when it is not being typed in —
+  `12 m` means 12 m, and `Solid` closes a wall.
+
+  Two quieter rules keep it honest. Focus shows the value itself rather than
+  its lettering, because a height of 4.572 m reads as `4.57 m` on a face ruled
+  to two places and a reader who touched the box and left it alone would have
+  silently trimmed 2 mm off the building — and the box compares what it gave
+  against what it got back, so a touch-and-leave commits nothing whatever.
+  And a redraw never types over the reader: a study tick landing or a station
+  attaching redraws every face on the desk, and the one being edited is left
+  alone until it is let go.
+
 - **The layered glazing model has a pane count, and the window says what it
   came to.** Two things were missing from the same strip. The layered model
   built a double unit and only a double unit — there was no way to ask for a
@@ -266,6 +346,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   more stamp.
 
 ### Fixed
+
+- **Bypassing Fabric fatalled any desk with an opening on it.** Patching that
+  channel out sends every surface adiabatic, and EnergyPlus refuses a
+  `FenestrationSurface:Detailed` or a `Shading:Zone:Detailed` whose base
+  surface is one:
+
+      ** Severe ** FenestrationSurface:Detailed="ZN001:WALL001:WIN001",
+                   invalid Building Surface Name="ZN001:WALL001".
+      ** Fatal  ** GetSurfaceData: Errors discovered, program terminates.
+
+  One wall window was enough — the desk ships with one — so the flask the
+  Fabric strip advertises was only reachable by patching Glazing, Shading and
+  Skylights out by hand first, and reaching for it any other way stopped the
+  run. It was recorded as unfixable through `Channel.requires`, on the grounds
+  that a precondition can only ask about channels already decided and Fabric is
+  declared at 07, below all three that would need to ask. That was the wrong
+  reading of the machinery: being *bypassed* is an input to that loop rather
+  than something the loop decides, so it can be asked of any channel in any
+  order. `requires.test` now takes an `off(id)` beside its `on(id)`, and
+  Glazing and Skylights refuse themselves with a sentence each instead. The
+  appliers ask the document as well — the boundary `applyFabric` has already
+  written, rather than a parameter — so an opening is never written where it
+  cannot stand, however it came to be there.
 
 - **The low-e coating note named the wrong coating.** The Glazing strip said
   "0.04 is a hard coat"; 0.04 is a *soft* coat's emissivity. A pyrolytic hard
