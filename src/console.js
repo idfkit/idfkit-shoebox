@@ -11,6 +11,7 @@ import {
   runDays,
   serializeHolidays,
 } from './controls.js';
+import { quantityField } from './field.js';
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -318,6 +319,7 @@ export function mountConsole({
     if (control.kind === 'selector') return buildSelector(control);
     if (control.kind === 'bearing') return buildBearing(control);
     if (control.kind === 'facade') return buildFacade(control, channel);
+    if (control.kind === 'boundary') return buildBoundary(control);
     if (control.kind === 'profile') return buildProfile(control);
     if (control.kind === 'calendar') return buildCalendar(control);
     if (control.kind === 'days') return buildDays(control);
@@ -436,11 +438,19 @@ export function mountConsole({
     const head = el('div', 'ctl-head');
     const label = el('label', null, control.label);
     label.htmlFor = `k-${control.key}`;
-    const value = el('output', 'ctl-value');
-    value.htmlFor = `k-${control.key}`;
+    // The reading is also the way to set it — see `field.js`. It carries no
+    // `htmlFor` of its own: an editable field is its own control, not an
+    // output of the face beside it, and it names itself for the reader.
+    const value = quantityField({
+      control,
+      name: control.label,
+      read: () => params[control.key],
+      write: (v) => onChange(control.key, v, true),
+      className: 'ctl-value',
+    });
 
     const studyBtn = studyOffer(control.key, control.label, control, channel);
-    head.append(label, ...(studyBtn ? [studyBtn] : []), value);
+    head.append(label, ...(studyBtn ? [studyBtn] : []), value.node);
 
     const face = el('div', 'face');
     const ruling = el('i', 'face-rule');
@@ -478,7 +488,7 @@ export function mountConsole({
     const redraw = () => {
       const v = params[control.key];
       input.value = String(v);
-      value.textContent = control.format(v);
+      value.show();
       // The landmark rides in the spoken value, not only in the drawing. A
       // reader who cannot see the marks hears "1.80 W/m²K, low-e double" as
       // the arrow keys walk the face, which is the whole of what the rule
@@ -746,8 +756,16 @@ export function mountConsole({
     const reads = control.sides.map((side) => {
       const item = el('div', 'plan-read');
       item.append(el('span', null, side.label));
-      const out = el('b');
-      item.append(out);
+      // One wall's number, typed where it is lettered. A plan key is dragged
+      // along a 48-unit bar, which is coarser than any of the four scales it
+      // stands for, so this is the only way to set a wall exactly.
+      const out = quantityField({
+        control,
+        name: labelFor(side.key),
+        read: () => params[side.key],
+        write: (v) => onChange(side.key, v, true),
+      });
+      item.append(out.node);
       // A legend column is about fifty pixels wide, which holds a band's name
       // and cannot hold a sentence. So the cell letters the landmark the wall
       // is standing in and stays blank between two — unlike a calibration
@@ -802,7 +820,7 @@ export function mountConsole({
       }
       for (const read of reads) {
         const v = params[read.side.key];
-        read.out.textContent = control.format(v);
+        read.out.show();
         if (read.stand) {
           const said = control.standing(v);
           read.stand.textContent = control.landmarkAt(v)?.label ?? '';
@@ -817,7 +835,7 @@ export function mountConsole({
         read.item.classList.toggle('idle', !reaches);
         syncStudyOffer(read.studyBtn, channel, {
           idle: spent || !reaches,
-          unreached: reaches ? null : read.side.unreached,
+          unreached: reaches ? null : read.side.reasonFor(params),
         });
       }
       row.classList.toggle('idle', spent);
@@ -825,6 +843,171 @@ export function mountConsole({
       for (const side of control.sides) cards.get(side.key)?.syncTick?.();
     };
     for (const side of control.sides) faces.set(side.key, redraw);
+    // The plan turns with the north axis, so it has to redraw when that moves.
+    const already = faces.get('northAxis');
+    faces.set('northAxis', already ? () => { already(); redraw(); } : redraw);
+    return row;
+  }
+
+  /**
+   * The six surfaces of the box: a plan with a section drawn through it.
+   *
+   * Which surfaces are adiabatic is one decision about a building — a party
+   * wall, a floor over a heated space, one bay cut out of a terrace — so it is
+   * set at the places the surfaces stand rather than as six rows of
+   * `Adiabatic / Outdoors` that would read as six unrelated switches. The four
+   * walls are the edges of the plan and turn with it, exactly as the glazing
+   * key's bars do. The roof and the floor cannot be in a plan at all — a plan
+   * is a horizontal cut and they are the two things it cuts through — so they
+   * are drawn as the section they would appear in, the roof above the floor,
+   * inside the square the walls make.
+   *
+   * A surface has two states and no third, so the gesture is a flip rather
+   * than a choice: tap the wall, or tap its entry in the legend. The legend
+   * entries are real buttons, which is what makes the whole key reachable from
+   * the keyboard — the bars in the drawing are pointer targets over the same
+   * six parameters.
+   *
+   * The convention is the one a drawing already uses: a surface open to the
+   * weather is a single hairline, and an adiabatic one is doubled inward, the
+   * way a party wall is drawn on any plan, so reading the key needs no key of
+   * its own. The axonometric says the same thing in the way a drawing says it
+   * of a face rather than of an edge — it hatches the surface, as a section
+   * hatches what it cuts.
+   */
+  function buildBoundary(control) {
+    const row = el('div', 'ctl ctl-boundary');
+    const head = el('div', 'ctl-head');
+    head.append(el('span', 'ctl-label', control.label));
+    row.append(head);
+
+    const root = svg('svg', { viewBox: '-56 -56 112 112', class: 'plan', role: 'group' });
+    root.setAttribute('aria-label', control.label);
+
+    const n = svg('text', {
+      x: 0, y: -46, 'text-anchor': 'middle', fill: 'var(--ink-3)',
+      'font-family': 'var(--cond)', 'font-size': 8.5, 'letter-spacing': '0.1em',
+    });
+    n.textContent = 'N';
+    root.append(n);
+
+    const turning = svg('g');
+    root.append(turning);
+
+    // The walls are the edges of the plan themselves, not bars set outside it:
+    // the thing being set here *is* the wall, where the glazing key's bars are
+    // a scale that belongs to one. Local +y points into the box under every
+    // one of these rotations, which is what lets one offset double every wall
+    // inward without four special cases.
+    const EDGES = {
+      north: { x: 0, y: -34, rotate: 0 },
+      east: { x: 34, y: 0, rotate: 90 },
+      south: { x: 0, y: 34, rotate: 180 },
+      west: { x: -34, y: 0, rotate: 270 },
+    };
+    // The section: two lines through the middle of the plan, shorter than the
+    // walls so the square still reads as a square behind them, and set clear
+    // of where the walls letter themselves.
+    const SECTION = {
+      roof: { y: -16, half: 18, inward: 1, label: 8 },
+      floor: { y: 16, half: 18, inward: -1, label: -8 },
+    };
+    // Each wall letters itself just inside its own edge — outside would put the
+    // north wall's letter under the key's own north point, which marks true
+    // north and does not turn with the building. Seven units in clears the
+    // section by thirteen.
+    const WALL_CAP = 7;
+
+    const flip = (face) => {
+      markGesture(face.key);
+      onChange(face.key, face.flip(params[face.key]), true);
+    };
+
+    const marks = control.faces.map((face) => {
+      const place = EDGES[face.face];
+      const cut = SECTION[face.face];
+      const g = svg('g', place
+        ? { transform: `translate(${place.x} ${place.y}) rotate(${place.rotate})` }
+        : {});
+      // Every face is one edge drawn one of two ways. The single line and the
+      // doubled pair are both built now and shown one at a time, so a flip
+      // costs an attribute rather than a rebuild.
+      const half = place ? 34 : cut.half;
+      const inward = place ? 1 : cut.inward;
+      const at = place ? 0 : cut.y;
+      const line = (offset, attrs) =>
+        svg('line', { x1: -half, y1: at + offset, x2: half, y2: at + offset, ...attrs });
+      const open = line(0, { stroke: 'var(--rule-firm)', 'stroke-width': 1 });
+      const shut = svg('g', { stroke: 'var(--ink)', 'stroke-width': 1.1 });
+      shut.append(line(0), line(inward * 3));
+      g.append(open, shut);
+
+      const capY = place ? WALL_CAP : at + cut.label;
+      const cap = svg('text', {
+        x: 0, y: capY,
+        'text-anchor': 'middle', fill: 'var(--ink-3)',
+        'font-family': 'var(--cond)', 'font-size': 7, 'letter-spacing': '0.11em',
+      });
+      cap.textContent = face.label.toUpperCase();
+      g.append(cap);
+
+      // The targets are sized so that a wall's and the section's can never
+      // overlap however far the plan has been turned: a wall's inner edge
+      // stands 28 units off centre, and the section's furthest corner 26.
+      const reach = place ? half : half - 2;
+      const grab = svg('rect', {
+        x: -reach, y: at - (place ? 6 : 4), width: reach * 2, height: place ? 12 : 8,
+        fill: 'transparent', class: 'plan-flip',
+      });
+      grab.addEventListener('click', () => flip(face));
+      g.append(grab);
+
+      (place ? turning : root).append(g);
+      return { face, group: g, open, shut, cap, capY, place };
+    });
+
+    row.append(root);
+
+    // Six entries where a plan key has four, so three to a line rather than
+    // four: `Adiabatic` is a word and not a number, and six of them across one
+    // column of the console would each be two characters wide.
+    const legend = el('div', 'plan-legend six');
+    const reads = control.faces.map((face) => {
+      const item = el('button', 'plan-read face-read');
+      item.type = 'button';
+      item.append(el('span', null, face.label));
+      const out = el('b');
+      item.append(out);
+      item.addEventListener('click', () => flip(face));
+      legend.append(item);
+      return { face, item, out };
+    });
+    row.append(legend);
+    if (control.note) row.append(el('p', 'ctl-note', control.note));
+
+    const redraw = () => {
+      turning.setAttribute('transform', `rotate(${params.northAxis})`);
+      for (const mark of marks) {
+        const shut = mark.face.shut(params[mark.face.key]);
+        mark.open.style.display = shut ? 'none' : '';
+        mark.shut.style.display = shut ? '' : 'none';
+        // Keep the lettering upright however far the plan has been turned.
+        if (mark.place) {
+          const total = params.northAxis + mark.place.rotate;
+          mark.cap.setAttribute('transform', `rotate(${-total} 0 ${mark.capY})`);
+        }
+      }
+      for (const read of reads) {
+        const state = params[read.face.key];
+        read.out.textContent = read.face.format(state);
+        read.item.setAttribute('aria-pressed', String(read.face.shut(state)));
+        read.item.setAttribute(
+          'aria-label',
+          `${labelFor(read.face.key)}: ${state}. Flip to ${read.face.flip(state)}.`,
+        );
+      }
+    };
+    for (const face of control.faces) faces.set(face.key, redraw);
     // The plan turns with the north axis, so it has to redraw when that moves.
     const already = faces.get('northAxis');
     faces.set('northAxis', already ? () => { already(); redraw(); } : redraw);
