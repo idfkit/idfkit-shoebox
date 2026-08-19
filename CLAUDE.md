@@ -394,6 +394,58 @@ and the rest per storey — what the axonometric draws — and `grossFloor`,
   cause is not otherwise obvious, and because a reading the reader cannot
   check the division of is the thing this sheet exists not to print.
 
+### The description (src/describe.js)
+
+The paragraph under the plate opens with the building and closes with the
+reading: two sentences about the desk the reader drew, then the one sentence
+that says what drawing it that way did. The description half is generated, not
+written — `describeDesk` returns a token list (strings, and `{ q }` for the
+quantities the sheet letters in its mono face) that `solve` appends ahead of
+the finding's own clauses.
+
+- **What to say is decided by difference.** Ninety-odd controls, and room for
+  three, so the moves are ranked by how far each sits from its own default —
+  the same identity diff `encodeState` takes to decide what a permalink must
+  carry, for the same reason: what the reader changed is what the reader
+  designed. `moved()` scores a scalar by its own travel (`Control.fraction`),
+  and the `FLIP` table scores a channel being patched in or out **above
+  anything a slider can reach**. That table is not decoration: a pane
+  emissivity taken the whole way across its range scores 1.00, and before the
+  flips outranked it the paragraph described the glass of a building whose
+  ideal unit it never mentioned.
+- **Ranking chooses; declaration order reads.** `READING_ORDER` re-sorts the
+  three that won, because "which three" and "in what order" are different
+  questions — left in rank order the clauses composed by luck, and a site
+  clause, a mechanism and a caveat about the whole run do not join in any
+  order you please.
+- **Every move is a noun phrase**, so one lead-in governs all of them however
+  they land, and none carries a comma of its own — a clause with a comma turns
+  the series' last "and" into an ambiguity about which half it governs. The
+  desk that changed exactly one thing is not a rare desk, which is why the
+  lead-in cannot be a verb agreeing with a plural.
+- **The compass words are measured, not named.** `turn()` puts the orientation
+  into the vertices and leaves every wall's name where it was, so on a building
+  turned 40° the wall called south faces south-east. `geometryFacts` now
+  returns `faces` — per wall: its length, area, glazing, ratio, overhang,
+  projection and **bearing off its own outward normal** — and the description
+  letters the bearing beside the word wherever the box is off the cardinals.
+  Reading the plan key's name instead would have the sheet stating the one
+  thing about a turned desk that is flatly untrue.
+- **It is captured before the await**, beside `capture` and the IDF, off the
+  snapshot the run was written from. Lettered after, a slider turned during a
+  0.7 s annual run would have the sentence describing one building over another
+  building's chart.
+- **Nothing is said that is not measured.** No typology — 12 m²/person is a
+  number, not "an office"; no assembly names — an R-value is not "a cavity
+  wall"; and no verdict, because "well insulated" has no measurement behind it
+  and no benchmark on this page to earn it. Areas, ratios and reaches come off
+  the document, so a channel patched out from under a control reads as what the
+  document holds: a building with Glazing bypassed is described as solid,
+  because it is.
+- The module is DOM-free and free of the network — the station arrives as
+  `place: { name, zone }`, already read — so the Node harness can assert the
+  sentences over documents it builds itself.
+
 **A plan key's four walls are four subjects, not one.** The `Facade` controls —
 window-to-wall ratio and overhang projection — own a key per wall, so each wall
 carries its own Study offer in the legend under the plan and its own curve, and

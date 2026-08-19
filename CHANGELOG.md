@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The finding says what the building is before it says what the run made of
+  it.** The paragraph under the plate was a reading with no subject: it opened
+  *With no heating or cooling anywhere in this model, the envelope alone takes
+  the summer design day's 15.1 °C outdoor swing down to 4.4 °C in the zone* over
+  a desk of eighteen strips, none of which it named. It now opens with the
+  shoebox — *A single storey of 232.3 m², 15.24 m square and 4.57 m tall,
+  glazed 0.20 south under a 0.60 m overhang* — and then reads it.
+
+  What the second sentence carries is decided by difference: a desk has ninety
+  controls and a paragraph has room for three, so the moves are ranked by how
+  far each sits from its own default, and a channel patched into the path
+  outranks any slider — *With 0.50 ACH of leakage, gains of 16.0 W/m² over
+  08:00–18:00 at 12.0 m²/person and an ideal unit holding 20.0–26.0 °C.*
+
+  **Every compass word is measured rather than named.** `turn()` puts the
+  orientation into the vertices and leaves the wall names alone, so on a
+  building turned 40° the wall the plan calls south faces south-east; the
+  description reads each wall's bearing off its own outward normal and letters
+  it beside the word — *glazed 0.45 south-west (220°) and 0.30 north-east
+  (40°)*. Areas, ratios and overhang reaches are read off the document too, so
+  a channel patched out from under a control describes what the document holds
+  and not what the slider still says: with Fabric and Mass out, the sentence is
+  *solid on every face. With every surface adiabatic and the slab swapped for a
+  massless layer.*
+
+  Nothing is claimed that is not measured — no typology, no assembly names and
+  no verdict — for the reason the rest of the sheet gives an em dash: 12 m²
+  per person is a number, and "an open-plan office" is a building this model
+  was never given.
+
 - **Each wall of a plan key can be swept.** The window-to-wall ratio and the
   overhang projection were the two controls on the desk a study could not be
   taken of, which is the wrong two: an elevation is where orientation stops
@@ -149,6 +179,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   more stamp.
 
 ### Fixed
+
+- **A fin was read as an overhang.** A wall carries up to three shades and the
+  overhang is written first, so the quantities panel took the first shade on
+  the south wall and reported its reach — which on any elevation carrying fins
+  and no overhang is a *fin's* depth, lettered as `Overhang, south 0.40 m ·
+  PF 0.29` over a window with nothing above its head. The overhang sits at one
+  height and a fin runs sill to head, so the two are told apart by their own
+  geometry now rather than by which was written first.
 
 - **"Heat only" and "Cool only" fatalled the engine.** The System strip's
   *Available* selector wrote the thermostat's control type number — 1 for

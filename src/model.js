@@ -37,7 +37,6 @@ import { END_USES } from './bill.js';
  */
 
 export const ZONE_NAME = 'ZONE ONE';
-export const SOUTH_WALL = 'Zn001:Wall001'; // the y = 0 wall; north_axis is 0, so it faces south
 export const SOUTH_WINDOW = 'Zn001:Wall001:Win001';
 
 /**
@@ -1808,6 +1807,25 @@ function reachOff(wallVerts, shadeVerts) {
   return Math.max(...offs) - Math.min(...offs);
 }
 
+/** A wall's length, taken along its own bottom edge rather than along x or y. */
+const edgeLength = (verts) => Math.hypot(verts[2][0] - verts[1][0], verts[2][1] - verts[1][1]);
+
+/**
+ * Which way a wall looks, in degrees clockwise from north.
+ *
+ * The outward normal in plan, from the same bottom edge `reachOff` measures
+ * against, so it carries whatever `turn()` did to the vertices. World
+ * coordinates put north at +y, which is what makes this a compass bearing
+ * rather than a number about the model's axes.
+ */
+const bearingOf = (verts) => {
+  const length = edgeLength(verts);
+  if (!(length > 0)) return NaN;
+  const [a, b] = [verts[1], verts[2]];
+  const n = [(b[1] - a[1]) / length, -(b[0] - a[0]) / length];
+  return ((Math.atan2(n[0], n[1]) * 180) / Math.PI + 360) % 360;
+};
+
 /**
  * Quantities an architect gets without running anything, summed off the
  * surfaces so they follow any geometry the model actually holds.
@@ -1871,12 +1889,54 @@ export function geometryFacts(doc) {
   const wallNames = new Set(WALLS.map((w) => w.name));
   const zoneShades = shades.filter((s) => !s.context && wallNames.has(s.host));
   const curbs = shades.filter((s) => !s.context && !wallNames.has(s.host));
-  const south = zoneShades.find((s) => s.host === SOUTH_WALL);
-  const southWall = walls.find((s) => s.name === SOUTH_WALL);
-  const southWindow = windows.find((w) => w.host === SOUTH_WALL);
-  const overhang = south && southWall ? reachOff(southWall.verts, south.verts) : 0;
-  const opening = southWindow ? span(southWindow.verts, 2) : 0;
-  const projection = overhang > 0 && opening > 0 ? overhang / opening : NaN;
+
+  // The same quantities again, wall by wall, because a sentence about this
+  // building has to say which face carries the glass and which way that face
+  // is looking — the ratio above is four walls summed and is true of none of
+  // them. Read here rather than at the call site for the reason the gross
+  // areas are: a second reader of the same surfaces is a second place for the
+  // window-to-wall ratio to be computed differently.
+  const byName = new Map(surfaces.map((s) => [s.name, s]));
+  const glassOn = new Map();
+  for (const w of windows) glassOn.set(w.host, (glassOn.get(w.host) ?? 0) + polygonArea(w.verts));
+  const faces = WALLS.map((wall) => {
+    const surface = byName.get(wall.name);
+    if (!surface) return null;
+    // The overhang is the flat one. A wall carries up to three shades and the
+    // overhang is written first, so taking the first shade on the wall read a
+    // *fin's* depth as an overhang on any elevation that had fins and no
+    // overhang — the quantities panel has been reporting "Overhang, south
+    // 0.40 m · PF 0.29" for a wall with nothing over its head. An overhang
+    // sits at one height and a fin runs from sill to head, so the geometry
+    // says which is which without either of them having to be named.
+    const shade = zoneShades.find((s) => s.host === wall.name && span(s.verts, 2) < 1e-6);
+    const opening = windows.find((w) => w.host === wall.name);
+    const reach = shade ? reachOff(surface.verts, shade.verts) : 0;
+    const head = opening ? span(opening.verts, 2) : 0;
+    const face = area([surface]);
+    const glass = glassOn.get(wall.name) ?? 0;
+    return {
+      side: wall.side,
+      label: wall.label,
+      length: edgeLength(surface.verts),
+      area: face,
+      glazing: glass,
+      ratio: face > 0 ? glass / face : NaN,
+      // Off the vertices, so it is the way this wall is really looking rather
+      // than the compass point its plan key is named after. `turn()` puts the
+      // orientation into the geometry and leaves every name where it was, so
+      // on a building turned 40° the wall called south faces south-east — and
+      // a description that read the name instead of the normal would say the
+      // one thing about this desk that is flatly untrue.
+      bearing: bearingOf(surface.verts),
+      overhang: reach,
+      projection: reach > 0 && head > 0 ? reach / head : NaN,
+    };
+  }).filter(Boolean);
+
+  const southFace = faces.find((f) => f.side === 'south');
+  const overhang = southFace?.overhang ?? 0;
+  const projection = southFace?.projection ?? NaN;
 
   return {
     // Per storey, which is what the drawing shows and what the dimension
@@ -1909,6 +1969,11 @@ export function geometryFacts(doc) {
     projection,
     shadeArea: area(zoneShades),
     curbArea: area(curbs),
+    // The box itself, as the drawing's dimension lines take it: the two plan
+    // edges off the walls' own bottom edges rather than off a bounding box,
+    // which is 21.55 m across for a 15.24 m square turned 45°.
+    height,
+    faces,
     contextArea: area(shades.filter((s) => s.context)),
     // Left per storey deliberately, and it needs no multiplier: stacking n
     // identical zones multiplies the exposed envelope and the volume by the
