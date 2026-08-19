@@ -35,6 +35,7 @@
  */
 
 import {
+  ADIABATIC,
   ALL_KEYS,
   CHANNELS,
   CHANNEL_BY_ID,
@@ -188,7 +189,7 @@ export function encodeState({ params, bypass, station = null, pin = null }) {
 
 /** One value, read through the control that owns its key. Throws, never clamps. */
 function readValue(key, raw) {
-  const { control } = controlFor(key); // throws naming an unowned key
+  const { control, face } = controlFor(key); // throws naming an unowned key
   if (control.kind === 'selector') {
     // Matched as text because the URL carries text: `timestep=4` has to find
     // the numeric option 4, and the option's own value — number or string — is
@@ -196,6 +197,20 @@ function readValue(key, raw) {
     const option = control.options.find((o) => String(o.value) === raw);
     if (!option) throw new Error(`"${raw}" is not an option of ${key}`);
     return option.value;
+  }
+  if (control.kind === 'boundary') {
+    // Above the numeric gate below, beside `selector`, for the reason the
+    // holiday list is: a boundary is a word — `Adiabatic`, `Outdoors`,
+    // `Ground` — so a branch in the switch after that regex would never be
+    // reached and every link carrying one would be refused as "not a number".
+    //
+    // Asked of the surface rather than of the control, because the two states
+    // are per surface: a link cannot ground a wall or send a floor outdoors,
+    // which are states the desk itself cannot produce.
+    if (raw !== face.open && raw !== ADIABATIC) {
+      throw new Error(`"${raw}" is not a state of ${key}`);
+    }
+    return raw;
   }
   if (control.kind === 'calendar') {
     // Twelve characters and at least one month in them, asked of the same
