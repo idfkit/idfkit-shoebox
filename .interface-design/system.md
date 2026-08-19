@@ -117,6 +117,51 @@ costs the arrow keys.
 - Hover turns the tick `--redline`. Focus ring goes on the face via
   `.face:has(input:focus-visible)`, because the input itself is invisible.
 
+### Landmarks on a calibration face
+
+A number is not yet a decision. `1.80 W/m²K` means nothing to a reader who
+reads *low-e double* fluently, and a face that offers only a range and a tick
+has handed them a quantity and withheld the vocabulary. So a scale carries the
+published cases it is read against, and the desk says which one the reading is
+standing in.
+
+- **The marks are dimension lines.** A hairline the width of the band with a
+  serif at each end, ruled `6px` under the face at `--ink-ghost`. Where the fact
+  is a single value — a code limit, an engine default — the near serif stands
+  alone with no rule between. The two must look different: a range you may land
+  anywhere in and a line you may not cross are different kinds of knowledge, the
+  same distinction the year rule draws between a tick and a hollow circle.
+- **A landmark is a band, because the fact is a band.** Double glazing is 2.7 to
+  3.0 W/m²K depending on the cavity and the spacer; writing 2.8 invents a
+  precision nobody published.
+- **The band you are in comes up to `--ink`; the rest stay ghost.** Tone, not
+  hue — the palette has already spent its colour on sign, and "you are here" is
+  not a signed physical quantity.
+- **The marks are read, never pressed.** A row of tappable pips under sixty
+  faces would be two hundred new tab stops, and a scale rule's graduations are
+  not buttons. Nothing here is a pointer-only control either: the reading below
+  the face letters the bands one at a time as the tick is dragged past, so
+  sweeping a face reads out its whole key, and the same sentence rides in
+  `aria-valuetext` so it is heard as well as seen.
+- **The reading is one line, always.** Clipped with `text-overflow: ellipsis`
+  and its whole text on the `title`, with the height held even when it is blank.
+  A band name that wrapped to two lines mid-drag, or a line that vanished at a
+  zero stop, would relayout the column under the reader's hand.
+- **At a `zero` stop it says nothing.** `None`, `Solid`, `Sealed` in the readout
+  is that position's own landmark and the only true one — "past a brick leaf"
+  over a wall with no masonry in it is a different statement, not an
+  approximation.
+- **Only where somebody published it.** Most quantities have no named cases and
+  their faces carry no rule at all. Inventing one so that every slider had a
+  label would be the interface grading a design rather than measuring it, which
+  is the same failure the em-dash rule prevents on the drawing.
+
+Where four values share one scale — a plan key — the rule is ruled along each
+wall's own bar rather than once beside the plan, because the argument for a plan
+key is that the number is beside the wall it belongs to. The legend column is
+about fifty pixels wide, so it letters the band a wall stands in and stays blank
+between two, with the full reading on the cell's `title`.
+
 ### Gesture ghosts
 
 Any control whose value is being dragged shows a ghost of where it stood when

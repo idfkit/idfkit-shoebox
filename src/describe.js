@@ -144,6 +144,25 @@ function facing(bearing) {
   return square ? [word] : [word, ' (', q(`${bearing.toFixed(0)}°`), ')'];
 }
 
+/**
+ * A layered unit in the words the strip already uses for it.
+ *
+ * The pane count carries landmarks with a `phrase` apiece — "a double unit",
+ * "a triple unit" — so the sentence reads the declaration rather than saying
+ * "double glazing" out of a literal here, which is exactly what it did until
+ * the count could be more than two and the paragraph went on calling a triple
+ * a double.
+ *
+ * A count with no landmark on it is lettered as the count. That is not a
+ * fallback for a value this cannot get: it is the same number said plainly,
+ * which stays true if the slider is ever widened past the cases anyone has
+ * named.
+ */
+function unitOf(panes) {
+  const named = controlFor('panes').control.landmarkAt(panes);
+  return named ? [named.phrase] : [q(String(panes)), ' panes'];
+}
+
 /* ══ the clauses ═════════════════════════════════════════════════════════ */
 
 /** Clauses joined the way a sentence joins them: commas, then "and". */
@@ -339,10 +358,13 @@ function moves(doc, params, facts, state) {
   // no surface in the model is made of.
   if (facts.grossGlazing > 0 || (facts.grossRoofGlazing > 0 && params.skyGlass === 'Walls')) {
     if (params.glazingModel === 'Layered') {
-      say('glass', moved(params, ['glazingModel', 'paneEmiss', 'gapWidth']), [
+      say('glass', moved(params, ['glazingModel', 'panes', 'paneEmiss', 'gapWidth']), [
+        // The coating leads rather than trailing on a "with" of its own: the
+        // moves sentence opens on one, and "With a triple unit with a low-e
+        // 0.04 inboard pane" is a preposition doing two jobs in nine words.
         params.paneEmiss < DEFAULT_PARAMETERS.paneEmiss
-          ? ['low-e double glazing at ε ', num('paneEmiss', params.paneEmiss), ' on the inboard pane']
-          : ['double glazing'],
+          ? ['a low-e coating of ε ', num('paneEmiss', params.paneEmiss), ' on ', unitOf(params.panes)]
+          : unitOf(params.panes),
       ]);
     } else {
       say('glass', moved(params, ['uFactor', 'shgc', 'visT']), [

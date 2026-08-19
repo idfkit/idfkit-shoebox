@@ -22,7 +22,7 @@
  * a one-line row that still reads — the index sheet's rule, applied here.
  */
 
-const STORE = 'shoebox-general-notes-v1';
+const STORE = 'shoebox-general-notes-v2';
 const VIEWS = ['open', 'folded', 'retired'];
 
 class Note {
@@ -79,7 +79,10 @@ export const NOTES = Object.freeze([
     body:
       'Eighteen channels in the order the physics happens. Every control ' +
       'writes a real object into the IDF, and every strip reads back what ' +
-      'its path contributes.',
+      'its path contributes. The scales are ruled with the cases anyone in ' +
+      'the trade already knows — single, double, triple; code limits; the ' +
+      'engine\'s own defaults — and each says which one you are standing in ' +
+      'as you drag it.',
     target: '#desk-open',
   }),
   new Note({
