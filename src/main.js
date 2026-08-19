@@ -1939,7 +1939,16 @@ function buildSliders() {
       control,
       name: label.textContent,
       read: () => params[key],
-      write: (v) => commit(key, v, true),
+      // Typing an exact dimension is taking hold of one, and note 2 now says
+      // so outright — so it files the same square the drag does. Filed here
+      // rather than in `commit` for the reason the listener below is: commit
+      // is also the path a programmatic change takes, and only a reader can
+      // fill a marker. The guard is the console's: a box left at the number
+      // it already held resolves nothing.
+      write: (v) => {
+        if (params[key] !== v) tour?.note('drag');
+        commit(key, v, true);
+      },
     });
     const show = () => {
       value.show();

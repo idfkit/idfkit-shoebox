@@ -75,6 +75,15 @@ export function quantityField({ control, name, read, write, className = null }) 
     took = String(read());
     input.value = took;
     fit();
+    // Selected whole, so "click the number, type 12, Enter" is the gesture it
+    // looks like. The classic hazard here is the release of that same click
+    // collapsing the selection to a caret, which would make 12 into 1512.24
+    // and hand the reader the stop it clamps to — measured in Chromium and it
+    // does not happen, at the press or the release, on a box whose lettering
+    // carries a unit or one whose focus text is character-for-character what
+    // was already showing. No mouseup guard is written for it, because a
+    // workaround for a behaviour this desk cannot observe is a claim it cannot
+    // check.
     input.select();
   });
 
