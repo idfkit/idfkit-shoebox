@@ -241,6 +241,25 @@ and its subject on the sheet is circled with the dashed markup hairline
 reads — the index sheet's rule; retired, they are gone. If a feature changes
 what a step points at or teaches, the note changes with it — see CLAUDE.md.
 
+### Naming a control the reader has never met
+
+A control whose label is a bare verb — **Chase**, **Solo**, **Pin** — tells a
+first reader what it is called and nothing about what it does. Explain it in
+**printed body text at the head of the block it belongs to**, one sentence
+covering every copy of the control, never in a tooltip: nothing on this board
+floats, and a hint that only appears on hover does not exist on a phone. Put
+the same sentence on the control's `title` and `aria-label` — that is what
+makes several identically-worded buttons tell themselves apart when they are
+read aloud, and it is where the standard's or the channel's own name belongs,
+since the visible label has no room for it. A control with two states writes
+two sentences, both halves flipping together: "Stop chasing X: hold its worst
+line up beside the drawing" describes the state being left, not the one the
+press reaches.
+
+Per-control `.why` notes are the wrong instrument here — five copies of one
+definition down a board is noise. Reserve `.why` for what differs per row: the
+arithmetic behind *this* clause, the caveat on *this* reading.
+
 ### Inline pin (`.pin-inline`)
 
 The rail's reading hour is stated in one line of mono type, and that line is
@@ -366,6 +385,44 @@ Deltas are **never coloured for good or bad**, in any section. They are set in
 the margin of their own value at metadata weight. The reading is the number; the
 delta is a note on it.
 
+### Measuring against somebody else's number
+
+A criterion is not a reading and must not be drawn as one. Set it as **asks for
+· reads · margin**, in that order, with the criterion in the publisher's own
+words and the reading in the sheet's — the same three-column build-up the bill
+uses for a rate, one level up.
+
+- The margin is a note on the reading, not a verdict on the design, so it is
+  set at metadata weight in the reading's margin like every other delta.
+- **A criterion that is met gets no mark at all.** A tick beside a number is the
+  interface grading the design. A criterion that is *missed* gets one small
+  `--redline` mark on the margin figure and nothing else, because a divergence
+  is exactly what the markup pen is for.
+- Where the publisher's limit is climate- or building-specific, there is no line
+  to draw: print the reading with no margin and say in the row why. A missing
+  limit is not a pass.
+- List the criteria the sheet **cannot** judge beside the ones it can, with the
+  reason for each. A panel showing only the questions it happens to be able to
+  answer reads as a certification.
+
+### Folding a table to stacked rows
+
+The table equivalent of the index sheet. Where a schedule has more columns than
+a narrow screen can carry, do not scroll it sideways and do not drop columns:
+below the breakpoint, set every part of the table to `display: block` so each
+row becomes a small stack, drop the head row, and give each cell the head it
+lost as `data-label`, drawn back through `::before`. Write the label once, in
+the builder, so the head row and the folded label cannot come to disagree.
+
+Two mechanics that cost real debugging:
+
+- **Column widths set as `.table td.class` out-specify anything shorter.** A
+  media query does not win a specificity argument by coming later, so every
+  width the wide layout set has to be named and given back explicitly.
+- **Move a unit onto the label it belongs to.** A unit column on its own line
+  reads as another value; folded, `46.6` under `READS, KWH/M²·YR` is the
+  reading, and the unit column is dropped.
+
 ### Absence is not zero
 
 A reading with no data behind it renders as an em dash and is excluded from any
@@ -420,6 +477,25 @@ pinned at the foot with `flex: none` so it stays visible while the strips
 scroll — whatever the column count, the rail is the desk's footer. Below
 `780px` it stops being a column, stacks under the sheet, gives up the sticky
 foot, and folds to the index sheet below.
+
+**A fixed block either side of a scroller makes the window's height a budget,
+and the scroller pays all of it.** A panel built this way looks fine on the
+screen it was designed on and is unusable two hundred pixels shorter: measured
+here, an iPad in landscape gave the eighteen channels 104px of a 736px desk to
+scroll 12,000 in, because the head and the footer are `flex: none` and the
+middle is the only thing that can give. Budget it deliberately, in this order:
+
+1. **Fold the head's optional instrument**, on a height threshold, by the same
+   closed-a-row-reads rule as the sections below it. The register cost 323 of
+   the head's 458px; folded, the channels go from 104px to 381.
+2. **Below the height where folding cannot rescue it, stop being a column** —
+   the same escape the narrow breakpoint already takes. Put the height clause in
+   the *same* media query rather than a new one: it is one question, "can this
+   window hold a column", asked in two directions.
+3. **Never answer a squeeze with an instruction the reader cannot follow.**
+   "Widen the window" is addressed to a window manager; under `pointer: coarse`
+   there isn't one, and the note is then two lines of red type taken out of the
+   very column it says is short.
 
 ### The index sheet
 

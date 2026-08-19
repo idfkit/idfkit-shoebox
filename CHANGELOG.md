@@ -492,6 +492,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   seventeen, in the desk's own subheading, in the general notes and in four
   layout comments. It is eighteen now, and says so.
 
+- **The console was unusable on a tablet in landscape.** The desk is a column
+  of viewport height with a fixed head and a fixed rail either side of its one
+  scroller, so a short window took its room out of the eighteen channels and
+  out of nothing else. Measured on an iPad at 768pt: the head was 458px, the
+  rail 172, and the channels were left **104px** — 14 % of the desk — to scroll
+  12,147px of controls in. A phone held sideways at 390pt got 3px.
+
+  Three changes, in the order the room is worth taking back. The register folds
+  on a short desk, since it was holding 323 of the head's 458px and is the one
+  block on the desk you reach for occasionally rather than constantly — closed
+  it still reads, carrying *built to Passivhaus Classic* or *5 standards*, by
+  the same rule that keeps a folded strip a reading. Below 600px tall, where no
+  amount of folding rescues a column, the desk goes under the sheet and becomes
+  its own index sheet — the escape the phone breakpoint already takes, since it
+  is one question asked in two directions rather than two questions. And
+  *Widen the window* is no longer said to a touch device, which has no window to
+  widen and was losing two lines of the head to being told so.
+
+  The channels now get 381px on an iPad 9.7 in landscape (was 104), 433 on an
+  iPad Air (was 156), 513 on a 1440×900 laptop (was 298), and 710 on a phone in
+  landscape (was 3). A desk tall enough to hold the register open — an iPad Pro
+  12.9, a desktop — is unchanged.
+
+- The scoreboard and the kept-schemes shelf lost their table semantics on a
+  phone. Both fold to a block per row below 620px, and `display: block` on a
+  `tr` drops the implicit row and cell roles in every engine — so the two
+  tables the register is made of read aloud as loose numbers with no criterion
+  attached to any of them, at exactly the width where the columns are gone and
+  the roles are the only structure left. They now go through the same
+  `keepTableSemantics` the results schedule and the bill do.
+
+- **The scoreboard's *Chase* marker never said what chasing was.** A bare verb
+  on a small button names the control and explains nothing, and the five copies
+  of it down the board were identical to a screen reader — five buttons reading
+  "Chase", none of them naming the standard they belong to. The board's lede now
+  prints the whole of it in a sentence, which is where an explanation on this
+  sheet goes: a tooltip floats, and a hint that only exists on hover does not
+  exist on a phone at all. The marker carries the same sentence on its `title`
+  and `aria-label`, with the standard's name in it, and both halves flip when it
+  is armed — *Stop chasing Passivhaus Classic: take its line down from beside
+  the drawing*, rather than a tail still describing the state being left.
+
 ### Changed
 
 - **A run that fails can be downloaded.** The bundle used to ride on the
@@ -555,6 +597,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two entries starting on the same date are refused. EnergyPlus states plainly
   that it gives "no error message on duplicate days or overlapping days", so the
   second would have disappeared into the first without a word.
+
+- A register of standards, split the way the code splits them. The
+  specifications live on the **console head** — five compact accordions beside
+  the desk's own subheading, each folded to a name and a live
+  conformance chip. **Standards** are laid *over* the drawing rather than in
+  place of it: applying Passivhaus Classic writes the ten controls it has an
+  opinion about — insulation derived from its U-values with the surface films
+  taken off, a window at U 0.80 with the g ≥ 0.5 its own inequality demands, an
+  airtightness converted from n50 0.6 by the divide-by-twenty rule, mechanical
+  ventilation at 75 % recovery — and leaves the massing, the site, the context,
+  the engine settings and the tariff exactly where you put them, so *what would
+  it take to build this to Passivhaus* is a question you can ask of the building
+  already on the sheet. Every number carries the arithmetic that produced it,
+  the way the bill's rates do. Whether the desk still meets a specification is
+  **measured off the controls** each time they move rather than remembered:
+  nudge a wall and the chip falls adrift by itself, naming the clause that
+  drifted. Alongside Passivhaus sit EnerPHit, LETI's commercial office targets —
+  which set no control at all, and are in the list precisely to show that a
+  specification and a target are different things — and two of this sheet's own
+  partis, a shaded free-running heavyweight and an all-glass office plate,
+  labelled as the sheet's own rather than borrowing anybody's authority.
+
+- **Peak loads, read beside the energy.** A demand is what a building costs to
+  run; a load is what has to be there on the worst hour, and it is the number
+  the plant, the risers and the distribution are actually sized from — so the
+  scoreboard now carries peak heating and peak cooling in W/m², and the shelf
+  keeps the heating peak beside each scheme's energy. Passivhaus's *heating
+  load ≤ 10 W/m²*, previously listed among the things this sheet could not
+  judge, is now one of its lines, alongside the demand it is an alternative
+  route to rather than a second hurdle. Unlike every other criterion here a
+  load does **not** need a weather file: sizing days are precisely the
+  conditions plant is designed against, so `Target.needs` distinguishes
+  `'year'` from `'run'` and the board answers something on a desk that has
+  never been near an EPW. It costs no new output request — the hourly system
+  transfer rate the balance rail already draws is the whole of it. Worth
+  seeing: the stock desk built to Passivhaus in Denver clears the heating
+  *demand* at 8.6 kWh/m²·yr and misses the *load* at 13.9 W/m². Peaks get
+  treated as an afterthought; this is what that costs.
+
+- The targets became a **scoreboard on the sheet**, under the results they are
+  read from — every standard's criteria against the one run, all at once, since
+  nothing is remembered and there is no "applied standard" to filter by: one
+  solved year, every published line it would clear or miss. Criteria read as
+  *asks for · reads · margin*, with one redline mark on a miss and none at all
+  on a pass; a criterion whose limit PHI sets per building prints its reading
+  with no verdict, and one the run cannot answer says what to do about it
+  instead of standing as an em dash. Each standard's accordion also lists what
+  this sheet **cannot** judge — the blower door, the primary energy, the
+  thermal bridges, the peak heating load — because a panel showing only the
+  half it can answer would read as a certification, and a one-zone shoebox with
+  ideal loads is not one.
+
+- **Chasing a standard.** Any standard on the scoreboard can be armed with the
+  same square marker the run ledger and the console's patch buttons use, which
+  reduces it to its single worst line and letters that up beside the drawing —
+  *Peak heating load reads 14.8 against 10, over by 4.8 W/m²* — with a ghost of
+  where the margin stood when you took hold. The scoreboard reads a run; this
+  reads a gesture, so the answer to "is what I am dragging right now helping"
+  is under the hand rather than a screen away. The worst line is chosen by
+  ratio rather than raw difference, since being 3 over means one thing against
+  a limit of 15 and another against 55, and the line always says how many of
+  the standard's criteria it is speaking for — a verdict from the two a design
+  day can answer must not read as a verdict on a standard that states four.
+  Chasing is the bill's pin in another column: chosen, visible, unchoosable,
+  and making no claim about the building, so conformance stays the measured
+  thing it was.
+
+- **Kept schemes.** *Save this scheme* joins the run bundle and the scheme link
+  in the run log, and keeps the whole desk — stored as the very fragment the
+  link button copies, so keeping and sharing are one format and a scheme kept
+  today still opens on a page that has since grown a channel. Each kept scheme
+  carries what it was reading when it was kept, and the register differences the
+  sheet against it — but only where the two are like for like, the same kind of
+  run in the same currency over the same end uses, which is the bill's own
+  refusal restated on data that survives the browser's storage. Restoring a
+  scheme that names the attached station is instant; one that names a different
+  station is a different climate, so it goes through the link and the page
+  reloads into the decode that already knows how to refuse a weather file it
+  cannot fetch. Schemes are named after they are kept, not before, because being
+  asked to think of a name mid-thought is what stops anybody keeping anything.
+  The shelf holds twenty-four and, when full, says so rather than quietly
+  dropping the oldest; a shelf that cannot be read is refused whole with the
+  reason in its place, never drawn as an empty one.
 
 - Parameter studies. Every scale on the console now carries a quiet **Study**
   action that sweeps that one control across its full range — about twenty

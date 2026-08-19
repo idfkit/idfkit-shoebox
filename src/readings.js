@@ -469,6 +469,85 @@ export function readExtremes(eso) {
 }
 
 /**
+ * How much of the year the zone spent above a temperature.
+ *
+ * The form every comfort criterion worth having is written in: not a peak,
+ * which one freak afternoon can set, but a frequency — Passivhaus asks for no
+ * more than a tenth of the year above 25 °C, and CIBSE and the adaptive
+ * standards all count exceedances the same way. Read over the billed
+ * environments only, by the bill's own rule: the sizing days exist to be more
+ * extreme than the year they precede, and counting them in would have two
+ * deliberately punishing days set the frequency for eight thousand ordinary
+ * ones. Without a year there is nothing to be a frequency *of*, and the
+ * register says so rather than dividing by 48.
+ */
+export function readOverheat(eso, above) {
+  const zr = zoneRuns(eso);
+  const year = zr ? zr.runs.filter((r) => r.kind === null) : [];
+  if (!year.length) return null;
+  let over = 0;
+  let all = 0;
+  for (const r of year) {
+    for (let i = r.start; i <= r.end; i += 1) {
+      all += 1;
+      if (zr.points[i].value > above) over += 1;
+    }
+  }
+  return all ? (over / all) * 100 : null;
+}
+
+/**
+ * The peak heating and cooling loads, in watts per square metre of floor.
+ *
+ * A demand is what the building costs to run; a load is what has to be *there*
+ * on the worst hour, and it is the number the plant, the risers and the
+ * distribution are actually sized from. An envelope decision usually moves the
+ * two together, but not always — thermal mass shaves a peak while barely
+ * touching an annual total, and a standard like Passivhaus offers the load as
+ * an explicit alternative route to compliance for exactly that reason. So the
+ * two are read side by side rather than the energy alone.
+ *
+ * `Zone Air Heat Balance System Air Transfer Rate` is the one variable needed
+ * and the balance rail already requests it Hourly whenever System is engaged,
+ * so this costs no new output — which matters, because per-surface requests
+ * once took an annual run from 681 ms to 2,984 ms. It is signed the way the
+ * rail reads it: positive is heat arriving in the zone, so the heating peak is
+ * the largest positive and the cooling peak the largest negative, reported as
+ * a magnitude. It is also `perBuilding` — already through the zone multiplier
+ * — so it is divided back down by the same multiplier the floor area is, which
+ * is to say both are the building's and the ratio is right either way.
+ *
+ * Unlike the demand intensities this does **not** insist on a weather file.
+ * Sizing days are precisely the conditions a load is designed against; they
+ * are the wrong environments to bill a year from and the right ones to size
+ * plant from, so the same billed-environment rule `readExtremes` uses applies
+ * and a bare design-day desk answers the question honestly.
+ */
+export function readPeaks(eso, floorArea) {
+  if (!(floorArea > 0)) return null;
+  const points = hourly(eso, /Zone Air Heat Balance System Air Transfer Rate/i);
+  if (!points.length) return null;
+  const runs = environmentRuns(points, eso.environments ?? []);
+  const year = runs.filter((r) => r.kind === null);
+  const billed = year.length ? year : runs;
+  if (!billed.length) return null;
+
+  let heat = null;
+  let cool = null;
+  for (const r of billed) {
+    for (let i = r.start; i <= r.end; i += 1) {
+      const w = points[i].value;
+      if (w > 0) heat = heat == null ? w : Math.max(heat, w);
+      else if (w < 0) cool = cool == null ? -w : Math.max(cool, -w);
+    }
+  }
+  return {
+    peakHeat: heat == null ? null : heat / floorArea,
+    peakCool: cool == null ? null : cool / floorArea,
+  };
+}
+
+/**
  * The demand intensities over one named set of environments.
  *
  * The three names are pinned to published definitions rather than to how they

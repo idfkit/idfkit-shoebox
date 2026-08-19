@@ -1256,6 +1256,68 @@ export const HOLIDAY_CALENDARS = Object.freeze([
   }),
 ]);
 
+/**
+ * Why a control cannot hold a value handed to it, or null when it can.
+ *
+ * A gesture can never produce an inadmissible value — the range input and the
+ * segmented rule only offer what the declaration allows. Everything that sets a
+ * control *without* a gesture does it by handing over a bare value: a pasted
+ * link, a saved scheme, a standard's specification. Each of those has to be
+ * checked against the same rules, and those rules are the declaration's own, so
+ * they are read off it here once rather than restated in each codec.
+ *
+ * The reason is a phrase, not a sentence, because the caller knows things this
+ * function does not: a link can quote the fragment it was given, a preset can
+ * name the clause that asked for it.
+ */
+export function refuses(control, value) {
+  if (control.kind === 'selector') {
+    return control.options.some((o) => o.value === value) ? null : 'is not one of its options';
+  }
+  // Non-numeric kinds are named here, above the numeric gate, for the reason
+  // CLAUDE.md gives for the same ordering in `readValue`: a branch added below
+  // it is unreachable, and every value of that kind is refused as "not a
+  // number" — a true sentence about the wrong thing. A month mask and a day
+  // list are both strings, both belong to the Run channel, and Run is
+  // `UNTOUCHABLE`, so no preset can reach them; they throw rather than
+  // validate, because the only way to arrive here is a programming error and
+  // an explicit one is worth more than a plausible verdict.
+  if (control.kind === 'calendar' || control.kind === 'days') {
+    throw new Error(`a "${control.kind}" control is not set by value here`);
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'is not a number';
+  let min;
+  let max;
+  let integer = false;
+  switch (control.kind) {
+    case 'scale':
+    case 'facade':
+      ({ min, max } = control);
+      // Step alignment is deliberately not required — several defaults (a wall
+      // R of 2.290965) sit off their own step grid, and a figure derived from a
+      // published U-value has no reason to land on one either. But a control
+      // whose step and floor are both whole numbers can only ever produce whole
+      // numbers, and a fraction there reaches an integer IDF field the engine
+      // rejects (a RunPeriod month of 6.5).
+      integer = Number.isInteger(control.step) && Number.isInteger(control.min);
+      break;
+    case 'bearing':
+      [min, max] = [0, 360];
+      break;
+    case 'profile':
+      [min, max] = [0, 24]; // an hour of the day, and the band sweeps whole cells
+      integer = true;
+      break;
+    default:
+      // A new control kind must be taught its rules here explicitly, not fall
+      // into whichever range happens to be last.
+      throw new Error(`no value rules are written for a "${control.kind}" control`);
+  }
+  if (value < min || value > max) return `is outside its ${min}–${max} range`;
+  if (integer && !Number.isInteger(value)) return 'is not a whole number';
+  return null;
+}
+
 /* ══ metering ════════════════════════════════════════════════════════════ */
 
 /**

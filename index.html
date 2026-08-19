@@ -985,6 +985,33 @@
         color: var(--ink-2);
         max-width: 62ch;
       }
+      /* The chased line. Set a step down from the finding above it, because it
+         is a running readout rather than a conclusion — the finding says what
+         this building does, this says how far the thing you are dragging is
+         from somebody's published number. It borrows the finding's `.q` marks
+         so a figure reads the same wherever it is set on this sheet. */
+      .chase {
+        margin: 10px 0 0;
+        max-width: 68ch;
+        font: 400 13px/1.6 var(--sans);
+        color: var(--ink-3);
+      }
+      .chase[hidden] { display: none; }
+      .chase .q {
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+        font-weight: 500;
+        color: var(--ink-2);
+      }
+      /* One redline mark, on the divergence, exactly as on the board below. */
+      .chase .q.hot { color: var(--redline); }
+      .chase-ghost,
+      .chase-part {
+        font-style: normal;
+        color: var(--ink-ghost);
+      }
+      .chase-ghost { font-family: var(--mono); }
+
       .finding em { font-style: normal; color: var(--ink); }
       .finding .q {
         font-family: var(--mono);
@@ -1000,15 +1027,21 @@
       .schedule { margin-top: 26px; }
       /* The bill is the same instrument as the results schedule — quantities
          down the side, a rate against each — so it is lettered with the same
-         table and not a second one that merely looks similar. */
+         table and not a second one that merely looks similar. The register of
+         schemes is the third: a criterion down the side and what the run reads
+         against it, which is the same shape again. Three schedules that agree
+         on how a table is set read as one drawing set; three that each invented
+         their own would read as three products. */
       .schedule table,
-      .bill table {
+      .bill table,
+      .register table {
         width: 100%;
         margin-top: 10px;
         border-collapse: collapse;
       }
       .schedule th,
-      .bill th {
+      .bill th,
+      .register th {
         font: 500 10px/1 var(--cond);
         text-transform: uppercase;
         letter-spacing: 0.13em;
@@ -1018,9 +1051,11 @@
         border-bottom: 1px solid var(--rule);
       }
       .schedule th:first-child,
-      .bill th:first-child { text-align: left; }
+      .bill th:first-child,
+      .register th:first-child { text-align: left; }
       .schedule td,
-      .bill td {
+      .bill td,
+      .register td {
         padding: 9px 0;
         border-bottom: 1px solid var(--rule-soft);
         font: 400 12.5px/1.2 var(--mono);
@@ -1030,7 +1065,8 @@
         white-space: nowrap;
       }
       .schedule td:first-child,
-      .bill td:first-child {
+      .bill td:first-child,
+      .register td:first-child {
         text-align: left;
         font: 400 13px/1.3 var(--sans);
         color: var(--ink-2);
@@ -1052,21 +1088,25 @@
          the column outright and stood flush against the figure, so the space
          is declared rather than left over. */
       .schedule td.unit,
-      .bill td.unit { color: var(--ink-3); width: 46px; padding-left: 12px; }
+      .bill td.unit,
+      .register td.unit { color: var(--ink-3); width: 46px; padding-left: 12px; }
       .schedule td.void,
-      .bill td.void { color: var(--ink-ghost); }
+      .bill td.void,
+      .register td.void { color: var(--ink-ghost); }
       /* Change against the shape you took hold of. Set in the margin of its own
          value, at metadata weight — the number is the reading, this is a note on
          it, and it is deliberately not coloured for good or bad. */
       .schedule td.delta,
-      .bill td.delta {
+      .bill td.delta,
+      .register td.delta {
         width: 62px;
         padding-left: 12px;
         font-size: 11.5px;
         color: var(--ink-3);
       }
       .schedule .base,
-      .bill .base {
+      .bill .base,
+      .register .base {
         text-transform: none;
         letter-spacing: 0;
         font: 400 10.5px/1 var(--mono);
@@ -1074,12 +1114,15 @@
         margin-left: 10px;
       }
       .schedule .base:empty,
-      .bill .base:empty { display: none; }
+      .bill .base:empty,
+      .register .base:empty { display: none; }
       /* the schedule changes subject: a firmer rule and a breath of space */
       .schedule tr.group td,
-      .bill tr.group td { border-top: 1px solid var(--rule); padding-top: 17px; }
+      .bill tr.group td,
+      .register tr.group td { border-top: 1px solid var(--rule); padding-top: 17px; }
       .schedule tr:last-child td,
-      .bill tr:last-child td { border-bottom: 0; }
+      .bill tr:last-child td,
+      .register tr:last-child td { border-bottom: 0; }
       /* the marker that ties a row to its curve on the plate */
       .schedule td:first-child .key {
         display: inline-block;
@@ -1368,6 +1411,493 @@
       }
       .bill-refs a { color: inherit; text-decoration-color: var(--rule); }
       .bill-refs a:hover { color: var(--ink-3); }
+
+      /* ── the register of schemes ────────────────────────────────── */
+
+      /* A specification clause and a criterion are both arguments, and an
+         argument is set as prose with its figures in mono beside it — the same
+         arrangement the bill's rate build-up uses, one level up. Nothing here
+         is a new colour: a clause that has drifted and a criterion that has
+         been missed are divergences, which is the one thing the redline pen is
+         for, and it is spent on the smallest mark that will carry it. Meeting a
+         criterion gets no mark at all, because a tick beside a number is the
+         interface grading the design, and this sheet measures. */
+
+      .register {
+        margin-top: 34px;
+        padding-top: 28px;
+        border-top: 1px solid var(--rule);
+      }
+      .register-lede {
+        margin: 9px 0 0;
+        max-width: 58ch;
+        font: 400 13px/1.55 var(--sans);
+        color: var(--ink-2);
+      }
+      .register-lede em { font-style: normal; color: var(--ink); }
+      .register-note {
+        margin: 12px 0 0;
+        max-width: 62ch;
+        font: 400 11.5px/1.55 var(--sans);
+        color: var(--ink-3);
+      }
+      .register-note[hidden] { display: none; }
+      .register-note b { font-weight: 500; color: var(--ink-2); }
+
+      /* The shelf's cells are spaced from one another where the schedules
+         above get away with none: only their delta column ever sits beside
+         another number, and ten columns of right-aligned figures with no
+         gutter run into each other. */
+      .register th + th,
+      .register td + td { padding-left: 14px; }
+
+      /* The scoreboard's cells carry sentences where the shelf's carry
+         figures — a criterion in the standard's own words, a reason a reading
+         is absent — so its text cells wrap within a set measure while the
+         readings stay on one line. */
+      .register #score td:first-child { width: 44%; }
+      .register #score td.asks {
+        color: var(--ink-3);
+        width: 15%;
+        white-space: normal;
+      }
+      .register #score td.delta {
+        width: 24%;
+        white-space: normal;
+      }
+      .register #score td.unit { width: 84px; }
+      .register #score td .why {
+        display: block;
+        margin-top: 4px;
+        max-width: 54ch;
+        font: 400 10.5px/1.45 var(--sans);
+        font-style: normal;
+        color: var(--ink-ghost);
+      }
+      .register #score td.delta.absent { font-size: 10.5px; color: var(--ink-ghost); }
+      /* The one mark on the whole board. A criterion that has been missed is
+         a divergence, and this is the markup pen doing what it is for. */
+      .register #score td.delta.over { color: var(--redline); }
+      /* The standard's name sections its rows, the way the schedule's group
+         rule changes subject. */
+      .register tr.score-head td {
+        padding: 17px 0 7px;
+        border-top: 1px solid var(--rule);
+        border-bottom: 0;
+        font: 600 10px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+        text-align: left;
+      }
+      .register tr.score-head:first-child td { border-top: 0; padding-top: 10px; }
+      /* The subhead carries the standard's name and its Chase marker on one
+         baseline. The marker is the `.pin` component at a size that sits in a
+         table row rather than over a section heading. */
+      /* `width: auto` explicitly: the criterion rows' first column is set to
+         44 % through an id selector, and a subhead cell is a first child too —
+         so without this the name and its marker are laid out inside 44 % of
+         the board and the name wraps to two lines beside a squeezed button. */
+      .register #score tr.score-head td { width: auto; }
+      .score-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      /* `min-width` and `min-height` are given back explicitly. The bare
+         `button` rule at the top of this sheet sets a 168 × 46 minimum for the
+         page's one real button, and `.pin` never resets it — the bill's pin is
+         that size on purpose. In a table subhead it is twice the row. */
+      .pin-sm {
+        min-width: 0;
+        min-height: 0;
+        padding: 4px 9px;
+        gap: 7px;
+        font-size: 9px;
+        letter-spacing: 0.1em;
+      }
+      .pin-sm .mark { width: 8px; height: 8px; }
+
+      /* ── the register of presets, on the console head ───────────── */
+
+      /* The standards sit with the controls they set, not with the results:
+         a preset is worked, so it lives on the vellum. Folded, each is one
+         line — name and a conformance reading — in the same discipline the
+         index sheet uses: closed a row reads, open it is worked. The
+         conformance chip is a measurement of the desk taken on every apply,
+         never a remembered selection. */
+      .desk-brief {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 8px 26px;
+        /* The register's two arrangements below are chosen by the brief's own
+           width, asked with a container query rather than a viewport guess:
+           the head's width is a negotiation between the sheet and the window,
+           and only the brief knows what it was actually dealt. */
+        container-type: inline-size;
+      }
+      /* The sub keeps a readable measure and no more; the register takes the
+         head's surplus, because on a wide desk the surplus is worth more as
+         preset rows than as margin — the same trade the board makes when it
+         hands the desk its columns. A one-column desk wraps the register
+         under the sub, which is the index-sheet order again. */
+      .desk-brief .desk-sub { flex: 1 1 30ch; }
+      .presets {
+        flex: 2 1 250px;
+        min-width: 0;
+        max-width: 560px;
+        margin-top: 7px;
+      }
+      /* The register's own summary, lettered as the eyebrow it replaces and
+         marked with the same +/− the presets inside it use, so the fold and
+         the folds within it read as one instrument rather than two. */
+      .presets > summary {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        width: fit-content;
+        padding: 2px 2px 2px 0;
+        cursor: pointer;
+        list-style: none;
+        font: 500 10px/1.4 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+      .presets > summary::-webkit-details-marker { display: none; }
+      .presets > summary::before {
+        content: "+";
+        flex: none;
+        width: 1ch;
+        font-family: var(--mono);
+        color: var(--ink-ghost);
+      }
+      .presets[open] > summary::before { content: "−"; }
+      /* Closed, the register still reads — the folded strip's rule, applied to
+         the block that folds above them. The one fact worth carrying at this
+         size is whether the desk is built to anything, since that is what the
+         chips inside would have said. */
+      .presets-state {
+        font: 400 10px/1.4 var(--mono);
+        font-variant-numeric: tabular-nums;
+        text-transform: none;
+        letter-spacing: 0;
+        font-style: normal;
+        color: var(--ink-ghost);
+      }
+      .presets-state.met { color: var(--ink-2); }
+      .presets[open] > summary .presets-state { display: none; }
+      .presets > summary:hover { color: var(--ink-2); }
+      .presets > summary:focus-visible {
+        outline: 2px solid var(--rule-focus);
+        outline-offset: 2px;
+      }
+      /* Whether the register should start folded, decided by the stylesheet and
+         read back by `main.js` — the same arrangement `--index` uses, and for
+         the same reason: a media query and a `matchMedia` string that disagree
+         is a bug that exists at one window size, which is the size nobody
+         tests at.
+
+         The threshold is a height, because the squeeze is vertical: the desk is
+         `100vh` minus a margin, and the head and the rail are fixed blocks
+         either side of the only scroller on it. Measured on the stock desk, the
+         head is 458px with the register open and 135px with it closed, and the
+         rail is about 172 — so an iPad in landscape at 768pt was giving the
+         eighteen channels 104px, and 1000px of window height is where they get
+         back a screen's worth. It is asked of width too, because below the
+         index breakpoint the desk is its own page and scrolls freely: there is
+         no squeeze there to relieve. */
+      @media (min-width: 781px) and (max-height: 1000px) {
+        .presets { --fold: 1; }
+      }
+      .presets-note {
+        margin: 9px 0 0;
+        max-width: 52ch;
+        font: 400 10.5px/1.5 var(--sans);
+        color: var(--ink-ghost);
+      }
+      #presets {
+        margin-top: 7px;
+        border-top: 1px solid var(--rule);
+        border-bottom: 1px solid var(--rule);
+      }
+      .preset + .preset { border-top: 1px solid var(--rule-soft); }
+      .preset > summary {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 8px 2px;
+        cursor: pointer;
+        list-style: none;
+        font: 500 10.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--ink-2);
+      }
+      .preset > summary::-webkit-details-marker { display: none; }
+      .preset > summary::before {
+        content: "+";
+        flex: none;
+        width: 1ch;
+        font-family: var(--mono);
+        color: var(--ink-ghost);
+      }
+      .preset[open] > summary::before { content: "−"; }
+      .preset > summary:hover { color: var(--ink); }
+      .preset > summary:focus-visible {
+        outline: 2px solid var(--rule-focus);
+        outline-offset: 2px;
+      }
+      /* The folded line's reading: built, n adrift, or targets only. Mono and
+         lowercase against the condensed name, the way every reading on a strip
+         sits against its label. */
+      .preset-state {
+        margin-left: auto;
+        flex: none;
+        font: 400 10px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        text-transform: none;
+        letter-spacing: 0;
+        color: var(--ink-3);
+      }
+      .preset-state.met { color: var(--ink); }
+      .preset-body { padding: 2px 2px 14px calc(1ch + 10px); }
+      .preset-cite {
+        margin: 2px 0 0;
+        font: 400 10px/1.45 var(--mono);
+        color: var(--ink-3);
+      }
+      /* A parti carries no citation because it has nothing to cite. Setting it
+         at ghost weight is the whole of the distinction: it is this sheet
+         talking, not a published document, and it should not borrow the
+         authority of the line above it. */
+      .preset.parti .preset-cite { color: var(--ink-ghost); font-style: italic; }
+      .preset-blurb {
+        margin: 8px 0 0;
+        max-width: 52ch;
+        font: 400 11.5px/1.5 var(--sans);
+        color: var(--ink-2);
+      }
+      .preset-verdict {
+        margin: 9px 0 0;
+        max-width: 52ch;
+        font: 400 11px/1.5 var(--sans);
+        color: var(--ink-3);
+      }
+      /* Built to the specification: the one state worth lettering in full ink,
+         because it is the answer to the question the register exists to ask. */
+      .preset-verdict.met { color: var(--ink); }
+      .preset-apply { margin: 10px 0 0; }
+      .preset-sub {
+        margin: 15px 0 0;
+        font: 500 9.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+
+      /* A console column is narrow at its widest, so the clause and criterion
+         tables take the stacked presentation full-time — the fold the sheet's
+         schedules only reach for below the breakpoint. Each cell carries the
+         head it has no row for as `data-label`, written once in the builder. */
+      .preset table { width: 100%; margin-top: 2px; }
+      .preset table,
+      .preset tbody,
+      .preset tr,
+      .preset td { display: block; }
+      .preset thead { display: none; }
+      .preset tr {
+        padding: 9px 0;
+        border-bottom: 1px solid var(--rule-soft);
+      }
+      .preset tr:last-child { border-bottom: 0; }
+      .preset td {
+        padding: 0;
+        border: 0;
+        font: 400 11.5px/1.4 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+        white-space: normal;
+      }
+      .preset td:first-child {
+        margin-bottom: 5px;
+        font: 400 12px/1.4 var(--sans);
+        color: var(--ink-2);
+      }
+      .preset td:empty { display: none; }
+      .preset td[data-label]::before {
+        content: attr(data-label);
+        display: inline-block;
+        min-width: 10ch;
+        margin-right: 8px;
+        font: 500 9px/1.6 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+      /* The unit rides on the reading's own folded label. */
+      .preset .targets td.unit { display: none; }
+      .preset tr.adrift td:first-child { color: var(--ink); }
+      .preset td.asks { color: var(--ink-3); }
+      .preset td.delta { color: var(--ink-3); }
+      .preset td.delta.absent { font-size: 10.5px; color: var(--ink-ghost); }
+      /* The one mark on the whole register. A criterion that has been missed
+         is a divergence, and this is the markup pen doing what it is for. */
+      .preset td.delta.over { color: var(--redline); }
+      .preset td .why {
+        display: block;
+        margin-top: 3px;
+        max-width: 50ch;
+        font: 400 10.5px/1.45 var(--sans);
+        font-style: normal;
+        color: var(--ink-ghost);
+      }
+
+      /* The clause build-up is the longest thing on the console — Passivhaus
+         runs to ten specs, each with a sentence of arithmetic under it — and
+         opened in full it would shove the strips a screen down. So the list
+         scrolls inside a capped well: the fold answers "what does it set",
+         the scroll answers "all of it", and the desk head keeps its height. */
+      .preset .clauses {
+        max-height: min(300px, 44vh);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+        /* The last row's missing rule reads as "the list ends here", which a
+           scroll well must not say while there is more below the fold line. */
+        border-bottom: 1px solid var(--rule-soft);
+      }
+      .preset .clauses tr:last-child { border-bottom: 0; }
+
+      .preset-fold { margin-top: 13px; }
+      .preset-fold > summary {
+        font: 500 9.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+        cursor: pointer;
+        list-style: none;
+      }
+      .preset-fold > summary::-webkit-details-marker { display: none; }
+      .preset-fold > summary::before {
+        content: "+ ";
+        font-family: var(--mono);
+      }
+      .preset-fold[open] > summary::before { content: "− "; }
+      .preset-fold > summary:hover { color: var(--ink); }
+      .preset-fold > summary:focus-visible {
+        outline: 2px solid var(--rule-focus);
+        outline-offset: 3px;
+      }
+      .unjudged {
+        margin: 10px 0 0;
+      }
+      .unjudged dt {
+        font: 400 11.5px/1.45 var(--sans);
+        color: var(--ink-2);
+      }
+      .unjudged dd {
+        margin: 2px 0 9px;
+        font: 400 11px/1.45 var(--sans);
+        color: var(--ink-ghost);
+      }
+      .unjudged dd:last-child { margin-bottom: 0; }
+      .preset-caveat {
+        margin: 13px 0 0;
+        max-width: 52ch;
+        padding: 10px 12px;
+        background: var(--inset);
+        border-radius: var(--r);
+        font: 400 10.5px/1.5 var(--sans);
+        color: var(--ink-3);
+      }
+
+      /* On a head with width to spare, the presets run left to right: closed,
+         they tile across as many columns as fit; opened, the one you are
+         working spans the full width in place, so the clause build-up gets the
+         whole head rather than a column of it. Five stacked rows spent the
+         vertical space the strips want in order to save horizontal space the
+         head has in surplus — and the desk head is wide and short by nature,
+         because it sits over a column set.
+
+         `auto-fit` rather than a column count: the head's width is a
+         negotiation between the sheet and the window, and the register should
+         take what it was actually dealt rather than assume five will fit. The
+         query is on the brief's container width for the same reason — a
+         viewport breakpoint would be guessing at a width it does not set. */
+      @container (min-width: 380px) {
+        .presets { max-width: none; }
+        #presets {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+          column-gap: 20px;
+        }
+        /* Rows are ruled and columns are separated by air. A vertical hairline
+           would have to know which tile starts a row, which `auto-fit` will
+           not say. */
+        .preset { min-width: 0; border-top: 1px solid var(--rule-soft); }
+        .preset:first-child { border-top: 0; }
+        .preset + .preset { border-top: 1px solid var(--rule-soft); }
+        /* The one being worked takes the whole shelf. Grid keeps it in source
+           order, so the tiles simply flow around it and nothing jumps. */
+        .preset[open] { grid-column: 1 / -1; }
+        /* Folded, the line becomes a tile head: name above, reading below, the
+           way a strip letters its label over its meter. Opened, the reading
+           goes back beside the name, where a full-width row has room for it. */
+        .preset > summary { display: block; padding: 8px 2px; }
+        .preset > summary::before { display: inline-block; width: auto; margin-right: 7px; }
+        .preset-state { display: block; margin: 4px 0 0 calc(1ch + 7px); }
+        .preset[open] > summary { display: flex; align-items: baseline; }
+        .preset[open] .preset-state { display: inline; margin: 0 0 0 auto; }
+      }
+
+      /* ── the shelf ──────────────────────────────────────────────── */
+
+      .shelf { margin-top: 30px; }
+      .shelf table[hidden] { display: none; }
+      .register .scheme-name {
+        display: block;
+        width: 100%;
+        max-width: 24ch;
+        padding: 4px 6px;
+        margin: -4px -6px 0;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: var(--r);
+        font: 500 13px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--ink);
+      }
+      /* Inset on hover and focus rather than always: a field that is always
+         drawn as a field turns a schedule into a form. It reads as a name until
+         you go to change it, which is when it says it can be changed. */
+      .register .scheme-name:hover { border-color: var(--rule); }
+      .register .scheme-name:focus {
+        background: var(--inset);
+        border-color: var(--rule);
+        outline: none;
+      }
+      .register .scheme-name:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 1px; }
+      .register .scheme-sub {
+        display: block;
+        margin-top: 5px;
+        font: 400 10.5px/1.45 var(--mono);
+        font-style: normal;
+        color: var(--ink-ghost);
+      }
+      /* The shelf runs to ten cells — four readings, each with its delta beside
+         it — so the name column gives up the 40 % the schedules hand their
+         first column and the actions are kept tight. */
+      .register #shelf-table td:first-child { width: 28%; }
+      .register td.scheme-actions {
+        width: 112px;
+        white-space: nowrap;
+      }
+      .register td.scheme-actions .link + .link { margin-left: 12px; }
 
       /* ── title block ────────────────────────────────────────────── */
 
@@ -1684,6 +2214,17 @@
       .desk-widen { display: none; margin: 8px 0 0; font: 400 11.5px/1.45 var(--sans); color: var(--redline); }
       @media (max-width: 1180px) {
         body.desk-open .desk-widen { display: block; }
+      }
+      /* Except where there is no window to widen. Between 781 and 1180px this
+         note is addressed to a laptop that can be dragged wider; a tablet in
+         landscape is already as wide as it goes, and the sentence is then two
+         lines of red type telling the reader to do something they cannot do —
+         taken out of the head of the very column it is complaining is short.
+         A coarse pointer is the honest test available to a stylesheet: it does
+         not name a device, it says the reader has no window manager under their
+         thumb. */
+      @media (pointer: coarse) {
+        body.desk-open .desk-widen { display: none; }
       }
 
       /* `--index` is the switch between the desk's two presentations. It is
@@ -2640,7 +3181,19 @@
       }
       .rail-note.loose { color: var(--ink-3); }
 
-      @media (max-width: 780px) {
+      /* The desk stops being a column beside the sheet when the window cannot
+         hold one — and that shortage has two directions, not one.
+         `max-width: 780px` is the horizontal case, the phone, where there is no
+         width to take a column of. The height clause is the same failure turned
+         ninety degrees: the desk is `100vh` minus a margin with a fixed head
+         and a fixed rail either side of its only scroller, so a short window
+         takes its room out of the eighteen channels and nothing else.
+         Measured with the register folded, the head is 181px and the rail 172,
+         so at 390pt — a phone held sideways — the channels were left 3px. Below
+         600 the column cannot be made to work by folding anything, so the desk
+         goes under the sheet and becomes its own index sheet, which is what
+         this block already does for the phone. */
+      @media (max-width: 780px), (max-height: 600px) {
         body { padding: 20px 12px 48px; }
         .head { grid-template-columns: 1fr; padding: 24px; }
         .body { grid-template-columns: 1fr; }
@@ -2661,6 +3214,64 @@
         .titleblock div:nth-child(2n) { border-right: 0; }
         .titleblock div:nth-child(n + 5) { border-bottom: 1px solid var(--rule-soft); }
         .titleblock div:nth-child(n + 7) { border-bottom: 0; }
+        /* The register's tables stop being tables.
+           A criterion row is five columns and a kept scheme is ten, which is
+           two and four columns more than the schedules above have ever had to
+           fit, and no amount of narrowing gets ten right-aligned figures into a
+           thumb's width. So each row folds to a stack — the same answer the
+           console gives at this breakpoint, for the same reason — and the head
+           row goes, because a head is no use to a column that no longer exists.
+           Each cell carries the head it lost on `data-label`, written once in
+           the builder so the two cannot come to disagree. */
+        .register table,
+        .register tbody,
+        .register tr,
+        .register td { display: block; width: auto; }
+        .register thead { display: none; }
+        .register tr {
+          padding: 12px 0;
+          border-bottom: 1px solid var(--rule-soft);
+        }
+        .register tr:last-child { border-bottom: 0; }
+        .register td {
+          padding: 0;
+          border: 0;
+          text-align: left;
+          white-space: normal;
+        }
+        /* Named one by one rather than as `.register td`, because the column
+           widths above are set on `.class td.class` and out-specify anything
+           shorter — a media query does not win a specificity argument just by
+           coming later. Every one of them has to be given back. */
+        .register #score td:first-child,
+        .register #score td.asks,
+        .register #score td.delta,
+        .register #score td.unit,
+        .register #shelf-table td:first-child,
+        .register td.scheme-actions { width: auto; }
+        .register td + td { padding-left: 0; }
+        .register td:empty { display: none; }
+        /* The unit has moved onto the reading's own label. */
+        .register #score td.unit { display: none; }
+        /* Folded, the subhead is the only structure the board has left. */
+        .register tr.score-head { padding: 0; border-bottom: 0; }
+        .register tr.score-head td { padding: 18px 0 2px; }
+        .register td[data-label]::before {
+          content: attr(data-label);
+          display: inline-block;
+          min-width: 11ch;
+          margin-right: 8px;
+          font: 500 9px/1.6 var(--cond);
+          text-transform: uppercase;
+          letter-spacing: 0.11em;
+          color: var(--ink-3);
+        }
+        .register td:first-child { margin-bottom: 6px; }
+        .register td .why { margin-bottom: 4px; }
+        .register .scheme-name { max-width: none; }
+        .register td.scheme-actions { margin-top: 8px; }
+        .unjudged { grid-template-columns: 1fr; gap: 3px; }
+        .unjudged dd { margin-bottom: 9px; }
         .notes summary, #log { padding-left: 24px; padding-right: 24px; }
         .notes-head, .notes-lede { padding-left: 24px; padding-right: 24px; }
         .notes-grid { padding: 8px 24px 16px; }
@@ -2917,6 +3528,14 @@
             <button type="button" class="link" id="share">
               Copy scheme link
             </button>
+            <!-- The third way out, and the only one that stays: the bundle is
+                 this run, the link is this scheme, and this keeps the scheme
+                 where you can come back to it. It sits with the other two
+                 because it is the same act — the shelf stores exactly the
+                 string the button above copies. -->
+            <button type="button" class="link" id="save-scheme">
+              Save this scheme
+            </button>
           </div>
         </aside>
 
@@ -3016,6 +3635,11 @@
           </figure>
 
           <p class="finding" id="finding"></p>
+          <!-- The chased standard's worst line, up beside the drawing where
+               the hand is. The scoreboard below reads a run; this reads a
+               gesture, and carries a ghost of where the margin stood when you
+               took hold. Armed from the board's own Chase marker. -->
+          <p class="chase" id="chase" hidden></p>
 
           <section class="schedule">
             <p class="eyebrow">Results schedule<span class="base" id="baseline-note"></span></p>
@@ -3052,6 +3676,59 @@
             <p class="finding" id="bill-finding"></p>
             <p class="bill-note" id="bill-absences"></p>
             <p class="bill-refs" id="bill-refs"></p>
+          </section>
+
+          <!-- The third schedule on the sheet, lettered with the same
+               instrument as the other two, because it is the same instrument:
+               quantities down the side and a figure against each. What it
+               schedules is the schemes you kept and what each was reading —
+               which is why it lives here, beside the bill, while the standards
+               that set controls live on the console beside the controls. -->
+          <section class="register" id="register">
+            <!-- The scoreboard: every standard's targets against the one run,
+                 all at once. There is no "applied standard" to filter by —
+                 nothing is remembered — and that is what makes it a game: one
+                 year solved, every published line it would clear or miss. -->
+            <div class="score-wrap">
+              <p class="eyebrow">The targets</p>
+              <p class="register-lede">
+                What each standard asks of the finished building, against what the last run read.
+                The specifications that would get you there are on the console, folded beside the
+                controls they set; this board only keeps the score.
+              </p>
+              <!-- What Chase means, printed rather than hovered. The word alone
+                   on a button says nothing to a first reader, and this board's
+                   rule is that nothing floats: a tooltip would be invisible to
+                   a thumb and unreadable to anyone who never hovers. One
+                   sentence at the head covers all five markers, where five
+                   copies of a `.why` under each name would be noise. -->
+              <p class="register-lede">
+                <b>Chase</b> a standard and it collapses to its single worst line, held up beside
+                the drawing while you work, with a ghost of where that margin stood when you took
+                hold — so you can see whether the control under your hand is helping without
+                reading a dozen rows a screen away. Chasing measures; it decides nothing, and
+                pressing it again puts it down.
+              </p>
+              <table id="score"></table>
+            </div>
+
+            <div class="shelf">
+              <p class="eyebrow">Kept schemes<span class="base" id="shelf-count"></span></p>
+              <p class="register-lede">
+                A kept scheme is the whole desk, stored as the same link <b>Copy scheme link</b>
+                hands out — one format for keeping and for sharing, carried forward by the same
+                version ledger, so a scheme kept today still opens on a page that has since grown
+                a channel. It is held in this browser and goes nowhere else. An option can be put
+                down, another one worked, and the two set side by side.
+              </p>
+              <p class="register-note" id="shelf-note" hidden></p>
+              <p class="register-note" id="shelf-empty">
+                Nothing kept yet. <b>Save this scheme</b>, in the run log at the left, keeps the
+                desk as it stands together with whatever it was reading.
+              </p>
+              <table id="shelf-table" hidden></table>
+              <p class="register-note" id="shelf-foot"></p>
+            </div>
           </section>
         </div>
       </div>
@@ -3177,11 +3854,33 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
           <button type="button" class="link" id="desk-revert">Revert all</button>
           <button type="button" class="link" id="desk-close">Close</button>
         </span>
-        <p class="desk-sub">
-          Eighteen channels in the order the physics happens. Every control writes a real object
-          into the IDF, and every strip reads back what its path is actually contributing. The five
-          marked <em>rail</em> are terms of the zone air heat balance, and they sum at the foot.
-        </p>
+        <div class="desk-brief">
+          <p class="desk-sub">
+            Eighteen channels in the order the physics happens. Every control writes a real object
+            into the IDF, and every strip reads back what its path is actually contributing. The five
+            marked <em>rail</em> are terms of the zone air heat balance, and they sum at the foot.
+          </p>
+          <!-- The register of presets: published standards and this sheet's own
+               partis, folded to a line each beside the sub. A standard is laid
+               *over* the desk — it writes only the controls it has an opinion
+               about — and whether the desk still meets one is measured off the
+               controls on every apply, never remembered. -->
+          <!-- A fold, for the reason a strip is one below `--index`: the desk is
+               a column of fixed viewport height with a scroller between two
+               fixed blocks, and on a short screen the register was taking 323
+               of the head's 458px while the eighteen channels — the thing the
+               desk is for — were left 104px to scroll 12,000 in. Closed it
+               still reads, which is the rule; open it is worked. `main.js`
+               sets the state from the stylesheet's own flag. -->
+          <details class="presets" open>
+            <summary>Build it to<i class="presets-state" id="presets-state"></i></summary>
+            <div id="presets"></div>
+            <p class="presets-note">
+              A standard writes only what it has an opinion about; the rest of the desk stays
+              yours. Conformance is measured off the controls, never remembered.
+            </p>
+          </details>
+        </div>
         <p class="desk-widen">
           The sheet is being squeezed. Widen the window to work the desk and read the drawing at
           the same time.

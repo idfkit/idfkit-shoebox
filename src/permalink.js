@@ -44,6 +44,7 @@ import {
   controlFor,
   isMonthMask,
   parseHolidays,
+  refuses,
   serializeHolidays,
 } from './controls.js';
 
@@ -240,38 +241,14 @@ function readValue(key, raw) {
   // building occupied from midnight before this check existed.
   if (!/^-?\d+(\.\d+)?$/.test(raw)) throw new Error(`"${raw}" is not a number for ${key}`);
   const value = Number(raw);
-  let min;
-  let max;
-  let integer = false;
-  switch (control.kind) {
-    case 'scale':
-    case 'facade':
-      ({ min, max } = control);
-      // Step alignment is not required — several defaults (a wall R of
-      // 2.290965) sit off their own step grid — but a control whose step and
-      // floor are both whole numbers can only ever produce whole numbers, and
-      // a fraction there reaches an integer IDF field the engine rejects
-      // (a RunPeriod month of 6.5).
-      integer = Number.isInteger(control.step) && Number.isInteger(control.min);
-      break;
-    case 'bearing':
-      [min, max] = [0, 360];
-      break;
-    case 'profile':
-      [min, max] = [0, 24]; // an hour of the day, and the band sweeps whole cells
-      integer = true;
-      break;
-    default:
-      // A new control kind must be taught its rules here explicitly, not
-      // fall into whichever range happens to be last.
-      throw new Error(`no link validation is written for a "${control.kind}" control`);
-  }
-  if (value < min || value > max) {
-    throw new Error(`${key} is ${raw}, outside its ${min}–${max} range`);
-  }
-  if (integer && !Number.isInteger(value)) {
-    throw new Error(`${key} is ${raw}, and it only takes whole numbers`);
-  }
+  // The admissible range is the control's own and is asked of the control. It
+  // used to be restated here, which was tolerable while a link was the only
+  // thing that handed a control a bare value; a standard's specification is a
+  // second, and two copies of "what this control can hold" would drift. The
+  // calendar is answered above rather than by `refuses`, because a month mask
+  // is not a number and never reaches this line.
+  const reason = refuses(control, value);
+  if (reason) throw new Error(`${key} is ${raw}, and it ${reason}`);
   return value;
 }
 

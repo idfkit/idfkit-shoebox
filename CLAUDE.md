@@ -896,18 +896,155 @@ round-trip of every key and refusal of every malformed input class.
 - The run bundle's manifest cites the permalink of the *snapshot* that was
   solved, not live params, for the same reason it holds the exact IDF text.
 
-### The index sheet (narrow screens)
+### The register (src/schemes.js)
 
-Below the `780px` breakpoint the desk stops being a column beside the drawing and
-becomes a page of its own, where eighteen strips end to end is about ten screens
-with nothing in them to say which one you are in. So the strips fold to a line
-each — number, name, reading, patch marker — and the console becomes its own
-index, one screen tall, in signal order.
+Two things that would be one thing in a lesser arrangement, kept apart on
+purpose:
 
+- A **standard** is a specification and is applied as an **overlay**. It writes
+  the controls it has an opinion about and leaves every other control where the
+  architect put it, which is what makes "what would it take to build *this* to
+  Passivhaus" a question you can ask of the building already on the sheet.
+  `UNTOUCHABLE` names the channels a preset may never write — Massing, Site and
+  Context (the brief), Solver and Run (not the building), and the two priced
+  ones (nothing they own reaches the IDF, so a preset that turned a tariff would
+  move the bill without moving the building). Asserted at module load, not
+  documented and hoped for.
+- A **kept scheme** is a whole desk and is applied as a **replacement**. It is
+  stored as its permalink fragment and nothing else, so the save format and the
+  share format are one string: the version ledger in `permalink.js` carries both,
+  and there is one codec to keep honest rather than two.
+
+**Nothing is remembered.** There is no "currently selected standard" anywhere on
+this page and there must not be. `conformance()` measures the desk against a
+preset's clauses every time `applyGeometry` runs, exactly as the axonometric
+measures the vertices — so nudging a wall a second after pressing Apply drops
+the conformance by itself, because there was never a flag to go stale.
+
+- **A specification and a target are different things**, and the split is drawn
+  in the layout itself. `Spec` sets a control, so the standards fold to compact
+  accordions on the console head, beside the controls they set — closed, each is
+  a name and a conformance chip. `Target` states a number the finished building
+  has to reach and is read off the run, so every standard's targets sit on one
+  scoreboard on the sheet (`renderScore`), under the results — all standards at
+  once, because there is no "applied standard" to filter by, and one run read
+  against every published line is the game the board affords. LETI is the pure
+  case — no specs at all, two targets — and having it in the list is what keeps
+  the distinction visible for the others. `conformance().built` is `null` for
+  such a preset, not `true`: "conforms to a specification with no clauses in it"
+  is the emptiest true statement available.
+- **`Spec.why` carries the arithmetic**, because almost no published figure is
+  in the units an IDF field wants. An assembly U-value becomes a construction
+  resistance by taking the ISO 6946 surface films off it (the Fabric strip
+  writes one `Material:NoMass` and EnergyPlus adds the films itself); a
+  blower-door n50 becomes a natural-conditions infiltration rate by the LBL
+  divide-by-twenty rule of thumb, which is coarse and is printed rather than
+  buried so it can be disagreed with. Same rule as the bill's rate build-up.
+- **`Unjudged` is the most important list in the module.** A one-zone shoebox
+  with ideal loads can speak to about half of what Passivhaus requires, and a
+  panel showing only the half it can answer would read as a certification. What
+  is *not* being checked is printed beside what is.
+- **A target with no line is not a pass.** PHI sets the cooling limit per
+  building and per climate, so there is no figure this sheet is entitled to
+  draw; the reading is shown with no verdict. And a reading that is absent says
+  *why* — "attach a weather file, this is a year's number" — rather than
+  standing as a bare em dash the reader can do nothing about.
+- **`Target.needs` separates a load from an energy**, and the distinction earns
+  its keep. `'year'` (the demand intensities, the exceedance frequency) has
+  nothing to say about two design days. `'run'` — the peak loads — reads on any
+  run at all, because sizing days *are* the conditions plant is designed
+  against, so the scoreboard answers something before a weather file is ever
+  attached. `targetAbsence` tests System before the year for the same reason: a
+  free-running desk should not be sent to fetch a year it does not need.
+  `readPeaks` costs no new `Output:Variable` — it reads the hourly
+  `Zone Air Heat Balance System Air Transfer Rate` the balance rail already
+  requests, signed positive into the zone. Watch this one in practice: a desk
+  can clear the Passivhaus *demand* at 8.6 kWh/m²·yr and miss its *load* at
+  13.9 W/m², which is the whole argument for reading both.
+- **The chase pin is the one thing here that *is* remembered — explicitly.**
+  Chasing a standard reduces it to its single worst line, drawn up beside the
+  drawing with a ghost of where that margin stood when the gesture began,
+  because a dozen scoreboard rows a screen away cannot answer "is what my hand
+  is doing right now helping". It is the bill's pin in another column: a
+  comparison the reader chose and can unchoose, making no claim about the
+  building, so it does not violate the no-remembered-standard rule that
+  conformance obeys. It stays out of the permalink for the same reason `pinned`
+  does — it is how the desk is being read, not what it is.
+- **What "Chase" means is printed above the board, not hovered.** The word on
+  the marker is a verb with no object, and a first reader has no way to guess
+  what pressing it does — but the fix is a sentence in the scoreboard's lede,
+  not a tooltip: nothing on this sheet floats, and a hint that exists only on
+  hover does not exist on a phone at all. The marker's `title` and `aria-label`
+  carry the same sentence, which is what makes five identically-worded buttons
+  distinguishable when they are read aloud; both halves flip together when it is
+  armed, since "Stop chasing … : hold its worst line up beside the drawing"
+  describes the state being left rather than the one the press reaches.
+- **The worst line is ranked by ratio, not by difference.** LETI's energy line
+  is 55 kWh/m²·yr and Passivhaus's heating line is 15, so 3 over means something
+  different against each while 20 % over means the same against both.
+  `chaseVerdict` takes its reader injected, so the harness drives the ranking
+  with a plain lookup.
+- **The chase ghost follows the bill's rule, not the plate's.** It is *not*
+  cleared on gesture end: an annual margin does not move until the release solve
+  lands, so clearing it there would mean the cadence where the numbers matter
+  most never showed a ghost at all. It stands until the next gesture replaces it.
+- **`refuses()` moved into `controls.js`.** Both the link codec and the preset
+  declarations hand a control a bare value, and the rules for what a control can
+  hold belong with the declaration. `permalink.js` reads it rather than
+  restating the ranges.
+- **A full shelf refuses; it does not evict.** Dropping the oldest to make room
+  is the silent fallback this codebase refuses everywhere else. A shelf that
+  cannot be read is refused whole with the reason standing where the schemes
+  would have been, because an empty table would tell the reader they never saved
+  anything.
+- **Restoring across a station change goes through the link.** A scheme naming
+  the attached station is applied in place like `revert`; one naming a different
+  station is a different climate, tariff and grid — that is a boot, so it is
+  handed to the hash and the page reloads into the existing decode path,
+  refusals and all, rather than growing a second thinner copy of it.
+- **A kept scheme stores a currency code, not a `Currency`.** Nothing with an
+  identity survives `JSON.stringify` into the browser's storage, so
+  `Measure.comparableWith` restates the bill's own refusal on flat data: same
+  kind of run, same currency, same end uses, or no delta at all.
+
+### The index sheet (no room for a column)
+
+At `780px` wide **or `600px` tall** the desk stops being a column beside the
+drawing and becomes a page of its own, where eighteen strips end to end is about
+ten screens with nothing in them to say which one you are in. So the strips fold
+to a line each — number, name, reading, patch marker — and the console becomes
+its own index, one screen tall, in signal order.
+
+- **The shortage has two directions, and the second one was missed for a
+  while.** The desk is `100vh` minus a margin, with a fixed head and a fixed
+  rail either side of its only scroller, so a *short* window takes its room out
+  of the eighteen channels and out of nothing else — the same failure as the
+  phone's, turned ninety degrees. Measured with the register folded, the head is
+  181px and the rail 172, so a phone held sideways at 390pt left the channels
+  3px of scroller. Below 600 no amount of folding rescues the column, so the
+  height clause sends the desk under the sheet where the phone already goes.
 - **The breakpoint is declared once**, in the media query, as `--index` on
   `.strips`. `console.js` reads that flag back rather than repeating the number
   as a `matchMedia` string. Layout is CSS's decision; the module only asks which
   one it got.
+- **Between the two, the register folds instead.** From 600 to 1000px tall the
+  column still works but is short, and the head is where the room is: measured
+  on an iPad in landscape, the register was taking 323 of the head's 458px while
+  the channels had 104px to scroll 12,000 in. Folded, the head is 181 and the
+  channels get 381. `.presets` is a `<details>` carrying its own `--fold` flag,
+  read back by `main.js` exactly as `--index` is, and acted on only when the
+  flag *changes* — a reader who opens the register on a short desk keeps it open
+  through every resize that does not cross the threshold, because the fold is
+  the layout's opening position and not a policy about what they may look at.
+  Closed it still reads, by the folded strip's own rule: the summary carries
+  `built to Passivhaus Classic`, or `5 standards` where none is.
+- **"Widen the window" is not said to a thumb.** That note shows between 781 and
+  1180px, addressed to a laptop that can be dragged wider; a tablet in landscape
+  is already as wide as it goes, and the sentence was two lines of red type
+  telling the reader to do something they cannot — taken out of the head of the
+  very column it was complaining is short. `pointer: coarse` is the honest test
+  a stylesheet has: it names no device, it says there is no window manager under
+  the reader's thumb.
 - **Closed a row reads, open it is worked.** The folded row keeps the reading and
   the armed marker, because "readable without opening anything" is the rule the
   desk exists to honour; only the controls go behind the fold. The blocked note
