@@ -9,6 +9,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The reading hour drags, and it has a picker.** The plate's marker could be
+  placed with a click; it can now be taken hold of and moved along the curve,
+  with every meter on the rail, the balance total and the stamp under the plate
+  re-lettering as it travels. Nothing is simulated — the run is already in hand
+  and the hour is only a way of reading it — so a drag across a Denver year
+  costs a re-read of an array rather than 8,760 hours of engine time. A press
+  that never travels is still a click and still toggles the hour it names; a
+  drag that ends where it began keeps the pin it just placed; and the address
+  bar updates on release, never per frame, like every other gesture here.
+
+  Under the plate there is now a bar carrying the instant, the hold, and two
+  ways of naming another one. **Named hours** first, because "which hour" is a
+  question the field already has stock answers to: EnergyPlus reports its own
+  component loads at the *time of the peak load*, heating and cooling apart, so
+  **peak heating** and **peak cooling** are the two a modeller arrives with; a
+  results tool's period list offers summer and winter design weeks read off the
+  weather file's statistics, which becomes the **hottest** and **coldest
+  outdoor** hour; the zone's own **warmest** and **coolest** stand beside them
+  because a free-running desk has no heating or cooling rate at all; and **peak
+  solar gain** is the hour every glazing and shading control on the desk is
+  arguing about. Each is found in the run that came back and letters the
+  environment it landed in, with the value it reads there — on Denver's design
+  days, peak heating at 24:00 on 21 December is 5.91 kW and peak cooling at
+  15:00 on 21 July is 2.18 kW.
+
+  An offer the run cannot make **states its reason where its stamp would have
+  been** and cannot be pressed. Bypass the System strip and both peaks say so
+  rather than quietly handing back the least-cooled hour of the year under a
+  label claiming the opposite — an `argmax` always returns something, which is
+  exactly why it needs a gate.
+
+  Then a **calendar**, every option of it walked out of the run's own
+  timestamps, so it cannot name an hour the run does not hold. A date field was
+  rejected when the marker was built, on the argument that it invites February
+  the 30th and hour 25 purely to meet a refusal message; that was an objection
+  to a free field, and there is nothing left here to refuse. It earns its place
+  because the gesture cannot reach everywhere — an annual plate at ten hours to
+  the pixel is physically unable to name 15:00 on 14 February, and a pointer is
+  not the keyboard's instrument at all. It works coarse to fine: an environment
+  opens at its own worst hour, a month or a day at that day's extreme, and only
+  the hour field names an hour.
+
+  The bar sits on the sheet rather than only on the rail for the reason the
+  plate grew its marker in the first place: the rail is inside a console you
+  have to open, and the hour is the single most movable thing about every
+  figure on the page. It also says, on the sheet, when a pin could not be found
+  in the new run and was released — until now the marker simply went from
+  filled to hollow, which is not an explanation.
+
 - **Any of the six surfaces can be made adiabatic**, on a key of their own at
   the foot of the Fabric strip. A shoebox is almost never a free-standing
   object: it is one bay of a terrace, a middle floor of a stack, a corner unit

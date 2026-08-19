@@ -816,6 +816,149 @@
       .trace { padding: 14px 16px 8px; min-width: 0; }
       .trace svg { display: block; width: 100%; }
 
+      /* ── the hour bar ───────────────────────────────────────────── */
+
+      /* Between the plate and its caption, because that is where its subject
+         is: the marker on the curve says *when*, and this says when in words,
+         plus what else you could ask for. On the rail alone — which is where
+         the hour lived first — it was a line of ten-pixel mono at the foot of
+         a console you have to open, which made the most movable thing about
+         every figure on the page the least visible one. */
+      .when {
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+        padding: 9px 16px 11px;
+        border-top: 1px solid var(--rule-soft);
+      }
+      .when[hidden] { display: none; }
+      .when-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 14px;
+      }
+      .when-note {
+        margin: 0;
+        max-width: 62ch;
+        font: 400 10.5px/1.45 var(--sans);
+        color: var(--ink-3);
+      }
+
+      .when-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+        padding-top: 3px;
+      }
+      /* One row that wraps rather than a scroller: eight offers is a set to be
+         read, and a set you have to scroll to see the end of is a set whose
+         end nobody reads. */
+      .when-offers {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .when-offer {
+        all: unset;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        padding: 6px 9px;
+        min-width: 0;
+        background: var(--inset);
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        cursor: pointer;
+        transition: border-color 0.15s ease;
+      }
+      .when-offer b {
+        font: 500 9.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-weight: 500;
+        color: var(--ink-2);
+      }
+      .when-offer span {
+        font: 400 10px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+      }
+      /* Which environment the offer landed in, drawn only when the run holds
+         more than one. "05:00, 21 Jan" is a complete answer on a run that is
+         one January; on a run that is two design days and a year it is three
+         different hours. */
+      .when-offer i {
+        font: 500 9px/1 var(--cond);
+        font-style: normal;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--ink-3);
+      }
+      .when .when-offer:hover:not(:disabled) { background: var(--inset); border-color: var(--rule-firm); }
+      .when-offer:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+      /* The offer the meters are actually on, in the markup pen — the same
+         thing the plate's filled marker is saying about the same instant. */
+      .when-offer[aria-pressed="true"] { border-color: var(--redline); }
+      .when-offer[aria-pressed="true"] b { color: var(--redline); }
+      /* An offer this run cannot make reads as absent rather than as a live
+         control that happens to do nothing, and states its reason where its
+         stamp would have been. */
+      .when-offer.refused { cursor: default; border-style: dashed; }
+      .when-offer.refused b { color: var(--ink-ghost); }
+      .when-offer.refused span {
+        font: 400 10.5px/1.35 var(--sans);
+        color: var(--ink-ghost);
+        max-width: 30ch;
+      }
+
+      .when-exact {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .when-field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      /* The one native select on the page, and it earns the exception: a run
+         period offers three hundred and sixty-five days and twenty-four hours
+         of each, which is two orders of magnitude past what the desk's
+         segmented control is for, and the platform's own list is the only
+         version of it that works under a thumb and under a screen reader. */
+      .when-field select {
+        appearance: none;
+        min-width: 78px;
+        padding: 5px 22px 5px 8px;
+        background: var(--inset)
+          linear-gradient(45deg, transparent 50%, var(--ink-3) 50%) no-repeat right 9px center / 5px 5px;
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        font: 400 10.5px/1.3 var(--mono);
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .when-field select:hover { border-color: var(--rule-firm); }
+      .when-field select:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+      .when-field select:disabled { color: var(--ink-3); cursor: default; background-image: none; }
+
+      .when-hint {
+        margin: 0;
+        max-width: 62ch;
+        font: 400 10.5px/1.45 var(--sans);
+        color: var(--ink-ghost);
+      }
+
+      /* The plate takes a gesture, so it says so under the pointer. `pan-y`
+         and not `none`: the drag is horizontal by construction, and a plate
+         that swallowed a vertical swipe would trap a phone reader on the one
+         block of the sheet they most want to scroll past. */
+      .trace { touch-action: pan-y; }
+      .trace.pickable { cursor: crosshair; }
+      .trace.dragging { cursor: ew-resize; user-select: none; }
+
       figcaption {
         display: flex;
         gap: 12px;
@@ -2781,6 +2924,12 @@
               </aside>
               <div class="trace" id="trace"></div>
             </div>
+            <!-- The hour every meter on the desk is read at, and the two ways
+                 of choosing another: the named instants a modeller already has
+                 words for, and an exact one named off the run's own calendar.
+                 The plate above is the third — press its marker and drag. All
+                 of it is drawn by `renderWhen` in main.js. -->
+            <div class="when" id="when" hidden></div>
             <figcaption>
               <span class="fig">Fig. 1</span>
               <span id="fig-cap">
