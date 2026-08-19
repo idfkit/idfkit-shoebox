@@ -51,6 +51,8 @@ import {
 } from './weather.js';
 import { holidayList, parseEpwCalendar, parseEpwStartDay } from './epw.js';
 import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
+import { mountChangelog } from './changelog.js';
+import CHANGELOG_SOURCE from '../CHANGELOG.md?raw';
 import {
   MONTHS,
   NEUTRAL_C,
@@ -3733,6 +3735,11 @@ $('t-rev').textContent = 'E-01 · Rev ';
   $('t-rev').append(stamp);
 }
 $('t-date').textContent = `Issued ${REVISION.date ?? '—'}`;
+
+// The revisions block is CHANGELOG.md itself, mounted once at boot the same
+// way the title block's own revision cell is lettered once above — the file
+// does not change under a running page, so there is nothing here to redraw.
+mountChangelog($('changelog-body'), CHANGELOG_SOURCE);
 
 // Start the ~28 MB WASM download immediately; the schema bundle is small and
 // arrives first, which is what lets the sheet draw itself before the engine is
