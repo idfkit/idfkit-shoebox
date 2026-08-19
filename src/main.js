@@ -1932,9 +1932,53 @@ function buildSliders() {
 
     const value = document.createElement('output');
     value.htmlFor = `dim-${key}`;
+
+    // The landmarks the console's calibration faces carry, on the sheet's own
+    // sliders. Three of these five have them; the two plan dimensions do not,
+    // because nobody publishes a width a shoebox ought to be, and a face with
+    // no cases behind it says so by carrying no rule rather than by carrying
+    // an empty one.
+    //
+    // The pips are placed against the *thumb's* travel and not the track's:
+    // this is a native range with a visible 9px thumb, so its centre only ever
+    // reaches from 4.5px to 4.5px short of the far end, and a mark ruled at a
+    // plain percentage would sit a few pixels off the value it names at both
+    // ends of the face. The console's faces have the opposite arrangement —
+    // their thumb is invisible and the tick is drawn — so there the plain
+    // percentage is the right one.
+    const marks = [];
+    let rule = null;
+    let standing = null;
+    if (control.landmarks.length) {
+      rule = document.createElement('div');
+      rule.className = 'dim-marks';
+      for (const mark of control.landmarks) {
+        const from = Math.min(Math.max(control.fraction(mark.from), 0), 1);
+        const to = Math.min(Math.max(control.fraction(mark.to), 0), 1);
+        const pip = document.createElement('i');
+        pip.className = mark.exact ? 'dim-mark point' : 'dim-mark';
+        pip.style.left = `calc(4.5px + ${from} * (100% - 9px))`;
+        if (!mark.exact) pip.style.width = `calc(${to - from} * (100% - 9px))`;
+        pip.title = mark.caption(control);
+        rule.append(pip);
+        marks.push({ mark, pip });
+      }
+      standing = document.createElement('p');
+      standing.className = 'dim-standing';
+      input.setAttribute('aria-description', control.landmarkSummary());
+    }
+
     const show = () => {
-      value.textContent = control.format(params[key]);
-      input.setAttribute('aria-valuetext', control.format(params[key]));
+      const v = params[key];
+      value.textContent = control.format(v);
+      const said = control.standing(v);
+      input.setAttribute('aria-valuetext', said ? `${control.format(v)}, ${said}` : control.format(v));
+      if (standing) {
+        standing.textContent = said ?? '';
+        standing.title = said ?? '';
+        standing.classList.toggle('between', !control.landmarkAt(v));
+        for (const { mark, pip } of marks) pip.classList.toggle('here', mark.holds(v));
+      }
     };
     show();
 
@@ -1949,6 +1993,7 @@ function buildSliders() {
     input.addEventListener('change', () => commit(key, Number(input.value), true));
 
     row.append(label, input, value);
+    if (rule) row.append(rule, standing);
     host.append(row);
     syncSlider[key] = () => {
       input.value = String(params[key]);

@@ -9,6 +9,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Landmarks on the calibration faces.** A slider set in W/m²K is a quantity
+  before it is a decision: `1.80` says nothing to a reader who reads *low-e
+  double* perfectly well, and a face offering only a range and a tick has
+  handed them the number and withheld the vocabulary. Fifty-one faces now carry
+  the published cases they are read against — 149 of them — ruled under the
+  face as dimension lines, with the one the reading is standing in lettered
+  underneath. Dragging the U-factor face reads out *single · double, clear ·
+  double, low-e · triple*, and the same sentence rides in `aria-valuetext`, so
+  a reader on the arrow keys hears "1.80 W/m²K, double, low-e".
+
+  Some of it was already on the desk as prose — "fresh snow reads near 0.7,
+  asphalt near 0.1", "the stock R13LAYER is 2.29" — where the drawing could not
+  reach it and the slider could not point at it. Those notes are landmarks now,
+  declared once in `controls.js` and drawn by the console, by the plan key
+  along each wall's own bar, and by the sheet's own dimension sliders.
+
+  Where the cases come from is carried with them: ASHRAE 90.1's fenestration
+  and lighting limits, 62.1's occupant densities and outdoor-air rates, 55's
+  comfort bands, the Handbook of Fundamentals for glazing and metabolic rate,
+  EN 12464-1 for illuminance, the Passive House Institute, the CRRC, the
+  Beaufort scale, and EnergyPlus's own Input Output Reference for the engine
+  defaults. `Landmark` refuses to be constructed without a source, because a
+  landmark nobody can check is the interface asserting rather than measuring.
+
+  Nothing here reaches the IDF. A throwaway harness built the document at six
+  desk positions before and after and hashed each one: byte-identical, with
+  `applyModel` still idempotent at every position.
+
+- **The blind's slat angle now says which way it runs.** EnergyPlus measures
+  `WindowMaterial:Blind.slat_angle` from the *glazing's outward normal*, so 0°
+  and 180° are closed and 90° is fully open — the opposite of what a slider
+  running 0 to 180 suggests, and nothing on the face said so. Both stops and
+  the middle are landmarked, and the strip states the convention.
+
+### Fixed
+
+- **The low-e coating note named the wrong coating.** The Glazing strip said
+  "0.04 is a hard coat"; 0.04 is a *soft* coat's emissivity. A pyrolytic hard
+  coat is fired on at the float line and sits near 0.15 to 0.20, four times
+  that, and the two are chosen for different reasons — one survives handling,
+  the other performs. Both are landmarks now, with uncoated float at 0.84.
+
+- **Five landmarks could be seen and never reached**, which is how the rule
+  that catches it came to be written. `input[type=range]` only ever returns
+  `min + n·step`, so a case declared at a published figure that falls between
+  two positions draws on the face, names itself in its tooltip, and can never
+  once be the reading — the reader is shown a place they cannot stand. The
+  BLAST infiltration constant (0.606 against a 0.01 step), the DOE-2 wind term
+  (0.224 against 0.005), BLAST's stack term (0.03636 against 0.001) and two of
+  ASHRAE's lighting allowances (imperial figures landing at 6.89 and 10.76 W/m²
+  against 0.1) were all of them. They are declared now as the narrow band the
+  step grid actually makes, with the published figure in the note, and
+  `readLandmarks` throws at module load for any that is not reachable.
+
 - **Each wall of a plan key can be swept.** The window-to-wall ratio and the
   overhang projection were the two controls on the desk a study could not be
   taken of, which is the wrong two: an elevation is where orientation stops

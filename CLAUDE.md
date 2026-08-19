@@ -76,6 +76,13 @@ so the two surfaces cannot drift.
 channel's applier in `model.js`. Do not add markup, defaults, or label strings
 anywhere else. `DEFAULT_PARAMETERS` is derived from the declaration.
 
+**To add a landmark** — the named cases a scale is read against — declare it in
+the `LANDMARKS` section of `controls.js` and hang it on the control with
+`landmarks:`. Nothing else is needed: `console.js` rules it under the
+calibration face, the plan key rules it along each wall's bar, and the sheet's
+own sliders read the same declaration. See "Landmarks" below for the rules a
+declaration has to meet, all of which throw at module load.
+
 **To add a control *kind*** — rarer, and it has two gates that fail in opposite
 directions. `console.js`'s `buildControl` throws for a kind it cannot draw, so
 the desk fails loudly at mount. `permalink.js`'s `readValue` is the quieter one:
@@ -92,6 +99,51 @@ last of those would alias an array default straight into live `params` — and
 drift with no symptom until a shared link came back wrong. A list-valued control
 carries canonical text and parses at the boundaries; `Days` is the worked
 example.
+
+### Landmarks (src/controls.js)
+
+A `Scale` or a `Facade` may carry `landmarks`: the published cases its number
+is read against, so that `1.80 W/m²K` also reads as *double, low-e* and a
+reader who does not yet think in W/m²K has somewhere to stand. They reach no
+IDF object — a throwaway harness asserted the document is byte-identical at six
+desk positions before and after they were added — so nothing here can move a
+result, only explain one.
+
+- **A landmark is a band, not a point**, because that is the shape of the fact:
+  double glazing is 2.7 to 3.0 W/m²K depending on cavity, fill and spacer.
+  Leaving `to` off closes the band to a point, which is for a *limit* — a code
+  maximum, an engine default — and draws differently from a range on purpose.
+- **`note` is required**, and that is the point of the class. A landmark is the
+  interface making a claim about the world, and a claim nobody can check is
+  what the rest of this sheet exists not to print. The note carries the source
+  and rides into the mark's `title` and the face's `aria-description`.
+- **Three rules throw at module load** (`readLandmarks`): inside the face's
+  range, no two overlapping, and — the one that had to be found by writing the
+  check — **reachable on the control's own step grid**. `input[type=range]`
+  only ever returns `min + n·step`, so a band falling between two positions
+  draws, names a case in its tooltip, and can never once be the reading. Five
+  did exactly that: the BLAST constant 0.606 against a 0.01 step, the DOE-2
+  wind term 0.224 against 0.005, and ASHRAE's lighting allowances, which are
+  imperial figures landing at 6.89 and 10.76 W/m² against 0.1. They are
+  declared now as the narrow band the rounding actually makes, with the
+  published figure in the note.
+- **A `zero` stop is silent.** `standing()` returns null there, because a
+  `zero` label means the bottom of the face is the *absence* of the quantity —
+  no frame, no mass, no ventilation — and "past a brick leaf" over a wall with
+  no masonry leaf is a different statement, not a rounder one. The readout's
+  own `None` is that position's only true landmark.
+- **Only where somebody published it.** Most of the desk carries none: nobody
+  publishes the width a shoebox ought to be. That absence is the honest answer,
+  and the same rule as the em dash on the drawing.
+- **`phrase` is kept apart from `label`** for the reason `noun` is kept apart
+  from `label` on an environment: the face letters `Double, low-e` on its own
+  and says "between low-e double and clear double" in a sentence, and one
+  string cannot do both.
+- The blind's **slat angle** is the landmark that most needed writing down.
+  `WindowMaterial:Blind.slat_angle` is measured from the *glazing's outward
+  normal*, so 0° and 180° are **closed** and 90° is **open** — the opposite of
+  what a 0–180° slider suggests. Nothing on the face said so, and a reader
+  assuming the other convention got the shading exactly backwards.
 
 ### `applyModel` (src/model.js)
 
@@ -490,7 +542,7 @@ next visit, and setting it aside folds it to a one-line row that still reads.
   than none — treat updating the general notes as part of any feature's
   definition of done, and check them whenever a modification to the
   onboarding itself is requested.
-- **Bump the storage key** (`shoebox-general-notes-v1`) whenever the steps
+- **Bump the storage key** (`shoebox-general-notes-v2`) whenever the steps
   change meaning, so a returning reader gets the new sheet rather than stale
   ticks against notes they never read.
 - Completion only ever comes from the genuine event: the solve note from the
