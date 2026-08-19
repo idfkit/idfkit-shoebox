@@ -34,8 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *solid on every face. With every surface adiabatic and the slab swapped for a
   massless layer.*
 
-  Nothing is claimed that is not measured — no typology, no assembly names and
-  no verdict — for the reason the rest of the sheet gives an em dash: 12 m²
+  A setting is described by the object it reached rather than by its own value,
+  which is a sharper rule than it sounds: *Available* is not a modifier on a
+  unit that has two setpoints, so at "Heat only" — where the model holds a
+  `ThermostatSetpoint:SingleHeating` and the cooling setpoint reaches nothing —
+  the sentence reads *an ideal unit heating to 20.0 °C*, and "Occupied" claims
+  occupied hours only when Gains is in the path to give it a band to follow.
+
+  Nothing else is claimed that is not measured — no typology, no assembly names
+  and no verdict — for the reason the rest of the sheet gives an em dash: 12 m²
   per person is a number, and "an open-plan office" is a building this model
   was never given.
 

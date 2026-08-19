@@ -431,6 +431,14 @@ the finding's own clauses.
   letters the bearing beside the word wherever the box is off the cardinals.
   Reading the plan key's name instead would have the sheet stating the one
   thing about a turned desk that is flatly untrue.
+- **A setting is described by the object it reached, not by its own value.**
+  *Available* is not a modifier on a unit that has two setpoints: at "Heat
+  only" `applySystem` writes a `ThermostatSetpoint:SingleHeating` and the
+  cooling setpoint reaches nothing, so the clause is read off the thermostat
+  object in the document — as is the availability schedule, since "Occupied"
+  falls back to `AlwaysOn` with Gains out of the path. The same rule takes the
+  wall glazing's U-factor and SHGC out of the sentence on a roof-only desk
+  whose rooflights are glazed in their own unit.
 - **It is captured before the await**, beside `capture` and the IDF, off the
   snapshot the run was written from. Lettered after, a slider turned during a
   0.7 s annual run would have the sentence describing one building over another

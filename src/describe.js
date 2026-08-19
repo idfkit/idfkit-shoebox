@@ -242,7 +242,49 @@ const TERRAIN = Object.freeze({
   Ocean: 'ocean terrain',
 });
 
-function moves(params, facts, state) {
+/**
+ * The ideal unit as the document holds it, not as the desk asked for it.
+ *
+ * *Available* is not a setting the unit takes alongside two setpoints: at "Heat
+ * only" `applySystem` writes a `ThermostatSetpoint:SingleHeating` naming the
+ * heating schedule and nothing else, so the cooling setpoint reaches no object
+ * in the model at all. Read off `params.availability` this clause said "an
+ * ideal unit holding 20.0–26.0 °C" over a run in which nothing whatever held
+ * 26 °C — the sheet stating a number the engine was never given, which is the
+ * one thing this paragraph exists not to do. So the thermostat object is what
+ * decides the verb, and the setpoint that reaches it is the only one said.
+ *
+ * The availability schedule is read the same way and for a sharper version of
+ * the same reason: "Occupied" falls back to the plant simply being on when
+ * Gains is out of the path, so a clause taken off the parameter would promise
+ * occupied hours on a desk whose unit runs all of them.
+ */
+function unit(doc, params) {
+  const holds = (type) => doc.all(type).size > 0;
+  const ideal = doc.all('ZoneHVAC:IdealLoadsAirSystem').first;
+  const schedule = ideal ? String(ideal.availability_schedule_name) : 'AlwaysOn';
+  const hours = schedule === 'AlwaysOn' ? [] : [' in occupied hours'];
+
+  if (holds('ThermostatSetpoint:SingleHeating')) {
+    return ['an ideal unit heating to ', num('heatSet', params.heatSet), ' °C', hours];
+  }
+  if (holds('ThermostatSetpoint:SingleCooling')) {
+    return ['an ideal unit cooling to ', num('coolSet', params.coolSet), ' °C', hours];
+  }
+  if (holds('ThermostatSetpoint:DualSetpoint')) {
+    return [
+      'an ideal unit holding ',
+      num('heatSet', params.heatSet),
+      '–',
+      num('coolSet', params.coolSet),
+      ' °C',
+      hours,
+    ];
+  }
+  throw new Error('the System channel is in the path with no thermostat setpoint object in the document');
+}
+
+function moves(doc, params, facts, state) {
   const on = (id) => Boolean(state.get(id)?.engaged);
   const out = [];
   const say = (id, weight, tokens) => {
@@ -291,7 +333,11 @@ function moves(params, facts, state) {
   // The glass itself, and only where there is glass in the document to have a
   // specification: a U-factor quoted for a building with no window is a number
   // about nothing.
-  if (facts.grossGlazing > 0 || facts.grossRoofGlazing > 0) {
+  // The wall glazing model, and only where the document holds glass built of
+  // it: rooflights on their own unit carry `skyU` and `skySHGC` instead, so a
+  // U-factor quoted off a roof-only desk would be a number about a construction
+  // no surface in the model is made of.
+  if (facts.grossGlazing > 0 || (facts.grossRoofGlazing > 0 && params.skyGlass === 'Walls')) {
     if (params.glazingModel === 'Layered') {
       say('glass', moved(params, ['glazingModel', 'paneEmiss', 'gapWidth']), [
         params.paneEmiss < DEFAULT_PARAMETERS.paneEmiss
@@ -357,11 +403,7 @@ function moves(params, facts, state) {
 
   if (on('system')) {
     say('system', FLIP.system, [
-      'an ideal unit holding ',
-      num('heatSet', params.heatSet),
-      '–',
-      num('coolSet', params.coolSet),
-      ' °C',
+      unit(doc, params),
       params.setback > 0 ? [', set back ', num('setback', params.setback), ' K out of hours'] : [],
     ]);
   }
@@ -433,7 +475,7 @@ export function describeDesk({ doc, params, state, place = null }) {
   // ran to all of it would be a table with the numerals hidden in prose.
   const chosen = [];
   let words = 0;
-  for (const move of moves(params, facts, state).sort((a, b) => b.weight - a.weight)) {
+  for (const move of moves(doc, params, facts, state).sort((a, b) => b.weight - a.weight)) {
     const cost = weigh(move.tokens.flat(Infinity));
     if (chosen.length >= MOVES || words + cost > MOVE_WORDS) continue;
     chosen.push(move);
