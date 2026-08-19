@@ -11,6 +11,7 @@ import {
   runDays,
   serializeHolidays,
 } from './controls.js';
+import { quantityField } from './field.js';
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -387,11 +388,19 @@ export function mountConsole({
     const head = el('div', 'ctl-head');
     const label = el('label', null, control.label);
     label.htmlFor = `k-${control.key}`;
-    const value = el('output', 'ctl-value');
-    value.htmlFor = `k-${control.key}`;
+    // The reading is also the way to set it — see `field.js`. It carries no
+    // `htmlFor` of its own: an editable field is its own control, not an
+    // output of the face beside it, and it names itself for the reader.
+    const value = quantityField({
+      control,
+      name: control.label,
+      read: () => params[control.key],
+      write: (v) => onChange(control.key, v, true),
+      className: 'ctl-value',
+    });
 
     const studyBtn = studyOffer(control.key, control.label, control, channel);
-    head.append(label, ...(studyBtn ? [studyBtn] : []), value);
+    head.append(label, ...(studyBtn ? [studyBtn] : []), value.node);
 
     const face = el('div', 'face');
     const ruling = el('i', 'face-rule');
@@ -420,7 +429,7 @@ export function mountConsole({
     const redraw = () => {
       const v = params[control.key];
       input.value = String(v);
-      value.textContent = control.format(v);
+      value.show();
       input.setAttribute('aria-valuetext', control.format(v));
       tick.style.left = `${clamp(control.fraction(v), 0, 1) * 100}%`;
       const was = ghost[control.key];
@@ -654,8 +663,16 @@ export function mountConsole({
     const reads = control.sides.map((side) => {
       const item = el('div', 'plan-read');
       item.append(el('span', null, side.label));
-      const out = el('b');
-      item.append(out);
+      // One wall's number, typed where it is lettered. A plan key is dragged
+      // along a 48-unit bar, which is coarser than any of the four scales it
+      // stands for, so this is the only way to set a wall exactly.
+      const out = quantityField({
+        control,
+        name: labelFor(side.key),
+        read: () => params[side.key],
+        write: (v) => onChange(side.key, v, true),
+      });
+      item.append(out.node);
       const studyBtn = studyOffer(side.key, labelFor(side.key), control, channel);
       if (studyBtn) item.append(studyBtn);
       legend.append(item);
@@ -695,7 +712,7 @@ export function mountConsole({
         bar.group.classList.toggle('idle', !bar.side.reaches(params));
       }
       for (const read of reads) {
-        read.out.textContent = control.format(params[read.side.key]);
+        read.out.show();
         // Only the wall's own reason dims the legend entry: were the whole
         // control idle as well, two nested 0.4s would take the reading to a
         // sixth of its ink and out of legibility altogether.

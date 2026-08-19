@@ -698,18 +698,21 @@
       .dim:last-child { margin-bottom: 0; }
       /* a ratio, not a length: ruled off from the three lengths above it */
       .dim.group { margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--rule-soft); }
-      .dim.group output { color: var(--ink); }
+      .dim.group .num-field { color: var(--ink); }
       .dim label {
         font: 500 9.5px/1 var(--cond);
         text-transform: uppercase;
         letter-spacing: 0.11em;
         color: var(--ink-3);
       }
-      .dim output {
+      .dim .num-field {
         font: 400 11.5px/1 var(--mono);
         font-variant-numeric: tabular-nums;
         color: var(--ink);
         text-align: right;
+        /* The column is 62px and set; the field fills it rather than sizing
+           itself, so five dimensions letter to one right margin. */
+        width: 100%;
       }
 
       /* A slider drawn as a dimension line: a hairline track, a graphite tick
@@ -1599,6 +1602,32 @@
         letter-spacing: 0.11em;
         color: var(--ink-3);
       }
+      /* A reading that is also the way to set it (src/field.js). Every number
+         it letters was an `output` before, and it has to letter identically —
+         so the box, the border, the fill and the padding a browser gives an
+         input are all taken back off, and what is left is the lettering of
+         whatever it stands in for. The I-beam is the whole affordance: the one
+         thing that says this number can be typed into, and the only thing this
+         sheet can afford to say it with. A focus ring is deliberately not
+         drawn — a focused text box shows a caret in it, which is a truer
+         indicator than an outline and does not put a rectangle on a sheet made
+         of hairlines. Not `all: unset`, which would re-declare `display` and
+         defeat the `hidden` attribute the way it once did on `.link`. */
+      .num-field {
+        font: inherit;
+        color: inherit;
+        letter-spacing: inherit;
+        text-align: inherit;
+        background: none;
+        border: 0;
+        border-radius: 0;
+        padding: 0;
+        margin: 0;
+        min-width: 0;
+        cursor: text;
+      }
+      .num-field:focus { outline: none; }
+      .num-field::selection { background: var(--redline-wash); }
       .ctl-value {
         font: 400 11px/1.3 var(--mono);
         font-variant-numeric: tabular-nums;
@@ -1782,10 +1811,12 @@
         letter-spacing: 0.11em;
         color: var(--ink-3);
       }
-      .plan-read b {
+      .plan-read .num-field {
         font: 400 10px/1.2 var(--mono);
         font-variant-numeric: tabular-nums;
         color: var(--ink);
+        text-align: center;
+        width: 100%;
       }
       /* A wall whose number reaches no object in the document — an overhang on
          a solid elevation. Dimmed here and on its own bar of the plan, which

@@ -26,6 +26,7 @@ import {
   phraseFor,
 } from './controls.js';
 import { mountConsole } from './console.js';
+import { quantityField } from './field.js';
 import { mountTour } from './tour.js';
 import { COARSE_SAMPLES, SWEEP_SAMPLES, samplePoints, sampleOrder } from './study.js';
 import { createEnginePool, poolLimit } from './pool.js';
@@ -1930,10 +1931,18 @@ function buildSliders() {
     });
     input.setAttribute('aria-label', label.textContent);
 
-    const value = document.createElement('output');
-    value.htmlFor = `dim-${key}`;
+    // The number is the other way to set the dimension: a box with nothing
+    // drawn around it, in the place the reading already stood. Width runs 4 to
+    // 40 m across the slider's ~200 px, so an exact 12.00 m was previously a
+    // hundred presses of an arrow key away. See `field.js`.
+    const value = quantityField({
+      control,
+      name: label.textContent,
+      read: () => params[key],
+      write: (v) => commit(key, v, true),
+    });
     const show = () => {
-      value.textContent = control.format(params[key]);
+      value.show();
       input.setAttribute('aria-valuetext', control.format(params[key]));
     };
     show();
@@ -1948,7 +1957,7 @@ function buildSliders() {
     });
     input.addEventListener('change', () => commit(key, Number(input.value), true));
 
-    row.append(label, input, value);
+    row.append(label, input, value.node);
     host.append(row);
     syncSlider[key] = () => {
       input.value = String(params[key]);

@@ -59,7 +59,8 @@ export const NOTES = Object.freeze([
     body:
       'Take hold of Width, under the drawing. Auto-solve re-runs as you ' +
       'drag, and the ghost ticks hold where you started, so a change reads ' +
-      'as a change.',
+      'as a change. The number beside it takes typing, when you have an ' +
+      'exact one in mind.',
     target: '.dims',
     focus: '#dim-width',
   }),

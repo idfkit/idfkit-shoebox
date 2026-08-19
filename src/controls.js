@@ -39,6 +39,57 @@ class Control {
 }
 
 /**
+ * How many decimals a step is written to, which is the resolution any value
+ * of that control may honestly carry.
+ */
+const decimalsOf = (step) => (String(step).split('.')[1] ?? '').length;
+
+/**
+ * A number typed into the margin, brought onto the control's own face.
+ *
+ * Clamped to the stops and snapped to the step, because the face is what the
+ * value means here: a projection of 4 m on a control that stops at 3 is not a
+ * building this desk can draw, and a value off the step grid would sit between
+ * two positions the slider can return to. Neither is a silent substitution —
+ * the box re-letters itself from the model the instant the edit lands, so what
+ * was made of what you typed is the next thing you read.
+ *
+ * The rounding at the end is not cosmetic. Binary floating point turns
+ * `0 + 3 * 0.05` into 0.15000000000000002, and that number would ride the
+ * permalink and be written into the IDF exactly as it stands.
+ */
+function onFace(control, n) {
+  const held = Math.min(control.max, Math.max(control.min, n));
+  const stops = Math.round((held - control.min) / control.step);
+  return Number((control.min + stops * control.step).toFixed(decimalsOf(control.step)));
+}
+
+/**
+ * Read a value back out of a quantity's own lettering.
+ *
+ * The inverse of `format`, and deliberately strict: `null` for anything that
+ * is not a number, so the field can put the model's value back rather than
+ * invent one out of "abc". The unit is accepted because it is what the box
+ * says when it is not being typed in, and a reader who selects all and
+ * retypes "12 m" means 12 m. The zero word is accepted for the same reason —
+ * "None" is what that stop reads as, so it has to be a thing you can say.
+ */
+function readQuantity(control, text) {
+  const said = String(text).trim();
+  if (!said) return null;
+  if (control.zero && said.toLowerCase() === control.zero.toLowerCase()) {
+    return onFace(control, 0);
+  }
+  const unit = control.unit.toLowerCase();
+  const bare = unit && said.toLowerCase().endsWith(unit)
+    ? said.slice(0, said.length - unit.length).trim()
+    : said;
+  if (!/^[+-]?(\d+(\.\d+)?|\.\d+)$/.test(bare)) return null;
+  const n = Number(bare);
+  return Number.isFinite(n) ? onFace(control, n) : null;
+}
+
+/**
  * A continuous quantity, drawn as a ruled calibration face with a penciled tick.
  */
 export class Scale extends Control {
@@ -67,6 +118,11 @@ export class Scale extends Control {
   /** Where the tick sits on the face, 0 to 1. */
   fraction(v) {
     return (v - this.min) / (this.max - this.min);
+  }
+
+  /** What a reader typing in the margin means, or null if it is not a number. */
+  parse(text) {
+    return readQuantity(this, text);
   }
 }
 
@@ -184,6 +240,11 @@ export class Facade extends Control {
 
   fraction(v) {
     return (v - this.min) / (this.max - this.min);
+  }
+
+  /** One wall's number, read back off the legend it is lettered in. */
+  parse(text) {
+    return readQuantity(this, text);
   }
 
   keys() {
