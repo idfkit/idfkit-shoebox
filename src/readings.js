@@ -554,3 +554,100 @@ export function readDemand(eso, floorArea) {
   if (!year.length) return null;
   return demandOver(eso, new Set(year.map((r) => r.key)), floorArea);
 }
+
+/* ══ what the engine made of the assembly ════════════════════════════════ */
+
+/**
+ * The window's own performance, as EnergyPlus computed it.
+ *
+ * The layered model is the one place on this desk where a control does not
+ * state a result: you set panes, a coating and a cavity, and what comes out is
+ * a U-factor and an SHGC nobody typed. Those numbers exist — the engine
+ * computes them at get-input and prints them in the Envelope Summary — so the
+ * sheet reads them back rather than leaving the reader to a product catalogue.
+ *
+ * The tabular report is the only route to them. The .eio carries the same
+ * figures under `WindowConstruction`, and would be the cheaper parse, but the
+ * engine hands back the .eso, .mtr, .rdd, .mdd, .csv and eplustbl.htm and no
+ * .eio at all; the .sql holds them too and costs a further dependency to open.
+ * So the htm is parsed, and parsed by *column head* rather than by position —
+ * the table has grown columns between versions (the NFRC assembly trio is
+ * newer than the glass one) and an index counted out here would silently read
+ * the wrong one the next time it does.
+ *
+ * Read for a named construction rather than off the table's own "Total or
+ * Average" row, which is area-weighted across every exterior opening in the
+ * building — with rooflights on their own glass that average is of two
+ * different windows and is a number no assembly has. Every surface built of
+ * one construction reports the same three figures, so the first row carrying
+ * the name is the assembly, exactly.
+ *
+ * Returns null when the run produced no tabular report (a fatal, or a study
+ * sample run under a lean reporting profile) or when the construction glazes
+ * nothing — a window that is not in the building has no performance, and an
+ * em dash is what says so.
+ */
+export function glassProperties(html, construction) {
+  const rows = fenestrationRows(html);
+  if (!rows) return null;
+  const [head, ...body] = rows;
+  const at = (row, column) => {
+    const i = head.indexOf(column);
+    // Not a missing reading — a table this reader no longer understands. It
+    // throws rather than returning null, because a silent null here would
+    // letter an em dash on the sheet and look exactly like a window that was
+    // not built.
+    if (i < 0) throw new Error(`the exterior fenestration table has no "${column}" column`);
+    // An empty cell and a lone hyphen are both EnergyPlus saying it has no
+    // figure here, and `Number('')` is 0 — which would print a U-factor of
+    // zero over a window whose assembly the engine declined to compute.
+    const text = row[i] ?? '';
+    if (!text || text === '-') return null;
+    const value = Number(text);
+    return Number.isFinite(value) ? value : null;
+  };
+
+  const wanted = construction.toUpperCase();
+  const row = body.find((r) => (r[head.indexOf('Construction')] ?? '').toUpperCase() === wanted);
+  if (!row) return null;
+
+  return {
+    u: at(row, 'Glass U-Factor [W/m2-K]'),
+    shgc: at(row, 'Glass SHGC'),
+    vt: at(row, 'Glass Visible Transmittance'),
+    // The whole window including its frame, by the NFRC method. EnergyPlus
+    // fills these only when the opening carries a `WindowProperty:FrameAndDivider`
+    // — with no frame there is nothing for the glass figures to be corrected
+    // against, and the three cells arrive empty rather than repeating the glass.
+    assembly: {
+      u: at(row, 'Assembly U-Factor [W/m2-K]'),
+      shgc: at(row, 'Assembly SHGC'),
+      vt: at(row, 'Assembly Visible Transmittance'),
+    },
+  };
+}
+
+/**
+ * The Envelope Summary's exterior fenestration table, as rows of trimmed cells.
+ *
+ * A regex parse rather than `DOMParser`, because this module is DOM-free on
+ * purpose — the harnesses that check these readers run in Node. The report is
+ * machine-written and its markup is accordingly rigid: one `<table>` after the
+ * `FullName` comment that names the table, `<tr>` per row, `<td>` per cell,
+ * no nesting. The comment is what is matched rather than the visible heading,
+ * since "Exterior Fenestration" is also the prefix of "Exterior Fenestration
+ * Shaded State" a few tables further down.
+ */
+function fenestrationRows(html) {
+  if (!html) return null;
+  const marker = '<!-- FullName:Envelope Summary_Entire Facility_Exterior Fenestration-->';
+  const at = html.indexOf(marker);
+  if (at < 0) return null;
+  const start = html.indexOf('<table', at);
+  const end = html.indexOf('</table>', start);
+  if (start < 0 || end < 0) return null;
+  return [...html.slice(start, end).matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map((row) =>
+    [...row[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((cell) =>
+      cell[1].replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()),
+  );
+}

@@ -711,6 +711,24 @@
         color: var(--ink);
         text-align: right;
       }
+      /* The landmark rule and its reading sit under the slider they belong to.
+         The rule is ruled against the slider and so must take the slider's own
+         column, placed explicitly because auto-placement would drop it into the
+         label column and rule the marks against the wrong width; the reading is
+         about the whole row and takes all three, because that column is 160px
+         and "Between an office and a shed" clipped to "Between an..." there,
+         which is a reading that has stopped being one. A dimension with no
+         landmarks has neither element and is exactly the row it always was.
+
+         Written as descendants of `.dim` for the margins' sake. These two
+         classes are shared with the console's faces, whose rules are declared
+         several hundred lines further down and carry margins of their own; at
+         one class each the two blocks tie on specificity and the later one
+         wins, so a plain `.dim-marks` here set a margin that never took. The
+         extra class is what makes the row's own spacing — the grid gap does the
+         work above the rule — outrank the shared default. */
+      .dim .dim-marks { grid-column: 2; margin-top: 0; }
+      .dim .dim-standing { grid-column: 1 / -1; margin-top: 3px; }
 
       /* A slider drawn as a dimension line: a hairline track, a graphite tick
          for the thumb. Same square marker the run ledger uses. */
@@ -1881,6 +1899,64 @@
       .face:hover .face-tick, .face:hover .face-tick::after { background: var(--redline); }
       .face:has(input:focus-visible) { outline: 2px solid var(--rule-focus); outline-offset: 3px; }
 
+      /* The landmark rule: the published cases a face is read against, ruled
+         under it as dimension lines — a hairline the width of the band with a
+         serif at each end, and for a value that is a single number (a code
+         limit, an engine default) the serif on its own. Marks, not controls:
+         a scale rule's graduations are read, never pressed.
+
+         The band the reading stands in comes up to full graphite while the
+         rest stay at ghost weight. Tone and not hue, because the palette has
+         already spent its colour on meaning and "you are here" is not a
+         signed physical quantity. */
+      .face-marks, .dim-marks { position: relative; height: 6px; margin-top: 3px; }
+      .face-mark, .dim-mark {
+        position: absolute;
+        top: 0;
+        height: 5px;
+        box-sizing: border-box;
+        margin-left: -0.5px;
+        border-left: 1px solid var(--ink-ghost);
+        border-right: 1px solid var(--ink-ghost);
+      }
+      .face-mark::before, .dim-mark::before {
+        content: "";
+        position: absolute;
+        left: 0; right: 0; top: 2px;
+        height: 1px;
+        background: var(--ink-ghost);
+      }
+      /* A limit is one line, not a stretch: no far serif and nothing to rule
+         between them. The two read differently on purpose — a range you may
+         land anywhere in and a line you may not cross are different kinds of
+         knowledge. */
+      .face-mark.point, .dim-mark.point { border-right: 0; }
+      .face-mark.point::before, .dim-mark.point::before { display: none; }
+      .face-mark.here, .dim-mark.here { border-color: var(--ink); }
+      .face-mark.here::before, .dim-mark.here::before { background: var(--ink); }
+
+      /* Which case the reading is standing in, said in words. Standing in one
+         is lettered at label weight; standing between two, or past the last
+         one anybody named, drops to ghost — the reader is somewhere real
+         either way, but only one of them has a name. */
+      .ctl-standing, .dim-standing {
+        margin: 4px 0 0;
+        min-height: 12px;
+        font: 500 9px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        color: var(--ink-3);
+        /* One line whatever it says, with the whole reading on the title.
+           A band name long enough to wrap would relayout the strip's column
+           mid-drag, and so would a line that vanished at a zero stop, so the
+           height is held and the words are clipped — the same arrangement
+           `.study-desk` uses for its one long string. */
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .ctl-standing.between, .dim-standing.between { color: var(--ink-ghost); }
+
       /* Exclusive states on one segmented rule. Never a dropdown: the desk
          has to be readable without opening anything. */
       .segments {
@@ -1929,6 +2005,24 @@
         font: 400 10px/1.2 var(--mono);
         font-variant-numeric: tabular-nums;
         color: var(--ink);
+      }
+      /* The landmark rule along a wall's bar, and the same bands' names under
+         the number in the legend. The bar's marks are ghost hairlines that
+         come up to full graphite where the wall is standing, exactly as a
+         calibration face's do. */
+      .plan-mark line { stroke: var(--ink-ghost); }
+      .plan-mark.here line { stroke: var(--ink); }
+      /* A legend column is about fifty pixels wide, so this letters the band
+         the wall is standing in and nothing when it is between two — the
+         between-form lives on the cell's title, and the bar above shows it
+         positionally. The line keeps its height when it has no words, or four
+         walls crossing bands would walk the legend up and down the page. */
+      .plan-mark-read {
+        min-height: 10px;
+        font: 500 8px/1.25 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--ink-ghost);
       }
       /* A wall whose number reaches no object in the document — an overhang on
          a solid elevation. Dimmed here and on its own bar of the plan, which
@@ -2191,6 +2285,44 @@
         font: 400 10.5px/1.45 var(--sans);
         color: var(--ink-ghost);
       }
+
+      /* ── what the engine made of a channel's declaration ───────────────
+         Same rule and same type as the meter block above it, because it is
+         the same kind of thing: a figure off the run rather than a figure
+         you set. It carries no bar — a U-factor has no zero to stand either
+         side of. */
+      .readout {
+        margin-top: 13px;
+        padding-top: 10px;
+        border-top: 1px solid var(--rule-soft);
+      }
+      .readout-head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .readout-label {
+        flex: 1;
+        font: 500 9.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+      .readout-value {
+        font: 400 11.5px/1.2 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+        text-align: right;
+      }
+      .readout-sub {
+        margin: 4px 0 0;
+        font: 400 10.5px/1.35 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink-3);
+        text-align: right;
+      }
+      .readout-sub[hidden] { display: none; }
+      .strip.out .readout { opacity: 0.38; }
 
       /* ── the index sheet ──────────────────────────────────────────────
          Below the breakpoint the desk is no longer a column beside the

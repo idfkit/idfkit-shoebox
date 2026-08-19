@@ -257,12 +257,15 @@ export function mountConsole({
     for (const control of channel.controls) body.append(buildControl(control, channel));
     fold.append(body);
 
+    const readout = buildReadout(channel);
+    if (readout) fold.append(readout.node);
+
     const meter = buildMeter(channel);
     if (meter) fold.append(meter.node);
     strip.append(fold);
 
     strips.set(channel.id, {
-      strip, note, patch, solo: soloBtn, meter, body, toggle, read, fold,
+      strip, note, patch, solo: soloBtn, meter, readout, body, toggle, read, fold,
       mark: channel.bypassable ? mark : null,
     });
     return strip;
@@ -370,6 +373,52 @@ export function mountConsole({
   }
 
   /**
+   * The landmark rule that hangs under a calibration face.
+   *
+   * Drawn as dimension lines, which is what they are: a hairline the width of
+   * the band with a serif at each end, and for a landmark that is a single
+   * value — a code limit, an engine default — the serif alone. They are marks
+   * and deliberately not controls. A row of tappable pips under every scale
+   * would put four more tab stops on each of sixty faces, and the drafting
+   * idiom is right as well as cheap: the graduations on a scale rule are read,
+   * not pressed.
+   *
+   * So the marks are unlettered and the reading below letters them, one at a
+   * time, as the tick is dragged past. Sweeping a face reads out its whole key.
+   */
+  function buildMarks(control) {
+    if (!control.landmarks.length) return null;
+    const rule = el('div', 'face-marks');
+    const marks = control.landmarks.map((mark) => {
+      const from = clamp(control.fraction(mark.from), 0, 1);
+      const to = clamp(control.fraction(mark.to), 0, 1);
+      const pip = el('i', mark.exact ? 'face-mark point' : 'face-mark');
+      pip.style.left = `${from * 100}%`;
+      if (!mark.exact) pip.style.width = `${(to - from) * 100}%`;
+      pip.title = mark.caption(control);
+      rule.append(pip);
+      return { mark, pip };
+    });
+    return {
+      rule,
+      // Which band the reading stands in is a tone, not a hue: the one you are
+      // in comes up to full graphite and the rest stay at ghost weight, the
+      // same move the balance rail makes to tell its segments apart.
+      //
+      // Which band that is comes from `landmarkAt` rather than from each
+      // mark's own `holds`, so the rule that lights a mark and the rule that
+      // letters the line under it are one rule. They were two, and at a zero
+      // stop they disagreed: `infWind` and `infStack` start at `None` with the
+      // engine's own zero declared as a landmark, so the face drew that mark
+      // at full graphite over a reading the desk had deliberately left blank.
+      sync(v) {
+        const here = control.landmarkAt(v);
+        for (const { mark, pip } of marks) pip.classList.toggle('here', mark === here);
+      },
+    };
+  }
+
+  /**
    * A ruled calibration face with a penciled tick.
    *
    * The range input is real and sits transparent over the drawing: it carries
@@ -404,6 +453,15 @@ export function mountConsole({
     face.append(ruling, ghostTick, tick, input);
 
     row.append(head, face);
+    const marks = buildMarks(control);
+    // The whole key, on the input rather than on the face, because the input is
+    // what a screen reader lands on and the face is a drawing it never reaches.
+    if (marks) {
+      input.setAttribute('aria-description', control.landmarkSummary());
+      row.append(marks.rule);
+    }
+    const standing = marks ? el('p', 'ctl-standing') : null;
+    if (standing) row.append(standing);
     if (control.note) row.append(el('p', 'ctl-note', control.note));
 
     input.addEventListener('input', () => {
@@ -416,7 +474,23 @@ export function mountConsole({
       const v = params[control.key];
       input.value = String(v);
       value.textContent = control.format(v);
-      input.setAttribute('aria-valuetext', control.format(v));
+      // The landmark rides in the spoken value, not only in the drawing. A
+      // reader who cannot see the marks hears "1.80 W/m²K, low-e double" as
+      // the arrow keys walk the face, which is the whole of what the rule
+      // under it is for.
+      const said = control.standing(v);
+      input.setAttribute('aria-valuetext', said ? `${control.format(v)}, ${said}` : control.format(v));
+      if (standing) {
+        // One line, always, clipped with its whole text on the title. A
+        // reading that grew to two lines as it was dragged past a long band
+        // name would relayout the strip's column under the reader's hand,
+        // which is the same failure blanking the finding used to cause on the
+        // sheet. `.study-desk` clips its one long string for the same reason.
+        standing.textContent = said ?? '';
+        standing.title = said ?? '';
+        standing.classList.toggle('between', !control.landmarkAt(v));
+      }
+      marks?.sync(v);
       tick.style.left = `${clamp(control.fraction(v), 0, 1) * 100}%`;
       const was = ghost[control.key];
       const show = was != null && was !== v;
@@ -605,6 +679,24 @@ export function mountConsole({
       const place = EDGES[side.side];
       const g = svg('g', { transform: `translate(${place.x} ${place.y}) rotate(${place.rotate})` });
       g.append(svg('line', { x1: -24, y1: 0, x2: 24, y2: 0, stroke: 'var(--rule)', 'stroke-width': 1 }));
+      // The same landmarks the calibration faces carry, ruled along the wall
+      // they belong to. All four walls of a plan key share one scale, so each
+      // bar gets the whole set rather than the plan getting one key beside it:
+      // the number you are setting has to be beside the wall it belongs to,
+      // which is the argument for the plan key in the first place.
+      const marks = control.landmarks.map((mark) => {
+        const x1 = -24 + clamp(control.fraction(mark.from), 0, 1) * 48;
+        const x2 = -24 + clamp(control.fraction(mark.to), 0, 1) * 48;
+        const pen = svg('g', { class: 'plan-mark', 'pointer-events': 'none' });
+        if (!mark.exact) {
+          pen.append(svg('line', { x1, y1: 4, x2, y2: 4, 'stroke-width': 0.75 }));
+        }
+        for (const x of mark.exact ? [x1] : [x1, x2]) {
+          pen.append(svg('line', { x1: x, y1: 2.4, x2: x, y2: 5.6, 'stroke-width': 0.75 }));
+        }
+        g.append(pen);
+        return { mark, pen };
+      });
       const filled = svg('line', {
         x1: -24, y1: 0, x2: -24, y2: 0, stroke: 'var(--redline)', 'stroke-width': 2.5, 'stroke-linecap': 'butt',
       });
@@ -639,7 +731,7 @@ export function mountConsole({
         onEnd: () => onChange(side.key, params[side.key], true),
       });
 
-      return { side, group: g, filled, cap, place };
+      return { side, group: g, filled, cap, place, marks };
     });
 
     root.append(turning);
@@ -651,10 +743,20 @@ export function mountConsole({
       item.append(el('span', null, side.label));
       const out = el('b');
       item.append(out);
+      // A legend column is about fifty pixels wide, which holds a band's name
+      // and cannot hold a sentence. So the cell letters the landmark the wall
+      // is standing in and stays blank between two — unlike a calibration
+      // face, which has the width for the whole reading. The between-form is
+      // not lost: it is on the cell's `title`, and it is what the wall's bar
+      // shows positionally anyway. The line is kept in the flow whether or not
+      // it has words, so four walls crossing bands do not walk the legend up
+      // and down the page.
+      const stand = control.landmarks.length ? el('small', 'plan-mark-read') : null;
+      if (stand) item.append(stand);
       const studyBtn = studyOffer(side.key, labelFor(side.key), control, channel);
       if (studyBtn) item.append(studyBtn);
       legend.append(item);
-      return { side, item, out, studyBtn };
+      return { side, item, out, stand, studyBtn };
     });
     row.append(legend);
     if (control.note) row.append(el('p', 'ctl-note', control.note));
@@ -688,9 +790,21 @@ export function mountConsole({
         // in the legend, at the bar you would reach for — the row-wide `idle`
         // the other kinds use cannot say "this one and not those three".
         bar.group.classList.toggle('idle', !bar.side.reaches(params));
+        // The band this wall stands in, read the one way the whole desk reads
+        // it — see `buildMarks`, where the two rules first came apart.
+        const here = control.landmarkAt(v);
+        for (const { mark, pen } of bar.marks) pen.classList.toggle('here', mark === here);
       }
       for (const read of reads) {
-        read.out.textContent = control.format(params[read.side.key]);
+        const v = params[read.side.key];
+        read.out.textContent = control.format(v);
+        if (read.stand) {
+          const said = control.standing(v);
+          read.stand.textContent = control.landmarkAt(v)?.label ?? '';
+          read.item.title = said
+            ? `${labelFor(read.side.key)}: ${control.format(v)} — ${said}`
+            : `${labelFor(read.side.key)}: ${control.format(v)}`;
+        }
         // Only the wall's own reason dims the legend entry: were the whole
         // control idle as well, two nested 0.4s would take the reading to a
         // sixth of its ink and out of legibility altogether.
@@ -1409,6 +1523,35 @@ export function mountConsole({
 
   /* ── meters ──────────────────────────────────────────────────────────── */
 
+  /**
+   * The channel's own declaration, as the engine settled it.
+   *
+   * Above the meter rather than below it, and inside the fold: what a window
+   * came to is a detail of working the strip, whereas the meter reading is
+   * half of what the folded index row is for. The value opens as an em dash
+   * and stays one until a run has produced the figures — there is no
+   * arithmetic here that could stand in for them.
+   */
+  function buildReadout(channel) {
+    if (!channel.readout) return null;
+    const node = el('div', 'readout');
+    const head = el('div', 'readout-head');
+    head.append(el('span', 'readout-label', channel.readout.label));
+    const value = el('b', 'readout-value', '—');
+    head.append(value);
+    node.append(head);
+    // The second line is the whole window including its frame, and it is
+    // absent far more often than not — the engine computes it only where
+    // there is a frame to correct the glass against — so it is built hidden
+    // and stays that way rather than standing as a row of em dashes under
+    // every frameless opening.
+    const sub = el('p', 'readout-sub');
+    sub.hidden = true;
+    node.append(sub);
+    if (channel.readout.note) node.append(el('p', 'meter-note', channel.readout.note));
+    return { node, value, sub };
+  }
+
   function buildMeter(channel) {
     if (!channel.meter) return null;
     const node = el('div', 'meter');
@@ -1530,9 +1673,24 @@ export function mountConsole({
      * whose series the ESO did not carry. Null is lettered as an em dash and
      * kept out of the rail — a meter with nothing behind it must not read zero,
      * because zero is a measurement and this is the absence of one.
+     *
+     * `readouts` is a map of channel id to `{ text, sub }` — what the engine
+     * made of that channel's declaration, and an optional second line. It
+     * rides along here rather than on a method of its own because it has the
+     * same life as the readings: both are read off the last run, both are
+     * re-lettered on every apply, and a readout left standing while the
+     * meters were cleared would describe a run the strips no longer report.
      */
-    setReadings(readings, derived, at = null) {
+    setReadings(readings, derived, at = null, readouts = null) {
       reading = at;
+      for (const channel of CHANNELS) {
+        const here = strips.get(channel.id);
+        if (!here.readout) continue;
+        const found = readouts?.get(channel.id) ?? null;
+        here.readout.value.textContent = found?.text ?? '—';
+        here.readout.sub.textContent = found?.sub ?? '';
+        here.readout.sub.hidden = !found?.sub;
+      }
       const magnitudes = [...readings.values()].filter((v) => Number.isFinite(v)).map(Math.abs);
       const scale = Math.max(1, ...magnitudes);
 

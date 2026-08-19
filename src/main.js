@@ -13,6 +13,7 @@ import {
   shadeGeometry,
   surfaceGeometry,
   WALLS,
+  WINDOW_CONSTRUCTION,
   windowGeometry,
 } from './model.js';
 import {
@@ -54,6 +55,7 @@ import {
   demandOver,
   environmentRuns,
   exactly,
+  glassProperties,
   hourly,
   instantOffers,
   pinAt,
@@ -1224,7 +1226,7 @@ function reprice() {
   if (!lastRun) return;
   bill = billFrom(lastRun);
   renderBill();
-  desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt);
+  desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt, readouts());
 }
 
 /**
@@ -1777,6 +1779,10 @@ function clearReadings() {
   lastReadFrom = null;
   lastAt = null;
   lastReadings = new Map();
+  // The window's computed figures go with the rest: they are a reading off a
+  // run, and a U-factor left standing over a fatal would be the one number on
+  // the strip claiming a run that did not happen.
+  lastGlass = null;
   renderBill();
   // The hour bar goes with the instant it was lettering. It is not hidden by
   // `markStale` -- that dims -- and a picker still standing over a cleared
@@ -1980,7 +1986,7 @@ function applyGeometry() {
   desk?.setState(modelState);
   syncStudies();
   syncRunSub();
-  desk?.setReadings(engagedReadings(), derivedReadings(facts), lastAt);
+  desk?.setReadings(engagedReadings(), derivedReadings(facts), lastAt, readouts());
   markStale();
 }
 
@@ -2046,9 +2052,57 @@ function buildSliders() {
 
     const value = document.createElement('output');
     value.htmlFor = `dim-${key}`;
+
+    // The landmarks the console's calibration faces carry, on the sheet's own
+    // sliders. Three of these five have them; the two plan dimensions do not,
+    // because nobody publishes a width a shoebox ought to be, and a face with
+    // no cases behind it says so by carrying no rule rather than by carrying
+    // an empty one.
+    //
+    // The pips are placed against the *thumb's* travel and not the track's:
+    // this is a native range with a visible 9px thumb, so its centre only ever
+    // reaches from 4.5px to 4.5px short of the far end, and a mark ruled at a
+    // plain percentage would sit a few pixels off the value it names at both
+    // ends of the face. The console's faces have the opposite arrangement —
+    // their thumb is invisible and the tick is drawn — so there the plain
+    // percentage is the right one.
+    const marks = [];
+    let rule = null;
+    let standing = null;
+    if (control.landmarks.length) {
+      rule = document.createElement('div');
+      rule.className = 'dim-marks';
+      for (const mark of control.landmarks) {
+        const from = Math.min(Math.max(control.fraction(mark.from), 0), 1);
+        const to = Math.min(Math.max(control.fraction(mark.to), 0), 1);
+        const pip = document.createElement('i');
+        pip.className = mark.exact ? 'dim-mark point' : 'dim-mark';
+        pip.style.left = `calc(4.5px + ${from} * (100% - 9px))`;
+        if (!mark.exact) pip.style.width = `calc(${to - from} * (100% - 9px))`;
+        pip.title = mark.caption(control);
+        rule.append(pip);
+        marks.push({ mark, pip });
+      }
+      standing = document.createElement('p');
+      standing.className = 'dim-standing';
+      input.setAttribute('aria-description', control.landmarkSummary());
+    }
+
     const show = () => {
-      value.textContent = control.format(params[key]);
-      input.setAttribute('aria-valuetext', control.format(params[key]));
+      const v = params[key];
+      value.textContent = control.format(v);
+      const said = control.standing(v);
+      input.setAttribute('aria-valuetext', said ? `${control.format(v)}, ${said}` : control.format(v));
+      if (standing) {
+        // One reading of where the tick stands, used by both the words and the
+        // rule under them. Read per mark instead, the two came apart at a zero
+        // stop — see `landmarkAt` in controls.js.
+        const here = control.landmarkAt(v);
+        standing.textContent = said ?? '';
+        standing.title = said ?? '';
+        standing.classList.toggle('between', !here);
+        for (const { mark, pip } of marks) pip.classList.toggle('here', mark === here);
+      }
     };
     show();
 
@@ -2063,6 +2117,7 @@ function buildSliders() {
     input.addEventListener('change', () => commit(key, Number(input.value), true));
 
     row.append(label, input, value);
+    if (rule) row.append(rule, standing);
     host.append(row);
     syncSlider[key] = () => {
       input.value = String(params[key]);
@@ -2248,6 +2303,37 @@ function derivedReadings(facts) {
 }
 
 /**
+ * The window's own performance, as the last run computed it — or null before
+ * there has been one, and after one that failed.
+ *
+ * Kept here rather than derived on demand because the tabular report it comes
+ * out of is 340 kB of markup: parsing it once per run costs nothing, parsing
+ * it on every apply of the desk would put a scan of it inside a drag.
+ */
+let lastGlass = null;
+
+/**
+ * The readouts, which is one strip: what the engine made of the glazing.
+ *
+ * Two lines where the opening carries a frame. The first is the glass, which
+ * is what the layered controls above it build and what the simple model's
+ * three sliders describe. The second is the whole window by the NFRC method —
+ * the engine fills those cells only where there is a frame, because with none
+ * there is nothing for the glass figures to be corrected against, and it is
+ * the frame that makes them differ.
+ */
+function readouts() {
+  const glass = lastGlass;
+  if (!glass) return new Map();
+  const trio = (t) =>
+    `U ${or(t.u, (v) => v.toFixed(2))} W/m²K · SHGC ${or(t.shgc, (v) => v.toFixed(2))} · VT ${or(t.vt, (v) => v.toFixed(2))}`;
+  const framed = Number.isFinite(glass.assembly.u);
+  return new Map([
+    ['glazing', { text: trio(glass), sub: framed ? `Whole window · ${trio(glass.assembly)}` : null }],
+  ]);
+}
+
+/**
  * Everything the instant is chosen from, kept so the pin can be turned without
  * asking the engine for anything. The ESO is already held for the bill; this
  * adds the zone series and its environments, which are parsed out of it once
@@ -2375,7 +2461,7 @@ function pinFromPlate(index, snap, { hold = false, address = true } = {}) {
  * the marker on one instant while the strips reported another.
  */
 function reletterReading({ address = true } = {}) {
-  desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt);
+  desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt, readouts());
   renderWhen();
   renderTrace();
   // Held back for the frames inside a plate drag, the rule every gesture on
@@ -3790,6 +3876,12 @@ async function solve() {
   // have shown the old result as current for the length of an annual run.
   for (const el of resultPanels()) el.classList.remove('stale');
 
+  // What the engine made of the glazing, off the tabular report this run
+  // wrote. Read here rather than beside the ESO because the Glazing strip is
+  // lettered from `setReadings` at the foot of this function, with the
+  // meters, and the two describe the same run.
+  lastGlass = glassProperties(wrote.html, WINDOW_CONSTRUCTION);
+
   const hasOutdoor = outPts.length > 0;
   const nn = hasOutdoor ? Math.min(zonePts.length, outPts.length) : zonePts.length;
   const zone = zonePts.slice(0, nn).map((p) => p.value);
@@ -3879,7 +3971,7 @@ async function solve() {
   syncPin();
   renderBill();
 
-  desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt);
+  desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt, readouts());
 
   // Denver is named only where Denver is what was solved. A short weather run
   // — January alone is 744 hours, and 792 with the sizing days kept — falls
