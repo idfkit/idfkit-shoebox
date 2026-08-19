@@ -28,6 +28,7 @@ import {
   phraseFor,
 } from './controls.js';
 import { mountConsole } from './console.js';
+import { describeDesk } from './describe.js';
 import { quantityField } from './field.js';
 import { mountTour } from './tour.js';
 import { COARSE_SAMPLES, SWEEP_SAMPLES, samplePoints, sampleOrder } from './study.js';
@@ -3863,6 +3864,20 @@ async function solve() {
     location: $('t-location').textContent,
     permalink: schemeUrl(snapshot),
   };
+  // The building this run is of, read here rather than after the await for the
+  // same reason everything else in `capture` is: the finding opens with a
+  // description, and a slider turned during a 0.7 s annual run would have that
+  // sentence describing a building the chart under it never solved. The
+  // document is the one the IDF is about to be written from, so the sentence
+  // and the file agree by construction.
+  const described = describeDesk({
+    doc: model,
+    params: snapshot,
+    state: modelState,
+    place: station?.url
+      ? { name: siteName(station), zone: climateZone(station) === '—' ? null : climateZone(station) }
+      : null,
+  });
   const live = continuous();
   quiet = live;
 
@@ -4139,6 +4154,10 @@ async function solve() {
     Object.assign(document.createElement('span'), { className: hot ? 'q hot' : 'q', textContent: text });
   const finding = $('finding');
   finding.textContent = '';
+  // The description first, then what the run made of it. Two sentences about
+  // the same building: the first is what the reader drew, the second is the
+  // only thing on this sheet that says what drawing it that way did.
+  for (const token of described) finding.append(typeof token === 'string' ? token : q(token.q));
   const m = lead.metrics;
   // Whether an ideal unit was in the path, read off the run and not off the
   // desk: these meters exist only when the System strip is engaged, and the
@@ -4170,8 +4189,13 @@ async function solve() {
       ' kWh/m² back out of it — the demand the envelope sets, before the plant efficiencies the bill below divides it by.',
     );
   } else if (conditioned) {
+    // The setpoints are in the description above, so this says what the unit
+    // actually held rather than restating them: under an unmet hour the two
+    // are different numbers, and that difference is the reading. It does not
+    // say "holds" either, for the plainer reason that the sentence before it
+    // has just said "holding".
     finding.append(
-      'An ideal unit holds the zone between ',
+      'The zone sits between ',
       q(f1(m.z.min)),
       ' °C and ',
       q(f1(m.z.max), true),
