@@ -2053,6 +2053,16 @@
       }
       .rev-source code { font: 400 10.5px/1 var(--mono); color: var(--ink-3); }
 
+      /* `min-width: 0` on every grid item down to `.rev-item`: a fatal's error
+         text runs to 79 columns of monospace, about 500px, and a grid item's
+         automatic minimum size is its content's min-content width, not zero —
+         so on a 390px phone the pre's un-wrapping longest line was winning a
+         tug-of-war with the viewport and growing `.changelog-body`, `.rev` and
+         `.rev-group` out to its own width instead of scrolling inside the
+         `overflow: auto` it already carries. Every other line on the sheet
+         wraps, so it stretched to match, and the whole page gained a
+         horizontal scrollbar over one code block. */
+      .rev, .rev-group, .rev-items, .rev-item { min-width: 0; }
       .rev { display: grid; gap: 12px; }
       .rev + .rev { padding-top: 22px; border-top: 1px solid var(--rule); }
 
@@ -3757,9 +3767,7 @@
         <summary>Revisions</summary>
         <div class="changelog-body" id="changelog-body">
           <p class="rev-source">
-            Read straight off <code>CHANGELOG.md</code>, not retyped here — the same
-            reason a control is declared once in <code>controls.js</code> rather than
-            wherever it happens to be drawn.
+            Generated from <code>CHANGELOG.md</code> in the repository.
           </p>
         </div>
       </details>
