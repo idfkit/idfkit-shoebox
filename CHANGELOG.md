@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a surface with no outside, exact round-trip of all 127 permalink keys and
   refusal of seventeen malformed-link classes, the four landmark rules, every
   preset clause against the control that owns it, and the description's own
-  claims. 913 assertions, no network, no browser, no engine.
+  claims. 915 assertions, no network, no browser, no engine.
 
 - **`test/sheet.test.mjs`, a linter over the seam nothing else could see.**
   `controls.js` is the single source of truth for the console, and that
@@ -56,6 +56,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Found by the engine suite's first run.
 
 ### Changed
+
+- **CLAUDE.md no longer says special days are withheld from a design-day
+  desk.** "Special days are never used with a `SizingPeriod:*` — a design-day
+  desk has no calendar at all" was wrong twice over. `applyRun` gates them on
+  the `holidays` control alone: measured, `sizingPeriods` at `Yes` and at `No`
+  write the same two `RunPeriodControl:SpecialDays`. And there is no desk with
+  no calendar in it — `isMonthMask` requires a month, so the document always
+  carries at least one `RunPeriod`. What a design-day desk lacks is a weather
+  file, so the engine simulates the two sizing periods, never reaches the run
+  period, and leaves the special days standing unread: exit 0, no severes,
+  nothing in the error file naming them. That is the same silence as a day
+  falling outside the mask, which the entry above it already described, rather
+  than a separate rule. Both halves are now asserted.
 
 - **The balance rail's closure is stated at the timestep it was measured at.**
   "Measured on the design days, to about a hundredth of a percent" was the

@@ -1291,20 +1291,32 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   `use_weather_file_holidays_and_special_days = No` or the listed days lose
   silently where they collide. The two are otherwise independent fields: `No`
   turns off the *file's* days and leaves the objects standing, which is why
-  file-plus-list is a real state and not a contradiction. Special days are also
-  never used with a `SizingPeriod:*` — a design-day desk has no calendar at all.
-  A special day the run cannot place is silently ignored, and there is no
-  reading of it anywhere in the output: the error file says nothing, and the
-  `.eio` echoes every special day under *every* run period whether it lands or
-  not. Measured twice — a January-plus-June-to-August mask carrying the eleven
-  US federal holidays simulated four of them, and a November-to-December mask
-  carrying a nine-day Christmas shutdown simulated eight of its nine days, both
-  runs clean. So the desk counts what reaches the engine, and counts it in
-  **days as a set**: holidays overlap, the schema says outright there is "no
-  error message on duplicate days or overlapping days", and the engine marks a
-  day once however many entries claim it. Summing the entries instead read
-  eleven days where the engine flagged ten, because a shutdown from 24 December
-  swallows Christmas and — wrapping past the year end — New Year too.
+  file-plus-list is a real state and not a contradiction. **A special day the
+  run cannot place is silently ignored**, and there is no reading of it
+  anywhere in the output: the error file says nothing, and the `.eio` echoes
+  every special day under *every* run period whether it lands or not. That
+  covers the design-day desk too, and this file used to claim otherwise —
+  "special days are never used with a `SizingPeriod:*`, a design-day desk has
+  no calendar at all" was wrong twice. `applyRun` gates them on `holidays`
+  alone: measured, `sizingPeriods` at `Yes` and at `No` write the same two
+  `RunPeriodControl:SpecialDays`, and there is no such thing as a desk with no
+  calendar in it — `isMonthMask` requires a month, so the document always
+  carries at least one `RunPeriod`. What a design-day desk lacks is a *weather
+  file*, so the engine simulates the two sizing periods, never reaches the run
+  period, and leaves the special days standing in the input unread — exit 0,
+  no severes, and nothing in the error file naming them. Which is the same
+  silence as a day that falls outside the mask, and not a separate rule.
+
+  The mask case was measured twice — a January-plus-June-to-August mask
+  carrying the eleven US federal holidays simulated four of them, and a
+  November-to-December mask carrying a nine-day Christmas shutdown simulated
+  eight of its nine days, both runs clean. So the desk counts what reaches the
+  engine, and counts it in **days as a set**: holidays overlap, the schema says
+  outright there is "no error message on duplicate days or overlapping days",
+  and the engine marks a day once however many entries claim it. Summing the
+  entries instead read eleven days where the engine flagged ten, because a
+  shutdown from 24 December swallows Christmas and — wrapping past the year
+  end — New Year too.
 - **`RunPeriod.day_of_week_for_start_day` must be left empty.** Pinned to
   Tuesday, as it was, it overrode what every weather file says about itself —
   TMYx declares `DATA PERIODS,1,1,Data,Sunday,1/ 1,12/31` — and put the run on

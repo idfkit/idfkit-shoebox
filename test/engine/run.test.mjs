@@ -101,6 +101,39 @@ describe('every variable the sheet asks for is one the engine produces', { timeo
   });
 });
 
+describe('a special day the run cannot place is ignored in silence', { timeout: 10 * MINUTE }, () => {
+  // The other half of a claim CLAUDE.md got wrong for a while: it is not that
+  // the model withholds special days from a design-day desk — it writes them
+  // identically whatever `sizingPeriods` says, which `test/model.test.mjs`
+  // asserts — but that the engine never reaches the run period they belong to,
+  // and says nothing about it. The silence is the finding: there is no reading
+  // of an unplaced special day anywhere in the output, which is why the desk
+  // counts what reaches the engine itself rather than looking for a number in
+  // the error file.
+  test('a design-day run carrying a calendar it cannot use', { timeout: 2 * MINUTE }, async () => {
+    const params = desk({
+      holidays: 'Listed',
+      holidayDays: '1/1: New Year; 3 Mon in Jan: MLK; Last Mon in May: Memorial',
+      sizingPeriods: 'Yes',
+      months: '111111111111',
+    });
+    // No weather file, so the two sizing periods are all there is to simulate.
+    const result = await run(await idfFor(params, patch()));
+    assert.equal(result.code, 0);
+    assert.deepEqual(fatals(result.err), []);
+    assert.deepEqual(severes(result.err), []);
+
+    const named = result.err
+      .split('\n')
+      .filter((line) => /special day|new year|mlk|memorial/i.test(line));
+    assert.deepEqual(named, [], 'the error file said something about them after all');
+
+    const environments = parseESO(result.eso).environments.map((e) => e.title);
+    assert.equal(environments.length, 2, `simulated ${environments.join(', ')}`);
+    for (const title of environments) assert.ok(/CONDNS/i.test(title), `${title} is not a design day`);
+  });
+});
+
 describe('the balance rail closes', { timeout: 10 * MINUTE }, () => {
   // Five channel meters are terms of the zone *air* heat balance and therefore
   // sum. Mixing in per-mechanism variables — infiltration in joules, ideal

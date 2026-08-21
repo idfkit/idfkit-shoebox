@@ -305,6 +305,42 @@ describe('the special days follow the weather file, or replace it', () => {
     }
   });
 
+  test('the sizing-period switch does not reach them', async () => {
+    // CLAUDE.md used to say "special days are never used with a
+    // `SizingPeriod:*` — a design-day desk has no calendar at all", and both
+    // halves were wrong. `applyRun` gates them on `holidays` alone, and there
+    // is no such thing as a desk with no calendar in it: `isMonthMask` requires
+    // a month, so the document always carries at least one `RunPeriod`. What a
+    // design-day desk lacks is a weather file, which is the engine's business
+    // and not the document's — `test/engine/` measures that half.
+    const listed = (sizingPeriods) => desk({
+      holidays: 'Listed',
+      holidayDays: '1/1: New Year; 3 Mon in Jan: MLK',
+      sizingPeriods,
+      months: '111111111111',
+    });
+    const kept = await documentFor(listed('Yes'), patch());
+    const skipped = await documentFor(listed('No'), patch());
+
+    for (const doc of [kept, skipped]) {
+      assert.equal(count(doc, 'RunPeriodControl:SpecialDays'), 2);
+      assert.ok(count(doc, 'RunPeriod') > 0, 'a desk with no calendar in it');
+    }
+    // Which is to say the two documents differ in exactly one field.
+    const sizing = (doc) => objects(doc, 'SimulationControl')[0].get('run_simulation_for_sizing_periods');
+    assert.equal(sizing(kept), 'Yes');
+    assert.equal(sizing(skipped), 'No');
+  });
+
+  test('every mask the calendar admits still carries a run period', async () => {
+    // The other half of "no calendar at all": there is no setting of the Run
+    // strip that empties the document of run periods.
+    for (const months of ['111111111111', '100000000000', '000000000001', '101010101010']) {
+      const doc = await documentFor(desk({ months, sizingPeriods: 'No' }), patch());
+      assert.ok(count(doc, 'RunPeriod') > 0, `${months} wrote no run period`);
+    }
+  });
+
   test('"No" turns both sources off, however many days are listed', async () => {
     // The two holiday sources are independent fields and `holidays` is the one
     // switch over both of them: `No` writes no `RunPeriodControl:SpecialDays`
