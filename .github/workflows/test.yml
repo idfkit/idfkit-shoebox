@@ -1,0 +1,49 @@
+# Run the suite on every push and pull request.
+#
+# Two jobs rather than one, because they answer different questions and cost
+# different amounts. `npm test` is the document, the codec, the declarations and
+# the readers — schema-only, hermetic, about a second — and it is what should
+# fail a pull request. `npm run test:engine` solves real design days in the wasm
+# build of EnergyPlus and takes about forty; it needs no network and no
+# installed EnergyPlus, since the engine is an ordinary dependency, but it is
+# slow enough to be worth watching separately.
+#
+# Neither job needs `prebuild`. Staging exists so a browser can fetch the engine
+# and the schema bundle over HTTP; under Node the tests read both straight out
+# of node_modules, which is also why they cannot silently test a stale copy of
+# either.
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Model, codec and declarations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  engine:
+    name: Real runs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:engine

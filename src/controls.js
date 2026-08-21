@@ -1329,8 +1329,17 @@ export function refuses(control, value) {
  * variables — infiltration and ventilation in joules, ideal loads in watts —
  * and summing them did not close, because those are terms of different
  * balances. `Zone Air Heat Balance …` is one purpose-built family covering the
- * zone *air* balance and nothing else, and it does close. Measured on the
- * design days, to about a hundredth of a percent.
+ * zone *air* balance and nothing else, and it does close.
+ *
+ * How closely is a property of the reporting frequency rather than of the
+ * physics, and the figure that used to stand here — "to about a hundredth of a
+ * percent" — was the fine-timestep one quoted for every desk. The rail reads
+ * hourly averages of rates the engine integrates per timestep, so at the
+ * default 4 steps an hour the worst hour of a fully engaged design-day pair is
+ * 53 W out against a largest term of 4,419 W, which is 1.2 %; at 60 steps an
+ * hour the same desk is 3.8 W out, which is 0.09 %. Both are the averaging,
+ * not the balance — a term from the wrong family misses by orders of
+ * magnitude, which is what `test/engine/run.test.mjs` actually checks for.
  */
 export class Term {
   constructor({ variable, sign = 1, perBuilding = false }) {

@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A test suite, where the prose used to be.** Every "measured", "verified" and
+  "asserted" in `CLAUDE.md` was a Node script written beside the change, run
+  once, and deleted — which left the whole invariant list standing on the memory
+  of whoever ran it, on a sheet whose entire argument is that a figure nobody
+  can check is a figure nobody should print. Those scripts are now `test/`, run
+  by `npm test` in about a second: `applyModel`'s idempotence at thirteen desk
+  positions, the removal sweeps, the reporting profiles' byte-exact restore, the
+  run-period grouping, the thermostat pairing, the rule that nothing is hung on
+  a surface with no outside, exact round-trip of all 127 permalink keys and
+  refusal of seventeen malformed-link classes, the four landmark rules, every
+  preset clause against the control that owns it, and the description's own
+  claims. 860 assertions, no network, no browser, no engine.
+
+- **`test/sheet.test.mjs`, a linter over the seam nothing else could see.**
+  `controls.js` is the single source of truth for the console, and that
+  guarantee has always stopped at the console's edge: the sheet's own half is a
+  hundred-odd `$('id')` lookups against hand-written markup, checked by nothing
+  but opening the page. It now checks that every id `main.js` reads exists (in
+  the markup or assigned by a module), that the two layout flags are declared in
+  the stylesheet and read back rather than restated as a `matchMedia` string,
+  that every class which unsets `display` and is used with the `hidden`
+  attribute carries its own `[hidden]` twin — the `#studies-stop` bug, as a
+  rule — and that the general notes still point at things that exist and are
+  still filed by real events.
+
+- **`npm run test:engine`, which solves real design days.** The engine assets
+  are an ordinary dependency, so this needs no network, no staging and no
+  installed EnergyPlus. Nineteen runs: every desk position exits 0 with no
+  severes — including the two that used to be fatal, an opening on an adiabatic
+  wall and a thermostat control type standing over the wrong setpoint object —
+  no run asks for a variable the engine will not produce, the balance rail
+  closes, the multiplier is divided back out of the system term, and the
+  layered unit's U-factor comes back off the tabular report at the figures this
+  file has been quoting (2.675 at two panes, 0.932 at four with a coating).
+
+### Fixed
+
+- **The run no longer asks for two variables that cannot exist.** The stock
+  example's matched ±352 W `OtherEquipment` pair was removed a while ago; the
+  `Output:Variable` requests reporting on it were not, so *every* run on this
+  desk ended with `** Warning ** The following Report Variables were requested
+  but not generated`, naming `OTHER EQUIPMENT TOTAL HEATING ENERGY` — which is
+  precisely the warning `syncReporting`'s channel gating exists to keep off the
+  title block, raised by the reporting itself. Nothing read either series.
+  Found by the engine suite's first run.
+
+### Changed
+
+- **The balance rail's closure is stated at the timestep it was measured at.**
+  "Measured on the design days, to about a hundredth of a percent" was the
+  fine-timestep figure quoted for every desk. The rail reads hourly averages of
+  rates the engine integrates per timestep: at the default 4 steps an hour a
+  fully engaged design-day pair is 53 W out at its worst hour against a largest
+  term of 4,419 W, which is 1.2 %; at 60 steps an hour the same desk is 0.09 %.
+  Both are the averaging rather than the balance — a term from the wrong family
+  misses by orders of magnitude, which is what the engine suite checks for.
+
 ## [0.2.0] - 2026-08-19
 
 ### Added

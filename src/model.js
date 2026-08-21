@@ -548,10 +548,24 @@ const VARIABLES_HOURLY = [
 
 const VARIABLES_DAILY = ['Site Daylight Saving Time Status', 'Site Day Type Index'];
 
-const VARIABLES_MONTHLY = [
-  'Other Equipment Total Heating Energy',
-  'Zone Other Equipment Total Heating Energy',
-];
+/*
+ * There used to be a monthly pair here, `Other Equipment Total Heating Energy`
+ * and its zone-level twin, inherited from the stock example along with the
+ * matched +352 W / -352 W `OtherEquipment` objects they reported on. Those
+ * objects were removed -- a test article whose halves cancel exactly buys
+ * nothing -- and the request for their series was not, so every run on this
+ * desk ended with
+ *
+ *   ** Warning ** The following Report Variables were requested but not
+ *                 generated -- check.rdd file
+ *   ************* Key=*, VarName=OTHER EQUIPMENT TOTAL HEATING ENERGY,
+ *
+ * which is exactly the warning `syncReporting`'s channel gating exists to keep
+ * off the title block, raised by the reporting itself. Nothing read either
+ * series. Found by `test/engine/`, which greps every run's error file for
+ * "requested but not generated" -- the check CLAUDE.md has always prescribed
+ * and nothing had ever performed twice.
+ */
 
 /** Build the model. `schema` comes from a `SchemaBundle` load. */
 export function buildModel(schema, parameters = DEFAULT_PARAMETERS, bypass = DEFAULT_BYPASS) {
@@ -1845,10 +1859,9 @@ function syncReporting(doc, state, reporting) {
     variable_name: 'Zone Wetbulb Globe Temperature',
     reporting_frequency: 'Hourly',
   });
-  for (const name of VARIABLES_MONTHLY) addVariable(doc, name, 'Monthly');
 
   // The engaged channels' balance-rail terms, deduplicated in channel order.
-  const base = new Set([...VARIABLES_HOURLY, ...VARIABLES_DAILY, ...VARIABLES_MONTHLY, 'Zone Wetbulb Globe Temperature']);
+  const base = new Set([...VARIABLES_HOURLY, ...VARIABLES_DAILY, 'Zone Wetbulb Globe Temperature']);
   const wanted = new Set();
   for (const channel of CHANNELS) {
     if (!state.get(channel.id).engaged || !channel.meter) continue;

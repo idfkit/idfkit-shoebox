@@ -9,6 +9,9 @@ npm install
 npm run dev       # predev stages ~50 MB of engine assets, schemas and the station index
 npm run build     # prebuild does the same staging
 npm run preview
+npm test          # the hermetic suite: document, codec, declarations, readers (~1 s)
+npm run test:engine   # real design days through the wasm engine (~40 s)
+npm run test:all
 npm run deploy    # compresses dist/ and publishes it; needs a built dist/ and AWS credentials
 npm run undeploy  # removes a preview; needs SHOEBOX_PREVIEW=<pr number>
 ```
@@ -18,38 +21,90 @@ schema bundle into `public/schemas/`, and the TMYx station index into
 `public/weather/`. All three are gitignored, so a fresh clone must run one of the
 npm scripts before the page will load.
 
-There is **no test runner and no linter** configured. See below for how changes
-are actually verified.
+There is **no linter** configured. There is a test suite, and it is where the
+verification below now lives.
 
 ## Verifying changes
 
 Schema validation alone does not catch what breaks a run, and the browser is a
-slow place to find out. EnergyPlus 26.1.0 is installed locally at
-`/Applications/EnergyPlus-26-1-0`, and the idfkit MCP tools find it unaided, so
-model changes should be checked outside the browser first:
+slow place to find out. Every fatal recorded in this file — the opening on an
+adiabatic wall, the thermostat control type standing over the wrong setpoint
+object — was a document the schema was perfectly happy with.
 
-1. Write a throwaway Node script that imports `src/model.js`, builds the document
-   at several console positions, and writes each IDF to disk. Outside the
-   browser the schema comes from `localBundle()` in `@idfkit/schemas/node`, not
-   from `httpSource('/schemas/')` — and it wants the full version string,
-   `load('26.1.0')`.
+That verification used to be prose. Each of the "measured", "verified" and
+"asserted" claims below was a Node script written beside the change, run once,
+and deleted, which left the whole invariant list standing on the memory of
+whoever ran it. Those scripts are now `test/`, and they are the reason a claim
+in this file can be checked rather than believed.
 
-   Where no EnergyPlus is installed — a CI box, a container — the staged engine
-   runs the same models under Node without one. `public/energyplus/energyplus.js`
-   is an emscripten build that detects Node, so `require`-ing it after setting
-   `global.Module` to `{ noInitialRun: true, locateFile }` gives you `FS` and
-   `callMain(['-d', '/output', '-w', '/weather.epw', '/input.idf'])` — the same
-   call the worker makes — and `/output/eplusout.err`, `.eso` and `.mtr` to read
-   back. It latches onto whatever `global.Module` held when the script was first
-   evaluated and EnergyPlus's `main` is not re-entrant, so clear the require
-   cache between runs. A design day is about 0.6 s.
-2. Assert idempotence: `applyModel` runs on every parameter change, so applying
-   it three times must produce byte-identical output.
-3. Run each IDF through `load_model` then `validate_model`,
-   `check_model_integrity`, and `run_simulation`.
-4. Read the run's `eplus.rdd` to confirm any output variable name exists rather
-   than guessing its spelling, and grep `eplus.err` for "requested but not
-   generated".
+```
+npm test              # ~1 s, hermetic: no network, no engine, no browser
+npm run test:engine   # ~40 s, real EnergyPlus runs
+```
+
+- **`test/helpers.mjs`** carries the desk positions everything is asserted at —
+  chosen as the corners rather than a sample, since the cases that have actually
+  broken are a building whose surfaces have no outside, a unit that has lost
+  panes, a grid that has shrunk, a year with a hole in it, a box turned off the
+  cardinals, and a zone standing for three floors. Outside the browser the
+  schema comes from `localBundle()` in `@idfkit/schemas/node`, not from
+  `httpSource('/schemas/')` — and it wants the full version string,
+  `load('26.1.0')`.
+- **`test/model.test.mjs`** — idempotence at every desk position, the removal
+  sweeps, the reporting profiles' byte-exact restore, the run-period grouping,
+  the thermostat pairing, and the rule that nothing is ever hung on a surface
+  with no outside.
+- **`test/controls.test.mjs`** — the declaration's own rules, including the four
+  landmark rules that also throw at module load. They are re-asserted rather
+  than trusted: an assertion that stopped being reached would take its own
+  guarantee down with it and nothing would say so.
+- **`test/permalink.test.mjs`** — exact round-trip of every key and refusal of
+  every malformed input class, which is the file whose loss cost the most: a
+  link that decodes to a slightly different desk produces a page that works
+  perfectly and is about another building.
+- **`test/readings.test.mjs`** with **`test/fixtures.mjs`** — runs written by
+  hand, small enough that an assertion about *which* hour was chosen is legible.
+- **`test/schemes.test.mjs`**, **`test/describe.test.mjs`** — the register's
+  clauses and the paragraph's claims.
+- **`test/sheet.test.mjs`** is a linter over `index.html` and `main.js`
+  together, and it covers the one seam nothing else can: `controls.js` is the
+  single source of truth for the console, and that guarantee stops at the
+  console's edge. The sheet's own half is a hundred-odd `$('id')` lookups
+  against hand-written markup, plus the two layout flags and the `[hidden]`
+  twins. Both halves of the general notes are checked here too — a step whose
+  subject has been renamed, and a note nothing in `main.js` ever files.
+- **`test/engine/`** solves real design days. The engine assets are an ordinary
+  dependency, so this needs no network, no staging and no installed EnergyPlus:
+  `node_modules/@idfkit/engine-assets/assets/energyplus.js` is an emscripten
+  build that detects Node, so `require`-ing it after setting `global.Module` to
+  `{ noInitialRun: true, locateFile, onRuntimeInitialized }` gives `FS` and
+  `callMain(['-d', '/output', '-w', '/weather.epw', '/input.idf'])` — the same
+  call the worker makes. Two things are not obvious: the module is unusable
+  until `onRuntimeInitialized` fires (writing an input file before that fails
+  inside emscripten's own `FS.write`), and it latches onto whatever
+  `global.Module` held when the script was first evaluated while EnergyPlus's
+  `main` is not re-entrant, so the require cache is cleared between runs. A
+  design day is about 0.7 s of simulation and two to four seconds wall-clock
+  once the wasm compile is counted. `test/engine/engine.mjs` does all of that
+  and hands back the `.err`, `.eso`, `.rdd` and `eplustbl.htm`.
+
+**Write the test with the change.** A rule worth a paragraph in this file is a
+rule worth an assertion, and the paragraph should cite the test rather than the
+measurement — the measurement is what the test now performs. Two of these found
+real defects on their first run: a pair of `Output:Variable` requests for the
+`OtherEquipment` objects that had been deleted, which put a "requested but not
+generated" warning on the title block of *every* run; and this file's own claim
+that the balance rail closes "to about a hundredth of a percent", which is the
+fine-timestep figure — at the default 4 steps an hour it is 1.2 % of the largest
+term, because the rail reads hourly averages of rates the engine integrates per
+timestep.
+
+For a model change the idfkit MCP tools are still the right second opinion: run
+the IDF through `load_model`, then `validate_model`, `check_model_integrity` and
+`run_simulation`. Read the run's `eplus.rdd` to confirm any output variable name
+exists rather than guessing its spelling — `test/engine/` greps every run's
+error file for "requested but not generated", which is what caught the pair
+above.
 
 Then load the page and drive it. A design day solves in about 50 ms once the
 engine is warm, so the whole desk can be exercised quickly.
@@ -1360,6 +1415,12 @@ stays vite and nothing else). Pushing to `main` publishes:
 
 Opening a pull request publishes a preview at `shoebox.idfkit.com/<number>/`
 (`.github/workflows/preview.yml`), and closing it takes the preview down again.
+
+`.github/workflows/test.yml` runs on every push and pull request, as two jobs:
+the hermetic suite, which is what should fail a review, and the engine runs,
+which are slow enough to be worth watching separately. Neither needs `prebuild`
+— staging exists so a *browser* can fetch the engine and the schema bundle over
+HTTP, and under Node the tests read both straight out of `node_modules`.
 
 - **A preview is the same bucket and the same distribution**, under the pull
   request's number as a key prefix. A separate host would leave the two things
