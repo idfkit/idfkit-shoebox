@@ -305,14 +305,31 @@ describe('the special days follow the weather file, or replace it', () => {
     }
   });
 
-  test('a design-day desk has no calendar at all', async () => {
+  test('"No" turns both sources off, however many days are listed', async () => {
+    // The two holiday sources are independent fields and `holidays` is the one
+    // switch over both of them: `No` writes no `RunPeriodControl:SpecialDays`
+    // at all *and* declines the file's own, so a list left in the box from an
+    // earlier setting cannot come back through either route.
+    //
+    // This used to stand as "a design-day desk has no calendar at all", under
+    // a `holidayUse: 'Listed'` that is not a value that control admits (its
+    // three options are AsWeekend, Closed and Open — `holidays` is the key
+    // that takes Listed), and behind an `if (count(doc, 'RunPeriod') === 0)`
+    // that can never be true: `applyRun` writes one run period per unbroken
+    // group of months and every desk here has months in it. It asserted
+    // nothing, twice over. There is nothing in the document for the original
+    // claim to be about either — special days are written whatever
+    // `sizingPeriods` says, and it is EnergyPlus that ignores them when no
+    // weather-file period is simulated.
     const doc = await documentFor(
-      desk({ holidayUse: 'Listed', holidayDays: '1/1: New Year', sizingPeriods: 'Yes', months: '111111111111' }),
+      desk({ holidays: 'No', holidayDays: '1/1: New Year', sizingPeriods: 'No', months: '111111111111' }),
       patch(),
     );
-    // Special days are never used with a SizingPeriod:*, and a desk that has
-    // not been given a year is design days only.
-    if (count(doc, 'RunPeriod') === 0) assert.equal(count(doc, 'RunPeriodControl:SpecialDays'), 0);
+    assert.ok(count(doc, 'RunPeriod') > 0, 'the desk has a year to hang a calendar on');
+    assert.equal(count(doc, 'RunPeriodControl:SpecialDays'), 0, 'a listed day was written under "No"');
+    for (const period of objects(doc, 'RunPeriod')) {
+      assert.equal(period.get('use_weather_file_holidays_and_special_days'), 'No');
+    }
   });
 });
 
@@ -357,9 +374,16 @@ describe('the multiplier is the building, and the ratios are not', () => {
     // overlay, so a fact taken from live parameters would describe the desk
     // instead of the sample.
     const doc = await documentFor(desk({ multiplier: 3 }));
-    doc.get('Zone', 'ZONE ONE').set?.('multiplier', 5) ??
-      doc.get('Zone', 'ZONE ONE').update?.({ multiplier: 5 });
-    assert.equal(geometryFacts(doc).storeys, Number(doc.get('Zone', 'ZONE ONE').get('multiplier')));
+    const zone = doc.get('Zone', 'ZONE ONE');
+    zone.set('multiplier', 5);
+    // Asserted against the literal rather than against the field it was just
+    // written to. Read back off the same object, both sides move together: a
+    // nudge that silently failed to land would leave 3 standing on each side
+    // and the test would go on passing while no longer able to see the bug it
+    // is here for -- which is what the previous `set?.() ?? update?.()` pair
+    // risked, since `set` returns undefined and the `??` therefore ran both.
+    assert.equal(Number(zone.get('multiplier')), 5, 'the nudge did not reach the document');
+    assert.equal(geometryFacts(doc).storeys, 5, 'the storeys were counted off params, not off the Zone');
   });
 });
 

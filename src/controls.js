@@ -159,8 +159,9 @@ export class Landmark {
 /**
  * Read a control's landmarks, or throw naming what is wrong with them.
  *
- * Three rules, all enforced here rather than trusted, and the third of them is
- * the one that had to be found by writing the check.
+ * Four rules, all enforced here rather than trusted, and the third of them is
+ * the one that had to be found by writing the check. The fourth arrived with
+ * the zero stops and is last below.
  *
  * A landmark **outside the face** cannot be drawn at all, so the range has to
  * hold it — and where it does not, the *range* is usually the thing that is

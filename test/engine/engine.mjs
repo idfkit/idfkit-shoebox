@@ -20,9 +20,14 @@
  */
 
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const ASSETS = new URL('../../node_modules/@idfkit/engine-assets/assets/', import.meta.url).pathname;
+// `fileURLToPath` rather than `.pathname`, which is not a path: it keeps the
+// percent-escapes, so a clone under a directory with a space in it hands
+// emscripten `/Users/me/My%20Work/...` and every run here fails to locate the
+// wasm. (It also leaves the drive letter behind a leading slash on Windows.)
+const ASSETS = fileURLToPath(new URL('../../node_modules/@idfkit/engine-assets/assets/', import.meta.url));
 const ENTRY = `${ASSETS}energyplus.js`;
 
 /**
@@ -35,12 +40,15 @@ const ENTRY = `${ASSETS}energyplus.js`;
 export async function run(idf, { weather = null, args = [] } = {}) {
   delete require.cache[require.resolve(ENTRY)];
   const ready = Promise.withResolvers();
-  const console = [];
+  // Not called `console`: a local of that name shadows the global one for the
+  // whole function, so the first `console.log` anybody reaches for while
+  // debugging a run in here dies as "console.log is not a function".
+  const log = [];
   global.Module = {
     noInitialRun: true,
     locateFile: (file) => ASSETS + file,
-    print: (text) => console.push(text),
-    printErr: (text) => console.push(text),
+    print: (text) => log.push(text),
+    printErr: (text) => log.push(text),
     onRuntimeInitialized: () => ready.resolve(),
   };
   require(ENTRY);
@@ -69,7 +77,7 @@ export async function run(idf, { weather = null, args = [] } = {}) {
 
   return {
     code,
-    console: console.join('\n'),
+    console: log.join('\n'),
     err: read('eplusout.err') ?? '',
     eso: read('eplusout.eso'),
     rdd: read('eplusout.rdd'),

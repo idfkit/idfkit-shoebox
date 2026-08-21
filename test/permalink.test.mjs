@@ -85,8 +85,18 @@ describe('every key survives the round trip', () => {
   for (const key of ALL_KEYS) {
     test(key, () => {
       const value = otherValue(key);
+      // The fixture has to move the control before anything below means
+      // anything. Left as an `|| value === the default` escape on the next
+      // assertion, a key `otherValue` failed to move would encode to the empty
+      // link, decode straight back to the defaults, and pass every line of this
+      // test while being the one key nothing had checked.
+      assert.notEqual(
+        String(value),
+        String(DEFAULT_PARAMETERS[key]),
+        `otherValue did not move ${key} off its default, so this test is about nothing`,
+      );
       const link = encodeState({ params: params({ [key]: value }), bypass: bypass() });
-      assert.ok(link.includes(`${key}=`) || String(value) === String(DEFAULT_PARAMETERS[key]), `${key} was not carried`);
+      assert.ok(link.includes(`${key}=`), `${key} was not carried`);
       const back = decodeState(link);
       assert.equal(back.params[key], value, `${key} came back as ${back.params[key]}`);
       // Round-tripping the decoded value again has to be a fixed point, or the

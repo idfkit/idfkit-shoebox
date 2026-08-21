@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a surface with no outside, exact round-trip of all 127 permalink keys and
   refusal of seventeen malformed-link classes, the four landmark rules, every
   preset clause against the control that owns it, and the description's own
-  claims. 860 assertions, no network, no browser, no engine.
+  claims. 913 assertions, no network, no browser, no engine.
 
 - **`test/sheet.test.mjs`, a linter over the seam nothing else could see.**
   `controls.js` is the single source of truth for the console, and that

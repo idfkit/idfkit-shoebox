@@ -2,10 +2,12 @@
  * The declaration's own rules.
  *
  * `controls.js` is the single source of truth for both surfaces that draw a
- * control, so a rule broken here is broken twice on the page. Four of these
- * already throw at module load; they are re-asserted rather than trusted,
- * because a `readLandmarks` rule that stopped being reached would take its own
- * guarantee down with it and nothing would say so.
+ * control, so a rule broken here is broken twice on the page. All four
+ * `readLandmarks` rules already throw at module load; they are re-asserted
+ * rather than trusted, because a rule that stopped being reached would take its
+ * own guarantee down with it and nothing would say so. The fourth of them — the
+ * band silenced by a zero stop — was the one this file claimed and did not
+ * carry.
  */
 
 import { test, describe } from 'node:test';
@@ -102,6 +104,29 @@ describe('the landmarks are readable', () => {
 
   test('there are landmarks to check', () => {
     assert.ok(marked.length > 0);
+    // And a zero stop for the fourth rule to be about, or that test skips every
+    // control it is given and reports as a row of passes.
+    assert.ok(marked.some((c) => c.zero), 'no marked control carries a zero stop');
+  });
+
+  test('the zero-stop rule is a guard rather than a live check, and says so', () => {
+    // Measured: 20 ruled controls carry a `zero` stop and every one of them
+    // opens at 0, so `mark.to <= 0` can only ever mean `from === to === 0`,
+    // which is the legal case — the mark that *is* the stop. The fourth
+    // `readLandmarks` throw therefore cannot fire under the declaration as it
+    // stands, and neither can its re-assertion below.
+    //
+    // Both are kept, and this test is what stops the pair being read as more
+    // than they are: the rule goes live the day a face opens below zero, and
+    // this assertion fails then, which is the moment to check that the one
+    // below has teeth rather than assuming it always did.
+    const zeroed = ruled.filter((c) => c.zero);
+    assert.ok(zeroed.length > 0);
+    assert.deepEqual(
+      zeroed.filter((c) => c.min < 0).map((c) => c.key ?? c.sides[0].key),
+      [],
+      'a face now opens below its zero stop — the rule below is live, so check that it bites',
+    );
   });
 
   for (const control of marked) {
@@ -139,6 +164,22 @@ describe('the landmarks are readable', () => {
         assert.ok(
           first <= to + 1e-9 || reachable(from),
           `${mark.label} (${from}–${to}) falls between two stops of ${control.step}`,
+        );
+      }
+    });
+
+    test(`${key} — no band is silenced by the zero stop`, () => {
+      // The fourth `readLandmarks` throw, and the one this file was leaving to
+      // itself while its own header claimed all four were re-asserted. A `zero`
+      // stop silences every band but the one that *is* that stop, so a band
+      // lying wholly at or below it draws, names a case in its tooltip, and can
+      // never once be the reading — which is how the first cut of this quietly
+      // retired the engine's own C = 0 and B = 0 on the Air strip.
+      if (!control.zero) return;
+      for (const mark of control.landmarks) {
+        assert.ok(
+          mark.to > 0 || (mark.exact && mark.from === 0),
+          `${mark.label} lies at or below the zero stop, where "${control.zero}" is the only reading`,
         );
       }
     });

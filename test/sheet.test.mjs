@@ -44,6 +44,22 @@ const generated = [
 const reachable = (id) =>
   ids.has(id) || assigned.has(id) || generated.some((head) => id.startsWith(head));
 
+/**
+ * Every class token the page actually carries.
+ *
+ * Read off the `class="..."` attributes rather than by substring, and out of
+ * `console.js` as a whole quoted literal -- `el('button', 'patch')` is how the
+ * strips' own classes are made, so they are never in the markup. A plain
+ * `includes(name)` was the first cut and it is no check at all: it matches the
+ * name inside prose, and inside a longer class, so renaming `.patch` to
+ * `.patch-bay` leaves `patch ` standing everywhere and the linter passes on the
+ * one thing it exists to catch.
+ */
+const classes = new Set(
+  [...html.matchAll(/class="([^"]+)"/g)].flatMap((m) => m[1].trim().split(/\s+/)),
+);
+const carries = (cls) => classes.has(cls) || consoleJs.includes(`'${cls}'`);
+
 describe('every element the sheet letters exists in the sheet', () => {
   test('there are lookups to check', () => {
     assert.ok(looked.length > 50, `only ${looked.length} lookups found — has $() been renamed?`);
@@ -150,8 +166,7 @@ describe('the general notes walk a page that exists', () => {
       }
       for (const cls of selector.matchAll(/\.([A-Za-z][\w-]*)/g)) {
         assert.ok(
-          html.includes(`class="${cls[1]}`) || html.includes(` ${cls[1]}"`) || html.includes(`${cls[1]} `)
-            || consoleJs.includes(cls[1]),
+          carries(cls[1]),
           `a note points at .${cls[1]}, which nothing on the sheet carries`,
         );
       }
