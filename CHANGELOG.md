@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The page says who built it, and the sheet still has no author.** The
+  Disclosure band has always been a colophon — the source has called it one for
+  as long as it has existed — but it only ever carried the negative half: who
+  this page is *not* (not NREL, not the Department of Energy) and under what
+  terms the engine arrives. It never said who it is. That missing half is now
+  there: built by Samuel Letellier-Duchesne, who works on building energy
+  simulation at Introba and maintains
+  [idfkit](https://idfkit.com), the toolkit for reading, writing and running
+  EnergyPlus models that this page is a demo of. It is named there without a
+  language attached, which is the claim and not vagueness — idfkit is meant to
+  be one set of ideas wherever the work happens, so "a Python toolkit" would
+  describe the half of it this tab does not run. What this tab runs is named by
+  its packages instead, which can be checked against the imports in
+  `src/main.js`.
+
+  It is a colophon and deliberately not a byline. A title block's `Drawn by`
+  names whoever drew *that* sheet, and on this page that is whoever is at the
+  console — every scheme is a different drawing, and a shared permalink hands a
+  stranger's building to a stranger's browser. A name in that block would also
+  be the only cell in it that was typed rather than read back off the model,
+  on a sheet whose whole claim is that nothing in it is retyped. So the credit
+  is the printer's note about the instrument, which is what a colophon has
+  always been, and it says as much in the reader's terms rather than only in a
+  source comment.
+
+  Above the fold, the head's stamp gains a **Toolkit** row beside Engine,
+  Runtime and Upload. Those three are facts about the page rather than readings
+  off the run, and what parses the model and writes the IDF is another one of
+  them — so the page now states what it is a demo of without anyone having to
+  open a band to find out.
+
 ## [0.2.0] - 2026-08-19
 
 ### Added

@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Shoebox: EnergyPlus in the browser</title>
+    <!-- The author of the document, which is the instrument. The drawing it
+         draws has a different author every time somebody moves a slider, and
+         nothing on this page claims otherwise. -->
+    <meta name="author" content="Samuel Letellier-Duchesne" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -164,6 +168,12 @@
         font: 400 11.5px/1 var(--mono);
         color: var(--ink);
       }
+      /* Underlined in the rule hairline rather than in the ink, the same way
+         the title block's revision and the bill's citations are: the stamp is
+         read as a block of facts, and one cell advertising itself in link blue
+         would be the loudest thing on the quietest part of the sheet. */
+      .stamp b a { color: inherit; text-decoration-color: var(--rule); }
+      .stamp b a:hover { color: var(--ink-3); }
 
       /* ── the general notes ──────────────────────────────────────────
          The onboarding, carried the way a drawing set carries it: a
@@ -2023,6 +2033,30 @@
         color: var(--ink-ghost);
         letter-spacing: 0.08em;
       }
+      /* The colophon is prose, so it takes the disclaimers' face and measure
+         rather than a face of its own — it is the same kind of fine print, and
+         a credit set larger than the licence it sits above would be the page
+         ranking itself over the terms it runs under. Its links are underlined
+         in the rule hairline, the convention every citation on this sheet
+         follows; the flat `a` above deliberately carries no underline because
+         the disclaimers only ever link a `code` span, which is already marked
+         out by its face. */
+      .colophon p {
+        margin: 0;
+        max-width: 74ch;
+        font: 400 12px/1.6 var(--sans);
+        color: var(--ink-3);
+      }
+      .colophon p + p { margin-top: 10px; }
+      .colophon b { font-weight: 500; color: var(--ink-2); }
+      .colophon h2 { margin-bottom: 10px; }
+      .colophon a {
+        text-decoration: underline;
+        text-decoration-color: var(--rule);
+        text-underline-offset: 2px;
+      }
+      .colophon a:hover { color: var(--ink-2); }
+
       .disclosure-body pre {
         margin: 8px 0 0;
         padding: 13px 15px;
@@ -3496,9 +3530,16 @@
             simulation server behind this page.
           </p>
         </div>
+        <!-- What the page is made of, which is why a toolkit row belongs here
+             and a name does not: Engine, Runtime and Upload are facts about
+             this page, not readings off the run, and `idfkit` is another one of
+             them — it is what parses the model and writes the IDF the engine is
+             handed. It also says, without opening a fold, what this page is a
+             demo of; the colophon at the foot says who built it. -->
         <div class="stamp">
           <div><span>Engine</span><b id="t-engine-version">EnergyPlus 26.1.0</b></div>
           <div><span>Runtime</span><b>WebAssembly</b></div>
+          <div><span>Toolkit</span><b><a href="https://idfkit.com" target="_blank" rel="noreferrer">idfkit</a></b></div>
           <div><span>Upload</span><b>None</b></div>
         </div>
       </header>
@@ -3775,6 +3816,48 @@
       <details class="notes" id="disclosure">
         <summary>Disclosure</summary>
         <div class="disclosure-body">
+          <!-- The positive half of a statement this band already made in the
+               negative. It said who the page is not — not NREL, not the DoE —
+               and under what terms the engine arrives, and it never said who it
+               is; a colophon is exactly that missing half, and it is the reason
+               the credit is here rather than in the title block. A colophon has
+               never been an authorship claim over what it is bound into: it is
+               the printer's note about the object, what it was set in and by
+               whom, which is the genus this belongs to.
+
+               The toolkit is named without a language attached, and that is the
+               claim rather than vagueness: idfkit is meant to be one set of
+               ideas wherever the work happens, and calling it "a Python
+               toolkit" here would describe the half of it this page does not
+               run. What this tab runs is the JavaScript side, which is named by
+               its packages instead — checkable against the imports in
+               `src/main.js` rather than asserted.
+
+               Nothing is written in a tense that expires. "Coming soon" on a
+               page deployed from `main` on every push is a sentence that goes
+               quietly false on release day and is never edited, which is the
+               same failure as a hand-lettered `Rev A`. The links carry what is
+               current; the prose says only what is true in both directions. -->
+          <article class="colophon">
+            <h2>Colophon</h2>
+            <p>
+              Built by Samuel Letellier-Duchesne, who works on building energy simulation at
+              <a href="https://www.introba.com" target="_blank" rel="noreferrer">Introba</a>
+              and maintains <a href="https://idfkit.com" target="_blank" rel="noreferrer"><b>idfkit</b></a>:
+              an open-source toolkit for reading, writing and running EnergyPlus models, meant to
+              be one set of ideas in whatever language the work is in rather than a library tied
+              to one of them. Shoebox is that toolkit in a browser — <code>@idfkit/core</code>
+              builds and writes the model every figure on this sheet is read back off,
+              <code>@idfkit/weather</code> finds the stations the picker offers, and
+              <code>@idfkit/engine</code> runs them.
+            </p>
+            <p>
+              The drawing itself has no author but whoever is at the console. That is why the
+              credit sits here and not in the title block, where every cell is read back off the
+              model and a name would be the one thing on it you could not check.
+            </p>
+          </article>
+
           <div class="disclaimers">
             <p class="disclaimer">
               <b>This demo is an independent project.</b> It is not affiliated with, endorsed by,
