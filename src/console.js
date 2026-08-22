@@ -11,7 +11,7 @@ import {
   runDays,
   serializeHolidays,
 } from './controls.js';
-import { quantityField } from './field.js';
+import { quantityField, sliderGesture } from './field.js';
 // The rail's own units, from the module that owns reading a run. One
 // definition: a second copy here would be the first thing to drift the day a
 // figure changed precision on one surface and not the other.
@@ -67,6 +67,14 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
  */
 export function mountConsole({
   host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear, onPin,
+  // A gesture the reader completed on a key, reported once on its release.
+  // Separate from `onChange` because a calibration face cannot tell the two
+  // apart at the moment it moves: the user agent sets a range from the touch
+  // point on the press and only afterwards decides the gesture was a scroll,
+  // so the change arrives before the news that it was never the reader's.
+  // Anything that has to be true of a *deliberate* turn — the general notes'
+  // drag marker is the one — is filed from here.
+  onGesture = null,
 }) {
   const strips = new Map(); // channel id -> { redraw(), meter, patch, solo }
   const faces = new Map(); // parameter key -> redraw for that control
@@ -474,11 +482,16 @@ export function mountConsole({
     if (standing) row.append(standing);
     if (control.note) row.append(el('p', 'ctl-note', control.note));
 
-    input.addEventListener('input', () => {
-      markGesture(control.key);
-      onChange(control.key, Number(input.value));
+    // The face's whole pointer story, including the one a phone brings with
+    // it: a thumb put down to scroll the desk lands on a slider and the user
+    // agent sets the value from where it landed before any direction exists to
+    // read. See `sliderGesture` in `field.js`.
+    sliderGesture(input, {
+      read: () => params[control.key],
+      write: (v, done = false) => onChange(control.key, v, done, false),
+      took: () => markGesture(control.key),
+      kept: () => onGesture?.(control.key),
     });
-    input.addEventListener('change', () => onChange(control.key, Number(input.value), true));
 
     const redraw = () => {
       const v = params[control.key];

@@ -497,6 +497,44 @@ middle is the only thing that can give. Budget it deliberately, in this order:
    there isn't one, and the note is then two lines of red type taken out of the
    very column it says is short.
 
+### A control under a thumb
+
+A drafting sheet is drawn in hairlines, and a hairline is not a target. Three
+rules, each of which cost a measured failure on a 390pt Chromium driven with
+real touch events:
+
+- **A scroll must not set a value.** A native range sets itself from the touch
+  point on the press, before there is movement to read a direction from, and a
+  page that scrolls is a page where a thumb lands on controls it never meant to
+  touch. Measured, a plain upward flick starting on a dimension slider scrolled
+  the page *and* rebuilt the building, committed and into the address bar, with
+  nothing on the sheet saying so. A value substituted for the one the reader
+  chose is the failure this whole board is arranged against; it does not stop
+  being that because a browser did the substituting. **Hold the press rather
+  than undo it**: the browser's own `pointercancel` fires on real drags too, so
+  reverting on it leaves the drawing and the control disagreeing — which is
+  worse. Wait one frame to see whether the value moves under the finger, and
+  commit nothing until it has.
+- **Grow the hit area, never the drawing.** A transparent input over a drawn
+  control can be three times the height of what it appears to be, which is how
+  a 15px calibration face becomes a 37px target with its rule, tick and ghost
+  standing exactly where they were ruled. Grow it into whatever is inert — a
+  landmark rule is read and never pressed, a standing note is a line of type —
+  and never over a neighbour that is itself a target. Where a number has to
+  grow, grow it with padding cancelled by an equal negative margin: hit area
+  and no layout at all. The test is that the pointer layout renders
+  byte-identically; anything visible on a mouse was written in the wrong media
+  query.
+- **`:hover` is not a state a thumb can leave.** A touch device holds it after
+  the finger has gone, so an accent that means "the pointer is on this" is left
+  asserting a pointer that does not exist. Put it behind `@media (hover: hover)`
+  and leave `:active` outside — that is the half a press can honestly answer.
+
+A gesture the interface drives by hand needs `touch-action` declared, and
+declared on an element that has a CSS layout box: an SVG child does not, so the
+property computes, reports itself back through `getComputedStyle`, and does
+nothing. Put it on the `svg`.
+
 ### The index sheet
 
 Where a panel is too long to navigate on the screen it has, fold its sections to

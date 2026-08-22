@@ -29,7 +29,7 @@ import {
 } from './controls.js';
 import { mountConsole } from './console.js';
 import { describeDesk } from './describe.js';
-import { quantityField } from './field.js';
+import { quantityField, sliderGesture } from './field.js';
 import { mountTour } from './tour.js';
 import { COARSE_SAMPLES, SWEEP_SAMPLES, samplePoints, sampleOrder } from './study.js';
 import { createEnginePool, poolLimit } from './pool.js';
@@ -2275,15 +2275,19 @@ function buildSliders() {
     };
     show();
 
-    // The general notes hear about the gesture from the listener, not from
-    // `commit`: commit is also the path programmatic changes take (a station
-    // attach setting `sizingPeriods`), and those must not fill the square
-    // that says the reader took hold of something.
-    input.addEventListener('input', () => {
-      tour?.note('drag');
-      commit(key, Number(input.value));
+    // The general notes hear about the gesture from here, not from `commit`:
+    // commit is also the path programmatic changes take (a station attach
+    // setting `sizingPeriods`), and those must not fill the square that says
+    // the reader took hold of something. A scroll the browser took off this
+    // slider must not fill it either, which is the other half of what
+    // `sliderGesture` is for — see `field.js`. These five sit in the sheet's
+    // own scroller with nothing either side of them, so on a phone they are
+    // the likeliest thing on the page for a thumb to land on.
+    sliderGesture(input, {
+      read: () => params[key],
+      write: (v, done = false) => commit(key, v, done),
+      kept: () => tour?.note('drag'),
     });
-    input.addEventListener('change', () => commit(key, Number(input.value), true));
 
     row.append(label, input, value.node);
     if (rule) row.append(rule, standing);
@@ -2994,12 +2998,20 @@ desk = mountConsole({
   host: deskPanel,
   params,
   bypass,
-  onChange(key, value, done = false) {
+  onChange(key, value, done = false, byHand = true) {
     // A console control genuinely turned is the same "take hold of
     // something" note the sheet's sliders file. Priced keys are excluded —
     // they re-letter the bill and resolve nothing, which is not the lesson.
-    if (params[key] !== value && !PRICED_KEYS.has(key)) tour?.note('drag');
+    //
+    // A calibration face passes `byHand: false` and files from `onGesture`
+    // instead: it cannot know at the moment it moves whether the gesture is
+    // the reader's or a scroll the browser is about to claim, because the
+    // change arrives before the `pointercancel` that says so.
+    if (byHand && params[key] !== value && !PRICED_KEYS.has(key)) tour?.note('drag');
     commit(key, value, done);
+  },
+  onGesture(key) {
+    if (!PRICED_KEYS.has(key)) tour?.note('drag');
   },
   onPin: toggleHourPin,
   onPatch(id, off) {
