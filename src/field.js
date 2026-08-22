@@ -120,3 +120,123 @@ export function quantityField({ control, name, read, write, className = null }) 
 
   return { node: input, show };
 }
+
+/**
+ * Bind a range input to a value, and hold it against a scroll that started on
+ * it.
+ *
+ * A native range sets its value from the touch point on the press, before
+ * anyone knows which way the finger is going, and on a phone the sheet and the
+ * desk are one long scroller — so a thumb put down to scroll lands on a slider
+ * constantly. Measured in Chromium at 390pt, a plain upward flick that happened
+ * to start on the sheet's width slider gave the input:
+ *
+ *     pointerdown → input(22) → pointermove → pointercancel
+ *     → thirteen more touchmoves, the page scrolling → change(22)
+ *
+ * The reader flicked past the sheet's five dimensions and rebuilt the
+ * building: width 15.24 m → 22 m, committed, written into the address bar as
+ * `#v1&width=22`, and solved. Nothing on the page said so, which makes it the
+ * exact failure this codebase refuses everywhere else — a value substituted for
+ * the one the reader chose, silently.
+ *
+ * **`pointercancel` alone does not mean "that was a scroll", and reading it
+ * that way is worse than the bug.** A deliberate horizontal drag on the same
+ * slider gives:
+ *
+ *     pointerdown → input → input → pointercancel → input ×12 → change
+ *
+ * Blink cancels the pointer stream when the slider's own touch handling takes
+ * the gesture over, so the cancel arrives two frames into a drag that is going
+ * perfectly well. A first attempt that reverted on the cancel therefore put the
+ * model back to 15.24 while the thumb went on to 37.52 and the release was
+ * swallowed — the drawing and the control disagreeing, which is the one thing
+ * this desk is built never to do.
+ *
+ * What separates the two is not the cancel but **whether the value ever moved
+ * under the finger**. A scroll gets exactly one `input`, the press's own jump,
+ * and never another; a drag gets one per frame. So the jump is *held* rather
+ * than committed — the model is not touched until a second `input` says the
+ * reader is driving this, or the release says it was a tap. On a scroll the
+ * held value is dropped at the cancel, the thumb is re-lettered where the model
+ * still stands, and nothing was ever applied. There is no revert because
+ * nothing was committed, and no flicker because nothing was drawn.
+ *
+ * Only a finger waits: a mouse commits on the press exactly as it always did,
+ * and never cancels anyway. Where the browser cancels a drag it has no business
+ * cancelling, the next `input` takes the gesture back.
+ *
+ * `read` returns what the model holds and `write(value, done)` commits. The two
+ * hooks are deliberately not one, because they answer questions at opposite
+ * ends of a gesture that may turn out not to be one:
+ *
+ * - `took` fires as the control takes hold, which is what a ghost of where the
+ *   tick stood has to be recorded from — it is wanted *during* the drag.
+ * - `kept` fires once, on the release of a gesture the control still owns. The
+ *   general notes' drag marker is filed from here, because the marker says the
+ *   reader took hold of something and a flick past a slider is not that.
+ */
+export function sliderGesture(input, { read, write, took = null, kept = null }) {
+  // The press's own jump: set from the first `input` of a touch gesture and
+  // held there — uncommitted — until the gesture says which kind it is. Null
+  // whenever there is nothing waiting, which is the whole of the state.
+  let held = null;
+  // Whether the press was a finger's. A mouse does not wait, both because it
+  // has no scroll to be confused with and because its click-to-position is a
+  // gesture people time.
+  let waiting = false;
+  // The browser has taken the gesture. Only ever set where nothing had been
+  // committed, and cleared by the next `input`, which is the reader saying
+  // otherwise.
+  let abandoned = false;
+
+  input.addEventListener('pointerdown', (event) => {
+    waiting = event.pointerType !== 'mouse';
+    held = null;
+    abandoned = false;
+  });
+
+  input.addEventListener('pointercancel', () => {
+    // Two frames into a real drag this fires and means nothing: by then the
+    // value has moved under the finger, `held` has been flushed, and the
+    // gesture goes on. It is only news when the press's jump is still the only
+    // thing that has happened.
+    if (held === null) return;
+    held = null;
+    waiting = false;
+    abandoned = true;
+    // Nothing was applied, so there is nothing to put back — only the thumb,
+    // which the user agent moved on its own.
+    input.value = String(read());
+  });
+
+  input.addEventListener('input', () => {
+    const v = Number(input.value);
+    // An `input` after a cancel is the reader driving this after all.
+    abandoned = false;
+    if (waiting && held === null) {
+      held = v;
+      return;
+    }
+    held = null;
+    took?.();
+    write(v);
+  });
+
+  input.addEventListener('change', () => {
+    waiting = false;
+    if (abandoned) {
+      abandoned = false;
+      input.value = String(read());
+      return;
+    }
+    // A tap on the track is a whole gesture in one event, and this is where it
+    // lands: `held` is the value the press planted and nothing since has
+    // contradicted it.
+    const v = held === null ? Number(input.value) : held;
+    if (held !== null) took?.();
+    held = null;
+    kept?.();
+    write(v, true);
+  });
+}

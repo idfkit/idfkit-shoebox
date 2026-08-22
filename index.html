@@ -759,14 +759,37 @@
         background: var(--ink);
         transition: background 0.15s ease;
       }
-      .dim input[type="range"]:hover::-webkit-slider-thumb,
       .dim input[type="range"]:active::-webkit-slider-thumb { background: var(--redline); }
       .dim input[type="range"]::-moz-range-track { height: 1px; background: var(--rule-firm); }
       .dim input[type="range"]::-moz-range-thumb {
         width: 9px; height: 9px; border: 0; border-radius: 1px; background: var(--ink);
       }
-      .dim input[type="range"]:hover::-moz-range-thumb { background: var(--redline); }
       .dim input[type="range"]:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+      /* The markup pen says what the pointer is on, and a device with no
+         pointer to be on anything holds that state after the finger has gone —
+         a tick left standing in redline over a slider nobody is touching, which
+         is the accent claiming something untrue. `:active` is the half of it a
+         thumb can honestly answer, so it stays outside. Same guard on the
+         console's faces, several hundred lines down. */
+      @media (hover: hover) {
+        .dim input[type="range"]:hover::-webkit-slider-thumb { background: var(--redline); }
+        .dim input[type="range"]:hover::-moz-range-thumb { background: var(--redline); }
+      }
+
+      /* Under a thumb this is 14px of a 44px target, and it is the worst case
+         on the page: the sheet's five stand in the open with the drawing above
+         them and the quantities below, so they are what a scrolling thumb meets
+         first. Measured at 390pt the track is 125px, which puts the width at
+         0.29 m to the pixel — so on a phone the number beside it is the
+         instrument that actually gets used, and it grows with it.
+
+         Neither moves the lettering. The row is `align-items: center`, so a
+         taller track thickens the rhythm without shifting a baseline; the
+         number's own growth is padding cancelled by an equal negative margin,
+         which is hit area and nothing else. */
+      @media (pointer: coarse) {
+        .dim input[type="range"] { height: 34px; }
+      }
 
       /* ── quantities that need no simulation ─────────────────────── */
 
@@ -2420,6 +2443,14 @@
         cursor: text;
       }
       .num-field:focus { outline: none; }
+      /* 14px tall wherever it stands — and on a phone it is the precise route
+         to a value that a 0.29 m-per-pixel track cannot be. The padding is hit
+         area only: the negative margin gives back exactly what it took, so the
+         console's heads, the sheet's five rows and the plan key's legends all
+         letter where they did. */
+      @media (pointer: coarse) {
+        .num-field { padding: 9px 0; margin: -9px 0; }
+      }
       .num-field::selection { background: var(--redline-wash); }
       .ctl-value {
         font: 400 11px/1.3 var(--mono);
@@ -2557,8 +2588,27 @@
         opacity: 0;
         cursor: ew-resize;
       }
-      .face:hover .face-tick, .face:hover .face-tick::after { background: var(--redline); }
+      @media (hover: hover) {
+        .face:hover .face-tick, .face:hover .face-tick::after { background: var(--redline); }
+      }
       .face:has(input:focus-visible) { outline: 2px solid var(--rule-focus); outline-offset: 3px; }
+
+      /* The face is 15px and its input 19px, which is under half a thumb. The
+         room to grow is all below it: 4px above is the whole gap before the
+         head, and the head carries the study offer and the number, which are
+         two more targets and must not be covered by a third. Below, the input
+         reaches over the landmark rule and the standing note — marks are read
+         and never pressed, and the note is a line of type — so the whole band
+         under a face becomes the face, which is what it already looks like.
+
+         The strip's own gap grows to carry it: 22px leaves the 37px input 4px
+         clear of the next control's head. Nothing is redrawn — the input is
+         transparent and absolutely positioned, so the rule, the tick and the
+         ghost stand exactly where they were ruled. */
+      @media (pointer: coarse) {
+        .face input { inset: -4px 0 -18px; }
+        .strip-body { gap: 22px; }
+      }
 
       /* The landmark rule: the published cases a face is read against, ruled
          under it as dimension lines — a hairline the width of the band with a
@@ -2644,7 +2694,30 @@
       .segment.here { background: var(--ink); color: var(--vellum); }
       .segment:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: -2px; }
 
-      .rose { display: block; width: 92px; height: 92px; margin: 2px auto 0; }
+      /* `touch-action: none`, here and on the plan and the band below, for the
+         reason the calendar's grid already carries it: these are the controls
+         `drag()` in console.js drives by hand, and a pointer the browser
+         decides is a scroll is taken away mid-gesture with a `pointercancel`.
+         Measured in Chromium at 390pt before this line existed: a touch drag
+         along a plan key's wall bar delivered 8 of its 14 moves and was then
+         cancelled, so the wall reached 0.28 where the same drag with a mouse
+         reached 0.85 — a control that half-works, which is worse than one that
+         does not, because the number it leaves behind looks chosen.
+
+         The rose and the plan bars turn with north and are dragged in every
+         direction, so there is no axis to hand back to the page; the hour band
+         is swept along its own length. Each is small against the scroller it
+         sits in, which is the trade the calendar already made: the sweep is the
+         gesture, and the page must not take it.
+
+         It is declared on the `svg` and not on the transparent `rect` inside it
+         that actually takes the pointer, because `touch-action` applies to
+         elements with a CSS layout box and an SVG child has none — Chromium
+         computes `none` on the rect, reports it back through
+         `getComputedStyle`, and goes on cancelling the drag at the eighth move
+         of fourteen. That is the whole reason the first attempt at this line
+         changed nothing measurable. */
+      .rose { display: block; width: 92px; height: 92px; margin: 2px auto 0; touch-action: none; }
       .rose-grab { cursor: grab; }
       .rose-grab:active { cursor: grabbing; }
 
@@ -2654,7 +2727,7 @@
          which a rule beats. */
       .axon-face:hover { stroke: var(--redline); }
 
-      .plan { display: block; width: 148px; height: 148px; margin: 0 auto; }
+      .plan { display: block; width: 148px; height: 148px; margin: 0 auto; touch-action: none; }
       .plan-grab { cursor: ew-resize; }
       /* A surface has two states and no third, so its target is a click and
          not a drag: the pointer says "flip this", the way the segmented
@@ -2752,7 +2825,7 @@
          order however the sweeps happened to finish. */
       .plan-studies .study-card { margin-top: 6px; }
 
-      .band { display: block; width: 100%; height: auto; }
+      .band { display: block; width: 100%; height: auto; touch-action: none; }
       .band-grab { cursor: ew-resize; }
 
       /* The year, as twelve cells. Ruled like the segmented selector, because

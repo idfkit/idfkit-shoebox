@@ -226,6 +226,57 @@ cannot say an exact figure — width runs 4 to 40 m across about 200 px, which i
   field holds focus, because a study tick, a landing solve or a station attach
   redraws every face on the desk and one of them may be being typed into.
 
+### Sliders under a thumb (src/field.js, and the CSS beside each control)
+
+A phone reaches this page as one long scroller with the sheet's five dimensions
+in the open and eighteen strips of console below them, so a thumb put down to
+scroll lands on a control constantly. Three separate mechanisms answer that,
+and each was found by driving a 390pt Chromium with real touch events rather
+than by reasoning about it.
+
+- **A scroll must not commit a value, and `pointercancel` is not how you tell.**
+  A native range sets its value from the touch point on the press, before any
+  movement exists to read a direction from. Measured, a plain upward flick
+  starting on the width slider delivered `pointerdown → input(22) → pointermove
+  → pointercancel → thirteen more touchmoves, the page scrolling → change(22)`:
+  the page scrolled *and* the building went 15.24 m → 22 m, committed, into the
+  address bar as `#v1&width=22`, and solved. But a *deliberate* drag delivers
+  `pointerdown → input → input → pointercancel → input ×12 → change` — Blink
+  cancels the pointer stream when the slider's own touch handling takes over —
+  so reverting on the cancel put the model back while the thumb travelled on,
+  which is the drawing and the control disagreeing. The discriminator is
+  **whether the value ever moved under the finger**: a scroll gets exactly one
+  `input` and never another, a drag gets one per frame. `sliderGesture` in
+  `field.js` therefore *holds* the press's jump — uncommitted — until a second
+  `input` or the release says which it was, and owns the whole `input` /
+  `change` / `pointercancel` story for both surfaces, the console's faces and
+  the sheet's five. Nothing is ever reverted because nothing was applied. Only
+  a finger waits; a mouse commits on the press exactly as before.
+- **`touch-action` goes on the `svg`, never on the shape inside it.** The rose,
+  the plan key's wall bars and the occupancy band are driven by `drag()` rather
+  than by an input, and `drag()`'s `preventDefault` on the press does not stop a
+  scroll — only `touch-action` does. Declared on the transparent `rect` that
+  actually takes the pointer it does nothing whatever: the property applies to
+  elements with a CSS layout box and an SVG child has none, so Chromium computes
+  `none`, reports it back through `getComputedStyle`, and goes on cancelling the
+  drag at the eighth move of fourteen. Measured before the fix: a wall bar
+  reached 0.28 where the same drag with a mouse reached 0.85. The trade is the
+  one `.months` already made — the sweep is the gesture and the page must not
+  take it — so each of these is small against the scroller it sits in.
+- **Hit area grows under `pointer: coarse`; nothing is redrawn.** The faces'
+  input is transparent and absolutely positioned, so it can be 37px tall over a
+  15px drawing; it grows *downward*, over its own landmark rule and standing
+  note, because marks are read and never pressed while the 4px above it is the
+  whole gap before a head carrying the study offer and the number. The margin
+  numbers grow by padding cancelled by an equal negative margin, which is hit
+  area and no layout at all. The desktop renders byte-identically before and
+  after, which is the check worth repeating: anything here that shows up on a
+  mouse has been written in the wrong media query.
+- **`:hover` is not a state a thumb can leave.** The redline on a thumb or a
+  tick sits behind `@media (hover: hover)`, or a touch device holds it after the
+  finger has gone and the one accent on the page asserts a pointer that does not
+  exist. `:active` is the half a thumb can answer and stays outside the guard.
+
 ### `applyModel` (src/model.js)
 
 One idempotent function puts the whole desk into the document. It runs on every
@@ -852,7 +903,10 @@ next visit, and setting it aside folds it to a one-line row that still reads.
   drag note from a real slider or console gesture (priced keys excluded —
   they resolve nothing; programmatic `commit`s such as a station attach
   setting `sizingPeriods` must not count either, which is why the note is
-  filed from the input listeners and not from `commit`), the station note
+  filed through `sliderGesture`'s `took` hook rather than from `commit` — and
+  a scroll the browser took off a slider does not fill it either, for the same
+  reason: the marker records that the reader took hold of something, and a
+  flick past a control is not that), the station note
   from `choose()` attaching — a link's automatic attach counts, because the
   notes record what has happened on the desk, not who did it.
 
