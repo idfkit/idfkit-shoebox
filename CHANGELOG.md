@@ -17,16 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it: take hold of the plate's marker and the ribbons re-letter on every frame,
   the balance re-closing at each hour.
 
-  **It is not a conservative left-to-right Sankey, deliberately.** A ribbon
-  diagram with only positive widths cannot draw a sink among sources, and this
-  balance is full of them — at the cooling peak the interzone floor runs at
-  −1.33 kW while everything around it is a gain. So the rail's own two-sided
-  arrangement becomes ribbons on a zone-air **spine**: warm arriving on one
-  flank, cold leaving on the other, the sign of a term choosing its flank rather
-  than a direction of travel. Left to right is causation, not flow. Only the
-  spine claims to balance, and whatever it does not close by is drawn as a
-  hatched stub rather than absorbed — the rail has said "unclosed by N W" in
-  words since long before there was a picture.
+  **The spine is a balanced node, and the sign of a term picks its side of it.**
+  That is the move that lets a Sankey draw this balance at all: a ribbon diagram
+  with only positive widths cannot show a sink among sources, and this balance is
+  full of them — at the cooling peak the interzone floor runs at −1.33 kW while
+  everything around it is a gain. Positives on one flank, negatives on the other,
+  and the sink is simply a ribbon on the leaving side at its true width with the
+  node still balancing. Both totals are lettered at the head of the spine —
+  `5.74 kW arriving`, `5.74 kW leaving` — in words as well as hues, so the
+  balance is checkable by eye and survives greyscale and a screen reader.
+
+  What it is *not* is a multi-stage Sankey whose every node closes by
+  construction. Only the zone air balances, because it is the only thing that was
+  measured to, and whatever the node does not close by is drawn as a hatched stub
+  rather than absorbed — the rail has said "unclosed by N W" in words since long
+  before there was a picture.
 
   **The figures beside a ribbon are read against it and do not divide it.**
   People, lights and equipment are lettered under the Gains band; windows and

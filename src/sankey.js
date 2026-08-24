@@ -6,23 +6,24 @@
  * schedule). What none of them draws is the chain — fuel at the meter, through
  * the plant, into the zone, and back out through the fabric that called for it.
  *
- * **It is not a conservative left-to-right Sankey, and saying why is the whole
- * design.** A ribbon diagram with only positive widths cannot draw a sink among
- * sources, and this balance is full of them: at the cooling peak the interzone
- * floor runs at −1,329 W while everything around it is a gain. So the drawing
- * is the rail's own two-sided arrangement turned into ribbons: a vertical
- * **zone-air spine**, warm ribbons arriving on one flank, cold ribbons leaving
- * on the other, and the sign of a term decides its flank rather than its
- * direction of travel. Left to right is causation — fuel, plant, system, air,
- * envelope — not direction of flow.
+ * **The spine is a balanced node, and the sign of a term picks its side of it.**
+ * That is what lets a Sankey draw this balance at all. A ribbon diagram with
+ * only positive widths cannot show a sink among sources, and this balance is
+ * full of them — at the cooling peak the interzone floor runs at −1,329 W while
+ * everything around it is a gain. Put the positives on one flank of a balanced
+ * node and the negatives on the other, and that difficulty disappears: the
+ * floor is simply a ribbon on the leaving side, drawn at its true width, and
+ * the node still balances. So this *is* a conservative diagram about its one
+ * node — `arriving` and `leaving` are lettered at the head of each flank so the
+ * reader can check that by eye.
  *
- * **Only the spine claims conservation.** The five rail terms close to about a
- * hundredth of a percent and nothing else on this drawing sums to anything.
- * Whatever the spine does not close by is drawn as a hatched residual stub
- * rather than absorbed into a ribbon, because the rail's own note has said
- * "unclosed by N W" in words since long before there was a picture, and a
- * diagram that balances by construction would be the one surface on this sheet
- * quietly asserting something it had not measured.
+ * What it is deliberately **not** is a multi-stage Sankey whose every node
+ * balances by construction. Only the zone air balances here, because the zone
+ * air is the only thing that was measured to. The figures beside each ribbon
+ * are read against it and do not divide it; and whatever the node does not
+ * close by is a hatched residual stub rather than heat quietly absorbed into a
+ * neighbouring ribbon, because the rail's own note has said "unclosed by N W"
+ * in words since long before there was a picture.
  *
  * The geometry below touches no `document` — the harness asserts flank
  * assignment, ordering and residual width without a browser — and `render` at
@@ -292,7 +293,7 @@ const el = (tag, className, text) => {
 /** Fixed viewBox, fluid element — the plate's arrangement. */
 const W = 760;
 const H = 320;
-const PAD = { t: 26, b: 26 };
+const PAD = { t: 42, b: 26 };
 /** The spine sits at the middle; the flanks are what radiate from it. */
 const SPINE = { x: W / 2, w: 13 };
 /** How far a ribbon runs before its stub, and where the fuel chain goes on. */
@@ -541,15 +542,49 @@ export function renderSankey(host, view) {
     );
   }
 
+  /*
+   * The node, and what balances across it.
+   *
+   * The spine is a balanced node — that is the whole claim of the arrangement,
+   * and until now it was the one figure the drawing did not letter: the two
+   * flank totals were in the `aria-label` and in the lede and nowhere a reader
+   * could see them against the ribbons they sum. Stating them at the head of
+   * each flank is what makes the balance checkable by eye, which is the same
+   * rule as everywhere else on this sheet.
+   *
+   * The direction is said in a **word** as well as a hue. Warm and cold carry
+   * the sign, but a hue is not a reading in greyscale, on a printed sheet or
+   * read aloud, and this is the one place on the drawing where saying it costs
+   * two words.
+   */
+  // Two lines: the node's name over the balance across it. One line put the
+  // totals either side of a centred label and they ran straight through it.
+  const head = top - 10;
   frame.append(
     text('ZONE AIR', {
       x: SPINE.x,
-      y: top - 12,
+      y: top - 25,
       'text-anchor': 'middle',
       'font-family': 'var(--cond)',
       'font-size': 8,
       'letter-spacing': '0.13em',
       fill: 'var(--ink-3)',
+    }),
+  );
+  frame.append(
+    text(`${view.format(layout.intoTotal)} arriving`, {
+      x: SPINE.x - SPINE.w / 2 - 14,
+      y: head,
+      'text-anchor': 'end',
+      fill: 'var(--ink-2)',
+    }),
+  );
+  frame.append(
+    text(`${view.format(layout.outOfTotal)} leaving`, {
+      x: SPINE.x + SPINE.w / 2 + 14,
+      y: head,
+      'text-anchor': 'start',
+      fill: 'var(--ink-2)',
     }),
   );
 

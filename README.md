@@ -247,13 +247,20 @@ and went: the zone air balance as ribbons converging on a spine, with the fuel
 chain running out beyond the system band. Take hold of the plate's marker and it
 re-letters on every frame, the balance re-closing at each hour.
 
-It is not a conservative left-to-right Sankey, and that is deliberate. A ribbon
-diagram with only positive widths cannot draw a sink among sources, and this
-balance is full of them — at the cooling peak the interzone floor runs at
-−1.33 kW while everything around it is a gain. So the sign of a term picks which
-flank it attaches to, hue carries the sign and nothing else, and only the spine
-claims to balance; what it does not close by is drawn hatched rather than
-absorbed.
+The spine is a **balanced node**, and the sign of a term picks its side of it.
+That is what lets a Sankey draw this balance at all: a ribbon diagram with only
+positive widths cannot show a sink among sources, and this balance is full of
+them — at the cooling peak the interzone floor runs at −1.33 kW while everything
+around it is a gain. Put the positives on one flank and the negatives on the
+other and the difficulty disappears; the floor is a ribbon on the leaving side
+at its true width, and the node still balances. The two totals are lettered at
+the head of the spine, in words as well as hues, so the balance can be checked
+by eye.
+
+What it is *not* is a multi-stage Sankey whose every node closes by
+construction. Only the zone air balances, because the zone air is the only thing
+that was measured to — and what the node does not close by is drawn hatched
+rather than absorbed.
 
 The figures lettered beside each ribbon are read *against* it and do not divide
 it. People, lights and equipment sit under Gains, windows and opaque conduction

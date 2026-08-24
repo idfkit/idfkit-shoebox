@@ -1218,15 +1218,21 @@ schedules, re-lettered from `reletterReading` so a plate drag moves it per
 frame, with `layoutFlows` pure and DOM-free (the harness asserts flank
 assignment and residual placement with no browser) and `renderSankey` beneath it.
 
-- **It is not a conservative Sankey and must not become one.** A ribbon diagram
-  with only positive widths cannot draw a sink among sources, and this balance
-  is full of them — `Interzone Floor` is −1,329 W at the cooling peak. So it is
-  the rail's two-sided arrangement as ribbons on a zone-air **spine**: the sign
-  of a term picks its flank, hue carries the sign and nothing else, and left to
-  right is causation rather than direction of travel.
-- **Only the spine sums.** The imbalance is a hatched stub, never absorbed —
-  the drawn form of the rail's own "unclosed by N W" note, and the first drawn
-  residual on this sheet.
+- **The spine is a balanced node, and the sign of a term picks its side of it.**
+  That is the move that lets a Sankey draw this balance at all: a ribbon diagram
+  with only positive widths cannot show a sink among sources, and this balance
+  is full of them — `Interzone Floor` is −1,329 W at the cooling peak. Positives
+  on one flank of a balanced node, negatives on the other, and the sink is just
+  a ribbon on the leaving side at its true width. So it *is* conservative about
+  its one node, and the two flank totals are lettered at the head of the spine
+  (`5.74 kW arriving` / `5.74 kW leaving`) so a reader can check that by eye
+  rather than take it on trust. The direction is said in a word as well as a
+  hue, because a hue is not a reading in greyscale or read aloud.
+- **Only that node balances, and only because it was measured to.** This is not
+  a multi-stage Sankey whose every node closes by construction — the figures
+  beside a ribbon are read against it and do not divide it, and the imbalance is
+  a hatched stub, never absorbed. It is the drawn form of the rail's own
+  "unclosed by N W" note, and the first drawn residual on this sheet.
 - **`Tributary` is not `Term`, and the distinction is the whole reason the
   class exists.** A tributary does not sum into its parent: window heat carries
   transmitted solar that lands on the surfaces, inside-face conduction is not

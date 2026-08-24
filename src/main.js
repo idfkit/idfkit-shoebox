@@ -2816,8 +2816,9 @@ function instantView() {
     keyed,
     stamp: lastAt.text,
     lede:
-      `The zone air balance at this hour, as ribbons: warm is heat arriving in the zone air, cold is heat leaving it. ` +
-      `Only the spine balances — the figures beside each ribbon are read against it and do not divide it.${closes}` +
+      `The zone air balance at this hour, as ribbons on a balanced node: warm is heat arriving in the zone air, ` +
+      `cold is heat leaving it, and a path running the other way is a ribbon on the other flank rather than a hole in the drawing. ` +
+      `The node is the only thing here that balances — the figures beside each ribbon are read against it and do not divide it.${closes}` +
       (params.multiplier > 1 ? ` One zone of the ${params.multiplier} stacked.` : ''),
     summary:
       `Heat flow at ${lastAt.text}. ` +
