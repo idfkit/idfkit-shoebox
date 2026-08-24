@@ -3037,11 +3037,22 @@ export const CHANNELS = Object.freeze([
     blurb:
       'What the building remembers. Bypassed, the slab is swapped for a massless layer of the same resistance, so the only thing that changes is storage.',
     meter: new Meter({
-      label: 'Air energy storage',
+      // Lettered as a *release* rather than as storage, which is the name the
+      // variable carries, because the sign is turned over on the way in and a
+      // label that disagreed with its own figure is worse than no label. The
+      // ESO reports storage positive when the zone air is warming; negated, the
+      // same number is the rate the air gives its store back, positive when it
+      // is cooling. Under the old name a reading of −400 W said "storage" and
+      // "out" in one breath, and the only reading of that which parses —
+      // discharging — is the opposite of what is happening. Under this one the
+      // double negative resolves the right way round: a negative release is the
+      // air charging.
+      label: 'Air energy release',
       rail: true,
       // The accumulation side of the balance, so it enters the rail negated:
       // heat going into store is heat the air does not keep.
       terms: [new Term({ variable: 'Zone Air Heat Balance Air Energy Storage Rate', sign: -1 })],
+      note: 'The negation of the run\'s own Zone Air Heat Balance Air Energy Storage Rate, which is positive when the zone air is warming. Storage is the accumulation side of the balance, so it crosses to the side the other four terms are on and its sign turns over with it: a reading out of the air is the air charging, and that is heat the other paths do not get. Turn the sign back over to check it against the ESO.',
     }),
     controls: [
       new Scale({
@@ -3301,6 +3312,7 @@ export const CHANNELS = Object.freeze([
       terms: [
         new Term({ variable: 'Zone Air Heat Balance System Air Transfer Rate', perBuilding: true }),
       ],
+      note: 'Divided by the zone multiplier. EnergyPlus reports Zone Air Heat Balance System Air Transfer Rate for the whole building, already multiplied, where the other four rail terms are per zone — so it is brought back down to the one zone before it is summed with them. At a multiplier of 1 it is the ESO figure unchanged; at 3 the ESO reads three times what is lettered here.',
     }),
     controls: [
       new Scale({
