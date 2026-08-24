@@ -172,7 +172,7 @@ export function fuelChain({ sensible, latent, divisor, fuelLabel, plantLabel }) 
  * recomputed. It is the difference between the peak EnergyPlus computed and the
  * instant-plus-delayed estimate, and it belongs to the report.
  */
-export function layoutComponents(half, { minRibbon = 0.006 } = {}) {
+export function layoutComponents(half, { minRibbon = 0.006, which = 'cooling' } = {}) {
   if (!half?.components?.length) return null;
 
   const rows = half.components
@@ -188,8 +188,28 @@ export function layoutComponents(half, { minRibbon = 0.006 } = {}) {
     // twenty of them at a flat zero. They are still counted in the key.
     .filter((r) => Math.abs(r.watts) > 1e-9);
 
-  const into = rows.filter((r) => r.watts > 0).sort((a, b) => b.watts - a.watts);
-  const outOf = rows.filter((r) => r.watts < 0).sort((a, b) => a.watts - b.watts);
+  /*
+   * The load itself, as the counterweight on the other flank.
+   *
+   * Without it the node did not balance and the head said so out loud: the
+   * components came to `8.66 kW arriving` against `1.33 kW leaving`, which
+   * invites a reader to check a balance that was never drawn. The load is what
+   * those components add up to — it is the whole subject of the report — so it
+   * belongs on the drawing, opposite them, at the figure EnergyPlus computed.
+   * With it there the node closes to the report's own published residual and
+   * nothing else, which is exactly the claim being made.
+   *
+   * Signed against the components: a cooling load is heat the system takes out,
+   * so it leaves; a heating load is heat it puts in, so it arrives. That falls
+   * out of `-peak` and needs no special case.
+   */
+  const load = Number.isFinite(half.peak) && Math.abs(half.peak) > 1e-9
+    ? { label: `${which === 'cooling' ? 'Cooling' : 'Heating'} load`, watts: -half.peak, isLoad: true }
+    : null;
+  const all = load ? [...rows, load] : rows;
+
+  const into = all.filter((r) => r.watts > 0).sort((a, b) => b.watts - a.watts);
+  const outOf = all.filter((r) => r.watts < 0).sort((a, b) => a.watts - b.watts);
   const intoTotal = sum(into.map((r) => r.watts));
   const outOfTotal = -sum(outOf.map((r) => r.watts));
   const scale = Math.max(intoTotal, outOfTotal, Math.abs(half.peak ?? 0));
@@ -208,7 +228,13 @@ export function layoutComponents(half, { minRibbon = 0.006 } = {}) {
         tone: toneOf(row.watts, rank),
         // The instant/delayed division, as a fraction of this ribbon's own
         // width. Guarded against a row that is entirely one or the other.
-        instantShare: Math.abs(row.watts) > 0 ? Math.abs(row.instant) / (Math.abs(row.instant) + Math.abs(row.delayed) || 1) : 0,
+        // The load is not a component and has no instant/delayed split — null
+        // rather than 0, which would draw it as entirely delayed.
+        instantShare: row.isLoad
+          ? null
+          : Math.abs(row.watts) > 0
+            ? Math.abs(row.instant) / (Math.abs(row.instant) + Math.abs(row.delayed) || 1)
+            : 0,
       };
       y += height;
       return band;
@@ -232,9 +258,10 @@ export function layoutComponents(half, { minRibbon = 0.006 } = {}) {
    */
   let residual = null;
   if (Number.isFinite(half.residual) && Math.abs(half.residual) > 1e-9) {
-    const dominant = intoTotal >= outOfTotal ? 'into' : 'outOf';
-    const opposite = dominant === 'into' ? 'outOf' : 'into';
-    const side = half.residual > 0 ? dominant : opposite;
+    // On the flank that comes up short, exactly as the live drawing places its
+    // own: with the load band in, the two flanks differ by the report's
+    // residual and this is the stub that closes them.
+    const side = intoTotal >= outOfTotal ? 'outOf' : 'into';
     const onSide = side === 'into' ? intoBands : outOfBands;
     residual = {
       label: 'Residual',
@@ -291,7 +318,7 @@ const el = (tag, className, text) => {
 };
 
 /** Fixed viewBox, fluid element — the plate's arrangement. */
-const W = 760;
+const W = 820;
 const H = 320;
 const PAD = { t: 42, b: 26 };
 /** The spine sits at the middle; the flanks are what radiate from it. */
@@ -299,6 +326,20 @@ const SPINE = { x: W / 2, w: 13 };
 /** How far a ribbon runs before its stub, and where the fuel chain goes on. */
 const REACH = 150;
 const CHAIN = 96;
+/**
+ * Where the lettering sits on one flank, measured from the spine's centre.
+ *
+ * Outboard of the chain lane where a chain is drawn, and tight against the
+ * bands where none is. Inboard of the chain, the wedge printed straight over
+ * the band labels — at a heating hour the system band is 97 % of its flank and
+ * the wedge flares wider still, so `System 11.0 kW` was drawn and then buried.
+ *
+ * Reserving the lane on *both* flanks regardless was the first fix and it was
+ * worse: the peak modes draw no chain at all, so it spent 96 px a side on
+ * nothing and clipped `Fenestration Conduction 243 W` off the edge of the
+ * viewBox. The lane is reserved where it is used.
+ */
+const laneFor = (hasChain) => SPINE.w / 2 + REACH + (hasChain ? CHAIN + 12 : 10);
 
 /**
  * The hatch, for the one thing on this drawing that is not a measurement.
@@ -333,7 +374,7 @@ const text = (string, attrs) => {
 };
 
 /** One band, drawn from the spine outwards on its own flank. */
-function band(entry, { top, height, letter }) {
+function band(entry, { top, height, letter, lane }) {
   const group = svg('g');
   const y = top + entry.y * height;
   const h = Math.max(entry.height * height, 1.6);
@@ -404,19 +445,48 @@ function band(entry, { top, height, letter }) {
     }
   }
 
-  // A ribbon thinner than its own label is still a reading, so the lettering
-  // sits in the gutter beyond the stub rather than inside the band.
-  if (letter) {
-    group.append(
-      text(letter, {
-        x: leaving ? outer + 7 : outer - 7,
-        y: y + h / 2 + 3,
-        'text-anchor': leaving ? 'start' : 'end',
-        fill: 'var(--ink-2)',
-      }),
-    );
+  // The lettering is *not* drawn here. A ribbon thinner than its own label is
+  // still a reading, so labels sit in the gutter beyond the stub — and two
+  // hairline bands at the foot of a flank (a term reading zero, and a residual
+  // that closes to nothing) put their labels in the same place and printed one
+  // over the other. So the caller collects them and settles the flank top to
+  // bottom against a minimum gap, which is the plate's own move and the study
+  // cards' after it.
+  return {
+    group,
+    label: letter
+      ? {
+          text: letter,
+          x: SPINE.x + (leaving ? lane : -lane),
+          anchor: leaving ? 'start' : 'end',
+          y: y + h / 2 + 3,
+        }
+      : null,
+  };
+}
+
+/**
+ * Settle one flank's labels so none prints over its neighbour.
+ *
+ * Sorted by where each would rather sit, then pushed down only as far as the
+ * minimum gap requires — so a flank whose bands are all comfortably thick is
+ * lettered exactly where the bands are, and only a crowded foot moves.
+ */
+function settle(labels, { gap = 9, top, bottom }) {
+  const settled = [...labels].sort((a, b) => a.y - b.y);
+  for (const [i, label] of settled.entries()) {
+    label.y = Math.max(label.y, top);
+    if (i > 0) label.y = Math.max(label.y, settled[i - 1].y + gap);
   }
-  return group;
+  // If the push has run the last one off the foot, walk the whole stack back up.
+  const overshoot = settled.length ? settled.at(-1).y - bottom : 0;
+  if (overshoot > 0) {
+    for (let i = settled.length - 1; i >= 0; i -= 1) {
+      settled[i].y = Math.min(settled[i].y, bottom - gap * (settled.length - 1 - i));
+      if (i > 0) settled[i - 1].y = Math.min(settled[i - 1].y, settled[i].y - gap);
+    }
+  }
+  return settled;
 }
 
 /**
@@ -429,7 +499,7 @@ function band(entry, { top, height, letter }) {
  * simulated — there is no boiler in this model — so the step is lettered with
  * the number it divides by and the reader can redo it.
  */
-function chainOf(fuel, { y, h, leaving, watts }) {
+function chainOf(fuel, { y, h, leaving, watts, lane }) {
   const group = svg('g');
   const dir = leaving ? 1 : -1;
   const from = leaving ? SPINE.x + SPINE.w / 2 + REACH : SPINE.x - SPINE.w / 2 - REACH;
@@ -447,22 +517,18 @@ function chainOf(fuel, { y, h, leaving, watts }) {
     'pointer-events': 'none',
   });
   group.append(path);
-  group.append(
-    text(fuel.plantLabel, {
-      x: to + dir * 7,
-      y: mid - 2,
-      'text-anchor': leaving ? 'start' : 'end',
-      fill: 'var(--ink-2)',
-    }),
-  );
-  group.append(
-    text(`${fuel.divisor ? `÷ ${fuel.divisor}` : 'no plant'}`, {
-      x: to + dir * 7,
-      y: mid + 9,
-      'text-anchor': leaving ? 'start' : 'end',
-    }),
-  );
-  return group;
+  // The chain's own lettering joins the flank's column rather than sitting at
+  // the end of the wedge, so it settles against the band labels instead of
+  // landing on whichever one shares its height.
+  return {
+    group,
+    label: {
+      text: `${fuel.plantLabel}${fuel.divisor ? ` ÷ ${fuel.divisor}` : ' (no plant)'}`,
+      x: SPINE.x + (leaving ? lane : -lane),
+      anchor: leaving ? 'start' : 'end',
+      y: mid + 3,
+    },
+  };
 }
 
 /**
@@ -514,32 +580,54 @@ export function renderSankey(host, view) {
   );
 
   const letterFor = (entry) => `${entry.label} ${view.format(entry.signedWatts ?? entry.watts)}`;
-  for (const entry of layout.into) frame.append(band(entry, { top, height, letter: letterFor(entry) }));
-  for (const entry of layout.outOf) frame.append(band(entry, { top, height, letter: letterFor(entry) }));
-  if (layout.residual) {
-    frame.append(band(layout.residual, {
-      top,
-      height,
-      // The published figure carries a sign and the key letters it — the
-      // drawing has to say the same thing or the two disagree about a number
-      // the reader can look up in the report.
-      letter: `Residual ${view.format(layout.residual.signed ?? layout.residual.watts)}`,
-    }));
-  }
 
+  // Which flank the chain lands on has to be known before anything is lettered,
+  // because it decides how much room that flank's labels have.
+  const chainSide = fuel && view.systemBand ? view.systemBand.side : null;
+  const lanes = { into: laneFor(chainSide === 'into'), outOf: laneFor(chainSide === 'outOf') };
+
+  // Drawn per flank, so each flank's labels can be settled against each other
+  // without the other flank's crowding pushing them about.
+  const flanks = { into: [], outOf: [] };
+  const draw = (entry, letter) => {
+    const drawn = band(entry, { top, height, letter, lane: lanes[entry.side] });
+    frame.append(drawn.group);
+    if (drawn.label) flanks[entry.side].push(drawn.label);
+  };
+  for (const entry of layout.into) draw(entry, letterFor(entry));
+  for (const entry of layout.outOf) draw(entry, letterFor(entry));
+  if (layout.residual) {
+    // The published figure carries a sign and the key letters it — the drawing
+    // has to say the same thing or the two disagree about a number the reader
+    // can look up in the report.
+    draw(layout.residual, `Residual ${view.format(layout.residual.signed ?? layout.residual.watts)}`);
+  }
   // The fuel chain hangs off whichever flank the system landed on. At a cooling
   // hour that is the leaving side, and the plant sits beyond it — which is the
   // honest picture: you buy electricity to take heat out.
   if (fuel && view.systemBand) {
     const entry = view.systemBand;
-    frame.append(
-      chainOf(fuel, {
-        y: top + entry.y * height,
-        h: Math.max(entry.height * height, 1.6),
-        leaving: entry.side === 'outOf',
-        watts: entry.watts,
-      }),
-    );
+    const drawn = chainOf(fuel, {
+      y: top + entry.y * height,
+      h: Math.max(entry.height * height, 1.6),
+      leaving: entry.side === 'outOf',
+      watts: entry.watts,
+      lane: lanes[entry.side],
+    });
+    frame.append(drawn.group);
+    if (drawn.label) flanks[entry.side].push(drawn.label);
+  }
+
+  // Settled last, once every label on the flank is known.
+  for (const side of ['into', 'outOf']) {
+    for (const label of settle(flanks[side], { top: top + 4, bottom: top + height })) {
+      frame.append(text(label.text, {
+        x: label.x,
+        y: label.y,
+        'text-anchor': label.anchor,
+        fill: 'var(--ink-2)',
+      }));
+    }
   }
 
   /*

@@ -1309,6 +1309,15 @@ assignment and residual placement with no browser) and `renderSankey` beneath it
   for a one-zone model.
 - **The Grand Total row is read by name and kept out of the components.** Summed
   in with them it would double the diagram.
+- **The load is drawn opposite the components, or the node does not balance.**
+  Without it the peak drawing's head read `8.66 kW arriving` against `1.33 kW
+  leaving`, inviting a reader to check a balance that was never on the drawing.
+  The load is what the components add up to, so it belongs on the other flank at
+  the figure EnergyPlus computed, signed `-peak` — which puts a cooling load on
+  the leaving side and a heating load on the arriving side with no special case.
+  With it there the node closes to the report's own published residual and
+  nothing else. It carries no instant/delayed split (`instantShare: null`, not
+  0, which would draw it as entirely delayed), and the fuel chain hangs off it.
 
 ## Invariants that fail quietly
 

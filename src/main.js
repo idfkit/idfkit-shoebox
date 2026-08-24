@@ -2828,7 +2828,7 @@ function instantView() {
 
 /** The peak half: the component decomposition, at an instant nobody can move. */
 function componentView(half, which) {
-  const laid = layoutComponents(half);
+  const laid = layoutComponents(half, { which });
   if (!laid) return { refusal: `The ${which} peak decomposition came back empty.` };
 
   const keyed = [];
@@ -2857,14 +2857,14 @@ function componentView(half, which) {
       note: `${fuel.fuelLabel} drawn at the sizing condition.`,
     });
   }
+  const loadBand = [...laid.into, ...laid.outOf].find((b) => b.isLoad);
 
-  const systemBand = which === 'cooling'
-    ? laid.outOf.at(-1) ?? laid.into.at(-1)
-    : laid.into.at(-1) ?? laid.outOf.at(-1);
+  // The chain hangs off the load band, which is the system's own ribbon here.
+  const systemBand = loadBand ?? null;
 
   return {
     layout: laid,
-    fuel: null,
+    fuel,
     systemBand,
     format: watts,
     keyed,
@@ -2873,7 +2873,8 @@ function componentView(half, which) {
       `The ${which} load at the sizing peak, decomposed into what caused it. ` +
       `**This is not an hour of the run above**: it is a sizing calculation over the design day, at ${half.at?.text ?? 'an instant the report names'}, ` +
       `and it cannot be moved — the delayed column is estimated inside the zone sizing routines and exists at this instant only. ` +
-      `Each ribbon is divided into the part that hit the air at once and the part the mass gave back later. ` +
+      `Each component ribbon is divided into the part that hit the air at once and the part the mass gave back later. ` +
+      `The load they add up to is drawn opposite them, so the node closes to the report's own published residual and nothing else. ` +
       `Per zone${params.multiplier > 1 ? `, one of the ${params.multiplier} stacked` : ''}.`,
     summary:
       `${which === 'cooling' ? 'Cooling' : 'Heating'} peak load components at ${half.at?.text ?? 'the sizing peak'}. ` +
