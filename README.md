@@ -283,12 +283,20 @@ instants per zone, sub-hourly, on a design day that may not be among the run's
 environments at all. Three instants on one sheet, each lettered as what it is.
 
 Asking for it repeats the zone sizing calculation twice. Measured, interleaved
-A/B over seven rounds on a conditioned design day: 0.20 s to 0.24 s of engine
-time, about 20 %, and that is the worst case — the passes are a fixed cost over
-the design days and do not grow with the run period. It is requested only under
+A/B at both cadences:
+
+| Run | Without the report | With it |
+| --- | --- | --- |
+| Design day, conditioned | 0.20 s | 0.24 s |
+| Denver year | 1.15 s | 1.11 s |
+
+The design day is the worst case at about 20 %; the year is −3.5 %, which is
+noise. The two passes are a fixed cost over the design days and do not grow with
+the run period, so a long run does not notice them. It is requested only under
 the sheet's own reporting profile, and only with the System channel in the path,
 because zone sizing on an unconditioned zone is a get-input fatal rather than a
-warning.
+warning — and the stock desk has System bypassed, so ungated it would take down
+the default page load.
 
 ## Reshaping the zone
 

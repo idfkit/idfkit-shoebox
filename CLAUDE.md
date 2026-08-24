@@ -1272,10 +1272,17 @@ assignment and residual placement with no browser) and `renderSankey` beneath it
   engaged only** — zone sizing on an unconditioned zone is a get-input fatal
   (`SetUpZoneSizingArrays: … no ZoneHVAC:EquipmentConnections`), and the stock
   desk has System bypassed, so ungated this fatals the *default page load*.
-  And the cost: interleaved A/B over seven rounds of the staged engine on a
-  conditioned design day, 0.20 s → 0.24 s of engine time, about 20 % — the worst
-  case, since the passes are fixed over the design days and do not grow with the
-  run period. It survives `sizingPeriods = 'No'`.
+  And the cost, measured at both cadences: interleaved A/B over seven rounds of
+  the staged engine on a conditioned design day, 0.20 s → 0.24 s of engine time,
+  about **20 %**; on a Denver year, 1.15 s → 1.11 s, or **−3.5 %**, which is
+  noise. That is the prediction confirmed rather than a surprise — the two
+  passes are a fixed cost over the design days and do not grow with the run
+  period, so the design day is the worst case and a year does not notice.
+  It survives `sizingPeriods = 'No'`, which is what makes an annual desk able to
+  carry the report at all: measured, a year attached with the sizing periods
+  unsimulated comes back as 8,760 hours in one environment and both peak tables
+  are present, because the sizing calculation runs over the design days whether
+  or not those days are themselves simulated.
 - **`do_zone_sizing_calculation` is set in *both* branches of `syncReporting`.**
   Flipped only on the way into `'sheet'`, a lean sample would leave `'Yes'`
   standing and "lean then sheet" would stop serializing identically to "always

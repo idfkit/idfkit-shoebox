@@ -66,10 +66,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   calculation over the design day, not an hour of the run above — which is what
   keeps three instants on one sheet from being quoted as though they were one.
 
-  It costs two extra zone sizing passes. Measured, interleaved A/B over seven
-  rounds of the staged engine on a conditioned design day: 0.20 s to 0.24 s of
-  engine time, about 20 %. That is the worst case, since the passes are a fixed
-  cost over the design days and do not grow with the run period. It is requested
+  It costs two extra zone sizing passes. Measured, interleaved A/B, at both
+  cadences: on a conditioned design day, 0.20 s to 0.24 s of engine time, about
+  **20 %**; on a Denver year, 1.15 s to 1.11 s, or **−3.5 %** — noise. The two
+  passes are a fixed cost over the design days and do not grow with the run
+  period, so the design day is the worst case and a year does not notice it. It
+  survives `sizingPeriods = 'No'`, which is what the weather picker sets when it
+  attaches a year: measured, such a run comes back as 8,760 hours in one
+  environment with both peak tables present, because the sizing calculation runs
+  over the design days whether or not those days are simulated. It is requested
   only under the sheet's own reporting profile, so a study sample never pays for
   a table nobody parses, and only with **System in the path** — zone sizing on
   an unconditioned zone is a get-input fatal, not a warning, and the stock desk
