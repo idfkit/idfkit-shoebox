@@ -387,12 +387,18 @@ const text = (string, attrs) => {
 /** One band, drawn from the spine outwards on its own flank. */
 function band(entry, { top, height, letter, lane }) {
   const group = svg('g');
+  // The rail's segments become these, so they carry the same rank the rail
+  // stacks by and unfold outward from the spine in that order.
+  group.setAttribute('class', 'flow-band');
+  group.style.setProperty('--i', String(entry.rank ?? 0));
   const y = top + entry.y * height;
   const h = Math.max(entry.height * height, 1.6);
   const leaving = entry.side === 'outOf';
   const inner = leaving ? SPINE.x + SPINE.w / 2 : SPINE.x - SPINE.w / 2;
   const outer = leaving ? inner + REACH : inner - REACH;
   const left = Math.min(inner, outer);
+
+  group.style.transformOrigin = `${SPINE.x}px ${y + Math.max(entry.height * height, 1.6) / 2}px`;
 
   const rect = svg('rect', {
     x: left,
@@ -553,8 +559,15 @@ function chainOf(fuel, { y, h, leaving, watts, lane }) {
 export function renderSankey(host, view) {
   if (!host) return;
   host.replaceChildren();
+  if (!view) return;
 
-  if (!view) {
+  // The panel is the whole instrument now that it opens from the rail rather
+  // than standing on the sheet: which instant, the offers, the sentence, the
+  // drawing and the key, in that order. Nothing above it says any of that.
+  if (view.offers) host.append(renderOffers(view.offers));
+  if (view.lede) host.append(renderLede(view.lede));
+
+  if (view.empty) {
     host.append(el('p', 'flow-empty', 'AWAITING RUN'));
     return;
   }
@@ -577,18 +590,21 @@ export function renderSankey(host, view) {
 
   // The spine. It is the only thing on this drawing that claims to balance, so
   // it is the only thing drawn as a single continuous object.
-  frame.append(
-    svg('rect', {
-      x: SPINE.x - SPINE.w / 2,
-      y: top - 6,
-      width: SPINE.w,
-      height: height + 12,
-      fill: 'var(--inset)',
-      stroke: 'var(--rule)',
-      'stroke-width': 1,
-      'pointer-events': 'none',
-    }),
-  );
+  const spine = svg('rect', {
+    x: SPINE.x - SPINE.w / 2,
+    y: top - 6,
+    width: SPINE.w,
+    height: height + 12,
+    fill: 'var(--inset)',
+    stroke: 'var(--rule)',
+    'stroke-width': 1,
+    'pointer-events': 'none',
+  });
+  // Named for the unfold: the rail's centre-zero hairline grows into this, so
+  // it is the first thing to move and everything else hangs off it.
+  spine.setAttribute('class', 'flow-spine');
+  spine.style.transformOrigin = `${SPINE.x}px ${top + height / 2}px`;
+  frame.append(spine);
 
   const letterFor = (entry) => `${entry.label} ${view.format(entry.watts)}`;
 
@@ -632,12 +648,14 @@ export function renderSankey(host, view) {
   // Settled last, once every label on the flank is known.
   for (const side of ['into', 'outOf']) {
     for (const label of settle(flanks[side], { top: top + 4, bottom: top + height })) {
-      frame.append(text(label.text, {
+      const node = text(label.text, {
         x: label.x,
         y: label.y,
         'text-anchor': label.anchor,
         fill: 'var(--ink-2)',
-      }));
+      });
+      node.setAttribute('class', 'flow-label');
+      frame.append(node);
     }
   }
 
@@ -700,6 +718,55 @@ export function renderSankey(host, view) {
  * keeps: this list is what survives a 390 px screen, a printed sheet and a
  * screen reader, so a reading that exists only as a ribbon does not exist.
  */
+/**
+ * The three instants, as a group of chips.
+ *
+ * A refused offer is shown and disabled rather than removed, with its reason on
+ * `title`, because a mode that vanishes teaches the reader nothing about why it
+ * is not there.
+ */
+function renderOffers(offers) {
+  const group = el('div', 'flow-modes');
+  group.setAttribute('role', 'group');
+  group.setAttribute('aria-label', 'Which instant the flow drawing reads at');
+  for (const offer of offers) {
+    const chip = el('button', 'flow-mode');
+    chip.type = 'button';
+    chip.id = `flow-mode-${offer.id}`;
+    chip.append(el('b', null, offer.label), el('span', null, offer.sub));
+    if (!offer.available) {
+      chip.disabled = true;
+      chip.title = offer.refusal;
+      group.append(chip);
+      continue;
+    }
+    chip.setAttribute('aria-pressed', String(offer.active));
+    chip.title = offer.blurb;
+    chip.addEventListener('click', () => {
+      offer.take();
+      document.getElementById(chip.id)?.focus();
+    });
+    group.append(chip);
+  }
+  return group;
+}
+
+/**
+ * The lede, with its emphasis rendered rather than stripped.
+ *
+ * The peak modes turn on one clause — *this is not an hour of the run* — and
+ * for a while the markers around it were deleted with a regex, which made the
+ * sentence's whole point indistinguishable from the rest of it.
+ */
+function renderLede(text) {
+  const paragraph = el('p', 'flow-lede');
+  for (const [i, part] of String(text).split('**').entries()) {
+    if (!part) continue;
+    paragraph.append(i % 2 ? el('b', null, part) : document.createTextNode(part));
+  }
+  return paragraph;
+}
+
 function renderKey(view) {
   const list = el('div', 'flow-key');
   for (const group of view.keyed) {

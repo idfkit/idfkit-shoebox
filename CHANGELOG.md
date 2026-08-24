@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The zone air heat balance opens out.** The rail has always drawn the five
+  terms as one signed bar; pressing **Open out** in its head expands it into the
+  full flow drawing, and the bar stays above as the summary being extended. It is
+  the rail at full size rather than a second instrument: where the rail has a
+  centre-zero line the drawing has a spine, and where it has stacked segments it
+  has ribbons.
+
+  It arrives by doing exactly that. The spine grows from the centre, each ribbon
+  extends out of it in the order the rail already stacks them — largest first —
+  and the lettering follows. A transition between two drawings of one quantity,
+  which is the only thing that earns the motion; all of it is off under
+  `prefers-reduced-motion`.
+
+  On the wide layout the strips give up the desk's column and the rail takes it,
+  which is the full window height the desk is already sized to. At the index
+  breakpoint there is no footer to expand into — the desk is `position: static`
+  with no height to fill — so the balance becomes a layer over the page instead,
+  with its own scroll, a sticky head so the way out never scrolls off, Escape to
+  close, and the page behind it locked.
+
 - **A drawing of the heat flow, from fuel through the plant to the loads that
   called for it.** The sheet could say what each path contributes at one instant
   (the balance rail), what the year cost (the bill) and what the demand

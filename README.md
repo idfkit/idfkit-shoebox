@@ -242,10 +242,19 @@ still here, and the results are unchanged. The sheet itself reads two of them.
 
 ### The flow drawing
 
-Under the finding there is a drawing of where the heat at one instant came from
-and went: the zone air balance as ribbons converging on a spine, with the fuel
-chain running out beyond the system band. Take hold of the plate's marker and it
-re-letters on every frame, the balance re-closing at each hour.
+The model console's rail has always drawn the zone air heat balance as one
+signed bar. Pressing **Open out** in its head expands it into the whole drawing:
+the same five terms as ribbons converging on a spine, with the fuel chain running
+out beyond the system band. Take hold of the plate's marker and it re-letters on
+every frame, the balance re-closing at each hour.
+
+It is the rail at full size rather than a second instrument — where the rail has
+a centre-zero line the drawing has a spine, where it has segments it has ribbons
+— and it opens by doing that: the spine grows, then the ribbons extend out of it
+in the order the rail stacks them. On a wide screen the strips give up the desk's
+column and the rail takes it; on a phone, where the desk is just a block in the
+page with no height to fill, it becomes a layer over the page with its own
+scroll and a sticky way out.
 
 The spine is a **balanced node**, and the sign of a term picks its side of it.
 That is what lets a Sankey draw this balance at all: a ribbon diagram with only

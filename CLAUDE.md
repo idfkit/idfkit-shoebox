@@ -1213,10 +1213,43 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
 
 ### The flow drawing (src/sankey.js)
 
-The rail's five terms, drawn. A sheet block between the finding and the
-schedules, re-lettered from `reletterReading` so a plate drag moves it per
-frame, with `layoutFlows` pure and DOM-free (the harness asserts flank
-assignment and residual placement with no browser) and `renderSankey` beneath it.
+The rail's five terms, drawn — **the rail at full size rather than a second
+instrument beside it**. Where the rail has a centre-zero bar the drawing has a
+spine, and where the rail has stacked segments it has ribbons, so it opens out
+of the rail's own head rather than standing on the sheet. `layoutFlows` is pure
+and DOM-free (the harness asserts flank assignment and residual placement with
+no browser); `renderSankey` draws the whole panel — offers, lede, drawing, key.
+
+- **Two halves of the rail, because only one is rebuilt.** `drawRail` clears and
+  redraws on every reading, which is every frame of a plate drag. So the compact
+  bar lives in `railBody`, which is cleared, and the drawing lives in `railFlow`,
+  which is re-lettered in place — rebuilt per frame it would restart its own
+  unfold forty times a second and lose the reader's scroll position inside it.
+  The **head is outside both**, built once: it is chrome, not a reading, and
+  inside `railBody` its toggle lost focus on every solve and its sticky range
+  ended where the compact bar did, which on the phone overlay scrolled away the
+  only way out.
+- **`setFlow` stores; it draws only when open.** A closed balance costs one
+  object and no DOM, which is what makes re-lettering on every drag frame cheap.
+- **What the drawing supersedes is hidden, not repeated.** Open, `.rail.open`
+  drops the compact key — the drawing's own key carries all five terms with
+  their tributaries under them, and the two together were the same five figures
+  twice, ten lines apart. The bar stays, because it is the summary being
+  extended. The stamp and the closure sentence are the rail's, said once.
+- **The unfold is a transition between two drawings of one quantity**, which is
+  the only thing that earns the motion: the spine grows from the centre, then
+  each ribbon extends out of it in the order the rail already stacks them,
+  largest first, and the lettering follows. `--i` per band carries the stagger.
+  All of it is off under `prefers-reduced-motion`.
+- **The narrow layout gets an overlay, because there is no footer to expand.**
+  At the index breakpoint the desk is `position: static` with no height to fill
+  and the strips stop scrolling, so growing in place would leave the drawing
+  competing with the whole page above it. `.rail.overlay` is `position: fixed;
+  inset: 0` with its own scroll, a sticky head so the way out never scrolls off,
+  Escape to close, and the body locked behind it. Which layout is live is read
+  from `indexMode()` — `--index` is declared on `.strips`, and reading it off
+  the desk gets nothing, because a custom property set on a child does not reach
+  its parent.
 
 - **The spine is a balanced node, and the sign of a term picks its side of it.**
   That is the move that lets a Sankey draw this balance at all: a ribbon diagram

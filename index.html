@@ -1022,132 +1022,6 @@
       .finding .q.hot { color: var(--redline); }
       .finding:empty { display: none; }
 
-      /* ── the flow drawing ───────────────────────────────────────── */
-
-      /* A block of the sheet, separated the way the bill and the register are.
-         It sits between the finding and the schedules because it is a picture
-         of the run rather than a table of it, and the sheet reads picture,
-         sentence, schedules. */
-      .flow {
-        margin-top: 34px;
-        padding-top: 28px;
-        border-top: 1px solid var(--rule);
-      }
-      .flow-lede {
-        margin: 6px 0 0;
-        font: 400 13px/1.55 var(--sans);
-        color: var(--ink-2);
-        max-width: 58ch;
-      }
-      .flow-lede:empty { display: none; }
-
-      /* Which instant the drawing reads at. Three offers, of which two are a
-         different kind of reading entirely — a sizing calculation rather than
-         an hour of the run — so the drawing states which under its own head
-         rather than leaving the marker to imply it. */
-      .flow-modes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-      .flow-mode {
-        all: unset;
-        display: inline-flex;
-        flex-direction: column;
-        gap: 1px;
-        padding: 5px 9px;
-        border: 1px solid var(--rule);
-        border-radius: var(--r);
-        background: var(--sheet);
-        cursor: pointer;
-        min-width: 0;
-        min-height: 0;
-      }
-      .flow-mode b { font: 500 10.5px/1.3 var(--cond); text-transform: uppercase; letter-spacing: 0.11em; color: var(--ink-2); }
-      .flow-mode span { font: 400 10px/1.3 var(--mono); color: var(--ink-3); font-variant-numeric: tabular-nums; }
-      .flow-mode[aria-pressed='true'] { border-color: var(--redline); }
-      .flow-mode[aria-pressed='true'] b { color: var(--redline); }
-      .flow-mode:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 1px; }
-      /* An offer this run cannot answer is shown and disabled rather than
-         removed: a mode that vanishes teaches the reader nothing about why. */
-      .flow-mode:disabled { cursor: default; opacity: 0.55; }
-
-      .flow-drawing { margin-top: 10px; }
-      .flow-drawing svg { display: block; width: 100%; height: auto; }
-      .flow-empty,
-      .flow-refused {
-        margin: 0;
-        padding: 18px 0;
-        font: 500 10px/1.5 var(--cond);
-        text-transform: uppercase;
-        letter-spacing: 0.16em;
-        color: var(--ink-ghost);
-      }
-      /* A refusal is a sentence, not a stamp — it has to say which mode and
-         why, so it is set as prose rather than as the empty state's label. */
-      .flow-refused {
-        font: 400 12px/1.55 var(--sans);
-        text-transform: none;
-        letter-spacing: 0;
-        color: var(--ink-3);
-        max-width: 56ch;
-      }
-
-      /* The key is the drawing's real text: everything the ribbons letter and
-         several things only it carries. This is what survives a narrow screen,
-         a printed sheet and a screen reader, so it is never decoration. */
-      .flow-key {
-        list-style: none;
-        margin: 14px 0 0;
-        padding: 0;
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-        gap: 12px 22px;
-        align-items: start;
-      }
-      /* A three-track grid rather than a flex row: the swatch, the name and the
-         figure line up down the column however long a name runs, and the note
-         spans all three underneath instead of shouldering the figure out of
-         line. */
-      .flow-item {
-        display: grid;
-        grid-template-columns: 9px minmax(0, 1fr) auto;
-        align-items: baseline;
-        gap: 1px 6px;
-        font: 400 10px/1.6 var(--mono);
-      }
-      .flow-swatch {
-        width: 8px; height: 8px;
-        border: 1px solid var(--rule-soft);
-        border-radius: 1px;
-        align-self: center;
-      }
-      /* A swatch with no fill would read as a segment drawn in the page colour.
-         The bare one is a rule instead: present, so the columns line up, and
-         plainly not a colour. */
-      .flow-swatch.bare { border: none; border-top: 1px solid var(--rule); height: 0; align-self: center; }
-      /* A tributary is indented under the ribbon it was read against and has no
-         swatch at all — it is not a segment of anything. */
-      .flow-item.sub { padding-left: 15px; }
-      .flow-item.sub > b { color: var(--ink-2); }
-      /* The tributary's slot in the swatch column stays empty rather than
-         collapsing, so its figure still lines up with the band's above it. */
-      .flow-swatch.none { border: none; background: none; }
-      .flow-group { display: flex; flex-direction: column; gap: 1px; }
-      /* The residual's swatch says what it is without a hue: it is the one mark
-         here that stands for something nobody measured. */
-      .flow-swatch.hatched {
-        background: repeating-linear-gradient(
-          45deg, var(--ink-3) 0 1px, transparent 1px 4px
-        );
-      }
-      .flow-item b { font-weight: 400; color: var(--ink); }
-      .flow-item span { color: var(--ink-3); font-variant-numeric: tabular-nums; }
-      .flow-item .why {
-        grid-column: 2 / -1;
-        font: 400 10px/1.45 var(--sans);
-        font-style: normal;
-        color: var(--ink-ghost);
-      }
-      .flow-item.absent b,
-      .flow-item.absent span { color: var(--ink-ghost); }
-
       /* ── the schedule ───────────────────────────────────────────── */
 
       .schedule { margin-top: 26px; }
@@ -3317,6 +3191,263 @@
       }
       .rail-note.loose { color: var(--ink-3); }
 
+      /* ── the balance, opened out ────────────────────────────────────
+
+         The flow drawing is the rail at full size, not a second instrument
+         beside it: the same five terms, where the rail has a centre-zero bar
+         it has a spine, and where the rail has stacked segments it has
+         ribbons. So it opens from the rail's own head, and the compact bar
+         stays above it rather than being replaced — the reader keeps the
+         summary they were looking at and gains the drawing under it. */
+
+      .rail-open {
+        all: unset;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 8px;
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        background: var(--sheet);
+        cursor: pointer;
+        flex: none;
+        min-width: 0;
+        min-height: 0;
+        font: 500 10px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-2);
+      }
+      .rail-open:hover { border-color: var(--rule-firm); }
+      .rail-open:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 1px; }
+      .rail-open[aria-expanded='true'] { border-color: var(--redline); color: var(--redline); }
+      /* The chevron turns rather than swapping glyph, so the control reads as
+         one thing in two states rather than two controls. */
+      .rail-chev {
+        width: 5px; height: 5px;
+        border-right: 1px solid currentColor;
+        border-bottom: 1px solid currentColor;
+        transform: rotate(-135deg) translate(-1px, -1px);
+        transition: transform 180ms ease;
+      }
+      .rail-open[aria-expanded='true'] .rail-chev { transform: rotate(45deg); }
+
+      /* Open, the drawing's own key carries all five terms with their
+         tributaries under them, so the compact key above it would be the same
+         five figures twice, ten lines apart. The bar stays — it is the summary
+         being extended — but its key gives way. */
+      .rail.open .rail-key { display: none; }
+
+      .rail-flow { margin-top: 14px; }
+      .rail-flow:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+
+      /* Open, on the layout where the rail is the desk's footer: the strips go
+         and the rail takes the column, which is the full window height the desk
+         is already sized to. The rail scrolls on its own so a long key does not
+         push the drawing off the bottom. */
+      .desk.balance-open .strips { display: none; }
+      .desk.balance-open .rail {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        border-top: 0;
+      }
+
+      /* ── the unfold ─────────────────────────────────────────────────
+
+         The rail's zero line becomes the spine and its segments become the
+         ribbons, so the drawing arrives by doing exactly that: the spine grows
+         from the centre, then each ribbon extends out of it in the order the
+         rail already stacks them, largest first, and the lettering follows.
+         It is a transition between two drawings of one quantity rather than a
+         panel sliding in, which is the only reason it earns the motion. */
+      @keyframes flow-spine-in { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+      @keyframes flow-band-in { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+      @keyframes flow-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+      .rail-flow.unfold .flow-spine {
+        transform-box: view-box;
+        animation: flow-spine-in 220ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+      }
+      .rail-flow.unfold .flow-band {
+        transform-box: view-box;
+        animation: flow-band-in 300ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+        animation-delay: calc(160ms + var(--i, 0) * 45ms);
+      }
+      .rail-flow.unfold .flow-label { animation: flow-fade-in 260ms ease backwards; animation-delay: 420ms; }
+      .rail-flow.unfold .flow-key { animation: flow-fade-in 260ms ease backwards; animation-delay: 460ms; }
+
+
+      /* Which instant, in the rail's own readout type — the same line the
+         rail's "Read at" carries, because it is the same question. */
+      .flow-stamp {
+        margin: 0;
+        font: 400 10px/1.4 var(--mono);
+        color: var(--ink-3);
+        font-variant-numeric: tabular-nums;
+      }
+      .flow-lede {
+        margin: 6px 0 0;
+        font: 400 13px/1.55 var(--sans);
+        color: var(--ink-2);
+        max-width: 58ch;
+      }
+      .flow-lede:empty { display: none; }
+
+      /* Which instant the drawing reads at. Three offers, of which two are a
+         different kind of reading entirely — a sizing calculation rather than
+         an hour of the run — so the drawing states which under its own head
+         rather than leaving the marker to imply it. */
+      .flow-modes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+      .flow-mode {
+        all: unset;
+        display: inline-flex;
+        flex-direction: column;
+        gap: 1px;
+        padding: 5px 9px;
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        background: var(--vellum);
+        cursor: pointer;
+        min-width: 0;
+        min-height: 0;
+      }
+      .flow-mode b { font: 500 10.5px/1.3 var(--cond); text-transform: uppercase; letter-spacing: 0.11em; color: var(--ink-2); }
+      .flow-mode span { font: 400 10px/1.3 var(--mono); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+      .flow-mode[aria-pressed='true'] { border-color: var(--redline); }
+      .flow-mode[aria-pressed='true'] b { color: var(--redline); }
+      .flow-mode:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 1px; }
+      /* An offer this run cannot answer is shown and disabled rather than
+         removed: a mode that vanishes teaches the reader nothing about why. */
+      .flow-mode:disabled { cursor: default; opacity: 0.55; }
+
+      .flow-drawing { margin-top: 10px; }
+      .flow-drawing svg { display: block; width: 100%; height: auto; }
+      .flow-empty,
+      .flow-refused {
+        margin: 0;
+        padding: 18px 0;
+        font: 500 10px/1.5 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        color: var(--ink-ghost);
+      }
+      /* A refusal is a sentence, not a stamp — it has to say which mode and
+         why, so it is set as prose rather than as the empty state's label. */
+      .flow-refused {
+        font: 400 12px/1.55 var(--sans);
+        text-transform: none;
+        letter-spacing: 0;
+        color: var(--ink-3);
+        max-width: 56ch;
+      }
+
+      /* The key is the drawing's real text: everything the ribbons letter and
+         several things only it carries. This is what survives a narrow screen,
+         a printed sheet and a screen reader, so it is never decoration. */
+      .flow-key {
+        list-style: none;
+        margin: 14px 0 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 12px 22px;
+        align-items: start;
+      }
+      /* A three-track grid rather than a flex row: the swatch, the name and the
+         figure line up down the column however long a name runs, and the note
+         spans all three underneath instead of shouldering the figure out of
+         line. */
+      .flow-item {
+        display: grid;
+        grid-template-columns: 9px minmax(0, 1fr) auto;
+        align-items: baseline;
+        gap: 1px 6px;
+        font: 400 10px/1.6 var(--mono);
+      }
+      .flow-swatch {
+        width: 8px; height: 8px;
+        border: 1px solid var(--rule-soft);
+        border-radius: 1px;
+        align-self: center;
+      }
+      /* A swatch with no fill would read as a segment drawn in the page colour.
+         The bare one is a rule instead: present, so the columns line up, and
+         plainly not a colour. */
+      .flow-swatch.bare { border: none; border-top: 1px solid var(--rule); height: 0; align-self: center; }
+      /* A tributary is indented under the ribbon it was read against and has no
+         swatch at all — it is not a segment of anything. */
+      .flow-item.sub { padding-left: 15px; }
+      .flow-item.sub > b { color: var(--ink-2); }
+      /* The tributary's slot in the swatch column stays empty rather than
+         collapsing, so its figure still lines up with the band's above it. */
+      .flow-swatch.none { border: none; background: none; }
+      .flow-group { display: flex; flex-direction: column; gap: 1px; }
+      /* The residual's swatch says what it is without a hue: it is the one mark
+         here that stands for something nobody measured. */
+      .flow-swatch.hatched {
+        background: repeating-linear-gradient(
+          45deg, var(--ink-3) 0 1px, transparent 1px 4px
+        );
+      }
+      .flow-item b { font-weight: 400; color: var(--ink); }
+      .flow-item span { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+      .flow-item .why {
+        grid-column: 2 / -1;
+        font: 400 10px/1.45 var(--sans);
+        font-style: normal;
+        color: var(--ink-ghost);
+      }
+      .flow-item.absent b,
+      .flow-item.absent span { color: var(--ink-ghost); }
+
+      /* ── the overlay, on the narrow layout ──────────────────────────
+
+         At the index breakpoint the desk is `position: static` with no height
+         to fill and the strips stop scrolling, so there is no footer to expand
+         into: growing in place would leave the drawing competing with the whole
+         page above it and never give it a screen. So the open balance becomes a
+         layer over the page instead, which is what "full window height" means
+         where nothing is height-constrained. Escape closes it, and the page
+         behind it is locked so a scroll gesture moves the drawing rather than
+         what it is covering. */
+      body.balance-overlay { overflow: hidden; }
+      .rail.overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        margin: 0;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+        border-top: 0;
+        background: var(--vellum);
+      }
+      /* The head stays put while the drawing scrolls under it, so the way out
+         is always on screen — on a phone the drawing is taller than the
+         viewport and a control at the top of a long scroll is a control the
+         reader has to go looking for. */
+      .rail.overlay .rail-head {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        margin: -16px -16px 0;
+        padding: 16px 16px 10px;
+        background: var(--vellum);
+        border-bottom: 1px solid var(--rule);
+      }
+      .rail.overlay .rail-open { min-height: 34px; padding: 0 12px; }
+
+      /* The motion is a flourish, and a flourish is the first thing to go. */
+      @media (prefers-reduced-motion: reduce) {
+        .rail-chev { transition: none; }
+        .rail-flow.unfold .flow-spine,
+        .rail-flow.unfold .flow-band,
+        .rail-flow.unfold .flow-label,
+        .rail-flow.unfold .flow-key { animation: none; }
+      }
+
+
       /* The desk stops being a column beside the sheet when the window cannot
          hold one — and that shortage has two directions, not one.
          `max-width: 780px` is the horizontal case, the phone, where there is no
@@ -3776,21 +3907,6 @@
                gesture, and carries a ghost of where the margin stood when you
                took hold. Armed from the board's own Chase marker. -->
           <p class="chase" id="chase" hidden></p>
-
-          <!-- The flow drawing. Not a conservative Sankey and deliberately so:
-               a ribbon diagram with only positive widths cannot draw a sink
-               among sources, and this balance is full of them. So the rail's
-               two-sided arrangement becomes ribbons on a zone-air spine, the
-               sign of a term choosing its flank. Only the spine claims to
-               balance; what it does not close by is hatched. Drawn by
-               `renderSankey` in src/sankey.js, re-lettered on every frame of a
-               plate drag by `reletterReading` in main.js. -->
-          <section class="flow" id="flow">
-            <p class="eyebrow">Heat flow<span class="base" id="flow-when"></span></p>
-            <p class="flow-lede" id="flow-lede"></p>
-            <div class="flow-modes" id="flow-modes" role="group" aria-label="Which instant the flow drawing reads at"></div>
-            <div class="flow-drawing" id="flow-drawing"></div>
-          </section>
 
           <section class="schedule">
             <p class="eyebrow">Results schedule<span class="base" id="baseline-note"></span></p>

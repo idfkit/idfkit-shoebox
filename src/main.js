@@ -2099,7 +2099,7 @@ function syncStudies() {
 // measurements of the desk as it stands and are true the instant a control
 // moves — dimming those would say the opposite of what they mean.
 const resultPanels = () =>
-  [$('trace'), $('when'), $('finding'), $('flow'), $('schedule'), $('bill'), $('score'), $('shelf-table'), $('chase')];
+  [$('trace'), $('when'), $('finding'), $('schedule'), $('bill'), $('score'), $('shelf-table'), $('chase')];
 
 // Results describe a shape. Once the shape moves, they describe a building that
 // is no longer on the sheet, so say so rather than letting them sit there.
@@ -2824,10 +2824,6 @@ function instantView() {
     });
   }
 
-  const closes = layout.closes == null ? '' :
-    layout.closes < 0.01
-      ? ` Closes to ${(layout.closes * 100).toFixed(2)} %.`
-      : ` Unclosed by ${watts(Math.abs(layout.intoTotal - layout.outOfTotal))}, ${(layout.closes * 100).toFixed(1)} % of the stack.`;
 
   return {
     layout,
@@ -2839,7 +2835,7 @@ function instantView() {
     lede:
       `The zone air balance at this hour, as ribbons on a balanced node: warm is heat arriving in the zone air, ` +
       `cold is heat leaving it, and a path running the other way is a ribbon on the other flank rather than a hole in the drawing. ` +
-      `The node is the only thing here that balances — the figures beside each ribbon are read against it and do not divide it.${closes}` +
+      `The node is the only thing here that balances — the figures beside each ribbon are read against it and do not divide it.` +
       (params.multiplier > 1 ? ` One zone of the ${params.multiplier} stacked.` : ''),
     summary:
       `Heat flow at ${lastAt.text}. ` +
@@ -2903,85 +2899,50 @@ function componentView(half, which) {
   };
 }
 
-/** Draw it, and the offers above it. */
-function renderFlow() {
-  const view = flowView();
-  renderSankey($('flow-drawing'), view);
-  set('flow-when', view?.stamp ? ` · ${view.stamp}` : '');
-  renderLede($('flow-lede'), view?.lede ?? '');
-  renderFlowModes();
-}
-
 /**
- * The lede, with the one clause that has to be stressed actually stressed.
+ * The three instants the drawing can be read at, as offers the panel draws.
  *
- * `**…**` in these strings is not decoration: the peak modes' lede turns on
- * *"this is not an hour of the run above"*, which is the whole difference
- * between a sizing calculation and a reading. Deleting the markers with a
- * regex replace and setting the sentence flat, as this did, threw the emphasis
- * away and left them with no effect but that the author had written them.
+ * Refused with a reason rather than hidden when the run cannot answer one, by
+ * the same rule the hour bar's named instants follow: an offer that disappears
+ * teaches the reader nothing about why it is not there.
  */
-function renderLede(host, source) {
-  if (!host) return;
-  host.replaceChildren();
-  if (!source) return;
-  // Odd segments are the ones between a pair of markers. An unpaired marker
-  // therefore reads as plain text rather than emphasising the rest of the
-  // paragraph, which is the failure mode worth choosing against.
-  const parts = source.split('**');
-  for (const [i, part] of parts.entries()) {
-    if (!part) continue;
-    host.append(i % 2 && i < parts.length - 1 ? el('b', null, part) : document.createTextNode(part));
-  }
-}
-
-/**
- * The three offers.
- *
- * The two peaks are refused with a reason rather than hidden when the run
- * cannot answer them, by the same rule the hour bar's named instants follow: an
- * offer that disappears teaches the reader nothing about why it is not there.
- */
-function renderFlowModes() {
-  const host = $('flow-modes');
-  if (!host) return;
-  // Which chip had the keyboard, so it can have it back after the rebuild —
-  // the same move `renderWhen` makes, and needed for the same reason: this is
-  // rebuilt whole from a solve, a tariff turn and every frame of a plate drag,
-  // and a reader who has just tabbed onto "Cooling peak" would otherwise be
-  // dropped on the body by a gesture happening somewhere else on the sheet.
-  const refocus = document.activeElement?.closest?.('#flow-modes') ? document.activeElement.id : null;
-  host.replaceChildren();
-  const offers = [
-    { id: 'now', label: 'Pinned hour', sub: lastAt?.text ?? '—', available: Boolean(lastReadFrom) },
-    { id: 'peakCool', label: 'Cooling peak', sub: lastComponents?.cooling?.at?.text ?? '—', available: Boolean(lastComponents?.cooling) },
-    { id: 'peakHeat', label: 'Heating peak', sub: lastComponents?.heating?.at?.text ?? '—', available: Boolean(lastComponents?.heating) },
-  ];
-  for (const offer of offers) {
-    const chip = el('button', 'flow-mode');
-    chip.type = 'button';
-    chip.id = `flow-mode-${offer.id}`;
-    chip.append(el('b', null, offer.label), el('span', null, offer.sub));
-    if (!offer.available) {
-      chip.disabled = true;
-      chip.title = offer.id === 'now'
-        ? 'Nothing has been solved yet.'
-        : componentRefusal ?? 'This run carried no such sizing peak. The System strip has to be in the path.';
-      host.append(chip);
-      continue;
-    }
-    chip.setAttribute('aria-pressed', String(flowMode === offer.id));
-    chip.title = offer.id === 'now'
-      ? 'Read the balance at the hour the plate is holding.'
-      : 'Read the component decomposition at the sizing peak — a calculation over the design day, not an hour of this run.';
-    chip.addEventListener('click', () => {
+function flowOffers() {
+  return [
+    { id: 'now', label: 'Pinned hour', sub: lastAt?.text ?? '—', available: Boolean(lastReadFrom),
+      blurb: 'Read the balance at the hour the plate is holding.',
+      refusal: 'Nothing has been solved yet.' },
+    { id: 'peakCool', label: 'Cooling peak', sub: lastComponents?.cooling?.at?.text ?? '—',
+      available: Boolean(lastComponents?.cooling),
+      blurb: 'Read the component decomposition at the sizing peak — a calculation over the design day, not an hour of this run.',
+      refusal: componentRefusal ?? 'This run carried no cooling sizing peak. The System strip has to be in the path.' },
+    { id: 'peakHeat', label: 'Heating peak', sub: lastComponents?.heating?.at?.text ?? '—',
+      available: Boolean(lastComponents?.heating),
+      blurb: 'Read the component decomposition at the sizing peak — a calculation over the design day, not an hour of this run.',
+      refusal: componentRefusal ?? 'This run carried no heating sizing peak. The System strip has to be in the path.' },
+  ].map((offer) => ({
+    ...offer,
+    active: flowMode === offer.id,
+    take: () => {
       flowMode = offer.id;
       renderFlow();
-      $(chip.id)?.focus();
-    });
-    host.append(chip);
-  }
-  if (refocus) $(refocus)?.focus();
+    },
+  }));
+}
+
+/**
+ * Hand the rail the view for the instant it is lettering.
+ *
+ * The drawing is the rail opened out rather than a block of its own, so this
+ * does not draw anything: it builds the view and gives it to the console, which
+ * renders it only while the balance is open. That is the saving that makes the
+ * whole arrangement cheap — a plate drag re-letters on every frame, and a
+ * closed balance costs one object and no DOM at all.
+ */
+function renderFlow() {
+  // The offers stand even when there is nothing to draw: before the first run
+  // they are what says the drawing exists and what it will read at.
+  const view = flowView();
+  desk?.setFlow({ ...(view ?? { empty: true }), offers: flowOffers() });
 }
 
 /* ══ the hour bar ════════════════════════════════════════════════════════ */

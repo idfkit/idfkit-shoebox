@@ -16,6 +16,7 @@ import { quantityField } from './field.js';
 // definition: a second copy here would be the first thing to drift the day a
 // figure changed precision on one surface and not the other.
 import { watts } from './readings.js';
+import { renderSankey } from './sankey.js';
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -66,7 +67,7 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
  * scales cannot drift apart. Every gesture goes back out through `onChange`.
  */
 export function mountConsole({
-  host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear, onPin,
+  host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear, onPin, onBalance,
 }) {
   const strips = new Map(); // channel id -> { redraw(), meter, patch, solo }
   const faces = new Map(); // parameter key -> redraw for that control
@@ -99,6 +100,35 @@ export function mountConsole({
   // columns balance to the content and the overflow stays vertical.
   const stripGrid = el('div', 'strip-grid');
   const railHost = el('div', 'rail');
+  /*
+   * The rail in two halves, because only one of them is rebuilt.
+   *
+   * `drawRail` clears and redraws on every reading, which is every frame of a
+   * plate drag. The flow drawing is the same five terms opened out, and it has
+   * to survive that: rebuilt from scratch per frame it would restart its own
+   * unfold animation forty times a second and lose the reader's scroll position
+   * inside it. So the compact bar lives in `railBody`, which is cleared, and
+   * the drawing lives in `railFlow`, which is re-lettered in place.
+   */
+  /*
+   * The head is chrome rather than a reading, so it is built once and sits
+   * outside the half that is rebuilt. Two things follow. It stops being
+   * recreated forty times a second during a plate drag, so the toggle inside it
+   * keeps its identity and its focus. And its sticky range becomes the whole
+   * rail rather than just the compact bar — inside `railBody` it unstuck the
+   * moment the reader scrolled into the drawing, which on the phone overlay
+   * meant scrolling away the only way out.
+   */
+  const railHead = el('div', 'rail-head');
+  const railBody = el('div', 'rail-body');
+  const railFlow = el('div', 'rail-flow');
+  railFlow.id = 'rail-flow';
+  railFlow.tabIndex = -1;
+  railFlow.setAttribute('role', 'group');
+  railFlow.setAttribute('aria-label', 'The zone air heat balance, drawn');
+  railFlow.hidden = true;
+  railHead.append(el('p', 'eyebrow', 'Zone air heat balance'));
+  railHost.append(railHead, railBody, railFlow);
 
   for (const channel of CHANNELS) stripGrid.append(buildStrip(channel));
   stripHost.append(stripGrid);
@@ -1864,6 +1894,22 @@ export function mountConsole({
      * re-lettered on every apply, and a readout left standing while the
      * meters were cleared would describe a run the strips no longer report.
      */
+    /**
+     * Hand the rail the flow drawing's view for the instant it is lettering.
+     *
+     * Stored rather than drawn when the balance is closed, which is the common
+     * case: a plate drag re-letters on every frame and there is no reason to
+     * build an SVG nobody has opened. Opening draws from whatever was last
+     * handed in, so the drawing is never a frame behind the bar above it.
+     */
+    setFlow(view) {
+      flowView = view;
+      drawFlow();
+    },
+
+    /** Whether the balance is opened out — the sheet asks, to letter the link. */
+    balanceOpen: () => balanceOpen,
+
     setReadings(readings, derived, at = null, readouts = null) {
       reading = at;
       for (const channel of CHANNELS) {
@@ -2049,6 +2095,112 @@ export function mountConsole({
     return wrap;
   }
 
+  /*
+   * The balance, opened out.
+   *
+   * The rail is the same five terms the flow drawing is, drawn small: a
+   * centre-zero bar where the drawing has a spine, and stacked segments where
+   * it has ribbons. So the drawing is not a second instrument beside the rail,
+   * it is the rail at full size — which is why it opens from here rather than
+   * standing on the sheet, and why the compact bar stays visible above it
+   * rather than being replaced.
+   */
+  let balanceOpen = false;
+  let flowView = null;
+
+  /**
+   * Whether the desk is on the layout where the rail is a scrolling footer.
+   *
+   * `indexMode()` above, read the one place it is declared: `--index` lives on
+   * `.strips`, and reading it off the desk instead gets nothing, because a
+   * custom property set on a child does not reach its parent. That is exactly
+   * the bug this had — the narrow layout took the footer path and the overlay
+   * never engaged.
+   */
+  const railIsFooter = () => !indexMode();
+
+  function balanceToggle() {
+    const button = el('button', 'rail-open');
+    button.type = 'button';
+    button.id = 'rail-open';
+    button.setAttribute('aria-controls', 'rail-flow');
+    button.append(el('span', null, ''), el('i', 'rail-chev'));
+    button.addEventListener('click', () => setBalanceOpen(!balanceOpen));
+    syncToggle(button);
+    return button;
+  }
+
+  /**
+   * Put the toggle into the state the balance is actually in.
+   *
+   * Kept apart from building it because the two happen at different moments:
+   * `drawRail` rebuilds the head on every reading, but pressing the button
+   * changes the state without any reading at all. Read only at build time, the
+   * control said "Open out" over an open drawing until the next solve.
+   *
+   * The word on it is a verb with no object, so the sentence saying what
+   * pressing it does rides on `title` and `aria-label` together — the
+   * scoreboard's Chase marker again, and for the same reason: a hint that
+   * exists only on hover does not exist on a phone at all. Both halves flip
+   * together, because the sentence describes the state being left.
+   */
+  function syncToggle(button = document.getElementById('rail-open')) {
+    if (!button) return;
+    const says = balanceOpen
+      ? 'Close the flow drawing and leave the balance as a bar'
+      : 'Open the balance out: every path at this hour, drawn as ribbons';
+    button.setAttribute('aria-expanded', String(balanceOpen));
+    button.title = says;
+    button.setAttribute('aria-label', says);
+    button.querySelector('span').textContent = balanceOpen ? 'Close' : 'Open out';
+  }
+
+  function setBalanceOpen(open) {
+    if (open === balanceOpen) return;
+    balanceOpen = open;
+    host.classList.toggle('balance-open', open);
+    // One class on the rail itself, so the parts the drawing supersedes can be
+    // hidden by a single rule whichever way it opened.
+    railHost.classList.toggle('open', open);
+    // The overlay is the narrow layout's answer to "full window height": there
+    // the desk is `position: static` with no height to fill, so growing in
+    // place would leave the drawing competing with the whole page above it.
+    railHost.classList.toggle('overlay', open && !railIsFooter());
+    document.body.classList.toggle('balance-overlay', open && !railIsFooter());
+    railFlow.hidden = !open;
+    syncToggle();
+    if (open) {
+      drawFlow({ unfold: true });
+      // Focus lands on the drawing so a keyboard reader is put inside what they
+      // just opened rather than left on a button that now says Close.
+      railFlow.focus({ preventScroll: true });
+    } else {
+      railFlow.replaceChildren();
+      document.getElementById('rail-open')?.focus();
+    }
+    onBalance?.(open);
+  }
+
+  /** Draw, or re-letter, whatever view was last handed in. */
+  function drawFlow({ unfold = false } = {}) {
+    if (!balanceOpen) return;
+    renderSankey(railFlow, flowView);
+    if (!unfold) return;
+    // Restarting the animation needs the class off, a reflow, and the class on
+    // again — otherwise a re-open inside the same frame does nothing.
+    railFlow.classList.remove('unfold');
+    void railFlow.offsetWidth;
+    railFlow.classList.add('unfold');
+  }
+
+  // The overlay is a layer over the page, so it takes Escape like any other.
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && balanceOpen && railHost.classList.contains('overlay')) {
+      event.preventDefault();
+      setBalanceOpen(false);
+    }
+  });
+
   /**
    * The master bus: the zone air heat balance, as one signed rail.
    *
@@ -2060,24 +2212,25 @@ export function mountConsole({
    * one dishonest thing on the sheet.
    */
   function drawRail(readings) {
-    railHost.textContent = '';
+    railBody.textContent = '';
     const terms = CHANNELS.filter((c) => c.meter?.rail)
       .map((c) => ({ channel: c, w: readings.get(c.id) }))
       .filter((t) => Number.isFinite(t.w) && Math.abs(t.w) > 0.5);
 
-    const head = el('div', 'rail-head');
-    head.append(el('p', 'eyebrow', 'Zone air heat balance'));
-    railHost.append(head);
+    // The head is mounted once, above; the toggle is only added once there is
+    // a balance to open — before the first run there is nothing to draw and an
+    // offer to draw it would be a control that does nothing.
+    if (!railHead.querySelector('.rail-open')) railHead.append(balanceToggle());
     // Every meter on the desk is an instantaneous reading, so the rail has to
     // say which instant, or the numbers are unfalsifiable. And because that
     // instant is chosen by the result — the hour furthest from 20 °C, which a
     // control can move without touching the quantity being read — the line
     // that states it is also where it is held still. One control, in the one
     // place the reading hour is already named.
-    if (reading) railHost.append(whenLine());
+    if (reading) railBody.append(whenLine());
 
     if (!terms.length) {
-      railHost.append(el('p', 'rail-empty', 'No solved run to balance yet.'));
+      railBody.append(el('p', 'rail-empty', 'No solved run to balance yet.'));
       return;
     }
 
@@ -2085,7 +2238,15 @@ export function mountConsole({
     const outOf = terms.filter((t) => t.w < 0).reduce((a, t) => a - t.w, 0);
     const residual = into - outOf;
     const scale = Math.max(into, outOf) || 1;
-    head.append(el('b', 'rail-total', `± ${watts(Math.max(into, outOf))}`));
+    // Set in place rather than appended: the head persists across readings now,
+    // so appending would stack a new total beside the last one every frame.
+    // It sits before the toggle, which is chrome and stays at the end.
+    let total = railHead.querySelector('.rail-total');
+    if (!total) {
+      total = el('b', 'rail-total');
+      railHead.insertBefore(total, railHead.querySelector('.rail-open'));
+    }
+    total.textContent = `± ${watts(Math.max(into, outOf))}`;
 
     /*
      * Adjacent segments on the same side of zero share a hue, because the hue
@@ -2126,7 +2287,7 @@ export function mountConsole({
       }
     }
     track.append(el('i', 'rail-zero'));
-    railHost.append(track);
+    railBody.append(track);
 
     const key = el('div', 'rail-key');
     // Keyed in the order they are laid on the rail, so a swatch can be matched
@@ -2138,7 +2299,7 @@ export function mountConsole({
       item.append(swatch, el('span', null, t.channel.name), el('b', null, watts(t.w)));
       key.append(item);
     }
-    railHost.append(key);
+    railBody.append(key);
 
     // A term that is out of the path is not reported at all, so the rail is
     // being asked to balance an equation with pieces missing. Saying which
@@ -2151,7 +2312,7 @@ export function mountConsole({
       note.textContent =
         `${missing.map((c) => c.name).join(', ')} ${missing.length === 1 ? 'is' : 'are'} out of the path and not reported, so the rail is weighing ${terms.length} of the balance's five terms rather than closing it.`;
       note.classList.add('loose');
-      railHost.append(note);
+      railBody.append(note);
       return;
     }
     if (scale < 50) {
@@ -2167,7 +2328,7 @@ export function mountConsole({
       note.textContent = `Unclosed by ${watts(residual)}, ${(closure * 100).toFixed(1)} % of the stack. These are hourly means of sub-hourly terms, so they do not cancel exactly.`;
       note.classList.add('loose');
     }
-    railHost.append(note);
+    railBody.append(note);
   }
 
   api.sync();
