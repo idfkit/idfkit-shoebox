@@ -2981,8 +2981,20 @@
       /* Which way a rail term's watts are going, beside the watts. Set below
          the figure in weight and colour because it is closer to a unit than to
          a second reading: the same relation `m²K/W` has to the number it
-         follows on a scale's face. */
+         follows on a scale's face.
+
+         Given the width of the longer of the two words rather than its own,
+         for the reason `.rail-dir` is: the head is a flex row with `flex: 1`
+         on the label, so the figure is held out against the right edge and a
+         cell that sized itself would drag it left and back as the reading
+         changed sides — twelve pixels when a run lands on a strip that was
+         reading an em dash, six more every time a drag flips the term's sign.
+         A fixed box holds the column still in all three states, the empty one
+         included. 3.2ch of the mono face rather than 3: `out` is three
+         characters, and the fifth over is slack against sub-pixel rounding. */
       .meter-dir {
+        flex: none;
+        width: 3.2ch;
         font: 400 10px/1.2 var(--mono);
         font-style: normal;
         color: var(--ink-3);

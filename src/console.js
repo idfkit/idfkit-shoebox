@@ -2229,7 +2229,16 @@ export function mountConsole({
     } else if (closure < 0.01) {
       note.textContent = `Closes to ${(closure * 100).toFixed(2)} %.`;
     } else {
-      note.textContent = `Unclosed by ${watts(residual)}, ${(closure * 100).toFixed(1)} % of the stack. These are hourly means of sub-hourly terms, so they do not cancel exactly.`;
+      // The residual is the last signed figure on the rail, and it is the one
+      // a minus sign cannot carry on its own: it stands mid-sentence rather
+      // than in a column beside a direction word, and read aloud "minus three
+      // hundred and twenty watts" says nothing whatever about which side of
+      // the balance is the longer one. So the magnitude is lettered and the
+      // side is said in words, by the same rule that put `in` and `out` beside
+      // every term above it.
+      note.textContent = `Unclosed by ${watts(Math.abs(residual))} — ${
+        residual > 0 ? 'more heat arriving than leaving' : 'more heat leaving than arriving'
+      }, ${(closure * 100).toFixed(1)} % of the stack. These are hourly means of sub-hourly terms, so they do not cancel exactly.`;
       note.classList.add('loose');
     }
     railHost.append(note);
