@@ -328,29 +328,60 @@ const el = (tag, className, text) => {
   return node;
 };
 
-/** Fixed viewBox, fluid element — the plate's arrangement. */
-const W = 820;
+/**
+ * The viewBox is built out of the host's measured width, so one unit is one
+ * pixel and the lettering renders at the size it is declared at.
+ *
+ * A *fixed* viewBox is what this had, and it was wrong in the one way that
+ * matters: `width: 100%` then scales the whole drawing, text included, by
+ * whatever ratio the container happens to be. Measured in the rail, an 820-unit
+ * box rendered into 460 px — a scale of 0.561, which took 8.5px labels down to
+ * about 4.8px against a key set at 10px beside them. `renderTrace` has always
+ * built its viewBox from `host.clientWidth` for this reason; the flow drawing
+ * now does the same, and pays the same price, which is that it has to be
+ * redrawn when the container resizes.
+ */
 const H = 320;
 const PAD = { t: 42, b: 26 };
-/** The spine sits at the middle; the flanks are what radiate from it. */
-const SPINE = { x: W / 2, w: 13 };
-/** How far a ribbon runs before its stub, and where the fuel chain goes on. */
-const REACH = 150;
-const CHAIN = 96;
+const SPINE_W = 13;
 /**
- * Where the lettering sits on one flank, measured from the spine's centre.
+ * Roughly how wide one character of the mono face is at the drawing's own size.
  *
- * Outboard of the chain lane where a chain is drawn, and tight against the
- * bands where none is. Inboard of the chain, the wedge printed straight over
- * the band labels — at a heating hour the system band is 97 % of its flank and
- * the wedge flares wider still, so `System 11.0 kW` was drawn and then buried.
- *
- * Reserving the lane on *both* flanks regardless was the first fix and it was
- * worse: the peak modes draw no chain at all, so it spent 96 px a side on
- * nothing and clipped `Fenestration Conduction 243 W` off the edge of the
- * viewBox. The lane is reserved where it is used.
+ * Used only to decide which *form* of a label will fit, never to place
+ * anything — the anchors do the placing. IBM Plex Mono is 0.6 em wide, so at
+ * 10px this is 6, and it is deliberately a slight over-estimate so the choice
+ * errs toward the shorter form rather than the clipped one.
  */
-const laneFor = (hasChain) => SPINE.w / 2 + REACH + (hasChain ? CHAIN + 12 : 10);
+const CHAR = 6.1;
+/** Below this even a bare name will not fit, and the key carries everything. */
+const LABEL_MIN = 44;
+
+/**
+ * Divide one flank between the ribbon, the chain lane and the lettering.
+ *
+ * Proportional rather than fixed, because the drawing now lives in the desk's
+ * column and on a phone overlay rather than across a sheet: at 460 px a fixed
+ * 150 px reach plus a 96 px chain leaves nothing for a label, and at 358 px it
+ * leaves less than nothing. Where the lettering will not fit it is dropped
+ * rather than shrunk — the key beside the drawing carries every figure already,
+ * and it is the surface this sheet's own rule says has to stay readable.
+ */
+function proportions(width, { hasChain }) {
+  const flank = width / 2 - SPINE_W / 2;
+  const chain = hasChain ? Math.min(96, flank * 0.24) : 0;
+  const room = Math.max(0, flank - chain - Math.min(150, flank * 0.34) - 14);
+  const letters = room >= LABEL_MIN;
+  // With no lettering to leave room for, the ribbons take what is left.
+  const reach = letters ? Math.min(150, flank * 0.34) : flank - chain - 6;
+  return {
+    flank,
+    chain,
+    reach,
+    letters,
+    room,
+    lane: SPINE_W / 2 + reach + (hasChain ? chain + 12 : 10),
+  };
+}
 
 /**
  * The hatch, for the one thing on this drawing that is not a measurement.
@@ -376,7 +407,9 @@ function hatchDefs() {
 const text = (string, attrs) => {
   const node = svg('text', {
     'font-family': 'var(--mono)',
-    'font-size': 8.5,
+    // One unit is one pixel now, so this is the size it renders at — the
+    // console's own readout size, which is what everything beside it is set in.
+    'font-size': 10,
     fill: 'var(--ink-3)',
     ...attrs,
   });
@@ -384,8 +417,23 @@ const text = (string, attrs) => {
   return node;
 };
 
+/**
+ * The longest form of a label that will actually fit the room it has.
+ *
+ * A ribbon diagram whose names run off the edge of its own viewBox is worse
+ * than one with no names on it, and the key below carries every figure either
+ * way — so the drawing takes the fullest form it can and gives up the rest.
+ * Name and figure where there is room for both, the bare name where there is
+ * room for one, nothing where there is room for neither.
+ */
+function fitLabel(full, short, room) {
+  if (full && full.length * CHAR <= room) return full;
+  if (short && short.length * CHAR <= room) return short;
+  return null;
+}
+
 /** One band, drawn from the spine outwards on its own flank. */
-function band(entry, { top, height, letter, lane }) {
+function band(entry, { top, height, letter, lane, geo }) {
   const group = svg('g');
   // The rail's segments become these, so they carry the same rank the rail
   // stacks by and unfold outward from the spine in that order.
@@ -394,16 +442,16 @@ function band(entry, { top, height, letter, lane }) {
   const y = top + entry.y * height;
   const h = Math.max(entry.height * height, 1.6);
   const leaving = entry.side === 'outOf';
-  const inner = leaving ? SPINE.x + SPINE.w / 2 : SPINE.x - SPINE.w / 2;
-  const outer = leaving ? inner + REACH : inner - REACH;
+  const inner = leaving ? geo.x + SPINE_W / 2 : geo.x - SPINE_W / 2;
+  const outer = leaving ? inner + geo.reach : inner - geo.reach;
   const left = Math.min(inner, outer);
 
-  group.style.transformOrigin = `${SPINE.x}px ${y + Math.max(entry.height * height, 1.6) / 2}px`;
+  group.style.transformOrigin = `${geo.x}px ${y + Math.max(entry.height * height, 1.6) / 2}px`;
 
   const rect = svg('rect', {
     x: left,
     y,
-    width: REACH,
+    width: geo.reach,
     height: h,
     fill: entry.hatched ? 'url(#flow-residual)' : entry.tone,
     // Deaf, for the axon's reason: nothing under the drawing should lose a
@@ -432,9 +480,9 @@ function band(entry, { top, height, letter, lane }) {
   // most delayed components on the drawing would be the only ones shown at
   // full strength.
   if (entry.instantShare != null && entry.instantShare < 1) {
-    const instantW = REACH * entry.instantShare;
-    const cutX = leaving ? left + instantW : left + REACH - instantW;
-    const delayedW = REACH - instantW;
+    const instantW = geo.reach * entry.instantShare;
+    const cutX = leaving ? left + instantW : left + geo.reach - instantW;
+    const delayedW = geo.reach - instantW;
     group.append(
       svg('rect', {
         // The *delayed* half is the one drawn lighter, and which half gets the
@@ -474,7 +522,7 @@ function band(entry, { top, height, letter, lane }) {
     label: letter
       ? {
           text: letter,
-          x: SPINE.x + (leaving ? lane : -lane),
+          x: geo.x + (leaving ? lane : -lane),
           anchor: leaving ? 'start' : 'end',
           y: y + h / 2 + 3,
         }
@@ -516,11 +564,11 @@ function settle(labels, { gap = 9, top, bottom }) {
  * simulated — there is no boiler in this model — so the step is lettered with
  * the number it divides by and the reader can redo it.
  */
-function chainOf(fuel, { y, h, leaving, watts, lane }) {
+function chainOf(fuel, { y, h, leaving, watts, lane, geo }) {
   const group = svg('g');
   const dir = leaving ? 1 : -1;
-  const from = leaving ? SPINE.x + SPINE.w / 2 + REACH : SPINE.x - SPINE.w / 2 - REACH;
-  const to = from + dir * CHAIN;
+  const from = leaving ? geo.x + SPINE_W / 2 + geo.reach : geo.x - SPINE_W / 2 - geo.reach;
+  const to = from + dir * geo.chain;
   // Drawn to the same scale as the ribbon it continues, so the step is a real
   // comparison rather than a decoration.
   const drawH = Math.max((h * fuel.draw) / Math.max(Math.abs(watts), 1e-9), 1.6);
@@ -541,7 +589,7 @@ function chainOf(fuel, { y, h, leaving, watts, lane }) {
     group,
     label: {
       text: `${fuel.plantLabel}${fuel.divisor ? ` ÷ ${fuel.divisor}` : ' (no plant)'}`,
-      x: SPINE.x + (leaving ? lane : -lane),
+      x: geo.x + (leaving ? lane : -lane),
       anchor: leaving ? 'start' : 'end',
       y: mid + 3,
     },
@@ -577,6 +625,21 @@ export function renderSankey(host, view) {
   }
 
   const { layout, fuel } = view;
+
+  // One unit to one pixel, so the lettering is the size it says it is. 320 is
+  // the floor: below that the drawing is unreadable however it is scaled, and
+  // letting the viewBox go narrower would only shrink it again.
+  const W = Math.max(host.clientWidth || 0, 320);
+  const chainSide = fuel && view.systemBand ? view.systemBand.side : null;
+  const geo = { x: W / 2 };
+  const sides = {
+    into: proportions(W, { hasChain: chainSide === 'into' }),
+    outOf: proportions(W, { hasChain: chainSide === 'outOf' }),
+  };
+  // The two flanks share one reach, or the spine would have ribbons of
+  // different lengths either side of it and read as two drawings.
+  const reach = Math.min(sides.into.reach, sides.outOf.reach);
+
   const frame = svg('svg', {
     viewBox: `0 0 ${W} ${H}`,
     width: '100%',
@@ -591,9 +654,9 @@ export function renderSankey(host, view) {
   // The spine. It is the only thing on this drawing that claims to balance, so
   // it is the only thing drawn as a single continuous object.
   const spine = svg('rect', {
-    x: SPINE.x - SPINE.w / 2,
+    x: geo.x - SPINE_W / 2,
     y: top - 6,
-    width: SPINE.w,
+    width: SPINE_W,
     height: height + 12,
     fill: 'var(--inset)',
     stroke: 'var(--rule)',
@@ -603,21 +666,24 @@ export function renderSankey(host, view) {
   // Named for the unfold: the rail's centre-zero hairline grows into this, so
   // it is the first thing to move and everything else hangs off it.
   spine.setAttribute('class', 'flow-spine');
-  spine.style.transformOrigin = `${SPINE.x}px ${top + height / 2}px`;
+  spine.style.transformOrigin = `${geo.x}px ${top + height / 2}px`;
   frame.append(spine);
 
   const letterFor = (entry) => `${entry.label} ${view.format(entry.watts)}`;
 
-  // Which flank the chain lands on has to be known before anything is lettered,
-  // because it decides how much room that flank's labels have.
-  const chainSide = fuel && view.systemBand ? view.systemBand.side : null;
-  const lanes = { into: laneFor(chainSide === 'into'), outOf: laneFor(chainSide === 'outOf') };
+  const lanes = { into: sides.into.lane, outOf: sides.outOf.lane };
+  const geoFor = (side) => ({ ...geo, reach, chain: sides[side].chain });
 
   // Drawn per flank, so each flank's labels can be settled against each other
-  // without the other flank's crowding pushing them about.
+  // without the other flank's crowding pushing them about. Where there is no
+  // room to letter, nothing is drawn and the key carries the figures — it is
+  // the surface that has to stay readable anyway.
   const flanks = { into: [], outOf: [] };
   const draw = (entry, letter) => {
-    const drawn = band(entry, { top, height, letter, lane: lanes[entry.side] });
+    const drawn = band(entry, {
+      top, height, geo: geoFor(entry.side), lane: lanes[entry.side],
+      letter: fitLabel(letter, entry.label, sides[entry.side].room),
+    });
     frame.append(drawn.group);
     if (drawn.label) flanks[entry.side].push(drawn.label);
   };
@@ -640,7 +706,13 @@ export function renderSankey(host, view) {
       leaving: entry.side === 'outOf',
       watts: entry.watts,
       lane: lanes[entry.side],
+      geo: geoFor(entry.side),
     });
+    if (drawn.label) {
+      const fitted = fitLabel(drawn.label.text, fuel.plantLabel, sides[entry.side].room);
+      if (fitted) drawn.label.text = fitted;
+      else drawn.label = null;
+    }
     frame.append(drawn.group);
     if (drawn.label) flanks[entry.side].push(drawn.label);
   }
@@ -679,18 +751,21 @@ export function renderSankey(host, view) {
   const head = top - 10;
   frame.append(
     text('ZONE AIR', {
-      x: SPINE.x,
+      x: geo.x,
       y: top - 25,
       'text-anchor': 'middle',
       'font-family': 'var(--cond)',
-      'font-size': 8,
+      // The eyebrow size the rest of the page uses. At 8 it was the smallest
+      // thing on the desk by two points, which is what the fixed viewBox used
+      // to hide — everything shrank together, so nothing looked wrong.
+      'font-size': 10.5,
       'letter-spacing': '0.13em',
       fill: 'var(--ink-3)',
     }),
   );
   frame.append(
     text(`${view.format(layout.intoTotal)} arriving`, {
-      x: SPINE.x - SPINE.w / 2 - 14,
+      x: geo.x - SPINE_W / 2 - 14,
       y: head,
       'text-anchor': 'end',
       fill: 'var(--ink-2)',
@@ -698,7 +773,7 @@ export function renderSankey(host, view) {
   );
   frame.append(
     text(`${view.format(layout.outOfTotal)} leaving`, {
-      x: SPINE.x + SPINE.w / 2 + 14,
+      x: geo.x + SPINE_W / 2 + 14,
       y: head,
       'text-anchor': 'start',
       fill: 'var(--ink-2)',

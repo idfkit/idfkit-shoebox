@@ -1287,6 +1287,20 @@ no browser); `renderSankey` draws the whole panel — offers, lede, drawing, key
   by that ribbon's own watts — is drawn three times wider than the ribbon it
   continues. The rule is the rail's, and it is the same trap: this side of the
   balance is found by arithmetic rather than by reading.
+- **The viewBox is built from the host's own width, so one unit is one pixel.**
+  A fixed viewBox with `width: 100%` scales the whole drawing to fit, lettering
+  included — measured in the rail, an 820-unit box in a 460 px container put
+  8.5px labels on screen at about 4.8px against a key set at 10px beside them,
+  and nothing looked wrong because everything shrank together. `renderTrace` has
+  always built its viewBox out of `host.clientWidth`; this does the same and
+  pays the same price, which is that a `ResizeObserver` has to redraw it — armed
+  only while the balance is open, since a closed one renders nothing.
+- **A label that will not fit is shortened, then dropped — never clipped.**
+  `proportions` divides a flank between the ribbon, the chain lane and the
+  lettering, and `fitLabel` takes the fullest form the room will hold: name and
+  figure, then the bare name, then nothing. The key carries every figure either
+  way, so a drawing whose names run off its own viewBox is strictly worse than
+  one with fewer names on it.
 - **The key is the drawing's real text.** Every ribbon's figure is repeated
   there and several readings exist only there. It groups each band with its own
   tributaries so the nesting survives a reflow, and at 390 px it is one column

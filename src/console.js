@@ -2170,16 +2170,31 @@ export function mountConsole({
     railFlow.hidden = !open;
     syncToggle();
     if (open) {
+      flowResize.observe(railFlow);
       drawFlow({ unfold: true });
       // Focus lands on the drawing so a keyboard reader is put inside what they
       // just opened rather than left on a button that now says Close.
       railFlow.focus({ preventScroll: true });
     } else {
+      flowResize.unobserve(railFlow);
+      clearTimeout(flowResizeTimer);
       railFlow.replaceChildren();
       document.getElementById('rail-open')?.focus();
     }
     onBalance?.(open);
   }
+
+  /*
+   * The drawing's viewBox is built out of its own width, so unlike the rest of
+   * the console it has to be redrawn when that width changes — opening the
+   * desk, the window resizing, the overlay engaging. Observed only while the
+   * balance is open, because a closed one renders nothing to resize.
+   */
+  const flowResize = new ResizeObserver(() => {
+    clearTimeout(flowResizeTimer);
+    flowResizeTimer = setTimeout(() => drawFlow(), 80);
+  });
+  let flowResizeTimer;
 
   /** Draw, or re-letter, whatever view was last handed in. */
   function drawFlow({ unfold = false } = {}) {
