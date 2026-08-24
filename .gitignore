@@ -6,3 +6,6 @@ public/weather/
 
 # scratch for scripts/build-rates.mjs
 .rates-cache/
+
+# throwaway verification harnesses
+.harness/

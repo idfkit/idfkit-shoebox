@@ -1392,6 +1392,43 @@ export class Readout {
   }
 }
 
+/**
+ * One named contributor *inside* a rail term, for the flow drawing to letter.
+ *
+ * The rail's five terms are the whole zone air balance and they close. What
+ * they do not say is which part of a term is which: `Fabric 2,140 W` is the
+ * convection off every inside face at once, and a reader looking at a Sankey
+ * wants to know how much of that was the glass. A tributary names that finer
+ * quantity and the EnergyPlus variable carrying it.
+ *
+ * The critical thing about a tributary, and the reason it is a separate class
+ * rather than another `Term`: **it does not sum into its parent**. Windows
+ * total heat gain carries transmitted solar, which lands on the surfaces and
+ * reaches the air later; inside face conduction is not the same quantity as
+ * convection to air; people, lights and equipment are the convective *and*
+ * radiant fractions of gains whose radiant half arrives through the fabric.
+ * Every one is a true reading of a real quantity and none of them is a share of
+ * the ribbon it hangs under. So the drawing letters them as figures beside the
+ * ribbon and never as divisions of its width — the same distinction `Meter.rail`
+ * already draws between a term of the balance and a diagnostic beside it.
+ *
+ * `of` names the rail channel it is read against, `needs` the channels that
+ * have to be in the path for the variable to exist at all (any one of them, for
+ * the window pair, which either wall glass or a rooflight can produce), and
+ * `note` is the sentence the key prints so the caveat travels with the figure.
+ */
+export class Tributary {
+  constructor({ id, label, terms, of, needs, note = null }) {
+    this.id = id;
+    this.label = label;
+    this.terms = terms;
+    this.of = of;
+    this.needs = Object.freeze(Array.isArray(needs) ? [...needs] : [needs]);
+    this.note = note;
+    Object.freeze(this);
+  }
+}
+
 /* ══ channels ════════════════════════════════════════════════════════════ */
 
 /**
@@ -3601,6 +3638,116 @@ export const CHANNELS = Object.freeze([
     ],
   }),
 ]);
+
+/**
+ * What the flow drawing letters inside each rail term.
+ *
+ * Ten hourly zone-level series, which is roughly what the whole console costs
+ * today — and the reason every one of them is zone-level and keyed to the one
+ * zone rather than requested with `*`. The regression that shaped this file's
+ * output policy took the ESO from 15 series to 173 and the annual run from
+ * 681 ms to 2,984 ms, and it did so entirely through per-surface keys.
+ *
+ * Each is gated on the channel that produces it, so a desk with Gains out asks
+ * for none of the three internal ones and EnergyPlus lists nothing it could not
+ * produce. Verified against the run's own `.rdd` rather than spelled from
+ * memory — `Zone Lights Total Heating Rate` and `Zone Electric Equipment Total
+ * Heating Rate`, not the `watts_per_zone_floor_area`-era names.
+ */
+export const TRIBUTARIES = Object.freeze([
+  new Tributary({
+    id: 'people',
+    label: 'People',
+    terms: [new Term({ variable: 'Zone People Sensible Heating Rate' })],
+    of: 'gains',
+    needs: 'gains',
+  }),
+  new Tributary({
+    id: 'lights',
+    label: 'Lights',
+    terms: [new Term({ variable: 'Zone Lights Total Heating Rate' })],
+    of: 'gains',
+    needs: 'gains',
+    note: 'The whole lighting gain. Its radiant share reaches the air later, through the fabric.',
+  }),
+  new Tributary({
+    id: 'equipment',
+    label: 'Equipment',
+    terms: [new Term({ variable: 'Zone Electric Equipment Total Heating Rate' })],
+    of: 'gains',
+    needs: 'gains',
+    note: 'The whole equipment gain, radiant share included.',
+  }),
+  new Tributary({
+    id: 'opaque',
+    label: 'Opaque surfaces',
+    // The signed variable rather than the gain/loss pair: one series instead of
+    // two, and no arithmetic to get the sign back.
+    terms: [new Term({ variable: 'Zone Opaque Surface Inside Faces Conduction Rate' })],
+    of: 'fabric',
+    needs: 'fabric',
+    note: 'Conduction at the inside face, which is not the same quantity as the convection to the air beside it.',
+  }),
+  new Tributary({
+    id: 'windows',
+    label: 'Windows',
+    // No signed variable exists for this one, so the gain and the loss are read
+    // as a pair and differenced. Only one of the two is ever non-zero.
+    terms: [
+      new Term({ variable: 'Zone Windows Total Heat Gain Rate' }),
+      new Term({ variable: 'Zone Windows Total Heat Loss Rate', sign: -1 }),
+    ],
+    of: 'fabric',
+    needs: ['glazing', 'skylights'],
+    note: 'Everything crossing the glass, transmitted solar included — which lands on the surfaces, not in the air.',
+  }),
+  new Tributary({
+    id: 'heatSensible',
+    label: 'Sensible heating',
+    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Sensible Heating Rate' })],
+    of: 'system',
+    needs: 'system',
+  }),
+  new Tributary({
+    id: 'coolSensible',
+    label: 'Sensible cooling',
+    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Sensible Cooling Rate', sign: -1 })],
+    of: 'system',
+    needs: 'system',
+  }),
+  new Tributary({
+    id: 'heatLatent',
+    label: 'Latent heating',
+    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Latent Heating Rate' })],
+    of: 'system',
+    needs: 'system',
+  }),
+  new Tributary({
+    id: 'coolLatent',
+    label: 'Latent cooling',
+    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Latent Cooling Rate', sign: -1 })],
+    of: 'system',
+    needs: 'system',
+  }),
+]);
+
+// Every `of` and every `needs` has to name a channel that exists, or a rename
+// would leave a tributary hanging on nothing and the drawing would quietly lose
+// a figure. Thrown at module load, like the landmark rules.
+{
+  const ids = new Set(CHANNELS.map((c) => c.id));
+  const rails = new Set(CHANNELS.filter((c) => c.meter?.rail).map((c) => c.id));
+  for (const tributary of TRIBUTARIES) {
+    if (!rails.has(tributary.of)) {
+      throw new Error(`tributary "${tributary.id}" hangs on "${tributary.of}", which is not a rail channel`);
+    }
+    for (const need of tributary.needs) {
+      if (!ids.has(need)) {
+        throw new Error(`tributary "${tributary.id}" needs "${need}", which is not a channel`);
+      }
+    }
+  }
+}
 
 /**
  * Parameters no single control owns.

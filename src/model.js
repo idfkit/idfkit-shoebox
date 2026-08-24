@@ -9,6 +9,7 @@ import {
   DEFAULT_PARAMETERS,
   monthSpans,
   parseHolidays,
+  TRIBUTARIES,
 } from './controls.js';
 import { END_USES } from './bill.js';
 
@@ -832,7 +833,7 @@ export function applyModel(doc, params, bypass = {}, { reporting = 'sheet' } = {
   applyGrounds(doc, params, on('grounds'));
   applySolver(doc, params);
   applyRun(doc, params);
-  syncReporting(doc, state, reporting);
+  syncReporting(doc, state, reporting, params);
 
   return state;
 }
@@ -1776,6 +1777,14 @@ const REPORTING_TYPES = [
   'OutputControl:Table:Style',
   'Output:Table:SummaryReports',
   'Output:Meter',
+  // Sizing:Zone is an input object rather than an output one, and it is owned
+  // here anyway, because on this desk it exists for exactly one reason: the
+  // component load summary is estimated inside the zone sizing routines and
+  // cannot be had without them. Nothing is autosized — the ideal unit stays
+  // NoLimit — so this object sizes nothing whatever. Owning it here is what
+  // keeps it in the same clear-and-rewrite regime as the report that needs it,
+  // so the two can never disagree about whether the run is carrying it.
+  'Sizing:Zone',
 ];
 
 /**
@@ -1810,10 +1819,17 @@ const REPORTING_TYPES = [
  * dictionary line survives `parseMTR` at all — an hourly meter's three-field
  * line falls below the parser's minimum and is dropped (see `bill.js`).
  */
-function syncReporting(doc, state, reporting) {
+function syncReporting(doc, state, reporting, params) {
   for (const type of REPORTING_TYPES) {
     for (const object of doc.all(type).toArray()) doc.remove(object);
   }
+
+  // Set here rather than only in the branch that turns it on. The lean profiles
+  // return early, and a flag flipped only on the way into `'sheet'` would be
+  // left standing by a sweep sample — so "lean then sheet" would serialize
+  // differently from "always sheet" and the study's byte-identical restore
+  // would break, silently, until the next sweep.
+  must(doc, 'SimulationControl').do_zone_sizing_calculation = 'No';
 
   const addMeter = (use) =>
     doc.add('Output:Meter', null, { key_name: use.meter, reporting_frequency: 'Monthly' });
@@ -1854,6 +1870,14 @@ function syncReporting(doc, state, reporting) {
     if (!state.get(channel.id).engaged || !channel.meter) continue;
     for (const term of channel.meter.terms) wanted.add(term.variable);
   }
+  // What the flow drawing letters inside each of those terms. Gated the same
+  // way and added to the same set, so a tributary naming a variable a rail term
+  // already asks for costs nothing — and a channel that is out asks for none of
+  // its own, which is what keeps unproducible variables off the error file.
+  for (const tributary of TRIBUTARIES) {
+    if (!tributary.needs.some((id) => state.get(id)?.engaged)) continue;
+    for (const term of tributary.terms) wanted.add(term.variable);
+  }
   for (const name of wanted) {
     if (!base.has(name)) addVariable(doc, name, 'Hourly');
   }
@@ -1871,6 +1895,56 @@ function syncReporting(doc, state, reporting) {
   doc.add('OutputControl:Table:Style', null, { column_separator: 'All' });
   const summary = doc.add('Output:Table:SummaryReports', null);
   summary.extensible.push({ report_name: 'AllSummary' });
+
+  // The component load summary, which `AllSummary` deliberately leaves out —
+  // EnergyPlus ships `AllSummaryButZoneComponentLoad` precisely because this is
+  // the expensive one. It is the only decomposition of a load into the
+  // components that caused it that this engine will produce, and the flow
+  // drawing's whole peak half is read off it.
+  //
+  // Three conditions, and each is load-bearing:
+  //
+  //  - **Only the sheet profile.** A study sample would pay two extra zone
+  //    sizing passes for a table nobody parses, which is the exact waste the
+  //    lean profiles were introduced to stop.
+  //  - **Only with System in the path.** Zone sizing on an unconditioned zone
+  //    is not a warning, it is a get-input fatal that takes the whole run down
+  //    before any environment starts:
+  //
+  //      ** Severe ** SetUpZoneSizingArrays: Zone Sizing is requested but there
+  //                   are no ZoneHVAC:EquipmentConnections statements.
+  //      **  Fatal ** SetUpZoneSizingArrays: Errors found in Sizing:Zone input
+  //
+  //    Measured on the stock desk, which has System bypassed by default — so
+  //    ungated this would fatal the *default* page load.
+  //  - **The cost was measured before it was accepted.** Interleaved A/B over
+  //    seven rounds of the staged wasm engine, on a conditioned design-day
+  //    desk: 0.20 s to 0.24 s of engine time, about 20 %. That is the worst
+  //    case, because the two extra passes are a fixed cost over the design days
+  //    and do not grow with the run period — an annual desk pays the same
+  //    fraction of a second against a run twenty times longer.
+  //
+  // It survives `sizingPeriods = 'No'`: the sizing calculation runs over the
+  // design days whether or not those days are themselves simulated, so an
+  // annual desk gets the report without giving the sizing periods back.
+  if (state.get('system').engaged) {
+    must(doc, 'SimulationControl').do_zone_sizing_calculation = 'Yes';
+    summary.extensible.push({ report_name: 'ZoneComponentLoadSummary' });
+
+    // Sizes nothing. The supply air temperatures are the ideal unit's own, so
+    // the sizing story and the equipment agree about what is being delivered;
+    // the humidity ratios are conventional and reach only the sizing
+    // calculation's own air state. Everything else takes the schema's defaults.
+    doc.add('Sizing:Zone', null, {
+      zone_or_zonelist_name: ZONE_NAME,
+      zone_cooling_design_supply_air_temperature_input_method: 'SupplyAirTemperature',
+      zone_cooling_design_supply_air_temperature: params.supplyMinT,
+      zone_heating_design_supply_air_temperature_input_method: 'SupplyAirTemperature',
+      zone_heating_design_supply_air_temperature: params.supplyMaxT,
+      zone_cooling_design_supply_air_humidity_ratio: 0.008,
+      zone_heating_design_supply_air_humidity_ratio: 0.008,
+    });
+  }
 
   for (const use of END_USES) {
     if (producible(use)) addMeter(use);
