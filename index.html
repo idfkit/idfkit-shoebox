@@ -3321,8 +3321,12 @@
          removed: a mode that vanishes teaches the reader nothing about why. */
       .flow-mode:disabled { cursor: default; opacity: 0.55; }
 
-      .flow-drawing { margin-top: 10px; }
-      .flow-drawing svg { display: block; width: 100%; height: auto; }
+      /* The panel renders straight into `.rail-flow` — there is no wrapper
+         between them since the drawing moved out of the sheet, so the SVG is
+         sized here. `width: 100%` is also set as an attribute by the renderer;
+         `display: block` is what takes the inline-element descender off the
+         bottom, and `height: auto` is what keeps the fixed viewBox scaling. */
+      .rail-flow svg { display: block; width: 100%; height: auto; margin-top: 10px; }
       .flow-empty,
       .flow-refused {
         margin: 0;
