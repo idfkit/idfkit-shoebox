@@ -2832,9 +2832,17 @@ function instantView() {
     format: watts,
     keyed,
     stamp: lastAt.text,
+    // The sign convention is not restated here. The rail's own line says it a
+    // few lines above — the drawing opens out of that bar and never scrolls
+    // away from it — and the flanks letter `arriving` and `leaving` at the head
+    // of the spine besides. Said a third time in one screen it reads as the
+    // page repeating itself, which is the rule the stamp and the closure
+    // sentence already keep: those are the rail's, said once. What is left is
+    // what only the drawing does with that sign.
     lede:
-      `The zone air balance at this hour, as ribbons on a balanced node: warm is heat arriving in the zone air, ` +
-      `cold is heat leaving it, and a path running the other way is a ribbon on the other flank rather than a hole in the drawing. ` +
+      `The zone air balance at this hour, as ribbons on a balanced node: the sign picks a flank rather than the ` +
+      `direction of an arrow, so a path running the other way is a ribbon on the other side of the spine rather ` +
+      `than a hole in the drawing. ` +
       `The node is the only thing here that balances — the figures beside each ribbon are read against it and do not divide it.` +
       (params.multiplier > 1 ? ` One zone of the ${params.multiplier} stacked.` : ''),
     summary:

@@ -50,6 +50,19 @@ sheet edge), `--rule-focus` (focus rings only).
   degrees Celsius on the drawing, watts into or out of the zone on the console.
   Warm is heat arriving, cold is heat leaving.
 
+**And that sentence is now on the page, because a hue cannot be the only one
+saying it.** The balance rail letters five signed figures whose direction was
+carried by the hue and by the absence of a minus sign — nothing else. In
+monochrome, under forced colours, or read aloud as a swatch, a name and a
+number, a positive term said nothing whatever about being positive, on the one
+block whose entire argument is which way each term points. So the rail states
+the convention outright under its head and every term carries `in` or `out`
+beside its watts (`flowWord` in `readings.js`, so the rail's key, the strip
+meters and the folded index row cannot disagree about it). The hue still ranks
+and groups the terms; it no longer has to be believed on its own. Any new
+reading that leans on `--cold` / `--warm` to say something owes the reader the
+same second carrier.
+
 Money and carbon get **no colour at all**. Energy, cost and emissions are
 unsigned magnitudes, so the cold/warm pair would be encoding nothing, and a
 green-for-clean or red-for-dirty on a carbon figure would be the interface

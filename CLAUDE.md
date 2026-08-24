@@ -1099,11 +1099,39 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
 - Use the `Zone Air Heat Balance …` family and nothing else. Mixing in
   per-mechanism variables (infiltration in joules, ideal loads in watts) does not
   close, because those belong to different balances.
+- **The sign is stated in words, because a hue cannot be the only thing saying
+  it.** Direction used to be carried by the pen — `--warm` right of zero,
+  `--cold` left — and by the absence of a minus, since `watts()` prints no `+`.
+  That is a colour-only encoding of the one fact the rail exists to state: in
+  monochrome, under forced colours, or read aloud as a swatch, a name and a
+  number, a positive term said nothing whatever about being positive, and a
+  reader who took positive for "load on the system" read every strip backwards
+  while the rail went on closing to 0.02 %. So the rail's head states the
+  convention outright — in place, not on hover, by the rule that put what
+  *Chase* means above the scoreboard — and `flowWord` in `readings.js` letters
+  `in` or `out` beside every rail figure: the rail's key, the strip meter, and
+  the folded index row, which on a phone is the whole reading. It is null under
+  half a watt, which is where `watts()` itself stops distinguishing (−0.2 W
+  already letters as `-0 W`) and is the rail's own threshold for a term worth
+  drawing. The head also says what the `±` is — one side of the balance, not a
+  net — which nothing did.
+- **Two of the five readings are not the variable they are named after, and
+  both now say so on the strip.** `Meter.note` is where a transformation is
+  declared, the way Glazing's transmitted-solar meter already says where its
+  reading is summed. Neither transformation was wrong; neither was checkable.
 - `Zone Air Heat Balance Air Energy Storage Rate` is the accumulation side, so it
-  enters negated.
+  enters negated — and the meter is therefore lettered **Air energy release**,
+  not storage. Under the variable's own name a reading of −400 W said "storage"
+  and "out" in one breath, and the only reading of that which parses —
+  discharging — is the opposite of what is happening. Negated, the same number
+  *is* the rate the air gives its store back, positive as the air cools, so the
+  label and the sign agree and a negative reading resolves the right way round:
+  the air is charging. A legend alone could not fix this one.
 - `Zone Air Heat Balance System Air Transfer Rate` is reported at **building**
   level, already multiplied by the zone multiplier, while the other four are per
-  zone. `Term.perBuilding` marks it and the reader divides it back down.
+  zone. `Term.perBuilding` marks it and the reader divides it back down. At a
+  multiplier of 3 the ESO reads three times what the strip letters, which is why
+  the meter carries the note.
 - Meters read **one instant**, the hour furthest from 20 °C in the lead
   environment, not an average. A free-running zone returns to where it started,
   so every term averages to roughly nothing over a day and the whole desk reads
@@ -1235,7 +1263,11 @@ no browser); `renderSankey` draws the whole panel — offers, lede, drawing, key
   drops the compact key — the drawing's own key carries all five terms with
   their tributaries under them, and the two together were the same five figures
   twice, ten lines apart. The bar stays, because it is the summary being
-  extended. The stamp and the closure sentence are the rail's, said once.
+  extended. The stamp, the closure sentence and the sign convention are the
+  rail's, said once — the drawing's lede says only what the drawing does with
+  that sign (it picks a flank rather than an arrow's direction), because the
+  rail's own convention line stands a few lines above it and never scrolls
+  away.
 - **The unfold is a transition between two drawings of one quantity**, which is
   the only thing that earns the motion: the spine grows from the centre, then
   each ribbon extends out of it in the order the rail already stacks them,
