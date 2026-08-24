@@ -80,15 +80,24 @@ export function layoutFlows(terms, { spine = 0.58, minRibbon = 0.006 } = {}) {
   const residual = intoTotal - outOfTotal;
   const scale = Math.max(intoTotal, outOfTotal);
 
-  if (!carried.length || scale <= 0) {
-    return { spine, into: [], outOf: [], residual: null, scale: 0, absent, closes: null };
+  if (!carried.length) {
+    return { spine, into: [], outOf: [], residual: null, intoTotal: 0, outOfTotal: 0, scale: 0, absent, closes: null };
   }
+
+  // A stack that reads all zeros has no scale to divide by — but every one of
+  // those zeros is still a measurement, and dropping the five bands here would
+  // contradict the rule two paragraphs up and hand back a drawing with an empty
+  // key over a spine, which is what "the run carried nothing" looks like. So
+  // the flanks are stacked at the floor thickness against a unit of one, and
+  // only `closes` goes null: there is genuinely nothing for the imbalance to be
+  // a fraction *of*.
+  const unit = scale > 0 ? scale : 1;
 
   /** Stack one flank from the spine outwards, largest nearest. */
   const stack = (list, side) => {
     let y = 0;
     return list.map((term, rank) => {
-      const height = Math.max(Math.abs(term.watts) / scale, minRibbon);
+      const height = Math.max(Math.abs(term.watts) / unit, minRibbon);
       const band = { ...term, side, rank, y, height, tone: toneOf(term.watts, rank) };
       y += height;
       return band;
@@ -110,7 +119,7 @@ export function layoutFlows(terms, { spine = 0.58, minRibbon = 0.006 } = {}) {
         side: shortSide,
         hatched: true,
         y: shortStack.length ? shortStack.at(-1).y + shortStack.at(-1).height : 0,
-        height: Math.max(Math.abs(residual) / scale, minRibbon),
+        height: Math.max(Math.abs(residual) / unit, minRibbon),
       };
 
   return {
@@ -212,7 +221,9 @@ export function layoutComponents(half, { minRibbon = 0.006, which = 'cooling' } 
   const outOf = all.filter((r) => r.watts < 0).sort((a, b) => a.watts - b.watts);
   const intoTotal = sum(into.map((r) => r.watts));
   const outOfTotal = -sum(outOf.map((r) => r.watts));
-  const scale = Math.max(intoTotal, outOfTotal, Math.abs(half.peak ?? 0));
+  // The load band is already on one flank or the other, so its own magnitude is
+  // inside one of these two totals and does not need a third term here.
+  const scale = Math.max(intoTotal, outOfTotal);
   if (scale <= 0) return null;
 
   const stack = (list, side) => {
@@ -229,12 +240,12 @@ export function layoutComponents(half, { minRibbon = 0.006, which = 'cooling' } 
         // The instant/delayed division, as a fraction of this ribbon's own
         // width. Guarded against a row that is entirely one or the other.
         // The load is not a component and has no instant/delayed split — null
-        // rather than 0, which would draw it as entirely delayed.
+        // rather than 0, which would draw it as entirely delayed. Every other
+        // row here survived the `> 1e-9` filter above, so there is no zero-width
+        // case left to test for.
         instantShare: row.isLoad
           ? null
-          : Math.abs(row.watts) > 0
-            ? Math.abs(row.instant) / (Math.abs(row.instant) + Math.abs(row.delayed) || 1)
-            : 0,
+          : Math.abs(row.instant) / (Math.abs(row.instant) + Math.abs(row.delayed) || 1),
       };
       y += height;
       return band;
@@ -579,7 +590,7 @@ export function renderSankey(host, view) {
     }),
   );
 
-  const letterFor = (entry) => `${entry.label} ${view.format(entry.signedWatts ?? entry.watts)}`;
+  const letterFor = (entry) => `${entry.label} ${view.format(entry.watts)}`;
 
   // Which flank the chain lands on has to be known before anything is lettered,
   // because it decides how much room that flank's labels have.

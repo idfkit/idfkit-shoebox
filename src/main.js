@@ -1008,7 +1008,6 @@ function plateIndexAt(clientX, { clamped = false } = {}) {
 }
 
 let resizeTimer;
-let flowResizeTimer;
 
 /* ══ reading the results ═════════════════════════════════════════════════ */
 
@@ -1296,6 +1295,16 @@ let flowMode = 'now'; // 'now' | 'peakCool' | 'peakHeat'
 // The component decomposition of the run in hand, parsed once per solve beside
 // `lastGlass` and taken down with it.
 let lastComponents = null;
+// Why there is none, when the reason is not simply that the run carried no
+// tables. `componentRows` throws for a table it no longer understands — a
+// column head moved between versions — and that throw is the reader refusing to
+// letter a zero it cannot vouch for. It has to be *caught*: raised out of
+// `solve` it escapes `pump`'s `finally` as an unhandled rejection, the schedule,
+// plate and bill are never re-lettered, and the sheet stands on the previous
+// run's numbers with nothing anywhere saying why. Caught here, it becomes the
+// drawing's own refusal, which is the half of "no silent fallbacks" that says
+// the caller has to state the reason in the interface.
+let componentRefusal = null;
 // The ten tributary series, hoisted out of the per-frame path and keyed on the
 // ESO's identity — the arrangement `offersFor` uses, for the same reason.
 let flowCache = null;
@@ -1954,6 +1963,7 @@ function clearReadings() {
   // series cache is keyed on the ESO's identity and would be harmless, but a
   // cleared sheet should not be holding ten series of a run it no longer shows.
   lastComponents = null;
+  componentRefusal = null;
   flowCache = null;
   // The window's computed figures go with the rest: they are a reading off a
   // run, and a U-factor left standing over a fatal would be the one number on
@@ -2719,9 +2729,13 @@ function flowView() {
     const which = flowMode === 'peakCool' ? 'cooling' : 'heating';
     if (!half) {
       return {
-        refusal: lastComponents
-          ? `This run carried no ${which} sizing peak, so there is no decomposition to draw at one.`
-          : 'The System strip was out of this run’s path. A sizing peak is a calculation over a conditioned zone, and there was none to make.',
+        // A reader that refused the tables outright says so in its own words:
+        // "no such peak" and "the report could not be read" are different
+        // facts, and the second one is not the reader's to paraphrase.
+        refusal: componentRefusal
+          ?? (lastComponents
+            ? `This run carried no ${which} sizing peak, so there is no decomposition to draw at one.`
+            : 'The System strip was out of this run’s path. A sizing peak is a calculation over a conditioned zone, and there was none to make.'),
       };
     }
     return componentView(half, which);
@@ -2742,10 +2756,10 @@ function instantView() {
   const readings = engagedReadings();
 
   // The spine is the rail's own five terms, read exactly as the rail reads
-  // them — not a second computation of the same quantity.
-  // `name`, which is what the rail's own key letters — one string on both
-  // surfaces, so the ribbon and the segment cannot end up called different
-  // things for the same term.
+  // them — not a second computation of the same quantity. Labelled by the
+  // channel's `name`, which is what the rail's own key letters, so one string
+  // serves both surfaces and the ribbon and the segment cannot end up called
+  // different things for the same term.
   const terms = CHANNELS.filter((c) => c.meter?.rail).map((channel) => ({
     id: channel.id,
     label: channel.name,
@@ -2758,7 +2772,14 @@ function instantView() {
   const sensible = (flows.get('heatSensible') ?? 0) + (flows.get('coolSensible') ?? 0);
   const latent = (flows.get('heatLatent') ?? 0) + (flows.get('coolLatent') ?? 0);
   const hasSystem = flows.get('heatSensible') != null;
-  const plant = plantFor(sensible >= 0 ? 'heating' : 'cooling');
+  // Which plant is asked for is decided by the same quantity the chain is drawn
+  // at — the sensible and latent halves together — and not by the sensible one
+  // alone. `fuelChain` reads its own `mode` off that sum, so choosing the
+  // divisor off a different signal is how an hour that is sensibly heated and
+  // latently dehumidified ends up lettered `Gas boiler ÷ 0.85` over a note
+  // saying the fuel was drawn to *remove* that heat, with the boiler's
+  // efficiency dividing a chiller's load.
+  const plant = plantFor(sensible + latent >= 0 ? 'heating' : 'cooling');
   const fuel = hasSystem ? fuelChain({ sensible, latent, ...plant }) : null;
 
   // The tributaries, hung under the term they were read against. Lettered, not
@@ -2887,9 +2908,31 @@ function renderFlow() {
   const view = flowView();
   renderSankey($('flow-drawing'), view);
   set('flow-when', view?.stamp ? ` · ${view.stamp}` : '');
-  const lede = $('flow-lede');
-  if (lede) lede.textContent = view?.lede ? view.lede.replace(/\*\*/g, '') : '';
+  renderLede($('flow-lede'), view?.lede ?? '');
   renderFlowModes();
+}
+
+/**
+ * The lede, with the one clause that has to be stressed actually stressed.
+ *
+ * `**…**` in these strings is not decoration: the peak modes' lede turns on
+ * *"this is not an hour of the run above"*, which is the whole difference
+ * between a sizing calculation and a reading. Deleting the markers with a
+ * regex replace and setting the sentence flat, as this did, threw the emphasis
+ * away and left them with no effect but that the author had written them.
+ */
+function renderLede(host, source) {
+  if (!host) return;
+  host.replaceChildren();
+  if (!source) return;
+  // Odd segments are the ones between a pair of markers. An unpaired marker
+  // therefore reads as plain text rather than emphasising the rest of the
+  // paragraph, which is the failure mode worth choosing against.
+  const parts = source.split('**');
+  for (const [i, part] of parts.entries()) {
+    if (!part) continue;
+    host.append(i % 2 && i < parts.length - 1 ? el('b', null, part) : document.createTextNode(part));
+  }
 }
 
 /**
@@ -2902,6 +2945,12 @@ function renderFlow() {
 function renderFlowModes() {
   const host = $('flow-modes');
   if (!host) return;
+  // Which chip had the keyboard, so it can have it back after the rebuild —
+  // the same move `renderWhen` makes, and needed for the same reason: this is
+  // rebuilt whole from a solve, a tariff turn and every frame of a plate drag,
+  // and a reader who has just tabbed onto "Cooling peak" would otherwise be
+  // dropped on the body by a gesture happening somewhere else on the sheet.
+  const refocus = document.activeElement?.closest?.('#flow-modes') ? document.activeElement.id : null;
   host.replaceChildren();
   const offers = [
     { id: 'now', label: 'Pinned hour', sub: lastAt?.text ?? '—', available: Boolean(lastReadFrom) },
@@ -2917,7 +2966,7 @@ function renderFlowModes() {
       chip.disabled = true;
       chip.title = offer.id === 'now'
         ? 'Nothing has been solved yet.'
-        : 'This run carried no such sizing peak. The System strip has to be in the path.';
+        : componentRefusal ?? 'This run carried no such sizing peak. The System strip has to be in the path.';
       host.append(chip);
       continue;
     }
@@ -2932,6 +2981,7 @@ function renderFlowModes() {
     });
     host.append(chip);
   }
+  if (refocus) $(refocus)?.focus();
 }
 
 /* ══ the hour bar ════════════════════════════════════════════════════════ */
@@ -5105,12 +5155,14 @@ new ResizeObserver(() => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(renderTrace, 80);
 }).observe($('trace'));
-// The flow drawing scales with the sheet the way the plate does, and its key
-// reflows under it, so it is re-drawn on the same debounce.
-new ResizeObserver(() => {
-  clearTimeout(flowResizeTimer);
-  flowResizeTimer = setTimeout(renderFlow, 80);
-}).observe($('flow-drawing'));
+// The flow drawing deliberately gets no observer of its own. The plate needs
+// one because `renderTrace` builds a viewBox out of `host.clientWidth` — its
+// ruling, its ticks and its point spacing are all in host pixels. `renderSankey`
+// is the opposite arrangement: a fixed 820 × 320 viewBox scaled by `width:
+// 100%`, with the key reflowing under it on a CSS grid, so nothing it draws is
+// a function of the width it is drawn at. An observer here would re-run the
+// whole view — layout, key, SVG — 80 ms after every reflow to produce the same
+// bytes, and it would be watching the very element the render writes into.
 
 const ep = await enginePromise;
 
@@ -5341,7 +5393,21 @@ async function solve() {
   // it is a reading of this run, parsed once here rather than on every frame of
   // a drag. Null when the run carried no such tables — System out of the path,
   // or a lean profile — and the drawing refuses those modes by name.
-  lastComponents = componentLoads(wrote.html, ZONE_NAME);
+  //
+  // A table whose columns have moved makes `componentRows` throw, deliberately,
+  // rather than letter a zero out of a cell it cannot find. That throw is this
+  // run's own account of why there is no decomposition, so it is carried into
+  // the drawing's refusal instead of being allowed off the end of `solve`,
+  // where it would take every other panel's re-lettering down with it and say
+  // nothing.
+  try {
+    lastComponents = componentLoads(wrote.html, ZONE_NAME);
+    componentRefusal = null;
+  } catch (error) {
+    lastComponents = null;
+    componentRefusal = `This run's component load report could not be read: ${error.message}`;
+    log(`[reader] ${componentRefusal}`);
+  }
 
   const hasOutdoor = outPts.length > 0;
   const nn = hasOutdoor ? Math.min(zonePts.length, outPts.length) : zonePts.length;

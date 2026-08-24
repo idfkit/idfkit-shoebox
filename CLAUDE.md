@@ -1243,6 +1243,17 @@ assignment and residual placement with no browser) and `renderSankey` beneath it
   beside a ribbon and never drawn as divisions of it**, each carrying the
   caveat in its own `note`. The one band that *is* divided is a component row's
   instant/delayed pair, which does sum by the report's construction.
+- **A tributary carries `Term.perBuilding` too, and the four ideal-loads ones
+  do.** `Zone Ideal Loads Supply Air {Sensible,Latent} {Heating,Cooling} Rate`
+  arrive already multiplied by the zone multiplier, exactly as the rail's own
+  `Zone Air Heat Balance System Air Transfer Rate` does — measured, a design-day
+  desk at a multiplier of 1 and again at 3 reads 11,484.5 W and 34,453.5 W of
+  sensible heating at the same hour, a ratio of 3.000, while the opaque and
+  window tributaries beside them do not move at all. Unmarked they letter 34.5 kW
+  under a System ribbon of 11.5 kW, and the fuel wedge — which `chainOf` scales
+  by that ribbon's own watts — is drawn three times wider than the ribbon it
+  continues. The rule is the rail's, and it is the same trap: this side of the
+  balance is found by arithmetic rather than by reading.
 - **The key is the drawing's real text.** Every ribbon's figure is repeated
   there and several readings exist only there. It groups each band with its own
   tributaries so the nesting survives a reflow, and at 390 px it is one column

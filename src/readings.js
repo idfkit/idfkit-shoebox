@@ -709,26 +709,12 @@ export function glassProperties(html, construction) {
 /**
  * The Envelope Summary's exterior fenestration table, as rows of trimmed cells.
  *
- * A regex parse rather than `DOMParser`, because this module is DOM-free on
- * purpose — the harnesses that check these readers run in Node. The report is
- * machine-written and its markup is accordingly rigid: one `<table>` after the
- * `FullName` comment that names the table, `<tr>` per row, `<td>` per cell,
- * no nesting. The comment is what is matched rather than the visible heading,
- * since "Exterior Fenestration" is also the prefix of "Exterior Fenestration
- * Shaded State" a few tables further down.
+ * The comment is what is matched rather than the visible heading, since
+ * "Exterior Fenestration" is also the prefix of "Exterior Fenestration Shaded
+ * State" a few tables further down.
  */
 function fenestrationRows(html) {
-  if (!html) return null;
-  const marker = '<!-- FullName:Envelope Summary_Entire Facility_Exterior Fenestration-->';
-  const at = html.indexOf(marker);
-  if (at < 0) return null;
-  const start = html.indexOf('<table', at);
-  const end = html.indexOf('</table>', start);
-  if (start < 0 || end < 0) return null;
-  return [...html.slice(start, end).matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map((row) =>
-    [...row[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((cell) =>
-      cell[1].replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()),
-  );
+  return tableRows(html, 'Envelope Summary_Entire Facility_Exterior Fenestration');
 }
 
 /* ══ the flows ═══════════════════════════════════════════════════════════ */
@@ -736,11 +722,16 @@ function fenestrationRows(html) {
 /**
  * The rows of one tabular report table, by the `FullName` comment naming it.
  *
- * `fenestrationRows` above does this for one hard-coded marker. The component
- * load summary has six tables per zone and the drawing reads four of them, so
- * the marker is a parameter here — but everything else is deliberately the
- * same, including being a regex parse rather than `DOMParser`, because this
- * module is DOM-free so that the harnesses can call the real readers.
+ * A regex parse rather than `DOMParser`, because this module is DOM-free on
+ * purpose — the harnesses that check these readers run in Node. The report is
+ * machine-written and its markup is accordingly rigid: one `<table>` after the
+ * `FullName` comment that names the table, `<tr>` per row, `<td>` per cell, no
+ * nesting.
+ *
+ * The marker is a parameter because there is more than one caller now: the
+ * envelope summary's fenestration table, and the component load summary's six
+ * tables per zone, of which the drawing reads four. It was written twice for
+ * about a week; one copy is the whole of it.
  */
 function tableRows(html, fullName) {
   if (!html) return null;

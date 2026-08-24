@@ -3642,11 +3642,14 @@ export const CHANNELS = Object.freeze([
 /**
  * What the flow drawing letters inside each rail term.
  *
- * Ten hourly zone-level series, which is roughly what the whole console costs
- * today — and the reason every one of them is zone-level and keyed to the one
- * zone rather than requested with `*`. The regression that shaped this file's
- * output policy took the ESO from 15 series to 173 and the annual run from
- * 681 ms to 2,984 ms, and it did so entirely through per-surface keys.
+ * Ten hourly series, which is roughly what the whole console costs today — and
+ * the reason every one of them names a *zone-level* variable. They go through
+ * `addVariable` like every other request here, which keys them `*`; on a
+ * one-zone model that is one series apiece, and what makes it safe is the
+ * variable being zone-level rather than the key being narrow. The regression
+ * that shaped this file's output policy took the ESO from 15 series to 173 and
+ * the annual run from 681 ms to 2,984 ms, and it did so entirely through
+ * per-surface variables under exactly that key.
  *
  * Each is gated on the channel that produces it, so a desk with Gains out asks
  * for none of the three internal ones and EnergyPlus lists nothing it could not
@@ -3701,31 +3704,46 @@ export const TRIBUTARIES = Object.freeze([
     needs: ['glazing', 'skylights'],
     note: 'Everything crossing the glass, transmitted solar included — which lands on the surfaces, not in the air.',
   }),
+  /*
+   * The four ideal-loads readings are **per building**, exactly as the rail's
+   * own `Zone Air Heat Balance System Air Transfer Rate` is, and for the same
+   * reason: the ideal unit answers the zone's demand after the multiplier has
+   * been applied to it. Found by arithmetic rather than by reading, the way
+   * `Term.perBuilding` was found the first time — a design-day desk solved at a
+   * multiplier of 1 and again at 3 reads 11,484.5 W and 34,453.5 W of sensible
+   * heating at the same hour, a ratio of exactly 3.000, while the opaque and
+   * window tributaries beside them do not move at all (−4,694.1 W both times).
+   *
+   * Unmarked they would letter 34.5 kW under a System ribbon of 11.5 kW — the
+   * one figure on the drawing that is three times the band it hangs on — and
+   * the fuel wedge, which is scaled by the ribbon's own watts, would be drawn
+   * three times wider than the ribbon it continues.
+   */
   new Tributary({
     id: 'heatSensible',
     label: 'Sensible heating',
-    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Sensible Heating Rate' })],
+    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Sensible Heating Rate', perBuilding: true })],
     of: 'system',
     needs: 'system',
   }),
   new Tributary({
     id: 'coolSensible',
     label: 'Sensible cooling',
-    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Sensible Cooling Rate', sign: -1 })],
+    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Sensible Cooling Rate', sign: -1, perBuilding: true })],
     of: 'system',
     needs: 'system',
   }),
   new Tributary({
     id: 'heatLatent',
     label: 'Latent heating',
-    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Latent Heating Rate' })],
+    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Latent Heating Rate', perBuilding: true })],
     of: 'system',
     needs: 'system',
   }),
   new Tributary({
     id: 'coolLatent',
     label: 'Latent cooling',
-    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Latent Cooling Rate', sign: -1 })],
+    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Latent Cooling Rate', sign: -1, perBuilding: true })],
     of: 'system',
     needs: 'system',
   }),
