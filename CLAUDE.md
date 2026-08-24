@@ -1211,6 +1211,92 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   held, exactly as `reprice` does for a tariff. It is `pinnedHour`, not
   `pinned` — the bill has held a pinned *scheme* since long before this.
 
+### The flow drawing (src/sankey.js)
+
+The rail's five terms, drawn. A sheet block between the finding and the
+schedules, re-lettered from `reletterReading` so a plate drag moves it per
+frame, with `layoutFlows` pure and DOM-free (the harness asserts flank
+assignment and residual placement with no browser) and `renderSankey` beneath it.
+
+- **It is not a conservative Sankey and must not become one.** A ribbon diagram
+  with only positive widths cannot draw a sink among sources, and this balance
+  is full of them — `Interzone Floor` is −1,329 W at the cooling peak. So it is
+  the rail's two-sided arrangement as ribbons on a zone-air **spine**: the sign
+  of a term picks its flank, hue carries the sign and nothing else, and left to
+  right is causation rather than direction of travel.
+- **Only the spine sums.** The imbalance is a hatched stub, never absorbed —
+  the drawn form of the rail's own "unclosed by N W" note, and the first drawn
+  residual on this sheet.
+- **`Tributary` is not `Term`, and the distinction is the whole reason the
+  class exists.** A tributary does not sum into its parent: window heat carries
+  transmitted solar that lands on the surfaces, inside-face conduction is not
+  convection to air, and people/lights/equipment are gains whose radiant half
+  arrives later through the fabric. Measured on the stock desk — the three
+  internal ones total 539 W against a gains term of 322 W; opaque plus windows
+  total −5,498 W against a fabric term of −5,280 W. So they are **lettered
+  beside a ribbon and never drawn as divisions of it**, each carrying the
+  caveat in its own `note`. The one band that *is* divided is a component row's
+  instant/delayed pair, which does sum by the report's construction.
+- **The key is the drawing's real text.** Every ribbon's figure is repeated
+  there and several readings exist only there. It groups each band with its own
+  tributaries so the nesting survives a reflow, and at 390 px it is one column
+  and the whole thing still reads — a reading that exists only as a ribbon does
+  not exist.
+- **The fuel chain is the bill's arithmetic in watts.** `supply ÷ divisor =
+  draw`, off `EndUse.divisorFor`, drawn as the width step it is. It reaches no
+  IDF object, so it re-letters from `reprice` with no run — which is why
+  `renderFlow` is called there as well as from `reletterReading`.
+- **`flowMode` and `lastComponents` are declared at the head of `main.js`**, not
+  beside the drawing: `clearReadings` and `reprice` both touch them and are
+  defined above it, so left in place they would sit in their own temporal dead
+  zone. Same hazard the study controls are spelled around, except a `let` has no
+  `?.` to hide behind and simply throws.
+
+### The component load decomposition
+
+`ZoneComponentLoadSummary`, requested in `syncReporting` and parsed by
+`componentLoads` in `readings.js`.
+
+- **It cannot be re-timed, and that is physics rather than a missing field.**
+  The Sensible-Delayed column is estimated *inside the zone sizing routines*: a
+  second "pulse sizing" run injects a single-timestep radiant pulse, per-surface
+  decay curves are differenced out of it, and those curves are applied to the
+  gain history up to the sizing-day peak. It therefore exists at exactly two
+  instants per zone — sub-hourly, on a design day that is not in the ESO at all
+  when `sizingPeriods = 'No'`. So the two peaks are **their own lettered modes
+  of the drawing, never plate pins and never `INSTANTS` entries** (`findInstant`
+  resolves against `points.length`, which this has no relation to), and each
+  states that it is a sizing calculation rather than an hour of the run.
+- **Three conditions on the request, each measured.** Sheet profile only, or a
+  sweep sample pays two sizing passes for a table nobody parses. **System
+  engaged only** — zone sizing on an unconditioned zone is a get-input fatal
+  (`SetUpZoneSizingArrays: … no ZoneHVAC:EquipmentConnections`), and the stock
+  desk has System bypassed, so ungated this fatals the *default page load*.
+  And the cost: interleaved A/B over seven rounds of the staged engine on a
+  conditioned design day, 0.20 s → 0.24 s of engine time, about 20 % — the worst
+  case, since the passes are fixed over the design days and do not grow with the
+  run period. It survives `sizingPeriods = 'No'`.
+- **`do_zone_sizing_calculation` is set in *both* branches of `syncReporting`.**
+  Flipped only on the way into `'sheet'`, a lean sample would leave `'Yes'`
+  standing and "lean then sheet" would stop serializing identically to "always
+  sheet" — the sweep's byte-exact restore, broken with no symptom until a study
+  is run. `Sizing:Zone` is in `REPORTING_TYPES` for the same reason, so the
+  object and the report can never disagree about being carried. It sizes
+  nothing: the ideal unit stays `NoLimit` and nothing here is autosized.
+- **Parsed by column head, like `glassProperties`.** `Sensible - Return Air`
+  sits between Delayed and Latent and has not always been there. The cells are
+  ragged on purpose — a wall has no instant column, a roof no latent one, and
+  the report writes `&nbsp;` in both, where `Number('')` is 0. A missing column
+  **throws**; a blank cell is null; a run with no tables is null rather than an
+  empty decomposition, so the mode refuses with a reason instead of drawing a
+  building whose loads appear to be zero.
+- **The report is per zone, not per building.** Measured: at a multiplier of 3
+  the cooling peak is 7,310 W either way, ratio 1.000. So the drawing letters
+  which building it describes, and the `AirLoop`/`Facility` variants buy nothing
+  for a one-zone model.
+- **The Grand Total row is read by name and kept out of the components.** Summed
+  in with them it would double the diagram.
+
 ## Invariants that fail quietly
 
 - **`Building.north_axis` is ignored** because `GlobalGeometryRules` declares

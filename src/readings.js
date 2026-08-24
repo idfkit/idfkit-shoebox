@@ -915,11 +915,17 @@ export function flowSeries(eso) {
  * that is shorter than the reading index (which should not happen, and is
  * refused rather than read past the end).
  */
-export function flowsAt(series, at, { multiplier = 1 } = {}) {
+export function flowsAt(series, at, { multiplier = 1, span = null } = {}) {
   const read = (tributary) => {
     let total = 0;
     for (const term of tributary.terms) {
       const points = series.get(term.variable);
+      // A series that does not span the same hours as the one the instant was
+      // chosen in cannot be indexed by the same `at`, and an off-by-one here
+      // would letter one hour's watts under another hour's stamp. The same
+      // guard `findInstant` keeps, for the same reason: refused rather than
+      // read, because a wrong number is worse than a missing one.
+      if (span != null && points != null && points.length !== span) return null;
       const point = points?.[at];
       if (!point) return null;
       total += (term.sign * point.value) / (term.perBuilding ? multiplier : 1);

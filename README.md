@@ -83,6 +83,7 @@ and would leave the weather picker dead.
 - `src/model.js`: authors the model with `@idfkit/core` and reads it back
 - `src/main.js`: loads the engine and schema, runs the model, reads the ESO, and
   draws the axonometric, the trace and the results schedule
+- `src/sankey.js`: the flow drawing — the layout, which is pure, and the render
 - `src/weather.js`: the site picker's data layer over `@idfkit/weather`
 - `index.html`: the sheet — tokens, run ledger, plate, schedule, title block
 - `scripts/copy-schemas.mjs`: stages the schema bundle into `public/schemas/`
@@ -238,6 +239,56 @@ across the worker boundary. Drawing the chart is about 15 ms of it.
 Output requests do not touch the physics — they only decide what is written
 down — so every zone-level and site-level series the stock example asks for is
 still here, and the results are unchanged. The sheet itself reads two of them.
+
+### The flow drawing
+
+Under the finding there is a drawing of where the heat at one instant came from
+and went: the zone air balance as ribbons converging on a spine, with the fuel
+chain running out beyond the system band. Take hold of the plate's marker and it
+re-letters on every frame, the balance re-closing at each hour.
+
+It is not a conservative left-to-right Sankey, and that is deliberate. A ribbon
+diagram with only positive widths cannot draw a sink among sources, and this
+balance is full of them — at the cooling peak the interzone floor runs at
+−1.33 kW while everything around it is a gain. So the sign of a term picks which
+flank it attaches to, hue carries the sign and nothing else, and only the spine
+claims to balance; what it does not close by is drawn hatched rather than
+absorbed.
+
+The figures lettered beside each ribbon are read *against* it and do not divide
+it. People, lights and equipment sit under Gains, windows and opaque conduction
+under Fabric — all true readings, none a share of the band above. On the stock
+desk the three internal ones come to 539 W against a gains term of 322 W, the
+difference being the radiant half that reaches the air later through the fabric.
+Drawing them as widths would assert an arithmetic that is false.
+
+The fuel chain is the bill's own division carried into watts. There is no boiler
+in this model — the ideal unit reports delivered heat at 100 % — so the seasonal
+efficiency or COP divides *after* the run, and the drawing shows it as the width
+step it is. Turning a COP therefore moves the chain with no simulation at all.
+
+### The two sizing peaks
+
+Two further modes read `ZoneComponentLoadSummary`, the only report this engine
+produces that breaks a load into the components that caused it: one ribbon per
+component, each divided into the part that hit the air at once and the part the
+mass gave back later, with the report's own published residual drawn beside them.
+
+That instant **cannot be moved**, and the block says so rather than letting the
+reader assume otherwise. The decomposition is estimated inside the zone sizing
+routines — a second "pulse sizing" run injects a single-timestep radiant pulse,
+per-surface decay curves are differenced out of it, and those curves are applied
+to the gain history up to the sizing-day peak — so it exists at exactly two
+instants per zone, sub-hourly, on a design day that may not be among the run's
+environments at all. Three instants on one sheet, each lettered as what it is.
+
+Asking for it repeats the zone sizing calculation twice. Measured, interleaved
+A/B over seven rounds on a conditioned design day: 0.20 s to 0.24 s of engine
+time, about 20 %, and that is the worst case — the passes are a fixed cost over
+the design days and do not grow with the run period. It is requested only under
+the sheet's own reporting profile, and only with the System channel in the path,
+because zone sizing on an unconditioned zone is a get-input fatal rather than a
+warning.
 
 ## Reshaping the zone
 

@@ -2732,7 +2732,13 @@ function flowView() {
 /** The live half: the balance at the pinned hour, with the chain on the system. */
 function instantView() {
   const series = flowSeriesFor(lastReadFrom.eso);
-  const flows = flowsAt(series, lastReadFrom.at, { multiplier: params.multiplier });
+  // `span` is the length of the series the instant was chosen in, so a
+  // tributary that does not cover the same hours is refused rather than indexed
+  // at the same position.
+  const flows = flowsAt(series, lastReadFrom.at, {
+    multiplier: params.multiplier,
+    span: lastReadFrom.points.length,
+  });
   const readings = engagedReadings();
 
   // The spine is the rail's own five terms, read exactly as the rail reads

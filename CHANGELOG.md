@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A drawing of the heat flow, from fuel through the plant to the loads that
+  called for it.** The sheet could say what each path contributes at one instant
+  (the balance rail), what the year cost (the bill) and what the demand
+  intensities came to (the schedule). What none of them drew was the chain. A
+  new block between the finding and the schedules draws it, and the pin moves
+  it: take hold of the plate's marker and the ribbons re-letter on every frame,
+  the balance re-closing at each hour.
+
+  **It is not a conservative left-to-right Sankey, deliberately.** A ribbon
+  diagram with only positive widths cannot draw a sink among sources, and this
+  balance is full of them — at the cooling peak the interzone floor runs at
+  −1.33 kW while everything around it is a gain. So the rail's own two-sided
+  arrangement becomes ribbons on a zone-air **spine**: warm arriving on one
+  flank, cold leaving on the other, the sign of a term choosing its flank rather
+  than a direction of travel. Left to right is causation, not flow. Only the
+  spine claims to balance, and whatever it does not close by is drawn as a
+  hatched stub rather than absorbed — the rail has said "unclosed by N W" in
+  words since long before there was a picture.
+
+  **The figures beside a ribbon are read against it and do not divide it.**
+  People, lights and equipment are lettered under the Gains band; windows and
+  opaque conduction under Fabric. They are true readings of real quantities and
+  none is a share of the band it sits under: measured on the stock desk, the
+  three internal ones come to 539 W against a gains term of 322 W, the
+  difference being the radiant half that reaches the air later through the
+  fabric. Drawing them as widths would assert an arithmetic that is false, so
+  they are lettered with the caveat that travels with them.
+
+  **The fuel chain is the bill's own division, carried into watts.** There is no
+  boiler in this model — the ideal unit reports delivered heat at 100 % — so the
+  seasonal efficiency or COP divides after the run, and the drawing shows that
+  division as the width step it is: `supply ÷ divisor = draw`. It reaches no IDF
+  object, so turning a COP re-letters the chain with no simulation, exactly as
+  it re-letters the bill. Measured: 3.5 to 2.7 moves the draw from 2.00 kW to
+  2.59 kW against an unchanged 6.99 kW of supply.
+
+- **The two sizing peaks, decomposed into what caused them.**
+  `ZoneComponentLoadSummary` is the only report this engine will produce that
+  breaks a load into the components that caused it, and it is now requested. Two
+  further modes on the drawing read it: one ribbon per component — people,
+  lights, equipment, infiltration, roof, walls, floor, fenestration — each
+  divided into the part that reached the air at once and the part the mass gave
+  back later, with the report's own published residual drawn hatched beside
+  them. The delayed half is drawn lighter than the instant half, because it is
+  estimated from the radiant decay curves rather than directly computed; the
+  drawing gets fainter as the claim gets weaker.
+
+  **That instant cannot be moved, and the block says so rather than implying
+  otherwise.** The decomposition is computed inside the zone sizing routines — a
+  second "pulse sizing" run injects a single-timestep radiant pulse, per-surface
+  decay curves are differenced out of it, and those curves are applied to the
+  gain history up to the sizing-day peak. It therefore exists at exactly two
+  instants per zone, sub-hourly, on a design day that may not be among the run's
+  environments at all. So the two peaks are lettered as what they are — a
+  calculation over the design day, not an hour of the run above — which is what
+  keeps three instants on one sheet from being quoted as though they were one.
+
+  It costs two extra zone sizing passes. Measured, interleaved A/B over seven
+  rounds of the staged engine on a conditioned design day: 0.20 s to 0.24 s of
+  engine time, about 20 %. That is the worst case, since the passes are a fixed
+  cost over the design days and do not grow with the run period. It is requested
+  only under the sheet's own reporting profile, so a study sample never pays for
+  a table nobody parses, and only with **System in the path** — zone sizing on
+  an unconditioned zone is a get-input fatal, not a warning, and the stock desk
+  has System bypassed, so ungated this would have taken down the default page
+  load. Where a run cannot answer a mode, the offer is refused with its reason
+  in place of its stamp rather than hidden.
+
+  The report is **per zone, not per building**: at a multiplier of 3 the cooling
+  peak is 7,310 W either way, ratio 1.000. The drawing letters which building it
+  is describing rather than leaving it to be assumed.
+
 ## [0.2.0] - 2026-08-19
 
 ### Added
