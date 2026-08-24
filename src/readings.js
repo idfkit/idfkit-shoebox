@@ -198,6 +198,44 @@ export function watts(w) {
   return `${w.toFixed(0)} W`;
 }
 
+/**
+ * Which way a signed watt figure points, in the one word every surface that
+ * letters one uses.
+ *
+ * The sign is the whole argument of the zone air heat balance, and until this
+ * existed it was carried by two things: the hue — warm right of zero, cold
+ * left — and the absence of a minus, since `watts` prints no `+`. That is a
+ * colour-only encoding of the one fact the rail exists to state. Printed in
+ * monochrome, under forced colours, or read aloud as a swatch, a name and a
+ * number, a positive term carried nothing whatever saying it was positive, and
+ * a reader who assumed positive meant "load on the system" or "heat leaving by
+ * this path" read every strip backwards while the rail went on closing to a
+ * hundredth of a percent. So the direction is lettered beside the figure wherever the figure
+ * is, and the hue is left to do what it has always done rather than to be the
+ * only one saying it.
+ *
+ * Null under half a watt, because that is where `watts` itself stops
+ * distinguishing: it prints to whole watts below a kilowatt, so −0.2 W already
+ * letters as `-0 W`, and a direction word standing over that would be claiming
+ * a heading the figure beside it cannot support. It is the rail's own
+ * threshold for a term worth drawing at all, for the same reason.
+ */
+export const flowWord = (w) =>
+  Number.isFinite(w) && Math.abs(w) >= 0.5 ? (w > 0 ? 'in' : 'out') : null;
+
+/**
+ * The same direction said in full, for a tooltip or a line read aloud.
+ *
+ * Two words on the rail is what a figure can carry; a sentence is what a
+ * `title` and an `aria-label` are for, and "in" alone leaves open *in to
+ * what* — the zone air, which is the one balance any of these terms belong to.
+ */
+export const flowPhrase = (w) => {
+  const dir = flowWord(w);
+  if (!dir) return null;
+  return dir === 'in' ? 'into the zone air' : 'out of the zone air';
+};
+
 /* ══ the hours worth reading at ══════════════════════════════════════════ */
 
 /**

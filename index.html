@@ -2978,6 +2978,15 @@
         font-variant-numeric: tabular-nums;
         color: var(--ink);
       }
+      /* Which way a rail term's watts are going, beside the watts. Set below
+         the figure in weight and colour because it is closer to a unit than to
+         a second reading: the same relation `m²K/W` has to the number it
+         follows on a scale's face. */
+      .meter-dir {
+        font: 400 10px/1.2 var(--mono);
+        font-style: normal;
+        color: var(--ink-3);
+      }
       .meter-bar {
         position: relative;
         height: 6px;
@@ -3139,6 +3148,19 @@
         font-variant-numeric: tabular-nums;
         color: var(--ink);
       }
+      /* The sign convention, standing under the head. It takes `--ink-3` where
+         the notes at the foot take `--ink-ghost`, because those are caveats on
+         a reading and this is the legend the reading cannot be had without —
+         the one line on the block a first reader has to be able to find. Same
+         62ch measure as the notes, and for the same reason: the rail is the
+         desk's full width at any column count, and a sentence set 2,700px wide
+         is not one anybody reads. */
+      .rail-convention {
+        margin: 5px 0 0;
+        max-width: 62ch;
+        font: 400 10.5px/1.45 var(--sans);
+        color: var(--ink-3);
+      }
       .rail-track {
         position: relative;
         height: 11px;
@@ -3164,6 +3186,21 @@
       }
       .rail-item span { flex: 1; color: var(--ink-3); }
       .rail-item b { font-weight: 400; font-variant-numeric: tabular-nums; color: var(--ink); }
+      /* Given the width of the longer of the two words rather than its own.
+         The figure before it is flush against the item's right edge, so a
+         direction word that sized itself would drag every number in and out of
+         its column as the reading changed sides — and the column of figures is
+         the thing the key is for. `out` is three characters of the mono face;
+         `in` sets in the same box and leaves the numbers where they were, and
+         the fifth of a character over is slack against sub-pixel rounding —
+         a box cut to exactly 3ch has none, and the last glyph is the one that
+         would lose. */
+      .rail-dir {
+        flex: none;
+        width: 3.2ch;
+        font-style: normal;
+        color: var(--ink-3);
+      }
       .rail-when {
         margin: 0 0 2px;
         font: 400 10px/1.4 var(--mono);
@@ -3866,7 +3903,8 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
           <p class="desk-sub">
             Eighteen channels in the order the physics happens. Every control writes a real object
             into the IDF, and every strip reads back what its path is actually contributing. The five
-            marked <em>rail</em> are terms of the zone air heat balance, and they sum at the foot.
+            marked <em>rail</em> are terms of the zone air heat balance, and they sum at the foot:
+            positive is heat arriving in the zone air, negative is heat leaving it.
           </p>
           <!-- The register of presets: published standards and this sheet's own
                partis, folded to a line each beside the sub. A standard is laid

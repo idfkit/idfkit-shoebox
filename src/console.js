@@ -15,7 +15,7 @@ import { quantityField } from './field.js';
 // The rail's own units, from the module that owns reading a run. One
 // definition: a second copy here would be the first thing to drift the day a
 // figure changed precision on one surface and not the other.
-import { watts } from './readings.js';
+import { flowPhrase, flowWord, watts } from './readings.js';
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -1743,6 +1743,14 @@ export function mountConsole({
     if (channel.meter.rail) head.append(el('i', 'meter-rail', 'rail'));
     const value = el('b', 'meter-value', '—');
     head.append(value);
+    // Which way the figure points, on the terms that have a way to point. The
+    // rail's five are signed readings of one balance and the sign is the whole
+    // argument, so the word rides beside the number here exactly as it does in
+    // the rail's own key. The other meters are unsigned magnitudes — solar
+    // through the glass, watts of light — where a direction would be a word
+    // with nothing behind it, so they get none.
+    const dir = channel.meter.rail ? el('i', 'meter-dir') : null;
+    if (dir) head.append(dir);
     node.append(head);
 
     const bar = el('div', 'meter-bar');
@@ -1750,7 +1758,7 @@ export function mountConsole({
     bar.append(el('i', 'meter-zero'), fill);
     node.append(bar);
     if (channel.meter.note) node.append(el('p', 'meter-note', channel.meter.note));
-    return { node, value, fill, bar };
+    return { node, value, fill, bar, dir };
   }
 
   /* ── gestures ────────────────────────────────────────────────────────── */
@@ -1894,8 +1902,20 @@ export function mountConsole({
         here.meter.bar.hidden = false;
         const w = readings.get(channel.id);
         const lettered = watts(w);
+        // The folded row is the whole reading on a phone, so the direction
+        // goes into its text rather than beside it: there is no meter open
+        // under it to say which way the watts are going, and a minus sign on
+        // its own is the encoding this pair of lines exists to replace.
+        //
+        // Gated on the meter having a direction cell at all, which is the same
+        // gate as `rail`. Taken off `flowWord` alone it read `Glazing 573 W in`
+        // on the index — transmitted solar is an unsigned magnitude and always
+        // positive, so the word was a direction nothing had chosen and it made
+        // a diagnostic look like a sixth term of the balance.
+        const dir = here.meter.dir ? flowWord(w) : null;
+        if (here.meter.dir) here.meter.dir.textContent = dir ?? '';
         here.meter.value.textContent = lettered;
-        here.read.textContent = lettered;
+        here.read.textContent = dir ? `${lettered} ${dir}` : lettered;
         const has = Number.isFinite(w);
         here.meter.fill.hidden = !has;
         if (!has) continue;
@@ -2068,6 +2088,34 @@ export function mountConsole({
     const head = el('div', 'rail-head');
     head.append(el('p', 'eyebrow', 'Zone air heat balance'));
     railHost.append(head);
+    /*
+     * Which way the sign points, stated where the signs are.
+     *
+     * The rail's whole argument is that the two sides are the same length when
+     * the balance closes, and until this line existed the direction of every
+     * term on it was carried by the hue and by the absence of a minus — a
+     * colour-only encoding of the one fact the block is for. This is the same
+     * fix, and the same reasoning, as the sentence over the scoreboard saying
+     * what Chase does: in place rather than on hover, because nothing on this
+     * sheet floats and a hint that exists only on hover does not exist on a
+     * phone at all.
+     *
+     * It also says what the `±` is, which nothing did: the total is the size
+     * of one side. A balance that closes nets to nothing, so a reader who took
+     * that figure for a net was reading a gain into a zone that has none.
+     *
+     * Only over a rail that has terms on it. Standing over `No solved run to
+     * balance yet` it would be a legend for figures that are not there.
+     */
+    if (terms.length) {
+      railHost.append(
+        el(
+          'p',
+          'rail-convention',
+          'Positive is heat arriving in the zone air, negative is heat leaving it — in and out on every term below. The ± total is one side of the balance, not a net of the two.',
+        ),
+      );
+    }
     // Every meter on the desk is an instantaneous reading, so the rail has to
     // say which instant, or the numbers are unfalsifiable. And because that
     // instant is chosen by the result — the hour furthest from 20 °C, which a
@@ -2104,11 +2152,20 @@ export function mountConsole({
         TONES[Math.min(i, TONES.length - 1)]
       }%, var(--inset))`;
 
+    // The direction is found once, here, and the segment and its key entry
+    // letter the same one. Every term on the rail is past the half-watt cut
+    // above, which is `flowWord`'s own threshold, so both are always a word.
     const order = (side) =>
       terms
         .filter((t) => (side === 'into' ? t.w > 0 : t.w < 0))
         .sort((a, b) => Math.abs(b.w) - Math.abs(a.w))
-        .map((t, i) => ({ ...t, side, fill: toneOf(t.w, i) }));
+        .map((t, i) => ({
+          ...t,
+          side,
+          fill: toneOf(t.w, i),
+          dir: flowWord(t.w),
+          phrase: flowPhrase(t.w),
+        }));
     const laid = [...order('into'), ...order('outof')];
 
     const track = el('div', 'rail-track');
@@ -2120,7 +2177,10 @@ export function mountConsole({
         seg.style[side === 'into' ? 'left' : 'right'] = `${50 + (run / scale) * 50}%`;
         seg.style.width = `${(w / scale) * 50}%`;
         seg.style.background = t.fill;
-        seg.title = `${t.channel.name}: ${watts(t.w)}`;
+        // Said in full here, where there is room for a sentence: "in" alone
+        // leaves open in to what, and the tooltip is also the segment's label
+        // when the row is read aloud.
+        seg.title = `${t.channel.name}: ${watts(t.w)} ${t.phrase}`;
         track.append(seg);
         run += w;
       }
@@ -2135,7 +2195,12 @@ export function mountConsole({
       const item = el('div', 'rail-item');
       const swatch = el('i', 'rail-swatch');
       swatch.style.background = t.fill;
-      item.append(swatch, el('span', null, t.channel.name), el('b', null, watts(t.w)));
+      item.append(
+        swatch,
+        el('span', null, t.channel.name),
+        el('b', null, watts(t.w)),
+        el('i', 'rail-dir', t.dir),
+      );
       key.append(item);
     }
     railHost.append(key);
