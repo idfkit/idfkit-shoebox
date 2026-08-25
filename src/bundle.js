@@ -40,7 +40,7 @@
 
 import { controlFor, isWholeYear } from './controls.js';
 import { REVISION, TOOLKIT } from './version.js';
-import { idfHeader } from './model.js';
+import { cleanSignature, idfHeader } from './model.js';
 
 const enc = new TextEncoder();
 
@@ -236,8 +236,17 @@ function manifest(run, list) {
   // where there was none. `severe` stands for the pair — the counts are read
   // off the same parsed error file in the same breath.
   const dash = (value, format) => (value == null ? '—' : format(value));
+  // Cleaned here as well as inside `idfHeader`, so the name in this ledger and
+  // the name at the top of `model.idf` are the same string by construction
+  // rather than by both happening to be handed the same input.
+  const signed = cleanSignature(run.author);
   const rows = [
     ['EnergyPlus', run.version],
+    // What wrote the file, beside what ran it. The IDF says this at its own
+    // head too, and deliberately twice: the manifest is the first thing a
+    // reader opens and the model is the thing that gets separated from it, so
+    // neither can be the only copy.
+    ['Toolkit', dash(TOOLKIT, (v) => `@idfkit/core ${v}`)],
     // Which build of the page derived the numbers this bundle is offered
     // against. The IDF and the EPW below reproduce the run in any
     // EnergyPlus; this line is what reproduces the *sheet*, months later,
@@ -263,6 +272,13 @@ function manifest(run, list) {
       dash(run.seconds, (s) => `${s.toFixed(2)} s, in-browser WebAssembly`),
     ],
     ['Bundled', run.date.toLocaleString('en-CA')],
+    // Unsigned reads as an em dash here and writes no line at all in the IDF,
+    // and the two are not inconsistent — they are the same rule meeting
+    // different stationery. This is a ruled ledger where every row is present
+    // and `—` is how it says a figure was not stated, so a missing signature
+    // belongs in the column like any other. A comment header has no ruling, so
+    // an em dash there would be inventing a field in order to leave it empty.
+    ['Drawn by', signed || '—'],
   ];
   const pad = Math.max(...rows.map(([k]) => k.length));
 

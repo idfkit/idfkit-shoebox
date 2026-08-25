@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never at this desk, and "the results moved" and "the writer moved" are
   different problems that a line at the top tells apart.
 
+  The run bundle's `MANIFEST.txt` carries the same two facts as rows of its
+  ledger, beside the EnergyPlus version and the sheet's build. Deliberately
+  twice: the manifest is the first thing a reader opens and the model is the
+  thing that gets separated from it, so neither can be the only copy. Unsigned
+  reads there as an em dash and writes no line at all in the IDF, which is one
+  rule meeting two kinds of stationery — a ruled ledger keeps every row present
+  and says `—` when a figure was not stated, while a comment header has no
+  ruling and an em dash would be inventing a field in order to leave it empty.
+
   The `Drawn by` cell is the reader's, which is the whole reason it can exist at
   all. This sheet has no author — a title block names whoever drew *that*
   drawing, and here that is whoever is at the console — so the cell is empty
@@ -58,9 +67,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than an untidiness: `Sam\nZone, EVIL, 0, 0, 0, 0;` would be a real
   object in a real file that a colleague runs. Every control and format
   character goes, the two Unicode line breaks are named as escapes beside them,
-  and runs of whitespace collapse. Measured through the field itself and then
-  through EnergyPlus: the injection arrives as one comment line, and the signed
-  and unsigned models both complete with 0 severe and 0 fatal errors.
+  and runs of whitespace collapse. The manifest turned out to be a second
+  surface of the same kind and is covered by the same cleaning: its ledger is
+  label-aligned text, so a newline could have forged a row — an `EnergyPlus
+  FAKE 9.9` line sitting above the real one, in the artifact that exists to be
+  checked. Measured through the field itself and then through EnergyPlus: the
+  injection arrives as one comment line and one ledger row, no row is forged,
+  the name in the manifest is the same string as the name in the IDF header, and
+  the signed and unsigned models both complete with 0 severe and 0 fatal
+  errors.
 
 - **The page says who built it, and the sheet still has no author.** The
   Disclosure band has always been a colophon — the source has called it one for
