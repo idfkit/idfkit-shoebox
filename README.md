@@ -251,10 +251,14 @@ every frame, the balance re-closing at each hour.
 It is the rail at full size rather than a second instrument — where the rail has
 a centre-zero line the drawing has a spine, where it has segments it has ribbons
 — and it opens by doing that: the spine grows, then the ribbons extend out of it
-in the order the rail stacks them. On a wide screen the strips give up the desk's
-column and the rail takes it; on a phone, where the desk is just a block in the
-page with no height to fill, it becomes a layer over the page with its own
-scroll and a sticky way out.
+in the order the rail stacks them. That is the opening and only the opening;
+every reading after it is the same drawing at another instant, so the ribbons
+travel to their new widths rather than being drawn again. It is what makes a
+drag over the plate read as one gesture over one quantity instead of a
+flip-book. On a wide screen the strips give up the desk's column and the rail
+takes it; on a phone, where the desk is just a block in the page with no height
+to fill, it becomes a layer over the page with its own scroll and a sticky way
+out.
 
 The spine is a **balanced node**, and the sign of a term picks its side of it.
 That is what lets a Sankey draw this balance at all: a ribbon diagram with only

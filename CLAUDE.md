@@ -1273,6 +1273,42 @@ no browser); `renderSankey` draws the whole panel — offers, lede, drawing, key
   each ribbon extends out of it in the order the rail already stacks them,
   largest first, and the lettering follows. `--i` per band carries the stagger.
   All of it is off under `prefers-reduced-motion`.
+- **The unfold is the *opening*; every reading after it is a travel.** The
+  class used to be left on the panel for as long as the balance was open, and
+  a re-letter rebuilds the drawing inside it — so the keyframes ran again from
+  a spine of no height and ribbons of no width. A plate drag is a re-letter per
+  pointer frame, so the drawing spent the whole gesture being drawn for the
+  first time instead of moving from the hour before it to this one: measured,
+  one twenty-four-frame drag started **thirty-seven** animations. `drawFlow`
+  now takes the class off on any re-letter, and the ribbons transition between
+  the two readings instead — which is the motion the gesture actually has.
+  Measured over a brisk drag: the drawn ribbon sits a **median 0.3 px** from
+  its own target, and the one large gap in the trace is the biggest hour-step
+  of the drag caught mid-travel, which is the jump this exists to smooth.
+- **A transition needs the same element on both sides of it, so the drawing is
+  re-lettered rather than rebuilt.** Every node whose geometry moves carries a
+  `data-key`, and `morph` in `sankey.js` walks the fresh drawing pairing them
+  off against the live one: same keys, same elements, nothing added and nothing
+  gone, values copied across. Any mismatch — a term that has just appeared, a
+  residual closed to nothing, a label the new figures leave no room for — is a
+  *different* drawing and is refused whole and replaced, which is what the
+  renderer did unconditionally before. Nothing is written until every pair is
+  known, so a refusal leaves the live drawing exactly as it stood.
+  - The panel therefore has **three slots built once** (`.flow-top`, the
+    `<svg>`, `.flow-key`), because a node removed and re-inserted loses every
+    transition running on it — `replaceChildren` on the host would have made
+    the persistence pointless.
+  - `x`, `y`, `width` and `height` are SVG geometry properties and animate as
+    CSS. The `x` on a `<text>` is **not** one, so a label is placed by
+    `transform` instead; left on the attribute it would jump while the ribbon
+    it names grew, which is the two halves of one reading disagreeing about
+    when they had arrived.
+  - **The `ResizeObserver`'s first report is not a resize**, and acting on it
+    redrew the drawing 80 ms into its own unfold and took the class with it —
+    the opening was cut after the spine and before any ribbon, fourteen
+    animations down to one. It is gated on the width `drawFlow` recorded, not
+    on the previous *report*: the first report has no previous one to differ
+    from, so a guard written that way passes it straight through.
 - **The narrow layout gets an overlay, because there is no footer to expand.**
   At the index breakpoint the desk is `position: static` with no height to fill
   and the strips stop scrolling, so growing in place would leave the drawing

@@ -3326,6 +3326,43 @@
       .rail-flow.unfold .flow-label { animation: flow-fade-in 260ms ease backwards; animation-delay: 420ms; }
       .rail-flow.unfold .flow-key { animation: flow-fade-in 260ms ease backwards; animation-delay: 460ms; }
 
+      /* ── travelling between readings ────────────────────────────────
+
+         The unfold above happens once, when the bar becomes the drawing.
+         Everything after it is the same drawing at another instant — so the
+         ribbons travel to their new widths rather than being drawn again.
+         That is what a plate drag is: one continuous gesture over one
+         continuous quantity, and an hour of an annual trace is a step of
+         about nineteen pixels, so without this the reading arrives in jumps
+         where the hand is moving smoothly.
+
+         It runs at all only because the drawing keeps its nodes between
+         readings — `morph` in sankey.js pairs them off by `data-key` and
+         copies the new geometry onto the old elements. Where it cannot (a
+         term appearing, a residual closing to nothing, a label the new
+         figures leave no room for) the frame is replaced and this does not
+         run, which is exactly what the drawing did before it existed.
+
+         `x`, `y`, `width` and `height` are SVG geometry properties and
+         animate as CSS; `x` on a `<text>` is not one, so a label travels by
+         `transform` instead. `d` carries the fuel wedge, which has to keep
+         step with the ribbon it continues or the drawing pulls apart at the
+         one joint that means something. */
+      .rail-flow .flow-band rect,
+      .rail-flow .flow-spine,
+      .rail-flow .flow-chain path {
+        transition:
+          x 140ms cubic-bezier(0.2, 0.7, 0.3, 1),
+          y 140ms cubic-bezier(0.2, 0.7, 0.3, 1),
+          width 140ms cubic-bezier(0.2, 0.7, 0.3, 1),
+          height 140ms cubic-bezier(0.2, 0.7, 0.3, 1),
+          d 140ms cubic-bezier(0.2, 0.7, 0.3, 1),
+          fill 140ms linear;
+      }
+      .rail-flow .flow-label {
+        transition: transform 140ms cubic-bezier(0.2, 0.7, 0.3, 1);
+      }
+
 
       /* Which instant, in the rail's own readout type — the same line the
          rail's "Read at" carries, because it is the same question. */
@@ -3498,6 +3535,10 @@
         .rail-flow.unfold .flow-band,
         .rail-flow.unfold .flow-label,
         .rail-flow.unfold .flow-key { animation: none; }
+        .rail-flow .flow-band rect,
+        .rail-flow .flow-spine,
+        .rail-flow .flow-chain path,
+        .rail-flow .flow-label { transition: none; }
       }
 
 

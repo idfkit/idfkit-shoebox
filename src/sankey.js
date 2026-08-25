@@ -357,6 +357,16 @@ const CHAR = 6.1;
 const LABEL_MIN = 44;
 
 /**
+ * What a band is called across two readings of the same drawing.
+ *
+ * The live terms carry an id; a component row carries only the name the report
+ * printed, which is unique within a table. Either is enough for `morph` to
+ * recognise the same ribbon an hour later and re-letter it in place instead of
+ * building a new one over its grave.
+ */
+const keyOf = (entry) => entry.id ?? entry.label;
+
+/**
  * Divide one flank between the ribbon, the chain lane and the lettering.
  *
  * Proportional rather than fixed, because the drawing now lives in the desk's
@@ -391,7 +401,7 @@ function proportions(width, { hasChain }) {
  * gesture aimed at whatever is beneath it.
  */
 function hatchDefs() {
-  const defs = svg('defs');
+  const defs = svg('defs', { 'data-key': 'defs' });
   const pattern = svg('pattern', {
     id: 'flow-residual',
     patternUnits: 'userSpaceOnUse',
@@ -439,6 +449,7 @@ function band(entry, { top, height, letter, lane, geo }) {
   // stacks by and unfold outward from the spine in that order.
   group.setAttribute('class', 'flow-band');
   group.style.setProperty('--i', String(entry.rank ?? 0));
+  group.dataset.key = `band:${keyOf(entry)}`;
   const y = top + entry.y * height;
   const h = Math.max(entry.height * height, 1.6);
   const leaving = entry.side === 'outOf';
@@ -449,6 +460,7 @@ function band(entry, { top, height, letter, lane, geo }) {
   group.style.transformOrigin = `${geo.x}px ${y + Math.max(entry.height * height, 1.6) / 2}px`;
 
   const rect = svg('rect', {
+    'data-key': `fill:${keyOf(entry)}`,
     x: left,
     y,
     width: geo.reach,
@@ -485,6 +497,7 @@ function band(entry, { top, height, letter, lane, geo }) {
     const delayedW = geo.reach - instantW;
     group.append(
       svg('rect', {
+        'data-key': `delayed:${keyOf(entry)}`,
         // The *delayed* half is the one drawn lighter, and which half gets the
         // lighter tone is not arbitrary: the instant column is directly
         // computed, while the delayed one is estimated from the radiant decay
@@ -503,6 +516,7 @@ function band(entry, { top, height, letter, lane, geo }) {
     if (instantW > 0) {
       group.append(
         svg('line', {
+          'data-key': `cut:${keyOf(entry)}`,
           x1: cutX, y1: y, x2: cutX, y2: y + h,
           stroke: 'var(--sheet)', 'stroke-width': 1, 'pointer-events': 'none',
         }),
@@ -521,6 +535,7 @@ function band(entry, { top, height, letter, lane, geo }) {
     group,
     label: letter
       ? {
+          key: keyOf(entry),
           text: letter,
           x: geo.x + (leaving ? lane : -lane),
           anchor: leaving ? 'start' : 'end',
@@ -566,6 +581,8 @@ function settle(labels, { gap = 9, top, bottom }) {
  */
 function chainOf(fuel, { y, h, leaving, watts, lane, geo }) {
   const group = svg('g');
+  group.setAttribute('class', 'flow-chain');
+  group.dataset.key = 'chain';
   const dir = leaving ? 1 : -1;
   const from = leaving ? geo.x + SPINE_W / 2 + geo.reach : geo.x - SPINE_W / 2 - geo.reach;
   const to = from + dir * geo.chain;
@@ -575,6 +592,7 @@ function chainOf(fuel, { y, h, leaving, watts, lane, geo }) {
   const mid = y + h / 2;
 
   const path = svg('path', {
+    'data-key': 'chain:wedge',
     d: `M ${from} ${y} L ${to} ${mid - drawH / 2} L ${to} ${mid + drawH / 2} L ${from} ${y + h} Z`,
     fill: inkTone(3),
     stroke: 'var(--rule)',
@@ -588,6 +606,7 @@ function chainOf(fuel, { y, h, leaving, watts, lane, geo }) {
   return {
     group,
     label: {
+      key: 'chain',
       text: `${fuel.plantLabel}${fuel.divisor ? ` ÷ ${fuel.divisor}` : ' (no plant)'}`,
       x: geo.x + (leaving ? lane : -lane),
       anchor: leaving ? 'start' : 'end',
@@ -596,8 +615,84 @@ function chainOf(fuel, { y, h, leaving, watts, lane, geo }) {
   };
 }
 
+/*
+ * Three slots, built once, so the drawing is never re-parented.
+ *
+ * The panel is re-lettered on every frame of a plate drag, and a node that is
+ * removed and re-inserted loses every transition running on it — so a drawing
+ * rebuilt into a fresh element can only ever snap between readings, whatever
+ * the stylesheet says. The offers, the sentence and the key are rebuilt (they
+ * are text, and text does not travel); the `<svg>` between them keeps its
+ * place in the host and its children keep their identity through `morph`.
+ */
+function slotsOf(host) {
+  if (!host.querySelector(':scope > .flow-top')) {
+    host.replaceChildren(el('div', 'flow-top'), el('div', 'flow-frame'), el('div', 'flow-key'));
+  }
+  return {
+    top: host.querySelector(':scope > .flow-top'),
+    frame: host.querySelector(':scope > .flow-frame'),
+    key: host.querySelector(':scope > .flow-key'),
+  };
+}
+
 /**
- * The drawing, rebuilt whole on every reading.
+ * Re-letter one drawing as another, where the two are the same drawing.
+ *
+ * Every node whose geometry moves between readings carries a `data-key`, and
+ * this walks the fresh drawing pairing them off against the live one. Same
+ * keys, same elements, nothing added and nothing gone: the values are copied
+ * across and the ribbons travel from where they were to where they now are,
+ * which is what the stylesheet's transitions have to have in order to run at
+ * all. Anything else — a term that has just appeared, a residual that has
+ * closed to nothing, a label the new figures no longer leave room for — is a
+ * *different* drawing, and it is refused whole and rebuilt, which is exactly
+ * what this function used to do unconditionally.
+ *
+ * Refusing on any mismatch rather than patching up the difference is the same
+ * rule the link codec keeps: half a drawing morphed onto half another one is
+ * the silent fallback this codebase does not do. The cost of a refusal is one
+ * frame that snaps instead of growing.
+ */
+function morph(live, fresh) {
+  const index = new Map();
+  for (const node of live.querySelectorAll('[data-key]')) index.set(node.dataset.key, node);
+
+  const pairs = [];
+  for (const node of fresh.querySelectorAll('[data-key]')) {
+    const twin = index.get(node.dataset.key);
+    if (!twin || twin.tagName !== node.tagName) return false;
+    pairs.push([twin, node]);
+    index.delete(node.dataset.key);
+  }
+  if (index.size) return false;
+
+  // Nothing is written until every pair is known, so a refusal leaves the live
+  // drawing exactly as it stood rather than half re-lettered.
+  for (const [twin, node] of pairs) restate(twin, node);
+  // The frame itself carries the viewBox and the `aria-label`, and neither is
+  // keyed: there is only ever one of it.
+  restate(live, fresh);
+  return true;
+}
+
+/** Copy one node's attributes and lettering onto its twin, and nothing else. */
+function restate(live, fresh) {
+  for (const { name, value } of fresh.attributes) {
+    if (live.getAttribute(name) !== value) live.setAttribute(name, value);
+  }
+  for (const name of live.getAttributeNames()) {
+    if (!fresh.hasAttribute(name)) live.removeAttribute(name);
+  }
+  // Only leaves carry text. Guarding on children keeps this from flattening a
+  // group into the concatenation of its own labels.
+  if (!fresh.children.length && live.textContent !== fresh.textContent) {
+    live.textContent = fresh.textContent;
+  }
+}
+
+/**
+ * The drawing, re-lettered in place wherever the reading before it allows.
  *
  * `view` is null before the first run and after a failed one, which draws the
  * empty state rather than an axis with nothing on it — the plate's own rule.
@@ -606,21 +701,25 @@ function chainOf(fuel, { y, h, leaving, watts, lane, geo }) {
  */
 export function renderSankey(host, view) {
   if (!host) return;
-  host.replaceChildren();
-  if (!view) return;
+  if (!view) {
+    host.replaceChildren();
+    return;
+  }
 
   // The panel is the whole instrument now that it opens from the rail rather
   // than standing on the sheet: which instant, the offers, the sentence, the
   // drawing and the key, in that order. Nothing above it says any of that.
-  if (view.offers) host.append(renderOffers(view.offers));
-  if (view.lede) host.append(renderLede(view.lede));
+  const slot = slotsOf(host);
+  slot.top.replaceChildren();
+  if (view.offers) slot.top.append(renderOffers(view.offers));
+  if (view.lede) slot.top.append(renderLede(view.lede));
 
-  if (view.empty) {
-    host.append(el('p', 'flow-empty', 'AWAITING RUN'));
-    return;
-  }
-  if (view.refusal) {
-    host.append(el('p', 'flow-refused', view.refusal));
+  if (view.empty || view.refusal) {
+    slot.top.append(
+      view.refusal ? el('p', 'flow-refused', view.refusal) : el('p', 'flow-empty', 'AWAITING RUN'),
+    );
+    slot.frame.replaceChildren();
+    slot.key.replaceChildren();
     return;
   }
 
@@ -654,6 +753,7 @@ export function renderSankey(host, view) {
   // The spine. It is the only thing on this drawing that claims to balance, so
   // it is the only thing drawn as a single continuous object.
   const spine = svg('rect', {
+    'data-key': 'spine',
     x: geo.x - SPINE_W / 2,
     y: top - 6,
     width: SPINE_W,
@@ -720,13 +820,21 @@ export function renderSankey(host, view) {
   // Settled last, once every label on the flank is known.
   for (const side of ['into', 'outOf']) {
     for (const label of settle(flanks[side], { top: top + 4, bottom: top + height })) {
+      // Placed by `transform` rather than by `x` and `y`, which is the one
+      // concession the travelling ribbons ask of the lettering: `x` and `y` on
+      // a `<text>` are plain attributes and not CSS geometry properties, so
+      // they cannot transition, and a label that jumped while the ribbon it
+      // names grew would be the two halves of one reading disagreeing about
+      // when they had arrived. `transform` transitions everywhere.
       const node = text(label.text, {
-        x: label.x,
-        y: label.y,
+        'data-key': `label:${label.key}`,
+        x: 0,
+        y: 0,
         'text-anchor': label.anchor,
         fill: 'var(--ink-2)',
       });
       node.setAttribute('class', 'flow-label');
+      node.style.transform = `translate(${label.x}px, ${label.y}px)`;
       frame.append(node);
     }
   }
@@ -751,6 +859,7 @@ export function renderSankey(host, view) {
   const head = top - 10;
   frame.append(
     text('ZONE AIR', {
+      'data-key': 'head:node',
       x: geo.x,
       y: top - 25,
       'text-anchor': 'middle',
@@ -765,6 +874,7 @@ export function renderSankey(host, view) {
   );
   frame.append(
     text(`${view.format(layout.intoTotal)} arriving`, {
+      'data-key': 'head:into',
       x: geo.x - SPINE_W / 2 - 14,
       y: head,
       'text-anchor': 'end',
@@ -773,6 +883,7 @@ export function renderSankey(host, view) {
   );
   frame.append(
     text(`${view.format(layout.outOfTotal)} leaving`, {
+      'data-key': 'head:outOf',
       x: geo.x + SPINE_W / 2 + 14,
       y: head,
       'text-anchor': 'start',
@@ -780,8 +891,11 @@ export function renderSankey(host, view) {
     }),
   );
 
-  host.append(frame);
-  host.append(renderKey(view));
+  // Re-lettered onto the drawing already standing where that is the same
+  // drawing; replaced outright where it is not.
+  const live = slot.frame.firstElementChild;
+  if (!(live && morph(live, frame))) slot.frame.replaceChildren(frame);
+  slot.key.replaceChildren(...renderKey(view));
 }
 
 /**
@@ -843,7 +957,7 @@ function renderLede(text) {
 }
 
 function renderKey(view) {
-  const list = el('div', 'flow-key');
+  const cells = [];
   for (const group of view.keyed) {
     // One cell per ribbon, carrying its own tributaries. The outer grid lays
     // out *groups* rather than lines, because a grid that flowed line by line
@@ -853,9 +967,9 @@ function renderKey(view) {
     const cell = el('div', 'flow-group');
     cell.append(keyLine(group));
     for (const sub of group.subs ?? []) cell.append(keyLine(sub));
-    list.append(cell);
+    cells.push(cell);
   }
-  return list;
+  return cells;
 }
 
 function keyLine(entry) {

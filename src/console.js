@@ -2198,6 +2198,7 @@ export function mountConsole({
     } else {
       flowResize.unobserve(railFlow);
       clearTimeout(flowResizeTimer);
+      flowWidth = null;
       railFlow.replaceChildren();
       document.getElementById('rail-open')?.focus();
     }
@@ -2211,16 +2212,53 @@ export function mountConsole({
    * balance is open, because a closed one renders nothing to resize.
    */
   const flowResize = new ResizeObserver(() => {
+    /*
+     * Only where the width actually moved.
+     *
+     * A `ResizeObserver` reports once as soon as it is given something to
+     * watch, and that first report is not a resize — it is the width the
+     * drawing was just built at. Acted on, it redrew 80 ms into the unfold and
+     * took the class off with it, which cut the opening after the spine and
+     * before any ribbon had started: measured, fifteen animations became one.
+     *
+     * Compared against the width `drawFlow` recorded rather than against the
+     * previous *report*, because those are not the same thing — the first
+     * report has no previous report to differ from, so a guard written that
+     * way passes it through and the bug stands.
+     */
+    if (railFlow.clientWidth === flowWidth) return;
     clearTimeout(flowResizeTimer);
     flowResizeTimer = setTimeout(() => drawFlow(), 80);
   });
   let flowResizeTimer;
+  // The width the drawing on screen was built at; null while there is none.
+  let flowWidth = null;
 
   /** Draw, or re-letter, whatever view was last handed in. */
   function drawFlow({ unfold = false } = {}) {
     if (!balanceOpen) return;
     renderSankey(railFlow, flowView);
-    if (!unfold) return;
+    flowWidth = railFlow.clientWidth;
+    if (!unfold) {
+      /*
+       * The unfold is the *opening*, and only that.
+       *
+       * The class used to be left on for as long as the balance was open, and
+       * every re-letter rebuilt the drawing inside it — so the keyframes ran
+       * again from a spine of zero height and ribbons of zero width. A plate
+       * drag is a re-letter per pointer frame, which meant the drawing spent
+       * the whole gesture being drawn for the first time, over and over,
+       * instead of travelling from the hour before it to this one. Measured
+       * on one drag of twenty-four frames: thirty-seven animations started.
+       *
+       * Off, the ribbons transition between the two readings instead, which
+       * is the motion the gesture actually has — one continuous drag over one
+       * continuous quantity. The stylesheet does that half; this half is only
+       * making sure the opening's animation is not still standing over it.
+       */
+      railFlow.classList.remove('unfold');
+      return;
+    }
     // Restarting the animation needs the class off, a reflow, and the class on
     // again — otherwise a re-open inside the same frame does nothing.
     railFlow.classList.remove('unfold');

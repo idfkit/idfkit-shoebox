@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which is the only thing that earns the motion; all of it is off under
   `prefers-reduced-motion`.
 
+  That unfold is the *opening*, and only that. Every reading after it is the
+  same drawing at another instant, so the ribbons **travel** to their new widths
+  instead of being drawn again — which is what a plate drag is: one continuous
+  gesture over one continuous quantity, stepping hour to hour. It used to replay
+  the whole unfold on every frame of that drag (measured: thirty-seven
+  animations started over twenty-four frames), so the drawing spent the gesture
+  being drawn for the first time, over and over. The drawing now keeps its nodes
+  between readings and re-letters them in place, and the transition tracks the
+  hand — a median 0.3 px between the drawn ribbon and its own target over a
+  brisk drag, with the large steps travelled rather than jumped.
+
   On the wide layout the strips give up the desk's column and the rail takes it,
   which is the full window height the desk is already sized to. At the index
   breakpoint there is no footer to expand into — the desk is `position: static`
@@ -32,10 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A drawing of the heat flow, from fuel through the plant to the loads that
   called for it.** The sheet could say what each path contributes at one instant
   (the balance rail), what the year cost (the bill) and what the demand
-  intensities came to (the schedule). What none of them drew was the chain. A
-  new block between the finding and the schedules draws it, and the pin moves
-  it: take hold of the plate's marker and the ribbons re-letter on every frame,
-  the balance re-closing at each hour.
+  intensities came to (the schedule). What none of them drew was the chain. The
+  balance opened out of the rail draws it, and the pin moves it: take hold of
+  the plate's marker and the ribbons re-letter on every frame, the balance
+  re-closing at each hour.
 
   **The spine is a balanced node, and the sign of a term picks its side of it.**
   That is the move that lets a Sankey draw this balance at all: a ribbon diagram
