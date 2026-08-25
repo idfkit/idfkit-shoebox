@@ -248,44 +248,32 @@ the same five terms as ribbons converging on a spine, with the fuel chain runnin
 out beyond the system band. Take hold of the plate's marker and it re-letters on
 every frame, the balance re-closing at each hour.
 
-It is the rail at full size rather than a second instrument — where the rail has
-a centre-zero line the drawing has a spine, where it has segments it has ribbons
-— and it opens by doing that: the spine grows, then the ribbons extend out of it
-in the order the rail stacks them. That is the opening and only the opening;
-every reading after it is the same drawing at another instant, so the ribbons
-travel to their new widths rather than being drawn again. It is what makes a
-drag over the plate read as one gesture over one quantity instead of a
-flip-book. On a wide screen the strips give up the desk's column and the rail
-takes it; on a phone, where the desk is just a block in the page with no height
-to fill, it becomes a layer over the page with its own scroll and a sticky way
-out.
+It is the rail at full size rather than a second instrument, and it opens by
+doing that — the spine grows, then the ribbons extend out of it in the order the
+rail stacks them. That is the opening and only the opening: every reading after
+it is the same drawing at another instant, so the ribbons travel to their new
+widths rather than being drawn again, which is what makes a drag read as one
+gesture rather than a flip-book. On a phone, where there is no footer to expand
+into, it becomes a layer over the page with its own scroll and a sticky way out.
 
 The spine is a **balanced node**, and the sign of a term picks its side of it.
 That is what lets a Sankey draw this balance at all: a ribbon diagram with only
 positive widths cannot show a sink among sources, and this balance is full of
 them — at the cooling peak the interzone floor runs at −1.33 kW while everything
-around it is a gain. Put the positives on one flank and the negatives on the
-other and the difficulty disappears; the floor is a ribbon on the leaving side
-at its true width, and the node still balances. The two totals are lettered at
-the head of the spine, in words as well as hues, so the balance can be checked
-by eye.
+around it is a gain. Positives on one flank, negatives on the other, and the
+floor is a ribbon on the leaving side at its true width with the node still
+balancing. Both totals are lettered at the head of the spine, in words as well as
+hues, so the balance can be checked by eye. Only that node claims to close, and
+what it does not close by is drawn hatched rather than absorbed.
 
-What it is *not* is a multi-stage Sankey whose every node closes by
-construction. Only the zone air balances, because the zone air is the only thing
-that was measured to — and what the node does not close by is drawn hatched
-rather than absorbed.
-
-The figures lettered beside each ribbon are read *against* it and do not divide
-it. People, lights and equipment sit under Gains, windows and opaque conduction
-under Fabric — all true readings, none a share of the band above. On the stock
-desk the three internal ones come to 539 W against a gains term of 322 W, the
-difference being the radiant half that reaches the air later through the fabric.
-Drawing them as widths would assert an arithmetic that is false.
-
-The fuel chain is the bill's own division carried into watts. There is no boiler
-in this model — the ideal unit reports delivered heat at 100 % — so the seasonal
-efficiency or COP divides *after* the run, and the drawing shows it as the width
-step it is. Turning a COP therefore moves the chain with no simulation at all.
+The figures beside each ribbon are read *against* it and do not divide it.
+People, lights and equipment sit under Gains, windows and opaque conduction under
+Fabric — all true readings, none a share of the band above: on the stock desk the
+three internal ones come to 539 W against a gains term of 322 W, the difference
+being the radiant half that reaches the air later through the fabric. Past the
+system ribbon the plant's efficiency or COP divides, drawn as the width step it
+is — the bill's own arithmetic in watts, so turning a COP moves it with no
+simulation at all.
 
 ### The two sizing peaks
 

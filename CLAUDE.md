@@ -1243,141 +1243,107 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
 
 The rail's five terms, drawn — **the rail at full size rather than a second
 instrument beside it**. Where the rail has a centre-zero bar the drawing has a
-spine, and where the rail has stacked segments it has ribbons, so it opens out
-of the rail's own head rather than standing on the sheet. `layoutFlows` is pure
-and DOM-free (the harness asserts flank assignment and residual placement with
-no browser); `renderSankey` draws the whole panel — offers, lede, drawing, key.
+spine, and where it has stacked segments it has ribbons, so it opens out of the
+rail's own head rather than standing on the sheet. `layoutFlows` is pure and
+DOM-free (the harness asserts flank assignment and residual placement with no
+browser); `renderSankey` draws the whole panel — offers, lede, drawing, key.
 
-- **Two halves of the rail, because only one is rebuilt.** `drawRail` clears and
-  redraws on every reading, which is every frame of a plate drag. So the compact
-  bar lives in `railBody`, which is cleared, and the drawing lives in `railFlow`,
-  which is re-lettered in place — rebuilt per frame it would restart its own
-  unfold forty times a second and lose the reader's scroll position inside it.
-  The **head is outside both**, built once: it is chrome, not a reading, and
-  inside `railBody` its toggle lost focus on every solve and its sticky range
-  ended where the compact bar did, which on the phone overlay scrolled away the
-  only way out.
-- **`setFlow` stores; it draws only when open.** A closed balance costs one
-  object and no DOM, which is what makes re-lettering on every drag frame cheap.
+- **The rail is three parts, because only one is rebuilt.** `drawRail` clears and
+  redraws on every reading, which is every frame of a plate drag, so the compact
+  bar lives in `railBody`, which is cleared, and the drawing in `railFlow`, which
+  is re-lettered in place. The **head is outside both**, built once: it is chrome
+  rather than a reading, and inside `railBody` its toggle lost focus on every
+  solve and its sticky range ended where the bar did, which on the phone overlay
+  scrolled away the only way out. `setFlow` stores the view and draws only while
+  the balance is open, so a closed one costs one object and no DOM.
 - **What the drawing supersedes is hidden, not repeated.** Open, `.rail.open`
-  drops the compact key — the drawing's own key carries all five terms with
-  their tributaries under them, and the two together were the same five figures
-  twice, ten lines apart. The bar stays, because it is the summary being
-  extended. The stamp, the closure sentence and the sign convention are the
-  rail's, said once — the drawing's lede says only what the drawing does with
-  that sign (it picks a flank rather than an arrow's direction), because the
-  rail's own convention line stands a few lines above it and never scrolls
-  away.
-- **The unfold is a transition between two drawings of one quantity**, which is
-  the only thing that earns the motion: the spine grows from the centre, then
-  each ribbon extends out of it in the order the rail already stacks them,
-  largest first, and the lettering follows. `--i` per band carries the stagger.
-  All of it is off under `prefers-reduced-motion`.
-- **The unfold is the *opening*; every reading after it is a travel.** The
-  class used to be left on the panel for as long as the balance was open, and
-  a re-letter rebuilds the drawing inside it — so the keyframes ran again from
-  a spine of no height and ribbons of no width. A plate drag is a re-letter per
-  pointer frame, so the drawing spent the whole gesture being drawn for the
-  first time instead of moving from the hour before it to this one: measured,
-  one twenty-four-frame drag started **thirty-seven** animations. `drawFlow`
-  now takes the class off on any re-letter, and the ribbons transition between
-  the two readings instead — which is the motion the gesture actually has.
-  Measured over a brisk drag: the drawn ribbon sits a **median 0.3 px** from
-  its own target, and the one large gap in the trace is the biggest hour-step
-  of the drag caught mid-travel, which is the jump this exists to smooth.
+  drops the compact key — the drawing's own key carries all five terms with their
+  tributaries, and the two together were the same figures twice, ten lines apart.
+  The bar stays, being the summary extended. The stamp, the closure sentence and
+  the sign convention are the rail's, said once; the drawing's lede says only
+  what the drawing does with that sign — it picks a flank rather than an arrow's
+  direction.
+- **The unfold is the *opening*, and every reading after it is a travel.** The
+  spine grows from the centre, then each ribbon extends out of it in the order
+  the rail already stacks them, largest first (`--i` carries the stagger); off
+  entirely under `prefers-reduced-motion`. The class used to be left on for as
+  long as the balance was open, and since a re-letter rebuilds the drawing inside
+  it the keyframes ran again from nothing — one twenty-four-frame plate drag
+  started **thirty-seven** animations, so the drawing spent the gesture being
+  drawn for the first time over and over. `drawFlow` takes the class off on any
+  re-letter and the ribbons transition instead: measured over a brisk drag, the
+  drawn ribbon sits a **median 0.3 px** from its own target.
 - **A transition needs the same element on both sides of it, so the drawing is
   re-lettered rather than rebuilt.** Every node whose geometry moves carries a
-  `data-key`, and `morph` in `sankey.js` walks the fresh drawing pairing them
-  off against the live one: same keys, same elements, nothing added and nothing
-  gone, values copied across. Any mismatch — a term that has just appeared, a
-  residual closed to nothing, a label the new figures leave no room for — is a
-  *different* drawing and is refused whole and replaced, which is what the
-  renderer did unconditionally before. Nothing is written until every pair is
-  known, so a refusal leaves the live drawing exactly as it stood.
-  - The panel therefore has **three slots built once** (`.flow-top`, the
-    `<svg>`, `.flow-key`), because a node removed and re-inserted loses every
-    transition running on it — `replaceChildren` on the host would have made
-    the persistence pointless.
-  - `x`, `y`, `width` and `height` are SVG geometry properties and animate as
-    CSS. The `x` on a `<text>` is **not** one, so a label is placed by
-    `transform` instead; left on the attribute it would jump while the ribbon
-    it names grew, which is the two halves of one reading disagreeing about
-    when they had arrived.
-  - **The `ResizeObserver`'s first report is not a resize**, and acting on it
-    redrew the drawing 80 ms into its own unfold and took the class with it —
-    the opening was cut after the spine and before any ribbon, fourteen
-    animations down to one. It is gated on the width `drawFlow` recorded, not
-    on the previous *report*: the first report has no previous one to differ
-    from, so a guard written that way passes it straight through.
-- **The narrow layout gets an overlay, because there is no footer to expand.**
-  At the index breakpoint the desk is `position: static` with no height to fill
-  and the strips stop scrolling, so growing in place would leave the drawing
-  competing with the whole page above it. `.rail.overlay` is `position: fixed;
-  inset: 0` with its own scroll, a sticky head so the way out never scrolls off,
-  Escape to close, and the body locked behind it. Which layout is live is read
-  from `indexMode()` — `--index` is declared on `.strips`, and reading it off
-  the desk gets nothing, because a custom property set on a child does not reach
-  its parent.
-
+  `data-key`, and `morph` walks the fresh drawing pairing them off against the
+  live one — same keys, same elements, nothing added and nothing gone, values
+  copied across. Any mismatch (a term just appeared, a residual closed to
+  nothing, a label the new figures leave no room for) is a *different* drawing,
+  refused whole and replaced, which is what the renderer did unconditionally
+  before. Nothing is written until every pair is known, so a refusal leaves the
+  live drawing as it stood. Three consequences, each of which cost debugging:
+  - The panel has **three slots built once** (`.flow-top`, the `<svg>`,
+    `.flow-key`): a node removed and re-inserted loses every transition running
+    on it, so `replaceChildren` on the host would make the persistence pointless.
+  - `x`, `y`, `width`, `height` are SVG geometry properties and animate as CSS.
+    The `x` on a `<text>` is **not** one, so a label is placed by `transform`;
+    left on the attribute it jumps while the ribbon it names grows.
+  - **The `ResizeObserver`'s first report is not a resize.** Acting on it redrew
+    80 ms into the unfold and took the class with it — the opening cut after the
+    spine, fourteen animations down to one. It is gated on the width `drawFlow`
+    recorded, not on the previous *report*, which the first report does not have.
+- **The narrow layout gets an overlay, because there is no footer to expand.** At
+  the index breakpoint the desk is `position: static` with no height to fill, so
+  growing in place would leave the drawing competing with the page above it.
+  `.rail.overlay` is `position: fixed; inset: 0` with its own scroll, a sticky
+  head, Escape, and the body locked. Which layout is live comes from
+  `indexMode()` — `--index` is declared on `.strips`, and a custom property set
+  on a child does not reach its parent.
 - **The spine is a balanced node, and the sign of a term picks its side of it.**
-  That is the move that lets a Sankey draw this balance at all: a ribbon diagram
-  with only positive widths cannot show a sink among sources, and this balance
-  is full of them — `Interzone Floor` is −1,329 W at the cooling peak. Positives
-  on one flank of a balanced node, negatives on the other, and the sink is just
-  a ribbon on the leaving side at its true width. So it *is* conservative about
-  its one node, and the two flank totals are lettered at the head of the spine
-  (`5.74 kW arriving` / `5.74 kW leaving`) so a reader can check that by eye
-  rather than take it on trust. The direction is said in a word as well as a
-  hue, because a hue is not a reading in greyscale or read aloud.
-- **Only that node balances, and only because it was measured to.** This is not
-  a multi-stage Sankey whose every node closes by construction — the figures
-  beside a ribbon are read against it and do not divide it, and the imbalance is
-  a hatched stub, never absorbed. It is the drawn form of the rail's own
-  "unclosed by N W" note, and the first drawn residual on this sheet.
-- **`Tributary` is not `Term`, and the distinction is the whole reason the
-  class exists.** A tributary does not sum into its parent: window heat carries
-  transmitted solar that lands on the surfaces, inside-face conduction is not
-  convection to air, and people/lights/equipment are gains whose radiant half
-  arrives later through the fabric. Measured on the stock desk — the three
-  internal ones total 539 W against a gains term of 322 W; opaque plus windows
-  total −5,498 W against a fabric term of −5,280 W. So they are **lettered
-  beside a ribbon and never drawn as divisions of it**, each carrying the
-  caveat in its own `note`. The one band that *is* divided is a component row's
-  instant/delayed pair, which does sum by the report's construction.
+  That is the move that lets a Sankey draw this balance at all: only positive
+  widths cannot show a sink among sources, and this balance is full of them
+  (`Interzone Floor` is −1,329 W at the cooling peak). The two flank totals are
+  lettered at the head of the spine so a reader can check the closure by eye, and
+  the direction is said in a word as well as a hue, since a hue is not a reading
+  in greyscale or read aloud. **Only that node balances, and only because it was
+  measured to** — this is not a multi-stage Sankey closing by construction, so
+  the imbalance is a hatched stub, never absorbed.
+- **`Tributary` is not `Term`, and that distinction is the whole reason the class
+  exists.** A tributary does not sum into its parent: window heat carries
+  transmitted solar landing on surfaces, inside-face conduction is not convection
+  to air, and internal gains have a radiant half arriving later through the
+  fabric. Measured on the stock desk, the three internal ones total 539 W against
+  a gains term of 322 W. So they are **lettered beside a ribbon and never drawn
+  as divisions of it**, each carrying the caveat in its own `note`. The one band
+  that *is* divided is a component row's instant/delayed pair, which does sum by
+  the report's construction.
 - **A tributary carries `Term.perBuilding` too, and the four ideal-loads ones
-  do.** `Zone Ideal Loads Supply Air {Sensible,Latent} {Heating,Cooling} Rate`
-  arrive already multiplied by the zone multiplier, exactly as the rail's own
-  `Zone Air Heat Balance System Air Transfer Rate` does — measured, a design-day
-  desk at a multiplier of 1 and again at 3 reads 11,484.5 W and 34,453.5 W of
-  sensible heating at the same hour, a ratio of 3.000, while the opaque and
-  window tributaries beside them do not move at all. Unmarked they letter 34.5 kW
-  under a System ribbon of 11.5 kW, and the fuel wedge — which `chainOf` scales
-  by that ribbon's own watts — is drawn three times wider than the ribbon it
-  continues. The rule is the rail's, and it is the same trap: this side of the
-  balance is found by arithmetic rather than by reading.
-- **The viewBox is built from the host's own width, so one unit is one pixel.**
-  A fixed viewBox with `width: 100%` scales the whole drawing to fit, lettering
-  included — measured in the rail, an 820-unit box in a 460 px container put
-  8.5px labels on screen at about 4.8px against a key set at 10px beside them,
-  and nothing looked wrong because everything shrank together. `renderTrace` has
-  always built its viewBox out of `host.clientWidth`; this does the same and
-  pays the same price, which is that a `ResizeObserver` has to redraw it — armed
-  only while the balance is open, since a closed one renders nothing.
+  do.** `Zone Ideal Loads Supply Air …` arrives already multiplied by the zone
+  multiplier, exactly as the rail's System term does — measured, the same hour at
+  a multiplier of 1 and 3 reads 11,484.5 W and 34,453.5 W, a ratio of 3.000,
+  while the opaque and window tributaries beside them do not move. Unmarked they
+  letter 34.5 kW under a System ribbon of 11.5 kW, and the fuel wedge — scaled by
+  that ribbon's watts — draws three times wider than the ribbon it continues.
+- **The viewBox is built from the host's own width, so one unit is one pixel.** A
+  fixed viewBox with `width: 100%` scales the lettering with everything else:
+  measured, an 820-unit box in a 460 px container put 8.5px labels on screen at
+  about 4.8px against a 10px key, and nothing looked wrong because it all shrank
+  together. The price is that a `ResizeObserver` has to redraw it, armed only
+  while the balance is open.
 - **A label that will not fit is shortened, then dropped — never clipped.**
-  `proportions` divides a flank between the ribbon, the chain lane and the
-  lettering, and `fitLabel` takes the fullest form the room will hold: name and
-  figure, then the bare name, then nothing. The key carries every figure either
-  way, so a drawing whose names run off its own viewBox is strictly worse than
-  one with fewer names on it.
-- **The key is the drawing's real text.** Every ribbon's figure is repeated
-  there and several readings exist only there. It groups each band with its own
+  `proportions` divides a flank between ribbon, chain lane and lettering;
+  `fitLabel` takes the fullest form the room holds — name and figure, then the
+  bare name, then nothing. The key carries every figure either way, so a drawing
+  whose names run off its own viewBox is strictly worse than one with fewer.
+- **The key is the drawing's real text.** Every ribbon's figure is repeated there
+  and several readings exist only there. It groups each band with its own
   tributaries so the nesting survives a reflow, and at 390 px it is one column
-  and the whole thing still reads — a reading that exists only as a ribbon does
-  not exist.
-- **The fuel chain is the bill's arithmetic in watts.** `supply ÷ divisor =
-  draw`, off `EndUse.divisorFor`, drawn as the width step it is. It reaches no
-  IDF object, so it re-letters from `reprice` with no run — which is why
-  `renderFlow` is called there as well as from `reletterReading`.
+  and still reads — a reading that exists only as a ribbon does not exist.
+- **The fuel chain is the bill's arithmetic in watts.** `supply ÷ divisor = draw`
+  off `EndUse.divisorFor`, drawn as the width step it is and lettered with the
+  figure it lands on. It reaches no IDF object, so it re-letters from `reprice`
+  with no run — which is why `renderFlow` is called there as well as from
+  `reletterReading`.
 - **`flowMode` and `lastComponents` are declared at the head of `main.js`**, not
   beside the drawing: `clearReadings` and `reprice` both touch them and are
   defined above it, so left in place they would sit in their own temporal dead

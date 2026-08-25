@@ -9,118 +9,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **The zone air heat balance opens out.** The rail has always drawn the five
-  terms as one signed bar; pressing **Open out** in its head expands it into the
-  full flow drawing, and the bar stays above as the summary being extended. It is
-  the rail at full size rather than a second instrument: where the rail has a
-  centre-zero line the drawing has a spine, and where it has stacked segments it
-  has ribbons.
-
-  It arrives by doing exactly that. The spine grows from the centre, each ribbon
-  extends out of it in the order the rail already stacks them — largest first —
-  and the lettering follows. A transition between two drawings of one quantity,
-  which is the only thing that earns the motion; all of it is off under
+- **The zone air heat balance opens out into the whole flow drawing.** The rail
+  has always drawn the five terms as one signed bar; pressing **Open out** in its
+  head expands it into where the heat at one instant came from and went. It is
+  the rail at full size rather than a second instrument — where the rail has a
+  centre-zero line the drawing has a spine, where it has stacked segments it has
+  ribbons — and it arrives by doing exactly that, the spine growing from the
+  centre and each ribbon extending out of it in the order the rail already
+  stacks them. Every reading after that opening is the same drawing at another
+  instant, so the ribbons travel to their new widths rather than being drawn
+  again: take hold of the plate's marker and they follow the hand, the balance
+  re-closing at each hour. All of the motion is off under
   `prefers-reduced-motion`.
-
-  That unfold is the *opening*, and only that. Every reading after it is the
-  same drawing at another instant, so the ribbons **travel** to their new widths
-  instead of being drawn again — which is what a plate drag is: one continuous
-  gesture over one continuous quantity, stepping hour to hour. It used to replay
-  the whole unfold on every frame of that drag (measured: thirty-seven
-  animations started over twenty-four frames), so the drawing spent the gesture
-  being drawn for the first time, over and over. The drawing now keeps its nodes
-  between readings and re-letters them in place, and the transition tracks the
-  hand — a median 0.3 px between the drawn ribbon and its own target over a
-  brisk drag, with the large steps travelled rather than jumped.
-
-  On the wide layout the strips give up the desk's column and the rail takes it,
-  which is the full window height the desk is already sized to. At the index
-  breakpoint there is no footer to expand into — the desk is `position: static`
-  with no height to fill — so the balance becomes a layer over the page instead,
-  with its own scroll, a sticky head so the way out never scrolls off, Escape to
-  close, and the page behind it locked.
-
-- **A drawing of the heat flow, from fuel through the plant to the loads that
-  called for it.** The sheet could say what each path contributes at one instant
-  (the balance rail), what the year cost (the bill) and what the demand
-  intensities came to (the schedule). What none of them drew was the chain. The
-  balance opened out of the rail draws it, and the pin moves it: take hold of
-  the plate's marker and the ribbons re-letter on every frame, the balance
-  re-closing at each hour.
 
   **The spine is a balanced node, and the sign of a term picks its side of it.**
   That is the move that lets a Sankey draw this balance at all: a ribbon diagram
   with only positive widths cannot show a sink among sources, and this balance is
   full of them — at the cooling peak the interzone floor runs at −1.33 kW while
   everything around it is a gain. Positives on one flank, negatives on the other,
-  and the sink is simply a ribbon on the leaving side at its true width with the
-  node still balancing. Both totals are lettered at the head of the spine —
-  `5.74 kW arriving`, `5.74 kW leaving` — in words as well as hues, so the
-  balance is checkable by eye and survives greyscale and a screen reader.
-
-  What it is *not* is a multi-stage Sankey whose every node closes by
-  construction. Only the zone air balances, because it is the only thing that was
-  measured to, and whatever the node does not close by is drawn as a hatched stub
-  rather than absorbed — the rail has said "unclosed by N W" in words since long
-  before there was a picture.
+  and the sink is a ribbon on the leaving side at its true width. Both totals are
+  lettered at the head of the spine, in words as well as hues, so the balance is
+  checkable by eye and survives greyscale and a screen reader. Only that node
+  claims to close, and whatever it does not close by is drawn as a hatched stub
+  rather than absorbed.
 
   **The figures beside a ribbon are read against it and do not divide it.**
-  People, lights and equipment are lettered under the Gains band; windows and
-  opaque conduction under Fabric. They are true readings of real quantities and
-  none is a share of the band it sits under: measured on the stock desk, the
-  three internal ones come to 539 W against a gains term of 322 W, the
-  difference being the radiant half that reaches the air later through the
-  fabric. Drawing them as widths would assert an arithmetic that is false, so
-  they are lettered with the caveat that travels with them.
+  People, lights and equipment are lettered under Gains, windows and opaque
+  conduction under Fabric — true readings, none of them a share of the band it
+  sits under: on the stock desk the three internal ones come to 539 W against a
+  gains term of 322 W, the difference being the radiant half that reaches the air
+  later through the fabric. Drawing them as widths would assert an arithmetic
+  that is false. Past the system ribbon, the plant's efficiency or COP divides,
+  and the drawing shows that as the width step it is — the bill's own arithmetic
+  in watts, so turning a COP re-letters it with no simulation.
 
-  **The fuel chain is the bill's own division, carried into watts.** There is no
-  boiler in this model — the ideal unit reports delivered heat at 100 % — so the
-  seasonal efficiency or COP divides after the run, and the drawing shows that
-  division as the width step it is: `supply ÷ divisor = draw`. It reaches no IDF
-  object, so turning a COP re-letters the chain with no simulation, exactly as
-  it re-letters the bill. Measured: 3.5 to 2.7 moves the draw from 2.00 kW to
-  2.59 kW against an unchanged 6.99 kW of supply.
+  On the wide layout the strips give up the desk's column and the rail takes it.
+  At the index breakpoint there is no footer to expand into, so the balance
+  becomes a layer over the page instead, with its own scroll, a sticky head,
+  Escape to close, and the page behind it locked.
 
-- **The two sizing peaks, decomposed into what caused them.**
-  `ZoneComponentLoadSummary` is the only report this engine will produce that
-  breaks a load into the components that caused it, and it is now requested. Two
-  further modes on the drawing read it: one ribbon per component — people,
-  lights, equipment, infiltration, roof, walls, floor, fenestration — each
-  divided into the part that reached the air at once and the part the mass gave
-  back later, with the report's own published residual drawn hatched beside
-  them. The delayed half is drawn lighter than the instant half, because it is
-  estimated from the radiant decay curves rather than directly computed; the
-  drawing gets fainter as the claim gets weaker.
+- **The two sizing peaks, decomposed into what caused them.** Two further modes
+  read `ZoneComponentLoadSummary`, the only report this engine produces that
+  breaks a load into its causes: one ribbon per component, each divided into the
+  part that reached the air at once and the part the mass gave back later, with
+  the report's own published residual drawn hatched beside them. The delayed half
+  draws lighter, because it is estimated rather than computed.
 
-  **That instant cannot be moved, and the block says so rather than implying
-  otherwise.** The decomposition is computed inside the zone sizing routines — a
-  second "pulse sizing" run injects a single-timestep radiant pulse, per-surface
-  decay curves are differenced out of it, and those curves are applied to the
-  gain history up to the sizing-day peak. It therefore exists at exactly two
-  instants per zone, sub-hourly, on a design day that may not be among the run's
-  environments at all. So the two peaks are lettered as what they are — a
-  calculation over the design day, not an hour of the run above — which is what
-  keeps three instants on one sheet from being quoted as though they were one.
-
-  It costs two extra zone sizing passes. Measured, interleaved A/B, at both
-  cadences: on a conditioned design day, 0.20 s to 0.24 s of engine time, about
-  **20 %**; on a Denver year, 1.15 s to 1.11 s, or **−3.5 %** — noise. The two
-  passes are a fixed cost over the design days and do not grow with the run
-  period, so the design day is the worst case and a year does not notice it. It
-  survives `sizingPeriods = 'No'`, which is what the weather picker sets when it
-  attaches a year: measured, such a run comes back as 8,760 hours in one
-  environment with both peak tables present, because the sizing calculation runs
-  over the design days whether or not those days are simulated. It is requested
-  only under the sheet's own reporting profile, so a study sample never pays for
-  a table nobody parses, and only with **System in the path** — zone sizing on
-  an unconditioned zone is a get-input fatal, not a warning, and the stock desk
-  has System bypassed, so ungated this would have taken down the default page
-  load. Where a run cannot answer a mode, the offer is refused with its reason
-  in place of its stamp rather than hidden.
-
-  The report is **per zone, not per building**: at a multiplier of 3 the cooling
-  peak is 7,310 W either way, ratio 1.000. The drawing letters which building it
-  is describing rather than leaving it to be assumed.
+  **That instant cannot be moved, and the modes say so.** The decomposition is
+  calculated inside the zone sizing routines, so it exists at exactly two
+  instants per zone — on a design day that may not be among the run's
+  environments at all. Each mode is lettered as what it is, a sizing calculation
+  rather than an hour of the run above, which is what keeps three instants on one
+  sheet from being quoted as though they were one. It costs two extra sizing
+  passes: about 20 % of a design day, and nothing measurable on a year. Requested
+  only under the sheet's own reporting profile and only with System in the path,
+  since zone sizing an unconditioned zone is a fatal rather than a warning.
 
 ### Changed
 
