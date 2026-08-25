@@ -67,6 +67,7 @@ import {
   componentLoads,
   flowSeries,
   flowsAt,
+  componentNote,
   glassProperties,
   hourly,
   instantOffers,
@@ -2884,13 +2885,36 @@ function componentView(half, which) {
   const laid = layoutComponents(half, { which });
   if (!laid) return { refusal: `The ${which} peak decomposition came back empty.` };
 
+  /*
+   * Which of the six surfaces the document says are adiabatic, so the report's
+   * interzone rows can be corrected against the model rather than trusted. Read
+   * off the boundary each apply actually wrote, which is the same rule the
+   * description follows: what the document holds, not what `params` says.
+   */
+  const adiabatic = new Set(
+    surfaceGeometry(model)
+      .filter((s) => s.boundary === 'adiabatic')
+      .map((s) => (s.type === 'wall' ? 'wall' : s.type === 'floor' ? 'floor' : 'roof')),
+  );
+
   const keyed = [];
   for (const row of [...laid.into, ...laid.outOf]) {
     const parts = [];
     if (row.instant) parts.push(`${watts(row.instant)} instant`);
     if (row.delayed) parts.push(`${watts(row.delayed)} delayed`);
     if (row.latent) parts.push(`${watts(row.latent)} latent`);
-    keyed.push({ label: row.label, reading: watts(row.watts), tone: row.tone, note: parts.join(' · ') });
+    // The split first, because it is a reading, then what the path is. The
+    // load band is the report's own total rather than a component, and says so
+    // where the others say what they are.
+    const says = row.isLoad
+      ? 'What the components above add up to, at the figure EnergyPlus computed. Drawn opposite them so the node closes.'
+      : componentNote(row.label, { adiabatic });
+    keyed.push({
+      label: row.label,
+      reading: watts(row.watts),
+      tone: row.tone,
+      note: [parts.join(' · '), says].filter(Boolean).join(' — '),
+    });
   }
   if (laid.residual) {
     keyed.push({

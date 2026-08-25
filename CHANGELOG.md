@@ -67,6 +67,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Every flow on the drawing now says what it is.** The key carried a name and
+  a number for most of its entries, which is enough for someone who already
+  knows the model and nothing at all for a student or an architect —
+  `Fenestration Conduction` and `Fenestration Solar` are two different things
+  through one window, and neither name says so. Every band, every tributary and
+  every component row now carries a sentence in the key: what that path *is*,
+  in the reader's terms. In the key rather than on hover, because nothing on
+  this sheet floats and a hint that exists only on hover does not exist on a
+  phone. Two rail terms and five tributaries had no sentence at all, which reads
+  worse than none — seeing Lights explained and People not, a reader has to
+  conclude People is a different kind of quantity — so both are now required and
+  throw at module load.
+
+  One of those sentences is a correction rather than a gloss. EnergyPlus sorts
+  each opaque surface into a report row by its outside boundary condition, and
+  labels the arm that catches everything unrecognised *interzone*; an adiabatic
+  surface is modelled as one facing itself, so it lands there. The stock desk's
+  floor is adiabatic, so the report files it under **Interzone Floor** over a
+  building that has no other zone in it. The row keeps EnergyPlus's name, so it
+  stays traceable to the report, and the sentence says both halves: the heat is
+  real — an adiabatic slab still takes heat out of the air and gives it back,
+  only its far side is sealed — and the row name is not.
+
 - **The heat balance says which way it points.** The rail lettered five signed
   watt figures and a ± total, and the only things carrying direction were the
   hue — warm right of zero, cold left — and the absence of a minus sign. That is

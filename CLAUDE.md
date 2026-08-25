@@ -1335,6 +1335,26 @@ browser); `renderSankey` draws the whole panel — offers, lede, drawing, key.
   `fitLabel` takes the fullest form the room holds — name and figure, then the
   bare name, then nothing. The key carries every figure either way, so a drawing
   whose names run off its own viewBox is strictly worse than one with fewer.
+- **Every band and every tributary says what its path is, in the key.** Not on
+  hover — nothing on this sheet floats, and a hint that exists only on hover does
+  not exist on a phone, which is the rule that put what *Chase* means above the
+  scoreboard and the sign convention under the rail's head. The audience is a
+  student or an architect, and `Fenestration Conduction` and `Fenestration Solar`
+  are two different things through one window. Two rail terms and five
+  tributaries shipped with no sentence at all, which read worse than none: a
+  reader who sees Lights explained and People not has to conclude that People is
+  a different kind of quantity. Both are now required and **throw at module
+  load**, like a landmark's `note` and for the same reason.
+  - **The component rows are EnergyPlus's names, and one of them is a guess.**
+    `ort.cc` sorts each opaque surface into a row by its outside boundary
+    condition and labels the catch-all arm *interzone*; an adiabatic surface is
+    modelled as one facing itself, so it matches nothing named and lands there.
+    The stock desk's floor is adiabatic, so the report files it under `Interzone
+    Floor` over a building with no other zone. `componentNote` corrects that from
+    the document's own boundaries rather than renaming the row — the label stays
+    traceable to the report a modeller might open, and the sentence says both
+    halves: the heat is real (an adiabatic slab still stores and releases; only
+    its far side is sealed) and the row name is not.
 - **The key is the drawing's real text.** Every ribbon's figure is repeated there
   and several readings exist only there. It groups each band with its own
   tributaries so the nesting survives a reflow, and at 390 px it is one column

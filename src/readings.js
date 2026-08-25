@@ -914,6 +914,76 @@ export function componentLoads(html, zoneName) {
   return heating || cooling ? { heating, cooling } : null;
 }
 
+/*
+ * What each component row of the report is, said in the reader's terms.
+ *
+ * The row names are EnergyPlus's own and several of them are opaque to anyone
+ * who has not read the I/O reference — `Fenestration Conduction` and
+ * `Fenestration Solar` are two different things through the same window, and
+ * `Interzone Floor` is the report's fall-through arm rather than a statement
+ * about the building (see `componentNote`). This sheet does not float a hint on
+ * hover, because a hint that exists only on hover does not exist on a phone; so
+ * the sentence goes in the key, which the drawing already treats as its real
+ * text and which survives 390 px and a screen reader.
+ *
+ * One line each. Every one says what the path *is*, never what the number
+ * means — a reader who wants to know whether 1.48 kW is a lot has the ribbon
+ * beside it and the rest of the desk.
+ */
+const COMPONENT_NOTES = Object.freeze({
+  People: 'Body heat, minus the part that leaves as moisture. The delayed share is radiant, warming the surfaces first.',
+  Lights: 'The whole lighting gain — an installed watt becomes a watt of heat. Most of it reaches the air through the surfaces rather than directly.',
+  Equipment: 'Plug and process loads, radiant and convective together.',
+  Refrigeration: 'Heat rejected into the zone by refrigerated cases and walk-ins.',
+  'Water Use Equipment': 'Heat and moisture given off by hot water in use.',
+  'HVAC Equipment Losses': 'Heat the plant sheds into the zone it is standing in.',
+  'Power Generation Equipment': 'Waste heat from on-site generation inside the thermal envelope.',
+  'DOAS Direct to Zone': 'Conditioned outdoor air delivered straight to the zone rather than through a mixing box.',
+  Infiltration: 'Outdoor air leaking in through the envelope, driven by wind and stack rather than by a fan.',
+  'Zone Ventilation': 'Outdoor air brought in on purpose — an opened window or a scheduled fan.',
+  'Interzone Mixing': 'Air traded with a neighbouring zone.',
+  Roof: 'Sun and outdoor air working down through the roof build-up. Almost entirely delayed, because the mass holds it first.',
+  'Exterior Wall': 'Sun and outdoor air through the opaque walls, arriving hours after the surface was warmed.',
+  'Exterior Floor': 'An exposed floor over open air — a soffit or an overhang.',
+  'Ground Contact Wall': 'A basement or retaining wall against soil, which damps the swing rather than following the weather.',
+  'Ground Contact Floor': 'A slab on grade. The ground below moves slowly, so this is steady where the roof is peaky.',
+  'Interzone Ceiling': 'The ceiling to whatever is above.',
+  'Interzone Wall': 'A party wall to whatever is beside.',
+  'Interzone Floor': 'The floor to whatever is below.',
+  'Other Roof': 'A roof whose far side is set by other-side coefficients rather than by the weather.',
+  'Other Wall': 'A wall whose far side is set by other-side coefficients rather than by the weather.',
+  'Other Floor': 'A floor whose far side is set by other-side coefficients rather than by the weather.',
+  'Opaque Door': 'Conduction through the doors.',
+  'Fenestration Conduction': 'Heat through the glass by temperature difference alone — the U-value half of the window.',
+  'Fenestration Solar': 'Sunlight transmitted through the glass and absorbed by whatever it lands on. It reaches the air later, off those surfaces, which is why it is all delayed.',
+});
+
+/**
+ * The note for one component row, corrected against the model where the
+ * report's own label is a guess.
+ *
+ * `ort.cc` sorts each opaque surface into a row by its outside boundary
+ * condition, and the arm that catches everything unrecognised is labelled
+ * *interzone*. An adiabatic surface is modelled as one facing itself, so it
+ * matches none of the named cases and lands there — on this desk the floor is
+ * adiabatic by default, and the report files it under `Interzone Floor` over a
+ * building that has no other zone in it. Both halves of that are worth saying:
+ * the heat flow is real (an adiabatic slab still stores and releases; only its
+ * far side is sealed), and the row name is not.
+ *
+ * `adiabatic` is the set of surface classes the document says are adiabatic,
+ * read off the model rather than assumed, so the correction cannot outlive the
+ * boundary that caused it.
+ */
+export function componentNote(label, { adiabatic = new Set() } = {}) {
+  const base = COMPONENT_NOTES[label] ?? null;
+  const face = { 'Interzone Floor': 'floor', 'Interzone Wall': 'wall', 'Interzone Ceiling': 'roof' }[label];
+  if (face && adiabatic.has(face)) {
+    return `Your ${face === 'roof' ? 'roof' : face} is adiabatic, and EnergyPlus files adiabatic surfaces under its interzone row — nothing is on the other side. The heat is real: the mass still takes it out of the air and gives it back later. Only the far side is sealed.`;
+  }
+  return base;
+}
+
 /**
  * Every series the flow drawing reads, looked up once per run.
  *
