@@ -93,6 +93,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   them — so the page now states what it is a demo of without anyone having to
   open a band to find out.
 
+### Changed
+
+- **The heat balance says which way it points.** The rail lettered five signed
+  watt figures and a ± total, and the only things carrying direction were the
+  hue — warm right of zero, cold left — and the absence of a minus sign. That is
+  a colour-only encoding of the one fact the block exists to state: in
+  monochrome, under forced colours, or read aloud as a swatch, a name and a
+  number, a positive term said nothing whatever about being positive. So the
+  convention is now stated where the signs are — under the rail's head, in
+  place rather than on hover — and every rail figure carries `in` or `out`
+  beside its watts, on the rail's key, the strip meter and the folded index row
+  alike. The head also says what the `±` is, which nothing did: the size of one
+  side of the balance, not the two netted. The hue still ranks and groups the
+  terms; it no longer has to be believed on its own.
+
+- **Two rail readings are not the variable they are named after, and both now
+  say so on the strip.** System air transfer is reported by EnergyPlus for the
+  whole building and divided back down, so at a zone multiplier of 3 the ESO
+  reads three times what the strip letters. Air energy storage enters the
+  balance negated — and that meter is relettered **Air energy release**,
+  because under the variable's own name a reading of −400 W said "storage" and
+  "out" in one breath, and the only reading of that which parses, discharging,
+  is the opposite of what is happening. Negated, the label and the sign agree:
+  a negative release is the air charging. Neither transformation was wrong;
+  neither was checkable. Nothing here reaches the IDF.
+
 ## [0.2.0] - 2026-08-19
 
 ### Added
