@@ -241,16 +241,23 @@ still here, and the results are unchanged. The sheet itself reads two of them.
 
 ## Reshaping the zone
 
-The five sliders call `setParameters(doc, ...)`, which rewrites the vertex groups
-on the six surfaces in place rather than rebuilding
-the document, so the run-period switch and the output requests keep their state.
-The window and its overhang are the two objects that come and go as their
-sliders cross zero, and one routine adds, reshapes and removes them both.
+The sheet's five dimension sliders and the model console's eighteen strips both
+come through `applyModel(doc, params, patching())` in `src/model.js`, which is
+idempotent and rewrites the vertex groups on the six surfaces in place rather
+than rebuilding the document, so the run-period switch and the output requests
+keep their state. The window and its overhang are the two objects that come and
+go as their controls cross zero, and one routine adds, reshapes and removes them
+both.
+
 The axonometric and the quantities panel update on every frame of the drag; the
 floor area, exposed envelope, volume and envelope-to-volume ratio are summed off
 the surfaces with Newell's method, so they need no simulation and follow
-whatever geometry the model actually holds. The adiabatic slab is excluded from
-the exposed envelope, since counting it would flatter the compactness.
+whatever geometry the model actually holds. An adiabatic surface is excluded
+from the exposed envelope, since counting it would flatter the compactness.
+
+(This section and the one below describe the through-line in outline. `CLAUDE.md`
+carries the current architecture in full — the control declarations, the
+per-channel appliers, and the rules each of them has to keep.)
 
 ## Solving as you drag
 
@@ -259,10 +266,12 @@ screen. That is well inside a drag, so the sheet solves itself: auto-solve is on
 by default and there is nothing to press.
 
 Runs are serialised — `@idfkit/engine` rejects a second `run()` while one is in
-flight — so every solve goes through one scheduler, and it is latest-wins.
-Whatever the sliders are showing when the engine comes free is what gets solved;
-the shapes the drag passed through on the way are skipped, not queued. Flicking
-a slider across its whole track fires 150 input events and two runs.
+flight — so every solve the sheet makes goes through one scheduler, and it is
+latest-wins. Whatever the controls are showing when the engine comes free is
+what gets solved; the shapes the drag passed through on the way are skipped, not
+queued. Flicking a slider across its whole track fires 150 input events and two
+runs. (Parameter studies do not share that engine — they run on a pool of
+further instances, so the live sheet never queues behind a curve.)
 
 The two run types are far enough apart to need different cadences, so the
 cadence is the only thing that changes between them:
@@ -272,17 +281,17 @@ cadence is the only thing that changes between them:
 | Design day, 48 h | ~50 ms | continuously, during the drag |
 | Weather file, 8,760 h | ~0.7 s | once, on release |
 
-Because a result now arrives roughly every 50 ms, replacing the numbers in place
+Because a result arrives roughly every 50 ms, replacing the numbers in place
 would be a strobe and would tell you nothing. So the sheet holds on to the shape
-you took hold of: the zone curve you started from stays on the plate as a ghost
-labelled `WAS`, and the schedule prints the change beside each value. Only the
-change — a shift too small to move the printed number prints nothing, which is
-why the outdoor rows stay blank. The design days are fixed, so they never move.
+you took hold of: the zone curve you started from stays on the plate as a ghost,
+and the schedule prints the change beside each value. Only the change — a shift
+too small to move the printed number prints nothing, which is why the outdoor
+rows stay blank. The design days are fixed, so they never move.
 
 The baseline is captured per gesture, not per run. During a slow drag the
 previous run is 50 ms old and nearly identical, so differencing against it would
 report nothing; differencing against where you took hold is the reading you
-want. It survives a gesture that crosses several sliders.
+want. It survives a gesture that crosses several controls.
 
 At this cadence the run ledger is scenery — five phases that flick past inside
 600 ms — so it stands down to a dimmed list and the live signal moves to a pen

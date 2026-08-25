@@ -9,67 +9,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **A scroll no longer redesigns the building.** A native range input sets its
-  value from the touch point on the press, before there is any movement to read
-  a direction from, and on a phone the sheet and the desk are one long scroller
-  — so a thumb put down to scroll lands on a slider constantly. Measured in
-  Chromium at 390pt, a plain upward flick that happened to start on the sheet's
-  width slider gave `pointerdown → input(22) → pointermove → pointercancel →
-  thirteen more touchmoves, the page scrolling → change(22)`: the page scrolled
-  *and* the building went from 15.24 m wide to 22 m, was committed, was written
-  into the address bar as `#v1&width=22`, and was solved. Nothing said so.
+- **A scroll no longer redesigns the building.** A native range sets its value
+  from the touch point on the press, before there is movement to read a
+  direction from, and on a phone the sheet and the desk are one long scroller —
+  so a thumb put down to scroll lands on a slider constantly. Measured in
+  Chromium at 390pt, a plain upward flick starting on the width slider gave
+  `pointerdown → input(22) → pointermove → pointercancel → thirteen more
+  touchmoves, the page scrolling → change(22)`: the page scrolled *and* the
+  building went 15.24 m → 22 m, committed, into the address bar as
+  `#v1&width=22`, and solved. Nothing said so.
 
-  `pointercancel` looks like the answer and is not: a deliberate horizontal
-  drag on the same slider gives `pointerdown → input → input → pointercancel →
-  input ×12 → change`, because Blink cancels the pointer stream when the
-  slider's own touch handling takes the gesture over. Reverting on the cancel
-  put the model back to 15.24 while the thumb travelled on to 37.52 and the
-  release was swallowed — the drawing and the control disagreeing, which is
-  worse than the bug it was fixing.
-
-  What separates the two is whether the value ever moved under the finger. A
-  scroll gets exactly one `input`, the press's own jump, and never another; a
-  drag gets one per frame. So the jump is now **held rather than committed**:
-  the model is not touched until a second `input` says the reader is driving
-  this, or the release says it was a tap. On a scroll the held value is dropped
-  and the thumb re-lettered where the model still stands — nothing was applied,
-  so there is nothing to revert and nothing flickers. Only a finger waits; a
-  mouse commits on the press exactly as it always did. A scroll no longer fills
-  the general notes' drag marker either, which was the note taking a flick for
-  a decision.
+  `pointercancel` looks like the answer and is not — a deliberate drag gives
+  `pointerdown → input → input → pointercancel → input ×12 → change`, because
+  Blink cancels the pointer stream when the slider's own touch handling takes
+  over, so reverting there put the model back to 15.24 while the thumb travelled
+  on to 37.52. What separates the two is whether the value ever moved under the
+  finger: a scroll gets exactly one `input`, a drag gets one per frame. So the
+  press's jump is now **held rather than committed** until a second `input` or
+  the release says which it was. Nothing is reverted because nothing was
+  applied. Only a finger waits; a mouse commits on the press as before. A scroll
+  no longer fills the general notes' drag marker either.
 
 - **The four hand-driven controls survive a thumb.** The north rose, the plan
-  key's wall bars and the occupancy band are dragged by `drag()` in
-  `console.js` rather than by a native input, and they were losing the gesture
-  partway through: measured, a touch drag along a wall bar delivered 8 of its
-  14 moves before a `pointercancel` and reached a ratio of 0.28 where the same
-  drag with a mouse reached 0.85 — a control that half-works, which is worse
-  than one that does not, because the number it leaves behind looks chosen.
-  They now carry `touch-action: none`, as the calendar's month grid already
-  did, and take all 14. The declaration sits on each `svg` and not on the
-  transparent rect inside it that actually receives the pointer: `touch-action`
-  applies to elements with a CSS layout box and an SVG child has none, so
-  Chromium computes `none` on the rect, reports it back through
-  `getComputedStyle`, and goes on cancelling the drag — which is why the first
-  attempt at this changed nothing measurable.
+  key's wall bars and the occupancy band are dragged by `drag()` rather than by
+  a native input, and were losing the gesture partway: measured, a touch drag
+  along a wall bar delivered 8 of its 14 moves before a `pointercancel` and
+  reached 0.28 where the same drag with a mouse reached 0.85. They now carry
+  `touch-action: none`, as the calendar's month grid already did, and take all
+  14. The declaration sits on each `svg`, not on the transparent rect inside it
+  that receives the pointer: `touch-action` applies to elements with a CSS
+  layout box and an SVG child has none, so Chromium computes `none` on the rect,
+  reports it back through `getComputedStyle`, and goes on cancelling the drag —
+  which is why the first attempt changed nothing measurable.
 
 - **A slider is no longer 14px of a 44px target.** Under `pointer: coarse` the
-  sheet's five dimensions grow their track from 14px to 34px, the console's
-  calibration faces from 19px to 37px, and every margin number from 14px to
-  32px. Nothing is redrawn and nothing moves: the faces' input is transparent
-  and absolutely positioned, so the rule, the tick and the ghost stand where
-  they were ruled; the numbers' growth is padding cancelled by an equal
-  negative margin. The face grows downward over its own landmark rule and
-  standing note — marks are read and never pressed — because the 4px above it
-  is the whole gap before a head carrying two more targets. Verified: the
-  desktop layout renders byte-identically before and after.
+  sheet's five dimensions grow from 14px to 34px, the console's calibration
+  faces from 19px to 37px, and every margin number from 14px to 32px. Nothing is
+  redrawn and nothing moves: the faces' input is transparent and absolutely
+  positioned, and the numbers grow by padding cancelled by an equal negative
+  margin. The face grows downward over its own landmark rule and standing note —
+  marks are read and never pressed — because the 4px above it is the whole gap
+  before a head carrying two more targets. Verified: the desktop layout renders
+  byte-identically before and after.
 
 - **The markup pen stops claiming a pointer that has gone.** The redline on a
-  slider's thumb and on a face's tick was a bare `:hover`, which a touch device
-  holds after the finger has lifted, leaving the accent asserting that
-  something is under a pointer that does not exist. It is now behind
-  `@media (hover: hover)`; `:active` is the half a thumb can honestly answer
-  and stays outside.
+  slider's thumb and a face's tick was a bare `:hover`, which a touch device
+  holds after the finger lifts. It is now behind `@media (hover: hover)`;
+  `:active` is the half a thumb can answer and stays outside.
+
+### Changed
+
+- The README's architecture sections described `setParameters` and "the five
+  sliders", an arrangement replaced by the model console and `applyModel` some
+  time ago. They now describe what the code does and point to `CLAUDE.md` for
+  the detail; its measurement studies are unchanged.
 
 ## [0.2.0] - 2026-08-19
 
