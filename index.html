@@ -1956,6 +1956,64 @@
       .titleblock b a { color: inherit; text-decoration-color: var(--rule); }
       .titleblock b a:hover { color: var(--ink-3); }
 
+      /* The signature course. Drawn as another cell of the block above — the
+         same 16px inset, the same hairline between courses, the same
+         label-over-value lettering — because that is what it is, and the only
+         reason it is not literally a ninth cell is the eight-cell rule stated
+         at the head of this block.
+         Two columns splitting at the quarter, which is where the four cells
+         above rule their first column: courses of one block share a grid or
+         they are two blocks. */
+      .drawn {
+        display: grid;
+        grid-template-columns: 1fr 3fr;
+        align-items: start;
+        border-top: 1px solid var(--rule-soft);
+        padding: 12px 16px 14px;
+        column-gap: 24px;
+      }
+      .drawn-sign { min-width: 0; }
+      .drawn-sign > span {
+        display: block;
+        font: 500 9.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+        color: var(--ink-3);
+        margin-bottom: 6px;
+      }
+      .drawn > p {
+        margin: 0;
+        max-width: 62ch;
+        padding-top: 19px;
+        font: 400 11px/1.55 var(--sans);
+        color: var(--ink-3);
+      }
+      /* The name takes the mono face every stated fact in the block above takes,
+         and the field fills its cell rather than sizing to its content the way
+         a quantity does: a number is short and shares its row with a study
+         offer, whereas this one is alone in a 25 % column and a box that shrank
+         to its text would leave the caret floating mid-cell on an empty sheet. */
+      .drawn .text-field {
+        width: 100%;
+        font: 400 12.5px/1.35 var(--mono);
+        color: var(--ink);
+        background: none;
+        border: 0;
+        border-radius: 0;
+        padding: 0;
+        margin: 0;
+        min-width: 0;
+        cursor: text;
+      }
+      .drawn .text-field:focus { outline: none; }
+      .drawn .text-field::selection { background: var(--redline-wash); }
+      /* Ghost weight, which is what this sheet letters every empty reading in.
+         `Unsigned` and not `Your name`: the placeholder states what the drawing
+         currently is, the way an em dash states that a reading is absent, and
+         an instruction in a cell would be the one imperative on a page of
+         facts. */
+      .drawn .text-field::placeholder { color: var(--ink-ghost); opacity: 1; }
+
       /* ── field notes ────────────────────────────────────────────── */
 
       .notes { border-top: 1px solid var(--rule); }
@@ -3258,6 +3316,12 @@
         .titleblock div:nth-child(2n) { border-right: 0; }
         .titleblock div:nth-child(n + 5) { border-bottom: 1px solid var(--rule-soft); }
         .titleblock div:nth-child(n + 7) { border-bottom: 0; }
+        /* The signature follows the block it closes into one column, and the
+           note stops hanging off the field's baseline — stacked, that offset is
+           a gap in the middle of a paragraph rather than an alignment to
+           anything. */
+        .drawn { grid-template-columns: 1fr; }
+        .drawn > p { padding-top: 10px; max-width: none; }
         /* The register's tables stop being tables.
            A criterion row is five columns and a kept scheme is ten, which is
            two and four columns more than the schedules above have ever had to
@@ -3797,6 +3861,36 @@
              is. `Rev` is lettered by `src/main.js` from the stamp `vite.config.js`
              froze in, and links to the release or the commit that produced it. -->
         <div><span>Sheet</span><b id="t-rev">E-01</b><i id="t-date">—</i></div>
+      </div>
+
+      <!-- The one cell on this sheet that is not read back off the model, and
+           the only one that could not be: nobody but the reader knows whose
+           drawing this is. It is the last course of the title block rather than
+           a ninth cell, because the block above is closed at eight by its own
+           rule — a filled grid, never a ragged last row.
+
+           This is where a `Drawn by` belongs and where the page's own byline
+           deliberately did not go. A title block names whoever drew *that*
+           sheet, and every scheme here is a different drawing: the person at
+           the console is the draughtsman, so the cell is theirs, and it is
+           empty until they fill it. What they write is what the IDF says at the
+           top, so the cell is checkable after all — against the file it signs
+           rather than against the document it describes. -->
+      <div class="drawn">
+        <!-- The label and the name are one block rather than two cells of the
+             outer grid: as siblings of the note they spanned its two rows, and
+             a grid distributes a spanning item's height across the rows it
+             covers — which pushed the name three lines clear of the word above
+             it, on a course whose whole job is to match the cells above. -->
+        <div class="drawn-sign">
+          <span>Drawn by</span>
+          <div id="drawn-field"></div>
+        </div>
+        <p>
+          Signs the models this desk writes: your name goes at the top of the IDF, above the
+          toolkit that wrote it and the build of this sheet. Kept in this browser, and never
+          in a shared link — a scheme you send carries the building, not whoever drew it.
+        </p>
       </div>
 
       <details class="notes" id="notes">

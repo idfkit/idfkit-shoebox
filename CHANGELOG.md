@@ -9,6 +9,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The title block can be signed, and the model goes out saying who wrote it
+  and what wrote it.** Every IDF this desk hands over now opens with three
+  comment lines — the toolkit that serialised it (`@idfkit/core`, the resolved
+  version rather than the range in `package.json`, because only the resolved one
+  is a fact about the file in your hand), the build of this sheet, and, if the
+  title block has been signed, whoever signed it. An IDF outlives the tab that
+  wrote it: it gets mailed, committed and re-run years later by somebody who was
+  never at this desk, and "the results moved" and "the writer moved" are
+  different problems that a line at the top tells apart.
+
+  The `Drawn by` cell is the reader's, which is the whole reason it can exist at
+  all. This sheet has no author — a title block names whoever drew *that*
+  drawing, and here that is whoever is at the console — so the cell is empty
+  until somebody fills it, and it letters `Unsigned` in ghost weight rather than
+  instructing anybody to fill it in. It is the margin numbers' own idiom: no box
+  drawn around it, the mono face the block above uses, Escape puts the edit
+  down, a field left alone commits nothing, and a redraw never types over
+  somebody mid-name.
+
+  **It is kept in this browser and never in a link.** A permalink carries the
+  desk — parameters, patch bay, station, the hour being read — and a signature
+  is none of those; carried along, a shared scheme would arrive with one
+  person's name on another person's building, which is the same false claim the
+  page's own byline was kept out of the title block to avoid, made silent by
+  nobody thinking to look.
+
+  Three things that took measuring. A signature **is not a parameter**: the
+  shape key is `JSON.stringify([params, patching()])`, so a name held there
+  would start a fresh solve on every keystroke of somebody typing their own, and
+  every one of those runs would return the same numbers. It is `pinnedHour`'s
+  arrangement instead — state that reaches the output without reaching the
+  physics. The header is stamped **at download rather than at the solve**: held
+  at the solve it failed exactly where a reader would find it, since signing the
+  sheet and pressing Download got you a model written before you signed it;
+  stamped in `bundle.js` the ZIP still offers the exact bytes the engine ran,
+  because a comment above the model is not the model, and the manifest says so
+  rather than leaving it to be noticed. And there is deliberately **no
+  timestamp**, which is the obvious fourth line: this repository is verified by
+  asserting that applying the desk three times serialises byte-identically and
+  that a lean reporting profile followed by a sheet one matches always-sheet, and
+  a clock in the header makes every one of those comparisons false for a reason
+  that has nothing to do with the model. The bundle's manifest carries the date.
+
+  A signature is normalised, never refused. There is no such thing as an invalid
+  name, so nothing is judged — but an IDF comment runs from `!` to the end of
+  the line and no further, which makes a newline in a name an **injection**
+  rather than an untidiness: `Sam\nZone, EVIL, 0, 0, 0, 0;` would be a real
+  object in a real file that a colleague runs. Every control and format
+  character goes, the two Unicode line breaks are named as escapes beside them,
+  and runs of whitespace collapse. Measured through the field itself and then
+  through EnergyPlus: the injection arrives as one comment line, and the signed
+  and unsigned models both complete with 0 severe and 0 fatal errors.
+
 - **The page says who built it, and the sheet still has no author.** The
   Disclosure band has always been a colophon — the source has called it one for
   as long as it has existed — but it only ever carried the negative half: who

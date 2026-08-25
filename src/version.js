@@ -16,6 +16,15 @@
 const stamp = typeof __SHEET_REVISION__ === 'undefined' ? null : __SHEET_REVISION__;
 
 /**
+ * The resolved `@idfkit/core` that writes every IDF this page hands out, from
+ * the second literal `vite.config.js` freezes in. Null outside a build, and
+ * null if the build could not read the installed tree — the IDF header letters
+ * an em dash for it rather than naming a version nobody can check, which is the
+ * same rule the drawing keeps for a reading it does not have.
+ */
+export const TOOLKIT = typeof __IDFKIT_VERSION__ === 'undefined' ? null : __IDFKIT_VERSION__;
+
+/**
  * `version` is `0.2.0` on a tagged release and `0.2.0+cd5881e` on everything
  * else; see `scripts/revision.mjs` for why. `commit` is the full sha, because
  * the seven characters shown are for reading and the forty are for linking.

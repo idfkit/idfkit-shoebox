@@ -120,3 +120,67 @@ export function quantityField({ control, name, read, write, className = null }) 
 
   return { node: input, show };
 }
+
+/**
+ * A line of text, drawn as its own value and editable in place.
+ *
+ * The signature's half of `quantityField`, and it keeps every rule that one
+ * keeps for the same reasons: no box drawn around it, a redraw never types over
+ * the reader, Escape puts the edit down, and a field left alone commits
+ * nothing. What it drops is the parsing, because there is nothing to parse — a
+ * name is already the value — and what it gains is `placeholder`, which a
+ * quantity never needs: a slider always holds a number, and this field is empty
+ * until somebody signs it.
+ *
+ * `write` is handed the raw string. The cleaning lives in `model.js` beside the
+ * header it has to be safe for, exactly as a quantity's `parse` lives beside
+ * the `format` it undoes — a signature is not made safe here because here is
+ * the DOM, and what makes it safe is a fact about IDF comment syntax.
+ */
+export function textField({ name, placeholder, read, write, className = null }) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = className ? `text-field ${className}` : 'text-field';
+  input.autocomplete = 'name';
+  input.spellcheck = false;
+  input.placeholder = placeholder;
+  input.setAttribute('aria-label', name);
+  // The header truncates anyway; stopping the typing at the same length means
+  // the box never shows a name the file will not carry.
+  input.maxLength = 60;
+
+  let took = null;
+
+  const show = () => {
+    if (took != null) return;
+    input.value = read();
+  };
+
+  input.addEventListener('focus', () => {
+    took = read();
+    // Not `select()`: a quantity is replaced wholesale — click, type 12, Enter —
+    // and a name is usually corrected rather than retyped, so selecting it all
+    // would put one keystroke between a reader and the loss of their own name.
+  });
+
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      input.blur();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      took = null;
+      input.blur();
+    }
+  });
+
+  input.addEventListener('blur', () => {
+    const said = input.value;
+    const asGiven = took;
+    took = null;
+    if (asGiven != null && said !== asGiven) write(said);
+    show();
+  });
+
+  return { node: input, show };
+}

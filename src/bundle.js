@@ -9,7 +9,10 @@
  * requirement above all others: the bytes have to be the genuine ones. The IDF
  * is the text passed to `ep.run`, not a fresh `writeIdf` that might have moved
  * since; the EPW is the file as fetched; `eplustbl.htm` is what EnergyPlus
- * wrote. Nothing is fabricated to fill a gap — a design-day run carries no
+ * wrote. The one addition is a header of `!` comments above the model, naming
+ * the toolkit, the sheet's build and whoever signed it — stated in the manifest
+ * rather than left for a reader to notice, and above the model rather than in
+ * it: delete those lines and what remains is byte-for-byte what ran. Nothing is fabricated to fill a gap — a design-day run carries no
  * weather file, and the manifest says so rather than inventing one, the same
  * refusal the weather picker makes when a station's design conditions can't be
  * read.
@@ -36,7 +39,8 @@
  */
 
 import { controlFor, isWholeYear } from './controls.js';
-import { REVISION } from './version.js';
+import { REVISION, TOOLKIT } from './version.js';
+import { idfHeader } from './model.js';
 
 const enc = new TextEncoder();
 
@@ -187,7 +191,15 @@ function runLine(run) {
  */
 function members(run) {
   return [
-    { name: 'model.idf', text: run.idf, note: 'the model, with its design days written in' },
+    {
+      name: 'model.idf',
+      // The header is put on here rather than at the solve, so a sheet signed a
+      // moment ago downloads signed. Everything below it is `run.idf`
+      // untouched — the exact bytes the engine was handed — which is the
+      // guarantee this bundle exists for and which a comment cannot affect.
+      text: idfHeader({ author: run.author, revision: REVISION.version, toolkit: TOOLKIT }) + run.idf,
+      note: 'the model, with its design days written in, under a header saying what wrote it',
+    },
     run.epw && {
       name: `${run.weatherStem ?? 'weather'}.epw`,
       text: run.epw,
@@ -306,9 +318,9 @@ function manifest(run, list) {
       `\n` +
       `This is the exact input and output of a run performed in your browser at\n` +
       `shoebox.idfkit.com. Nothing here is re-derived: the IDF is the text handed\n` +
-      `to the engine, the EPW is the weather file as downloaded, and the report is\n` +
-      `what EnergyPlus wrote back. Re-run it to reproduce every number the page\n` +
-      `showed.\n`;
+      `to the engine under a header of comments naming what wrote it, the EPW is\n` +
+      `the weather file as downloaded, and the report is what EnergyPlus wrote\n` +
+      `back. Re-run it to reproduce every number the page showed.\n`;
 
   // The sentence the sheet reported, quoted rather than paraphrased: it is
   // frequently the engine's own fatal message, and re-wording it here would

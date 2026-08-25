@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { revision } from './scripts/revision.mjs';
+import { toolkit } from './scripts/toolkit.mjs';
 
 /**
  * climate.onebuilding.org serves the TMYx archives without an
@@ -31,8 +32,19 @@ const onebuilding = {
  */
 const sheetRevision = revision();
 
+/**
+ * The toolkit that writes the models, frozen in for the same reason and read
+ * back by the same module. It goes in beside the revision rather than being
+ * asked for at runtime because the answer is a property of the build: the page
+ * ships one resolved `@idfkit/core` and cannot acquire another while running.
+ */
+const toolkitVersion = toolkit();
+
 export default defineConfig({
-  define: { __SHEET_REVISION__: JSON.stringify(sheetRevision) },
+  define: {
+    __SHEET_REVISION__: JSON.stringify(sheetRevision),
+    __IDFKIT_VERSION__: JSON.stringify(toolkitVersion),
+  },
   server: { proxy: { '/onebuilding': onebuilding } },
   preview: { proxy: { '/onebuilding': onebuilding } },
 });
