@@ -579,7 +579,7 @@ function settle(labels, { gap = 9, top, bottom }) {
  * simulated — there is no boiler in this model — so the step is lettered with
  * the number it divides by and the reader can redo it.
  */
-function chainOf(fuel, { y, h, leaving, watts, lane, geo }) {
+function chainOf(fuel, { y, h, leaving, watts, lane, geo, format }) {
   const group = svg('g');
   group.setAttribute('class', 'flow-chain');
   group.dataset.key = 'chain';
@@ -605,9 +605,22 @@ function chainOf(fuel, { y, h, leaving, watts, lane, geo }) {
   // landing on whichever one shares its height.
   return {
     group,
+    /*
+     * The step is lettered with what it *lands on*, not only with what it
+     * divides by.
+     *
+     * `Electric chiller ÷ 3.5` states an operation and withholds its result,
+     * which is the one thing a width step means: the ribbon arrives at the
+     * plant carrying the heat and leaves it carrying the fuel, and the figure
+     * the reader needs in order to check that is the second one. The supply
+     * side is not repeated here because it is already the label on the ribbon
+     * this wedge continues, a few pixels away.
+     */
     label: {
       key: 'chain',
-      text: `${fuel.plantLabel}${fuel.divisor ? ` ÷ ${fuel.divisor}` : ' (no plant)'}`,
+      text: fuel.divisor
+        ? `${fuel.plantLabel} ÷ ${fuel.divisor} = ${format(Math.abs(fuel.draw))}`
+        : `${fuel.plantLabel} (no plant)`,
       x: geo.x + (leaving ? lane : -lane),
       anchor: leaving ? 'start' : 'end',
       y: mid + 3,
@@ -807,6 +820,7 @@ export function renderSankey(host, view) {
       watts: entry.watts,
       lane: lanes[entry.side],
       geo: geoFor(entry.side),
+      format: view.format,
     });
     if (drawn.label) {
       const fitted = fitLabel(drawn.label.text, fuel.plantLabel, sides[entry.side].room);

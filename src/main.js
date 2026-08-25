@@ -2707,6 +2707,12 @@ function plantFor(mode) {
   const divisor = use?.divisorFor(params) ?? null;
   return {
     divisor: divisor?.value ?? null,
+    // What that number *is* in the reader's terms — a seasonal COP for a
+    // chiller, a seasonal efficiency for a boiler. The bill has always named it
+    // beside the figure; the drawing needs it for the same reason, since a bare
+    // `÷ 3.5` under a row called `Electric chiller` is the sheet asking to be
+    // taken on trust.
+    noun: divisor?.noun ?? null,
     plantLabel: divisor?.label ?? (mode === 'cooling' ? 'Cooling plant' : 'Heating plant'),
     fuelLabel: use?.fuelFor(params)?.label ?? 'Fuel',
   };
@@ -2820,7 +2826,29 @@ function instantView() {
       label: fuel.plantLabel,
       reading: `${watts(Math.abs(fuel.supply))} ÷ ${fuel.divisor ?? 1} = ${watts(fuel.draw)}`,
       tone: null,
-      note: `${fuel.fuelLabel} drawn to ${fuel.mode === 'heating' ? 'deliver' : 'remove'} that heat. There is no plant in this model — the ideal unit reports delivered heat at 100 %, so the division is the bill’s and happens after the run.`,
+      /*
+       * Where each of the two numbers came from, because the row divides one by
+       * the other and the reader is entitled to know which of them the engine
+       * produced.
+       *
+       * This used to open `There is no plant in this model`, which reads as a
+       * flat contradiction of the row it sits under: a line named after a
+       * chiller, dividing by its COP, announcing that there is no chiller. Both
+       * halves were true and the sentence never joined them. What is absent is a
+       * *simulated* compressor; what is present is the COP on the Plant strip,
+       * which reaches no IDF object and is applied afterwards. So the note now
+       * says which number is the run's, which is the reader's own, and that the
+       * step between them is arithmetic rather than a result — the same
+       * build-up the bill prints rather than buries.
+       */
+      note:
+        `${fuel.fuelLabel} drawn to ${fuel.mode === 'heating' ? 'deliver' : 'remove'} that heat. ` +
+        `Nothing here simulated a ${fuel.mode === 'heating' ? 'boiler' : 'compressor'} — the ideal unit reports the heat it moves at 100 %, ` +
+        `so ${watts(Math.abs(fuel.supply))} is the run's own figure. ` +
+        (fuel.divisor
+          ? `The ${plant.noun ?? 'divisor'} of ${fuel.divisor} is the Plant strip's, and dividing by it is arithmetic this sheet does after the run, ` +
+            `exactly as the bill does: the step is the consequence of a number you set rather than a result of the run.`
+          : `There is no figure to divide it by, so the fuel side is the delivered heat itself.`),
     });
   }
 
@@ -2879,7 +2907,12 @@ function componentView(half, which) {
     keyed.push({
       label: fuel.plantLabel,
       reading: `${watts(Math.abs(fuel.supply))} ÷ ${fuel.divisor ?? 1} = ${watts(fuel.draw)}`,
-      note: `${fuel.fuelLabel} drawn at the sizing condition.`,
+      // The same division and the same distinction as the pinned hour's, said
+      // shorter because the mode's own lede has already spent a paragraph on
+      // what a sizing calculation is and is not.
+      note:
+        `${fuel.fuelLabel} drawn at the sizing condition. The peak is the report's; ` +
+        `the ${plant.noun ?? 'divisor'} of ${fuel.divisor ?? 1} is the Plant strip's, applied after the run as the bill applies it.`,
     });
   }
   const loadBand = [...laid.into, ...laid.outOf].find((b) => b.isLoad);
