@@ -21,12 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   The run bundle's `MANIFEST.txt` carries the same two facts as rows of its
   ledger, beside the EnergyPlus version and the sheet's build. Deliberately
-  twice: the manifest is the first thing a reader opens and the model is the
-  thing that gets separated from it, so neither can be the only copy. Unsigned
-  reads there as an em dash and writes no line at all in the IDF, which is one
-  rule meeting two kinds of stationery — a ruled ledger keeps every row present
-  and says `—` when a figure was not stated, while a comment header has no
-  ruling and an em dash would be inventing a field in order to leave it empty.
+  twice: the manifest is the first thing you open and the model is the thing
+  that gets separated from it, so neither can be the only copy.
 
   The `Drawn by` cell is the reader's, which is the whole reason it can exist at
   all. This sheet has no author — a title block names whoever drew *that*
@@ -44,22 +40,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   page's own byline was kept out of the title block to avoid, made silent by
   nobody thinking to look.
 
-  Three things that took measuring. A signature **is not a parameter**: the
-  shape key is `JSON.stringify([params, patching()])`, so a name held there
-  would start a fresh solve on every keystroke of somebody typing their own, and
-  every one of those runs would return the same numbers. It is `pinnedHour`'s
-  arrangement instead — state that reaches the output without reaching the
-  physics. The header is stamped **at download rather than at the solve**: held
-  at the solve it failed exactly where a reader would find it, since signing the
-  sheet and pressing Download got you a model written before you signed it;
-  stamped in `bundle.js` the ZIP still offers the exact bytes the engine ran,
-  because a comment above the model is not the model, and the manifest says so
-  rather than leaving it to be noticed. And there is deliberately **no
-  timestamp**, which is the obvious fourth line: this repository is verified by
-  asserting that applying the desk three times serialises byte-identically and
-  that a lean reporting profile followed by a sheet one matches always-sheet, and
-  a clock in the header makes every one of those comparisons false for a reason
-  that has nothing to do with the model. The bundle's manifest carries the date.
+  Signing runs nothing and changes no result: the header is a comment, so it is
+  written when the model is handed over rather than when it is solved, and a
+  name typed after a run is on the file you download a second later. The header
+  carries no date, deliberately — two models of the same desk are then
+  byte-identical, which is what makes them worth diffing. The bundle's manifest
+  carries the date.
 
   A signature is normalised, never refused. There is no such thing as an invalid
   name, so nothing is judged — but an IDF comment runs from `!` to the end of
@@ -67,15 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than an untidiness: `Sam\nZone, EVIL, 0, 0, 0, 0;` would be a real
   object in a real file that a colleague runs. Every control and format
   character goes, the two Unicode line breaks are named as escapes beside them,
-  and runs of whitespace collapse. The manifest turned out to be a second
-  surface of the same kind and is covered by the same cleaning: its ledger is
-  label-aligned text, so a newline could have forged a row — an `EnergyPlus
-  FAKE 9.9` line sitting above the real one, in the artifact that exists to be
-  checked. Measured through the field itself and then through EnergyPlus: the
-  injection arrives as one comment line and one ledger row, no row is forged,
-  the name in the manifest is the same string as the name in the IDF header, and
-  the signed and unsigned models both complete with 0 severe and 0 fatal
-  errors.
+  and runs of whitespace collapse. The manifest's ledger is a
+  second surface of the same kind — its rows are label-aligned, so a newline
+  could have forged one — and is covered by the same cleaning.
 
 - **The page says who built it, and the sheet still has no author.** The
   Disclosure band has always been a colophon — the source has called it one for
