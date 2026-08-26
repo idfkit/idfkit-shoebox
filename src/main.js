@@ -4480,7 +4480,7 @@ const OFFERS = [
     because:
       'about a conditioned building, and this zone is free-running — there is no demand to meter and no load to size.',
     label: 'Patch System in',
-    then: ' and the lines a run of this kind can answer will fill.',
+    then: 'Patching it in fills the lines a run of this kind can answer.',
     press() {
       patchChannel('system', false);
       // The note is read off live model state, so it answers the press at once
@@ -4495,7 +4495,7 @@ const OFFERS = [
     verb: { every: 'needs', some: 'need' },
     because: 'a full year behind them, and this run is design days.',
     label: 'Choose a weather location',
-    then: ' — the picker is at the head of the sheet.',
+    then: 'The picker is at the head of the sheet.',
     press() {
       // The picker is a panel at the top of the page, so the reader is taken
       // to it rather than having it opened out of sight behind them.
@@ -4549,13 +4549,17 @@ function scoreNote() {
     n === targets.length
       ? `Every one of these ${n} lines ${offer.verb.every}`
       : `${n} of these ${targets.length} lines ${offer.verb.some}`;
-  note.append(`${count} ${offer.because} `);
-  const act = elem('button', 'link link-inline');
+  note.append(elem('span', null, `${count} ${offer.because} ${offer.then}`));
+  // The same chip the Chase marker in the band below is, and the same one
+  // every patch marker on the console is. Its square is left hollow and
+  // carries no `aria-pressed`: this is an act, not a toggle — the note goes
+  // away once it has been taken — and hollow is the true reading of a channel
+  // that is out of the path.
+  const act = elem('button', 'pin pin-sm');
   act.type = 'button';
-  act.textContent = offer.label;
+  act.append(elem('i', 'mark'), elem('span', null, offer.label));
   act.addEventListener('click', offer.press);
   note.append(act);
-  note.append(offer.then);
 }
 
 

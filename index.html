@@ -676,18 +676,6 @@
         border-bottom: 1px solid var(--rule);
         padding-bottom: 1px;
       }
-      /* The same control set inside a running sentence instead of standing on
-         its own in the margin. `.link`'s condensed 10px caps is a label, and a
-         label dropped mid-paragraph is at once smaller than the prose around
-         it and shouting over it; this takes the sentence's own type and keeps
-         only the rule underneath that says it can be pressed. */
-      .link.link-inline {
-        font: inherit;
-        text-transform: none;
-        letter-spacing: inherit;
-        color: var(--ink);
-        border-bottom-color: var(--rule-firm);
-      }
       .link:hover { color: var(--redline); border-bottom-color: var(--redline); }
       /* The guard every unset button carries, and for the same reason: the
          sheet's one real button styles `button:hover:not(:disabled)`, one
@@ -1473,6 +1461,22 @@
         color: var(--ink-3);
       }
       .register-note[hidden] { display: none; }
+      /* The board's blocked note carries a press, so the press is a chip on a
+         line of its own rather than a link inside the sentence. `.link` is a
+         margin label — 10px condensed caps — and set in an 11.5px grey note it
+         is at once smaller than the prose and lost in it; asked where the
+         button was, the honest answer was that there wasn't one that looked
+         like a button. `.pin` is what the Chase marker in the band directly
+         below and every patch marker on the console already are, so a reader
+         meets one species of pressable thing rather than two.
+         Its square is a reading and not decoration: hollow says the channel is
+         out of the path, which is exactly the state the note is about. */
+      .score-note {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 11px;
+      }
       .register-note b { font-weight: 500; color: var(--ink-2); }
 
       /* The shelf's cells are spaced from one another where the schedules
@@ -3826,7 +3830,7 @@
               <!-- Why the board is mostly em dashes, and the one press that
                    fixes it. Written by `renderScore`, hidden when it does not
                    apply. -->
-              <p class="register-note" id="score-note" hidden></p>
+              <div class="register-note score-note" id="score-note" hidden></div>
               <table id="score"></table>
             </div>
 
