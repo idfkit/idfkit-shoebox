@@ -9,84 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **The title block can be signed, and the model goes out saying who wrote it
-  and what wrote it.** Every IDF this desk hands over now opens with three
-  comment lines — the toolkit that serialised it (`@idfkit/core`, the resolved
-  version rather than the range in `package.json`, because only the resolved one
-  is a fact about the file in your hand), the build of this sheet, and, if the
-  title block has been signed, whoever signed it. An IDF outlives the tab that
-  wrote it: it gets mailed, committed and re-run years later by somebody who was
-  never at this desk, and "the results moved" and "the writer moved" are
-  different problems that a line at the top tells apart.
+- **The title block can be signed.** Type a name into the `Drawn by` cell and
+  every model this desk hands over carries it: at the head of the IDF, as a
+  comment, and in the run bundle's `MANIFEST.txt` — beside the toolkit that
+  wrote the file and the build of this sheet. An IDF outlives the tab that
+  wrote it, and "the results moved" and "the writer moved" are different
+  problems that a line at the top tells apart.
 
-  The run bundle's `MANIFEST.txt` carries the same two facts as rows of its
-  ledger, beside the EnergyPlus version and the sheet's build. Deliberately
-  twice: the manifest is the first thing you open and the model is the thing
-  that gets separated from it, so neither can be the only copy.
+  The cell is empty until you fill it, because this sheet has no author of its
+  own: a title block names whoever drew *that* drawing, and here that is
+  whoever is at the console. The name is kept in this browser and never in a
+  link — a scheme you send carries the building, not whoever drew it. Signing
+  runs nothing and moves no reading. Names are normalised and never refused.
+  The header carries no date, so two models of the same desk stay
+  byte-identical and worth diffing; the manifest has the date.
 
-  The `Drawn by` cell is the reader's, which is the whole reason it can exist at
-  all. This sheet has no author — a title block names whoever drew *that*
-  drawing, and here that is whoever is at the console — so the cell is empty
-  until somebody fills it, and it letters `Unsigned` in ghost weight rather than
-  instructing anybody to fill it in. It is the margin numbers' own idiom: no box
-  drawn around it, the mono face the block above uses, Escape puts the edit
-  down, a field left alone commits nothing, and a redraw never types over
-  somebody mid-name.
-
-  **It is kept in this browser and never in a link.** A permalink carries the
-  desk — parameters, patch bay, station, the hour being read — and a signature
-  is none of those; carried along, a shared scheme would arrive with one
-  person's name on another person's building, which is the same false claim the
-  page's own byline was kept out of the title block to avoid, made silent by
-  nobody thinking to look.
-
-  Signing runs nothing and changes no result: the header is a comment, so it is
-  written when the model is handed over rather than when it is solved, and a
-  name typed after a run is on the file you download a second later. The header
-  carries no date, deliberately — two models of the same desk are then
-  byte-identical, which is what makes them worth diffing. The bundle's manifest
-  carries the date.
-
-  A signature is normalised, never refused. There is no such thing as an invalid
-  name, so nothing is judged — but an IDF comment runs from `!` to the end of
-  the line and no further, which makes a newline in a name an **injection**
-  rather than an untidiness: `Sam\nZone, EVIL, 0, 0, 0, 0;` would be a real
-  object in a real file that a colleague runs. Every control and format
-  character goes, the two Unicode line breaks are named as escapes beside them,
-  and runs of whitespace collapse. The manifest's ledger is a
-  second surface of the same kind — its rows are label-aligned, so a newline
-  could have forged one — and is covered by the same cleaning.
-
-- **The page says who built it, and the sheet still has no author.** The
-  Disclosure band has always been a colophon — the source has called it one for
-  as long as it has existed — but it only ever carried the negative half: who
-  this page is *not* (not NREL, not the Department of Energy) and under what
-  terms the engine arrives. It never said who it is. That missing half is now
-  there: built by Samuel Letellier-Duchesne, who works on building energy
-  simulation at Introba and maintains
-  [idfkit](https://idfkit.com), the toolkit for reading, writing and running
-  EnergyPlus models that this page is a demo of. It is named there without a
-  language attached, which is the claim and not vagueness — idfkit is meant to
-  be one set of ideas wherever the work happens, so "a Python toolkit" would
-  describe the half of it this tab does not run. What this tab runs is named by
-  its packages instead, which can be checked against the imports in
-  `src/main.js`.
-
-  It is a colophon and deliberately not a byline. A title block's `Drawn by`
-  names whoever drew *that* sheet, and on this page that is whoever is at the
-  console — every scheme is a different drawing, and a shared permalink hands a
-  stranger's building to a stranger's browser. A name in that block would also
-  be the only cell in it that was typed rather than read back off the model,
-  on a sheet whose whole claim is that nothing in it is retyped. So the credit
-  is the printer's note about the instrument, which is what a colophon has
-  always been, and it says as much in the reader's terms rather than only in a
-  source comment.
-
-  Above the fold, the head's stamp gains a **Toolkit** row beside Engine,
-  Runtime and Upload. Those three are facts about the page rather than readings
-  off the run, and what parses the model and writes the IDF is another one of
-  them — so the page now states what it is a demo of without anyone having to
-  open a band to find out.
+- **The page says who built it.** The Disclosure band has always been a
+  colophon and only ever carried the negative half — who this page is *not*,
+  and the terms the engine arrives under. It now says who it is. The head's
+  stamp gains a **Toolkit** row beside Engine, Runtime and Upload, so the page
+  states what it is a demo of without anyone opening a band to find out.
 
 ### Changed
 
