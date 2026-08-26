@@ -1068,6 +1068,13 @@
         text-align: right;
         padding: 0 0 8px;
         border-bottom: 1px solid var(--rule);
+        /* A head sets its own column's minimum. These columns are sized by
+           their content, and a figure is narrower than the word over it —
+           `25.4` under PEAK HEAT — so without this the head wraps to two lines
+           and that one column's rule sits a line below all the others. The
+           table is not at its full width; there is room, it was simply never
+           asked for. */
+        white-space: nowrap;
       }
       .schedule th:first-child,
       .bill th:first-child,

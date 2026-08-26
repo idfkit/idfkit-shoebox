@@ -4767,10 +4767,17 @@ function renderShelf() {
 
   const here = measureNow();
 
-  // Every measured column carries a delta cell beside it, so its head spans
-  // both — the same arrangement the results schedule makes when it has a
-  // baseline to difference against.
-  table.append(tableHead(['Scheme', ...SHELF_COLUMNS.map((c) => [c.label, 2]), '']));
+  // The head sits over the figure it names, not over the pair.
+  //
+  // Every measured column carries a delta cell beside it, and heading both
+  // with one `th` was the arrangement the results schedule makes. It does not
+  // carry here. These heads are right-aligned, so a `th` spanning two columns
+  // letters its word against the *delta's* right edge — and the schedule only
+  // spans when it has a baseline, which is exactly when both halves carry
+  // figures. The shelf differences strictly (same kind of run, same currency,
+  // same end uses), so its delta column is empty on most rows and the head was
+  // standing over blank paper about 60px to the right of its own number.
+  table.append(tableHead(['Scheme', ...SHELF_COLUMNS.flatMap((c) => [c.label, '']), '']));
 
   const body = document.createElement('tbody');
   for (const scheme of kept) {
