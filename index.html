@@ -272,12 +272,31 @@
         grid-template-columns: 172px minmax(0, 1fr);
       }
 
+      /* The run log stands still while the sheet goes past it.
+         It is the one block on the page that describes the run rather than
+         the building — what stage the engine is in, how long it took, how
+         many solves deep you are, and the three ways out — and the sheet
+         below it is several screens of readings taken *by* that run. Scrolled
+         away, a solve fired from a control down at the scoreboard reported
+         its progress to an empty margin.
+         `align-self: start` is what makes it possible at all: a grid item
+         stretches to its row by default, so the ledger was already as tall as
+         the whole sheet and had nothing to stick to. Which is also why the
+         binding rule moved to `.field`'s left edge — it has to run the length
+         of the page, and this column no longer does. */
       .ledger {
         padding: 26px 20px 26px 32px;
-        border-right: 1px solid var(--rule);
         display: flex;
         flex-direction: column;
         gap: 16px;
+        position: sticky;
+        top: 20px;
+        align-self: start;
+        /* Between the 600px the layout folds at and about 650, the log is
+           taller than the room above the fold. It scrolls within itself
+           rather than running off the bottom of the window. */
+        max-height: calc(100vh - 40px);
+        overflow-y: auto;
       }
 
       .ledger ol {
@@ -347,7 +366,7 @@
       .ledger-foot b { font: 400 15px/1 var(--mono); color: var(--ink); }
       .ledger-foot .sub { font: 400 10.5px/1 var(--mono); color: var(--ink-ghost); }
 
-      .field { padding: 26px 32px 30px; min-width: 0; }
+      .field { padding: 26px 32px 30px; min-width: 0; border-left: 1px solid var(--rule); }
 
       /* ── controls ───────────────────────────────────────────────── */
 
@@ -1049,6 +1068,13 @@
         text-align: right;
         padding: 0 0 8px;
         border-bottom: 1px solid var(--rule);
+        /* A head sets its own column's minimum. These columns are sized by
+           their content, and a figure is narrower than the word over it —
+           `25.4` under PEAK HEAT — so without this the head wraps to two lines
+           and that one column's rule sits a line below all the others. The
+           table is not at its full width; there is room, it was simply never
+           asked for. */
+        white-space: nowrap;
       }
       .schedule th:first-child,
       .bill th:first-child,
@@ -1442,6 +1468,22 @@
         color: var(--ink-3);
       }
       .register-note[hidden] { display: none; }
+      /* A note that carries a press — the scoreboard's and the shelf's alike.
+         line of its own rather than a link inside the sentence. `.link` is a
+         margin label — 10px condensed caps — and set in an 11.5px grey note it
+         is at once smaller than the prose and lost in it; asked where the
+         button was, the honest answer was that there wasn't one that looked
+         like a button. `.pin` is what the Chase marker in the band directly
+         below and every patch marker on the console already are, so a reader
+         meets one species of pressable thing rather than two.
+         Its square is a reading and not decoration: hollow says the channel is
+         out of the path, which is exactly the state the note is about. */
+      .note-act {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 11px;
+      }
       .register-note b { font-weight: 500; color: var(--ink-2); }
 
       /* The shelf's cells are spaced from one another where the schedules
@@ -1478,19 +1520,23 @@
       /* The one mark on the whole board. A criterion that has been missed is
          a divergence, and this is the markup pen doing what it is for. */
       .register #score td.delta.over { color: var(--redline); }
-      /* The standard's name sections its rows, the way the schedule's group
-         rule changes subject. */
+      /* The standard's name sections its rows, and on this board that has to
+         be a band rather than the schedule's group rule.
+         A schedule's group changes subject within one subject; this table is
+         five separate published documents end to end, and each section is
+         screens tall because most criteria carry a note explaining what the
+         reading is. Set as the schedule's subhead was — 10px condensed in
+         `--ink-3` over a hairline — the section head was *quieter* than the
+         criterion labels beneath it, so a reader arriving in the middle of
+         EnerPHit's rows had nothing to tell them whose lines they were.
+         The band is the page's inset surface, which is what the rest of the
+         sheet already uses to say "a field of its own". */
       .register tr.score-head td {
-        padding: 17px 0 7px;
-        border-top: 1px solid var(--rule);
-        border-bottom: 0;
-        font: 600 10px/1 var(--cond);
-        text-transform: uppercase;
-        letter-spacing: 0.11em;
-        color: var(--ink-3);
+        padding: 26px 0 0;
+        border: 0;
         text-align: left;
       }
-      .register tr.score-head:first-child td { border-top: 0; padding-top: 10px; }
+      .register tr.score-head:first-child td { padding-top: 4px; }
       /* The subhead carries the standard's name and its Chase marker on one
          baseline. The marker is the `.pin` component at a size that sits in a
          table row rather than over a section heading. */
@@ -1499,11 +1545,23 @@
          so without this the name and its marker are laid out inside 44 % of
          the board and the name wraps to two lines beside a squeezed button. */
       .register #score tr.score-head td { width: auto; }
+      /* The band itself is on the inner div, not on the cell: the cell keeps
+         the air above the section, and a `td` has no margin to make it with. */
       .score-bar {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 16px;
+        padding: 9px 12px;
+        background: var(--inset);
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+      }
+      .score-name {
+        font: 600 12px/1.2 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--ink);
       }
       /* `min-width` and `min-height` are given back explicitly. The bare
          `button` rule at the top of this sheet sets a 168 × 46 minimum for the
@@ -3256,11 +3314,17 @@
         body { padding: 20px 12px 48px; }
         .head { grid-template-columns: 1fr; padding: 24px; }
         .body { grid-template-columns: 1fr; }
+        /* One column, so the log is a band above the field rather than a
+           margin beside it — and a band pinned to the top of the window is a
+           toolbar, which this is not. It scrolls away with the sheet here. */
         .ledger {
-          border-right: 0;
           border-bottom: 1px solid var(--rule);
           padding: 20px 24px;
+          position: static;
+          max-height: none;
+          overflow-y: visible;
         }
+        .field { border-left: 0; }
         .ledger ol { flex-direction: row; flex-wrap: wrap; gap: 6px 18px; }
         .ledger li { padding: 0 0 0 16px; }
         .ledger li::before { display: none; }
@@ -3312,9 +3376,11 @@
         .register td:empty { display: none; }
         /* The unit has moved onto the reading's own label. */
         .register #score td.unit { display: none; }
-        /* Folded, the subhead is the only structure the board has left. */
+        /* Folded, the subhead is the only structure the board has left, so
+           the band matters more here than on the wide sheet, not less. */
         .register tr.score-head { padding: 0; border-bottom: 0; }
-        .register tr.score-head td { padding: 18px 0 2px; }
+        .register tr.score-head td { padding: 20px 0 4px; }
+        .register tr.score-head:first-child td { padding-top: 4px; }
         .register td[data-label]::before {
           content: attr(data-label);
           display: inline-block;
@@ -3538,9 +3604,9 @@
           <h1>EnergyPlus in the browser</h1>
           <p class="lede">
             The U.S. Department of Energy whole-building engine, compiled to WebAssembly and running
-            inside this tab. Out of the box it solves a single free-running zone against Denver
-            design conditions, or against any of 17,292 weather stations and the design conditions
-            that come with them.
+            inside this tab. It solves a single free-running zone against any of 17,292 weather
+            stations and the design conditions that come with them. The sheet opens on Denver's
+            design days, so there is a result on the page before you have chosen anything.
             <b>The model, the solver and the results never leave your machine</b> — there is no
             simulation server behind this page.
           </p>
@@ -3548,7 +3614,7 @@
         <div class="stamp">
           <div><span>Engine</span><b id="t-engine-version">EnergyPlus 26.1.0</b></div>
           <div><span>Runtime</span><b>WebAssembly</b></div>
-          <div><span>Upload</span><b>None</b></div>
+          <div><span>Simulation server</span><b>None</b></div>
         </div>
       </header>
 
@@ -3768,6 +3834,10 @@
                 reading a dozen rows a screen away. Chasing measures; it decides nothing, and
                 pressing it again puts it down.
               </p>
+              <!-- Why the board is mostly em dashes, and the one press that
+                   fixes it. Written by `renderScore`, hidden when it does not
+                   apply. -->
+              <div class="register-note note-act" id="score-note" hidden></div>
               <table id="score"></table>
             </div>
 
@@ -3781,6 +3851,9 @@
                 down, another one worked, and the two set side by side.
               </p>
               <p class="register-note" id="shelf-note" hidden></p>
+              <!-- What a scheme kept from this desk would actually hold, and
+                   the one press that changes it. Written by `shelfOffer`. -->
+              <div class="register-note note-act" id="shelf-offer" hidden></div>
               <p class="register-note" id="shelf-empty">
                 Nothing kept yet. <b>Save this scheme</b>, in the run log at the left, keeps the
                 desk as it stands together with whatever it was reading.
