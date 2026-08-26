@@ -3930,22 +3930,30 @@ function targetReading(target) {
  * about a year cannot be answered by two design days, and a demand intensity
  * cannot be answered by a zone nobody is conditioning.
  */
-function targetBlock(target) {
-  if (!lastRun) return { key: 'unrun', says: 'nothing solved yet' };
+function runBlock(needs) {
+  if (!lastRun) return 'unrun';
   // The order matters: a peak load asks only for a run, so telling somebody to
   // attach a weather file before telling them to patch System in would send
   // them off to fetch a year they do not need for this line.
-  if (!modelState?.get('system')?.engaged) {
+  if (!modelState?.get('system')?.engaged) return 'system';
+  if (needs === 'year' && !lastRun.annual) return 'year';
+  return null;
+}
+
+function targetBlock(target) {
+  const key = runBlock(target.needs);
+  if (key === 'unrun') return { key, says: 'nothing solved yet' };
+  if (key === 'system') {
     return {
-      key: 'system',
+      key,
       says:
         target.needs === 'run'
           ? 'patch System in — a free-running zone has no load to size'
           : 'patch System in — a free-running zone has no demand to meter',
     };
   }
-  if (target.needs === 'year' && !lastRun.annual) {
-    return { key: 'year', says: 'attach a weather file — this is a year’s number' };
+  if (key === 'year') {
+    return { key, says: 'attach a weather file — this is a year’s number' };
   }
   // The energy use intensity is read off the bill, and the bill draws a per-m²
   // figure only over twelve months, because every published benchmark is a
@@ -4481,10 +4489,21 @@ const OFFERS = [
       'about a conditioned building, and this zone is free-running — there is no demand to meter and no load to size.',
     label: 'Patch System in',
     then: 'Patching it in fills the lines a run of this kind can answer.',
+    // The shelf is asking a different question of the same fact — not "why is
+    // this criterion blank" but "what would a scheme kept from here hold" —
+    // so it gets its own sentence, the way an environment's `noun` is kept
+    // apart from its `label`.
+    shelf: (blank) =>
+      `${listOf(blank)} blank while this zone is free-running — nothing to meter and no load to size — so a scheme kept from here would keep the gap.`,
     press() {
       patchChannel('system', false);
-      // The note is read off live model state, so it answers the press at once
-      // rather than waiting for the solve it just started.
+      // The board's note is a question about the desk — what is standing in
+      // the way — so it answers the press at once. The shelf's is a question
+      // about the run: which columns actually came back empty. Re-lettered
+      // here it would read the *old* run under the *new* block and call peak
+      // heat, cost and carbon "year figures" when they are merely not solved
+      // yet, so it waits for the solve that this press just started and stays
+      // in agreement with the table beside it.
       renderScore();
     },
   },
@@ -4496,6 +4515,8 @@ const OFFERS = [
     because: 'a full year behind them, and this run is design days.',
     label: 'Choose a weather location',
     then: 'The picker is at the head of the sheet.',
+    shelf: (blank) =>
+      `${listOf(blank)} year figures and this run is design days, so a scheme kept from here would keep the gap.`,
     press() {
       // The picker is a panel at the top of the page, so the reader is taken
       // to it rather than having it opened out of sight behind them.
@@ -4527,39 +4548,81 @@ const OFFERS = [
  * matters least: the overheating lines read perfectly well free-running, which
  * is exactly the criterion Passivhaus means them to answer.
  */
-function scoreNote() {
-  const note = $('score-note');
-  note.textContent = '';
-  const targets = PRESETS.flatMap((preset) => preset.targets);
-  const blocked = targets.filter((target) => targetReading(target) == null).map(targetBlock);
-
-  // Taken in the order `targetBlock` resolves them, so the board offers the
-  // thing standing in front of everything else rather than the second thing.
-  // Only these two are offered. A partial calendar is fixed on the Run strip's
-  // twelve-month mask, which is a gesture and not a press, and there is no
-  // honest one-button version of it.
-  const offer = OFFERS.find((o) => blocked.some((b) => b.key === o.key));
-  note.hidden = !offer;
+function offerNote(host, key, sentence) {
+  host.textContent = '';
+  const offer = key ? OFFERS.find((o) => o.key === key) : null;
+  host.hidden = !offer;
   if (!offer) return;
-
-  const n = blocked.filter((b) => b.key === offer.key).length;
-  // "9 of these 9" is a fraction pretending to be one, and on the desk as it
-  // ships every line is blank — which is the case a first reader meets.
-  const count =
-    n === targets.length
-      ? `Every one of these ${n} lines ${offer.verb.every}`
-      : `${n} of these ${targets.length} lines ${offer.verb.some}`;
-  note.append(elem('span', null, `${count} ${offer.because} ${offer.then}`));
+  host.append(elem('span', null, sentence(offer)));
   // The same chip the Chase marker in the band below is, and the same one
   // every patch marker on the console is. Its square is left hollow and
-  // carries no `aria-pressed`: this is an act, not a toggle — the note goes
-  // away once it has been taken — and hollow is the true reading of a channel
-  // that is out of the path.
+  // carries no `aria-pressed`: this is an act, not a toggle — the note retires
+  // once it has been taken — and hollow is the true reading of a channel that
+  // is out of the path, or of a run with no weather file behind it.
   const act = elem('button', 'pin pin-sm');
   act.type = 'button';
   act.append(elem('i', 'mark'), elem('span', null, offer.label));
   act.addEventListener('click', offer.press);
-  note.append(act);
+  host.append(act);
+}
+
+function scoreNote() {
+  const targets = PRESETS.flatMap((preset) => preset.targets);
+  const blocked = targets.filter((target) => targetReading(target) == null).map(targetBlock);
+  // Taken in the order `runBlock` resolves them, so the board offers the thing
+  // standing in front of everything else rather than the second thing. Only
+  // the two in `OFFERS` are offered: a partial calendar is fixed on the Run
+  // strip's twelve-month mask, which is a gesture and not a press, and there
+  // is no honest one-button version of it.
+  const offer = OFFERS.find((o) => blocked.some((b) => b.key === o.key));
+  offerNote($('score-note'), offer?.key, (o) => {
+    const n = blocked.filter((b) => b.key === o.key).length;
+    // "9 of these 9" is a fraction pretending to be one, and on the desk as it
+    // ships every line is blank — which is the case a first reader meets.
+    const count =
+      n === targets.length
+        ? `Every one of these ${n} lines ${o.verb.every}`
+        : `${n} of these ${targets.length} lines ${o.verb.some}`;
+    return `${count} ${o.because} ${o.then}`;
+  });
+}
+
+/**
+ * The same offer on the shelf, about a different thing.
+ *
+ * Four of the five columns here are year figures and the fifth needs a system
+ * — `SHELF_COLUMNS` says so of the peak load in its own comment — so on the
+ * desk as it ships every column a saved scheme could carry is blank. The
+ * board's note would be the wrong sentence to reuse: it is about criteria,
+ * this is about what a save from here would hold.
+ *
+ * And it is deliberately about the *live* desk, never about the rows. A kept
+ * scheme's figures are stored at the moment it was kept, so no press on this
+ * page can fill a row that was saved off a free-running run — offering one
+ * would be the interface claiming a power it does not have.
+ */
+function shelfOffer() {
+  // Which columns are blank is measured off the live desk, never asserted. The
+  // first draft of this sentence said a design-day scheme would carry "its
+  // peak load and nothing else", and the row beside it was reading a cost of
+  // 6 USD and 36 kgCO₂e at the time: the bill totals whatever was run, and it
+  // is only the two per-year intensities that need twelve months. Naming the
+  // columns that are actually empty costs one filter and cannot go stale when
+  // a column is added.
+  const here = measureNow();
+  const blank = SHELF_COLUMNS.filter((column) => !Number.isFinite(here[column.field]));
+  offerNote($('shelf-offer'), blank.length ? runBlock('year') : null, (o) => o.shelf(blank));
+}
+
+/**
+ * The blank columns as the subject of a sentence, with the verb that agrees
+ * with however many of them there turn out to be.
+ */
+function listOf(columns) {
+  const names = columns.map((column, i) => (i ? column.label.toLowerCase() : column.label));
+  const list =
+    names.length < 2 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+  return `${list} ${names.length < 2 ? 'is' : 'are'}`;
 }
 
 
@@ -4685,6 +4748,8 @@ function renderShelf() {
   const note = $('shelf-note');
   note.textContent = shelfNote ?? '';
   note.hidden = !shelfNote;
+
+  shelfOffer();
 
   const table = $('shelf-table');
   table.textContent = '';

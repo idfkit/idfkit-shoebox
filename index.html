@@ -1461,7 +1461,7 @@
         color: var(--ink-3);
       }
       .register-note[hidden] { display: none; }
-      /* The board's blocked note carries a press, so the press is a chip on a
+      /* A note that carries a press — the scoreboard's and the shelf's alike.
          line of its own rather than a link inside the sentence. `.link` is a
          margin label — 10px condensed caps — and set in an 11.5px grey note it
          is at once smaller than the prose and lost in it; asked where the
@@ -1471,7 +1471,7 @@
          meets one species of pressable thing rather than two.
          Its square is a reading and not decoration: hollow says the channel is
          out of the path, which is exactly the state the note is about. */
-      .score-note {
+      .note-act {
         display: flex;
         flex-direction: column;
         align-items: flex-start;
@@ -3830,7 +3830,7 @@
               <!-- Why the board is mostly em dashes, and the one press that
                    fixes it. Written by `renderScore`, hidden when it does not
                    apply. -->
-              <div class="register-note score-note" id="score-note" hidden></div>
+              <div class="register-note note-act" id="score-note" hidden></div>
               <table id="score"></table>
             </div>
 
@@ -3844,6 +3844,9 @@
                 down, another one worked, and the two set side by side.
               </p>
               <p class="register-note" id="shelf-note" hidden></p>
+              <!-- What a scheme kept from this desk would actually hold, and
+                   the one press that changes it. Written by `shelfOffer`. -->
+              <div class="register-note note-act" id="shelf-offer" hidden></div>
               <p class="register-note" id="shelf-empty">
                 Nothing kept yet. <b>Save this scheme</b>, in the run log at the left, keeps the
                 desk as it stands together with whatever it was reading.
