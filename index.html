@@ -272,12 +272,31 @@
         grid-template-columns: 172px minmax(0, 1fr);
       }
 
+      /* The run log stands still while the sheet goes past it.
+         It is the one block on the page that describes the run rather than
+         the building — what stage the engine is in, how long it took, how
+         many solves deep you are, and the three ways out — and the sheet
+         below it is several screens of readings taken *by* that run. Scrolled
+         away, a solve fired from a control down at the scoreboard reported
+         its progress to an empty margin.
+         `align-self: start` is what makes it possible at all: a grid item
+         stretches to its row by default, so the ledger was already as tall as
+         the whole sheet and had nothing to stick to. Which is also why the
+         binding rule moved to `.field`'s left edge — it has to run the length
+         of the page, and this column no longer does. */
       .ledger {
         padding: 26px 20px 26px 32px;
-        border-right: 1px solid var(--rule);
         display: flex;
         flex-direction: column;
         gap: 16px;
+        position: sticky;
+        top: 20px;
+        align-self: start;
+        /* Between the 600px the layout folds at and about 650, the log is
+           taller than the room above the fold. It scrolls within itself
+           rather than running off the bottom of the window. */
+        max-height: calc(100vh - 40px);
+        overflow-y: auto;
       }
 
       .ledger ol {
@@ -347,7 +366,7 @@
       .ledger-foot b { font: 400 15px/1 var(--mono); color: var(--ink); }
       .ledger-foot .sub { font: 400 10.5px/1 var(--mono); color: var(--ink-ghost); }
 
-      .field { padding: 26px 32px 30px; min-width: 0; }
+      .field { padding: 26px 32px 30px; min-width: 0; border-left: 1px solid var(--rule); }
 
       /* ── controls ───────────────────────────────────────────────── */
 
@@ -3272,11 +3291,17 @@
         body { padding: 20px 12px 48px; }
         .head { grid-template-columns: 1fr; padding: 24px; }
         .body { grid-template-columns: 1fr; }
+        /* One column, so the log is a band above the field rather than a
+           margin beside it — and a band pinned to the top of the window is a
+           toolbar, which this is not. It scrolls away with the sheet here. */
         .ledger {
-          border-right: 0;
           border-bottom: 1px solid var(--rule);
           padding: 20px 24px;
+          position: static;
+          max-height: none;
+          overflow-y: visible;
         }
+        .field { border-left: 0; }
         .ledger ol { flex-direction: row; flex-wrap: wrap; gap: 6px 18px; }
         .ledger li { padding: 0 0 0 16px; }
         .ledger li::before { display: none; }
