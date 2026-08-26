@@ -4366,7 +4366,7 @@ function renderScore() {
     // itself: a `display: flex` table cell stops being a table cell, and the
     // colSpan that makes this a full-width subhead is quietly ignored.
     const bar = elem('div', 'score-bar');
-    bar.append(elem('span', null, preset.name));
+    bar.append(elem('span', 'score-name', preset.name));
     th.append(bar);
     // The same armed square the run ledger, the auto-solve toggle and the
     // console's patch buttons use, meaning the same thing a fourth time: this

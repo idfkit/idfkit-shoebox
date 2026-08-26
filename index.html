@@ -1478,19 +1478,23 @@
       /* The one mark on the whole board. A criterion that has been missed is
          a divergence, and this is the markup pen doing what it is for. */
       .register #score td.delta.over { color: var(--redline); }
-      /* The standard's name sections its rows, the way the schedule's group
-         rule changes subject. */
+      /* The standard's name sections its rows, and on this board that has to
+         be a band rather than the schedule's group rule.
+         A schedule's group changes subject within one subject; this table is
+         five separate published documents end to end, and each section is
+         screens tall because most criteria carry a note explaining what the
+         reading is. Set as the schedule's subhead was — 10px condensed in
+         `--ink-3` over a hairline — the section head was *quieter* than the
+         criterion labels beneath it, so a reader arriving in the middle of
+         EnerPHit's rows had nothing to tell them whose lines they were.
+         The band is the page's inset surface, which is what the rest of the
+         sheet already uses to say "a field of its own". */
       .register tr.score-head td {
-        padding: 17px 0 7px;
-        border-top: 1px solid var(--rule);
-        border-bottom: 0;
-        font: 600 10px/1 var(--cond);
-        text-transform: uppercase;
-        letter-spacing: 0.11em;
-        color: var(--ink-3);
+        padding: 26px 0 0;
+        border: 0;
         text-align: left;
       }
-      .register tr.score-head:first-child td { border-top: 0; padding-top: 10px; }
+      .register tr.score-head:first-child td { padding-top: 4px; }
       /* The subhead carries the standard's name and its Chase marker on one
          baseline. The marker is the `.pin` component at a size that sits in a
          table row rather than over a section heading. */
@@ -1499,11 +1503,23 @@
          so without this the name and its marker are laid out inside 44 % of
          the board and the name wraps to two lines beside a squeezed button. */
       .register #score tr.score-head td { width: auto; }
+      /* The band itself is on the inner div, not on the cell: the cell keeps
+         the air above the section, and a `td` has no margin to make it with. */
       .score-bar {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 16px;
+        padding: 9px 12px;
+        background: var(--inset);
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+      }
+      .score-name {
+        font: 600 12px/1.2 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--ink);
       }
       /* `min-width` and `min-height` are given back explicitly. The bare
          `button` rule at the top of this sheet sets a 168 × 46 minimum for the
@@ -3312,9 +3328,11 @@
         .register td:empty { display: none; }
         /* The unit has moved onto the reading's own label. */
         .register #score td.unit { display: none; }
-        /* Folded, the subhead is the only structure the board has left. */
+        /* Folded, the subhead is the only structure the board has left, so
+           the band matters more here than on the wide sheet, not less. */
         .register tr.score-head { padding: 0; border-bottom: 0; }
-        .register tr.score-head td { padding: 18px 0 2px; }
+        .register tr.score-head td { padding: 20px 0 4px; }
+        .register tr.score-head:first-child td { padding-top: 4px; }
         .register td[data-label]::before {
           content: attr(data-label);
           display: inline-block;
