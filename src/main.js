@@ -2987,6 +2987,30 @@ function readMeters(eso, at) {
   return readings;
 }
 
+/**
+ * Take a channel in or out of the path.
+ *
+ * The console's own patch markers are one caller; the scoreboard's "Patch
+ * System in" is the other. It is one function rather than two because a second
+ * copy would be a second chance to forget the solo release, the gesture
+ * brackets or the auto-solve, and the desk would then behave differently
+ * depending on which surface the reader happened to press.
+ */
+function patchChannel(id, off) {
+  tour?.note('patch');
+  beginGesture();
+  bypass[id] = off;
+  // Taking a channel in by hand is an answer to the solo question too.
+  if (solo && solo !== id) {
+    solo = null;
+    desk.solo = null;
+  }
+  applyGeometry();
+  endGesture();
+  desk.settle();
+  if (autoOn()) pump();
+}
+
 const deskPanel = $('desk');
 const deskButton = $('desk-open');
 
@@ -3002,20 +3026,7 @@ desk = mountConsole({
     commit(key, value, done);
   },
   onPin: toggleHourPin,
-  onPatch(id, off) {
-    tour?.note('patch');
-    beginGesture();
-    bypass[id] = off;
-    // Taking a channel in by hand is an answer to the solo question too.
-    if (solo && solo !== id) {
-      solo = null;
-      desk.solo = null;
-    }
-    applyGeometry();
-    endGesture();
-    desk.settle();
-    if (autoOn()) pump();
-  },
+  onPatch: patchChannel,
   onSolo(next) {
     // Solo is patching by another route: every other channel goes out.
     tour?.note('patch');
@@ -3919,18 +3930,22 @@ function targetReading(target) {
  * about a year cannot be answered by two design days, and a demand intensity
  * cannot be answered by a zone nobody is conditioning.
  */
-function targetAbsence(target) {
-  if (!lastRun) return 'nothing solved yet';
+function targetBlock(target) {
+  if (!lastRun) return { key: 'unrun', says: 'nothing solved yet' };
   // The order matters: a peak load asks only for a run, so telling somebody to
   // attach a weather file before telling them to patch System in would send
   // them off to fetch a year they do not need for this line.
   if (!modelState?.get('system')?.engaged) {
-    return target.needs === 'run'
-      ? 'patch System in — a free-running zone has no load to size'
-      : 'patch System in — a free-running zone has no demand to meter';
+    return {
+      key: 'system',
+      says:
+        target.needs === 'run'
+          ? 'patch System in — a free-running zone has no load to size'
+          : 'patch System in — a free-running zone has no demand to meter',
+    };
   }
   if (target.needs === 'year' && !lastRun.annual) {
-    return 'attach a weather file — this is a year’s number';
+    return { key: 'year', says: 'attach a weather file — this is a year’s number' };
   }
   // The energy use intensity is read off the bill, and the bill draws a per-m²
   // figure only over twelve months, because every published benchmark is a
@@ -3938,9 +3953,22 @@ function targetAbsence(target) {
   // real bill — it simply cannot answer this line, and saying so beats the
   // catch-all below, which reads as though the meter were missing.
   if (target.metric === 'eui' && bill && !bill.wholeYear) {
-    return 'run the whole year — this is a twelve-month benchmark';
+    return { key: 'months', says: 'run the whole year — this is a twelve-month benchmark' };
   }
-  return 'not carried by this run';
+  return { key: 'other', says: 'not carried by this run' };
+}
+
+/**
+ * The same finding as a sentence for the margin column.
+ *
+ * The board's note above the table offers the *press* that clears a blockage
+ * and the margin cell letters the reason, so they have to agree about which
+ * blockage a line is under. They read one function to do it: the precedence
+ * here — System before weather, because a peak load needs no year — is the
+ * only copy of that ordering on the page.
+ */
+function targetAbsence(target) {
+  return targetBlock(target).says;
 }
 
 /** What the desk is reading right now, in the form a kept scheme stores. */
@@ -4435,10 +4463,101 @@ function renderScore() {
   // drops the implicit row and cell roles, and a scoreboard read aloud without
   // them is a list of loose numbers with no criterion attached to any of them.
   keepTableSemantics(table);
+  scoreNote();
   // The board and the chased line are two drawings of one set of readings, so
   // they are lettered in one pass and cannot come to disagree about a margin.
   renderChase();
 }
+
+/**
+ * The two blockages the board can offer a press for, in `targetBlock`'s own
+ * precedence order.
+ */
+const OFFERS = [
+  {
+    key: 'system',
+    verb: { every: 'asks', some: 'ask' },
+    because:
+      'about a conditioned building, and this zone is free-running — there is no demand to meter and no load to size.',
+    label: 'Patch System in',
+    then: ' and the lines a run of this kind can answer will fill.',
+    press() {
+      patchChannel('system', false);
+      // The note is read off live model state, so it answers the press at once
+      // rather than waiting for the solve it just started.
+      renderScore();
+    },
+  },
+  {
+    key: 'year',
+    // Worded so the number agrees either way: "Every one of these 9 lines
+    // needs" and "7 of these 9 lines need" are both sentences.
+    verb: { every: 'needs', some: 'need' },
+    because: 'a full year behind them, and this run is design days.',
+    label: 'Choose a weather location',
+    then: ' — the picker is at the head of the sheet.',
+    press() {
+      // The picker is a panel at the top of the page, so the reader is taken
+      // to it rather than having it opened out of sight behind them.
+      const field = $('site-field');
+      field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      field.click();
+    },
+  },
+];
+
+/**
+ * Why the board is mostly em dashes, when it is, and the one press that ends
+ * it.
+ *
+ * Almost every criterion here asks about a conditioned building — a demand to
+ * meter, a load to size — and the desk ships free-running, so a first reader
+ * meets a board of em dashes with the same grey sentence beside every one of
+ * them. `targetAbsence` has always named the fix; what was missing was any way
+ * to take it from where it is read. The console is a panel away and eighteen
+ * strips down, and a reader who does not already know that System is a channel
+ * has nowhere to go with the instruction.
+ *
+ * One control rather than one per row: patching a channel is a fact about the
+ * whole run, not about a standard or a criterion, and fifteen buttons doing
+ * the same thing would be fifteen chances to think they do different things.
+ *
+ * The count is taken rather than asserted. "Most of this board" would be a
+ * claim the sheet does not check, and it would be wrong on the desks where it
+ * matters least: the overheating lines read perfectly well free-running, which
+ * is exactly the criterion Passivhaus means them to answer.
+ */
+function scoreNote() {
+  const note = $('score-note');
+  note.textContent = '';
+  const targets = PRESETS.flatMap((preset) => preset.targets);
+  const blocked = targets.filter((target) => targetReading(target) == null).map(targetBlock);
+
+  // Taken in the order `targetBlock` resolves them, so the board offers the
+  // thing standing in front of everything else rather than the second thing.
+  // Only these two are offered. A partial calendar is fixed on the Run strip's
+  // twelve-month mask, which is a gesture and not a press, and there is no
+  // honest one-button version of it.
+  const offer = OFFERS.find((o) => blocked.some((b) => b.key === o.key));
+  note.hidden = !offer;
+  if (!offer) return;
+
+  const n = blocked.filter((b) => b.key === offer.key).length;
+  // "9 of these 9" is a fraction pretending to be one, and on the desk as it
+  // ships every line is blank — which is the case a first reader meets.
+  const count =
+    n === targets.length
+      ? `Every one of these ${n} lines ${offer.verb.every}`
+      : `${n} of these ${targets.length} lines ${offer.verb.some}`;
+  note.append(`${count} ${offer.because} `);
+  const act = elem('button', 'link link-inline');
+  act.type = 'button';
+  act.textContent = offer.label;
+  act.addEventListener('click', offer.press);
+  note.append(act);
+  note.append(offer.then);
+}
+
 
 /* ── chasing one standard ─────────────────────────────────────────────── */
 

@@ -676,6 +676,18 @@
         border-bottom: 1px solid var(--rule);
         padding-bottom: 1px;
       }
+      /* The same control set inside a running sentence instead of standing on
+         its own in the margin. `.link`'s condensed 10px caps is a label, and a
+         label dropped mid-paragraph is at once smaller than the prose around
+         it and shouting over it; this takes the sentence's own type and keeps
+         only the rule underneath that says it can be pressed. */
+      .link.link-inline {
+        font: inherit;
+        text-transform: none;
+        letter-spacing: inherit;
+        color: var(--ink);
+        border-bottom-color: var(--rule-firm);
+      }
       .link:hover { color: var(--redline); border-bottom-color: var(--redline); }
       /* The guard every unset button carries, and for the same reason: the
          sheet's one real button styles `button:hover:not(:disabled)`, one
@@ -3811,6 +3823,10 @@
                 reading a dozen rows a screen away. Chasing measures; it decides nothing, and
                 pressing it again puts it down.
               </p>
+              <!-- Why the board is mostly em dashes, and the one press that
+                   fixes it. Written by `renderScore`, hidden when it does not
+                   apply. -->
+              <p class="register-note" id="score-note" hidden></p>
               <table id="score"></table>
             </div>
 
