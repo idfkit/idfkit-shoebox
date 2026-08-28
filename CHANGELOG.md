@@ -9,6 +9,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The zone air heat balance opens out into the whole flow drawing.** The rail
+  has always drawn the five terms as one signed bar; pressing **Open out** in its
+  head expands it into where the heat at one instant came from and went. It is
+  the rail at full size rather than a second instrument — where the rail has a
+  centre-zero line the drawing has a spine, where it has stacked segments it has
+  ribbons — and it arrives by doing exactly that, the spine growing from the
+  centre and each ribbon extending out of it in the order the rail already
+  stacks them. Every reading after that opening is the same drawing at another
+  instant, so the ribbons travel to their new widths rather than being drawn
+  again: take hold of the plate's marker and they follow the hand, the balance
+  re-closing at each hour. All of the motion is off under
+  `prefers-reduced-motion`.
+
+  **The spine is a balanced node, and the sign of a term picks its side of it.**
+  That is the move that lets a Sankey draw this balance at all: a ribbon diagram
+  with only positive widths cannot show a sink among sources, and this balance is
+  full of them — at the cooling peak the interzone floor runs at −1.33 kW while
+  everything around it is a gain. Positives on one flank, negatives on the other,
+  and the sink is a ribbon on the leaving side at its true width. Both totals are
+  lettered at the head of the spine, in words as well as hues, so the balance is
+  checkable by eye and survives greyscale and a screen reader. Only that node
+  claims to close, and whatever it does not close by is drawn as a hatched stub
+  rather than absorbed.
+
+  **The figures beside a ribbon are read against it and do not divide it.**
+  People, lights and equipment are lettered under Gains, windows and opaque
+  conduction under Fabric — true readings, none of them a share of the band it
+  sits under: on the stock desk the three internal ones come to 539 W against a
+  gains term of 322 W, the difference being the radiant half that reaches the air
+  later through the fabric. Drawing them as widths would assert an arithmetic
+  that is false. Past the system ribbon, the plant's efficiency or COP divides,
+  and the drawing shows that as the width step it is — the bill's own arithmetic
+  in watts, so turning a COP re-letters it with no simulation.
+
+  On the wide layout the strips give up the desk's column and the rail takes it.
+  At the index breakpoint there is no footer to expand into, so the balance
+  becomes a layer over the page instead, with its own scroll, a sticky head,
+  Escape to close, and the page behind it locked.
+
+- **The two sizing peaks, decomposed into what caused them.** Two further modes
+  read `ZoneComponentLoadSummary`, the only report this engine produces that
+  breaks a load into its causes: one ribbon per component, each divided into the
+  part that reached the air at once and the part the mass gave back later, with
+  the report's own published residual drawn hatched beside them. The delayed half
+  draws lighter, because it is estimated rather than computed.
+
+  **That instant cannot be moved, and the modes say so.** The decomposition is
+  calculated inside the zone sizing routines, so it exists at exactly two
+  instants per zone — on a design day that may not be among the run's
+  environments at all. Each mode is lettered as what it is, a sizing calculation
+  rather than an hour of the run above, which is what keeps three instants on one
+  sheet from being quoted as though they were one. It costs two extra sizing
+  passes: about 20 % of a design day, and nothing measurable on a year. Requested
+  only under the sheet's own reporting profile and only with System in the path,
+  since zone sizing an unconditioned zone is a fatal rather than a warning.
+
 - **The title block can be signed.** Type a name into the `Drawn by` cell and
   every model this desk hands over carries it: at the head of the IDF, as a
   comment, and in the run bundle's `MANIFEST.txt` — beside the toolkit that
@@ -31,6 +87,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   states what it is a demo of without anyone opening a band to find out.
 
 ### Changed
+
+- **Every flow on the drawing now says what it is.** The key carried a name and
+  a number for most of its entries, which is enough for someone who already
+  knows the model and nothing at all for a student or an architect —
+  `Fenestration Conduction` and `Fenestration Solar` are two different things
+  through one window, and neither name says so. Every band, every tributary and
+  every component row now carries a sentence in the key: what that path *is*,
+  in the reader's terms. In the key rather than on hover, because nothing on
+  this sheet floats and a hint that exists only on hover does not exist on a
+  phone. Two rail terms and five tributaries had no sentence at all, which reads
+  worse than none — seeing Lights explained and People not, a reader has to
+  conclude People is a different kind of quantity — so both are now required and
+  throw at module load.
+
+  One of those sentences is a correction rather than a gloss. EnergyPlus sorts
+  each opaque surface into a report row by its outside boundary condition, and
+  labels the arm that catches everything unrecognised *interzone*; an adiabatic
+  surface is modelled as one facing itself, so it lands there. The stock desk's
+  floor is adiabatic, so the report files it under **Interzone Floor** over a
+  building that has no other zone in it. The row keeps EnergyPlus's name, so it
+  stays traceable to the report, and the sentence says both halves: the heat is
+  real — an adiabatic slab still takes heat out of the air and gives it back,
+  only its far side is sealed — and the row name is not.
 
 - **The heat balance says which way it points.** The rail lettered five signed
   watt figures and a ± total, and the only things carrying direction were the

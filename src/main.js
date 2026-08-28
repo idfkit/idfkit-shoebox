@@ -16,18 +16,21 @@ import {
   WALLS,
   WINDOW_CONSTRUCTION,
   windowGeometry,
+  ZONE_NAME,
 } from './model.js';
 import {
   CHANNELS,
   DEFAULT_BYPASS,
   DEFAULT_PARAMETERS,
   SHEET_KEYS,
+  TRIBUTARIES,
   controlFor,
   isWholeYear,
   monthHours,
   phraseFor,
 } from './controls.js';
 import { mountConsole } from './console.js';
+import { fuelChain, layoutComponents, layoutFlows, renderSankey } from './sankey.js';
 import { describeDesk } from './describe.js';
 import { quantityField, textField } from './field.js';
 import { mountTour } from './tour.js';
@@ -62,6 +65,10 @@ import {
   demandOver,
   environmentRuns,
   exactly,
+  componentLoads,
+  flowSeries,
+  flowsAt,
+  componentNote,
   glassProperties,
   hourly,
   instantOffers,
@@ -1328,6 +1335,39 @@ const BILL_COLUMNS = Object.freeze([
 // a station is picked.
 let station = { country: 'USA', state: 'CO' };
 let bill = null;
+
+/*
+ * The flow drawing's state, declared here rather than beside the drawing.
+ *
+ * `clearReadings` and `reprice` both touch these and both are defined above the
+ * flow section, so left where they are read they would sit in their own
+ * temporal dead zone — the hazard the study controls at the foot of this module
+ * are spelled around, except that a `let` has no `?.` to hide behind and simply
+ * throws. Same reason `bill` and `lastRun` are up here.
+ *
+ * `flowMode` is off `params` deliberately, like the pin and the chase pin: it
+ * reaches no IDF object and starts no run, so putting it there would begin a
+ * solve that could only reproduce the numbers already on the sheet. It is kept
+ * across solves, because a reader who asked for the cooling peak is still
+ * asking for it after the next drag.
+ */
+let flowMode = 'now'; // 'now' | 'peakCool' | 'peakHeat'
+// The component decomposition of the run in hand, parsed once per solve beside
+// `lastGlass` and taken down with it.
+let lastComponents = null;
+// Why there is none, when the reason is not simply that the run carried no
+// tables. `componentRows` throws for a table it no longer understands — a
+// column head moved between versions — and that throw is the reader refusing to
+// letter a zero it cannot vouch for. It has to be *caught*: raised out of
+// `solve` it escapes `pump`'s `finally` as an unhandled rejection, the schedule,
+// plate and bill are never re-lettered, and the sheet stands on the previous
+// run's numbers with nothing anywhere saying why. Caught here, it becomes the
+// drawing's own refusal, which is the half of "no silent fallbacks" that says
+// the caller has to state the reason in the interface.
+let componentRefusal = null;
+// The ten tributary series, hoisted out of the per-frame path and keyed on the
+// ESO's identity — the arrangement `offersFor` uses, for the same reason.
+let flowCache = null;
 let pinned = null; // { bill, label } — a scheme held to be measured against
 let billGhost = null; // the bill as it stood when this gesture began
 let billBasis = BILL_COLUMNS[1]; // cost, because that is the argument that gets had
@@ -1411,6 +1451,10 @@ function reprice() {
   if (!lastRun) return;
   bill = billFrom(lastRun);
   renderBill();
+  // The plant divisor is the flow drawing's own width step, so a turned
+  // efficiency moves the chain exactly as it moves the bill — and by the same
+  // route, without a run, since neither reaches an IDF object.
+  renderFlow();
   desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt, readouts());
 }
 
@@ -1974,11 +2018,19 @@ function clearReadings() {
   lastReadFrom = null;
   lastAt = null;
   lastReadings = new Map();
+  // The flow drawing letters the balance at that instant, so it goes with it —
+  // and so does the decomposition, which is a reading off the same run. The
+  // series cache is keyed on the ESO's identity and would be harmless, but a
+  // cleared sheet should not be holding ten series of a run it no longer shows.
+  lastComponents = null;
+  componentRefusal = null;
+  flowCache = null;
   // The window's computed figures go with the rest: they are a reading off a
   // run, and a U-factor left standing over a fatal would be the one number on
   // the strip claiming a run that did not happen.
   lastGlass = null;
   renderBill();
+  renderFlow();
   // The hour bar goes with the instant it was lettering. It is not hidden by
   // `markStale` -- that dims -- and a picker still standing over a cleared
   // plate would offer to move meters that are no longer reading anything.
@@ -2692,9 +2744,329 @@ function reletterReading({ address = true } = {}) {
   desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt, readouts());
   renderWhen();
   renderTrace();
+  // The flow drawing is a fourth view of the same hour and joins them here for
+  // the same reason: it letters the balance at one instant, so a route that
+  // moved the instant without moving it would draw one hour's heat under
+  // another hour's stamp.
+  renderFlow();
   // Held back for the frames inside a plate drag, the rule every gesture on
   // this page follows: the address is a reading and it updates when you let go.
   if (address) updatePermalink();
+}
+
+/* ══ the flow drawing ════════════════════════════════════════════════════ */
+
+function flowSeriesFor(eso) {
+  if (flowCache?.eso !== eso) flowCache = { eso, series: flowSeries(eso) };
+  return flowCache.series;
+}
+
+/** The plant divisor and its wording, off the bill's own declaration. */
+function plantFor(mode) {
+  const use = END_USES.find((u) => u.meter === (mode === 'cooling' ? 'Cooling:DistrictCooling' : 'Heating:DistrictHeatingWater'));
+  const divisor = use?.divisorFor(params) ?? null;
+  return {
+    divisor: divisor?.value ?? null,
+    // What that number *is* in the reader's terms — a seasonal COP for a
+    // chiller, a seasonal efficiency for a boiler. The bill has always named it
+    // beside the figure; the drawing needs it for the same reason, since a bare
+    // `÷ 3.5` under a row called `Electric chiller` is the sheet asking to be
+    // taken on trust.
+    noun: divisor?.noun ?? null,
+    plantLabel: divisor?.label ?? (mode === 'cooling' ? 'Cooling plant' : 'Heating plant'),
+    fuelLabel: use?.fuelFor(params)?.label ?? 'Fuel',
+  };
+}
+
+/**
+ * What the drawing is being asked to show, assembled from the run in hand.
+ *
+ * Everything here is read off the run rather than off live `params` — the desk
+ * may have moved since the solve, and a drawing that took its channels from the
+ * controls would letter a system the run never simulated. The one exception is
+ * the plant divisor, which reaches no IDF object at all: it is priced, so it
+ * re-letters through `reprice` without a run, exactly as the bill does.
+ */
+function flowView() {
+  if (!lastReadFrom || !lastAt) return null;
+
+  if (flowMode !== 'now') {
+    const half = flowMode === 'peakCool' ? lastComponents?.cooling : lastComponents?.heating;
+    const which = flowMode === 'peakCool' ? 'cooling' : 'heating';
+    if (!half) {
+      return {
+        // A reader that refused the tables outright says so in its own words:
+        // "no such peak" and "the report could not be read" are different
+        // facts, and the second one is not the reader's to paraphrase.
+        refusal: componentRefusal
+          ?? (lastComponents
+            ? `This run carried no ${which} sizing peak, so there is no decomposition to draw at one.`
+            : 'The System strip was out of this run’s path. A sizing peak is a calculation over a conditioned zone, and there was none to make.'),
+      };
+    }
+    return componentView(half, which);
+  }
+  return instantView();
+}
+
+/** The live half: the balance at the pinned hour, with the chain on the system. */
+function instantView() {
+  const series = flowSeriesFor(lastReadFrom.eso);
+  // `span` is the length of the series the instant was chosen in, so a
+  // tributary that does not cover the same hours is refused rather than indexed
+  // at the same position.
+  const flows = flowsAt(series, lastReadFrom.at, {
+    multiplier: params.multiplier,
+    span: lastReadFrom.points.length,
+  });
+  const readings = engagedReadings();
+
+  // The spine is the rail's own five terms, read exactly as the rail reads
+  // them — not a second computation of the same quantity. Labelled by the
+  // channel's `name`, which is what the rail's own key letters, so one string
+  // serves both surfaces and the ribbon and the segment cannot end up called
+  // different things for the same term.
+  const terms = CHANNELS.filter((c) => c.meter?.rail).map((channel) => ({
+    id: channel.id,
+    label: channel.name,
+    watts: readings.get(channel.id) ?? null,
+    note: channel.meter.note,
+  }));
+  const layout = layoutFlows(terms);
+
+  const systemBand = [...layout.into, ...layout.outOf].find((b) => b.id === 'system') ?? null;
+  const sensible = (flows.get('heatSensible') ?? 0) + (flows.get('coolSensible') ?? 0);
+  const latent = (flows.get('heatLatent') ?? 0) + (flows.get('coolLatent') ?? 0);
+  const hasSystem = flows.get('heatSensible') != null;
+  // Which plant is asked for is decided by the same quantity the chain is drawn
+  // at — the sensible and latent halves together — and not by the sensible one
+  // alone. `fuelChain` reads its own `mode` off that sum, so choosing the
+  // divisor off a different signal is how an hour that is sensibly heated and
+  // latently dehumidified ends up lettered `Gas boiler ÷ 0.85` over a note
+  // saying the fuel was drawn to *remove* that heat, with the boiler's
+  // efficiency dividing a chiller's load.
+  const plant = plantFor(sensible + latent >= 0 ? 'heating' : 'cooling');
+  const fuel = hasSystem ? fuelChain({ sensible, latent, ...plant }) : null;
+
+  // The tributaries, hung under the term they were read against. Lettered, not
+  // drawn — see the `Tributary` class comment for why they cannot be widths.
+  // Each ribbon keys as a group carrying its own tributaries, so the figures
+  // read against a band stay under it however the key reflows.
+  const keyed = [];
+  for (const band of [...layout.into, ...layout.outOf]) {
+    keyed.push({
+      label: band.label,
+      reading: watts(band.watts),
+      tone: band.tone,
+      note: band.note,
+      subs: TRIBUTARIES.filter((t) => t.of === band.id)
+        .map((t) => ({ tributary: t, value: flows.get(t.id) }))
+        .filter(({ value }) => value != null)
+        .map(({ tributary, value }) => ({
+          label: tributary.label,
+          reading: watts(value),
+          sub: true,
+          note: tributary.note,
+        })),
+    });
+  }
+  if (layout.residual) {
+    keyed.push({
+      label: 'Residual',
+      reading: watts(layout.residual.watts),
+      hatched: true,
+      note: 'What the five terms do not close by at this hour. Drawn rather than absorbed, because nothing measured it.',
+    });
+  }
+  for (const gone of layout.absent) {
+    keyed.push({ label: gone.label, reading: '—', absent: true, note: 'Out of this run’s path, so there is no reading to take.' });
+  }
+  if (fuel) {
+    keyed.push({
+      label: fuel.plantLabel,
+      reading: `${watts(Math.abs(fuel.supply))} ÷ ${fuel.divisor ?? 1} = ${watts(fuel.draw)}`,
+      tone: null,
+      /*
+       * Where each of the two numbers came from, because the row divides one by
+       * the other and the reader is entitled to know which of them the engine
+       * produced.
+       *
+       * This used to open `There is no plant in this model`, which reads as a
+       * flat contradiction of the row it sits under: a line named after a
+       * chiller, dividing by its COP, announcing that there is no chiller. Both
+       * halves were true and the sentence never joined them. What is absent is a
+       * *simulated* compressor; what is present is the COP on the Plant strip,
+       * which reaches no IDF object and is applied afterwards. So the note now
+       * says which number is the run's, which is the reader's own, and that the
+       * step between them is arithmetic rather than a result — the same
+       * build-up the bill prints rather than buries.
+       */
+      note:
+        `${fuel.fuelLabel} drawn to ${fuel.mode === 'heating' ? 'deliver' : 'remove'} that heat. ` +
+        `Nothing here simulated a ${fuel.mode === 'heating' ? 'boiler' : 'compressor'} — the ideal unit reports the heat it moves at 100 %, ` +
+        `so ${watts(Math.abs(fuel.supply))} is the run's own figure. ` +
+        (fuel.divisor
+          ? `The ${plant.noun ?? 'divisor'} of ${fuel.divisor} is the Plant strip's, and dividing by it is arithmetic this sheet does after the run, ` +
+            `exactly as the bill does: the step is the consequence of a number you set rather than a result of the run.`
+          : `There is no figure to divide it by, so the fuel side is the delivered heat itself.`),
+    });
+  }
+
+
+  return {
+    layout,
+    fuel,
+    systemBand,
+    format: watts,
+    keyed,
+    stamp: lastAt.text,
+    // The sign convention is not restated here. The rail's own line says it a
+    // few lines above — the drawing opens out of that bar and never scrolls
+    // away from it — and the flanks letter `arriving` and `leaving` at the head
+    // of the spine besides. Said a third time in one screen it reads as the
+    // page repeating itself, which is the rule the stamp and the closure
+    // sentence already keep: those are the rail's, said once. What is left is
+    // what only the drawing does with that sign.
+    lede:
+      `The zone air balance at this hour, as ribbons on a balanced node: the sign picks a flank rather than the ` +
+      `direction of an arrow, so a path running the other way is a ribbon on the other side of the spine rather ` +
+      `than a hole in the drawing. ` +
+      `The node is the only thing here that balances — the figures beside each ribbon are read against it and do not divide it.` +
+      (params.multiplier > 1 ? ` One zone of the ${params.multiplier} stacked.` : ''),
+    summary:
+      `Heat flow at ${lastAt.text}. ` +
+      `${watts(layout.intoTotal)} arriving in the zone air, ${watts(layout.outOfTotal)} leaving it.`,
+  };
+}
+
+/** The peak half: the component decomposition, at an instant nobody can move. */
+function componentView(half, which) {
+  const laid = layoutComponents(half, { which });
+  if (!laid) return { refusal: `The ${which} peak decomposition came back empty.` };
+
+  /*
+   * Which of the six surfaces the document says are adiabatic, so the report's
+   * interzone rows can be corrected against the model rather than trusted. Read
+   * off the boundary each apply actually wrote, which is the same rule the
+   * description follows: what the document holds, not what `params` says.
+   */
+  const adiabatic = new Set(
+    surfaceGeometry(model)
+      .filter((s) => s.boundary === 'adiabatic')
+      .map((s) => (s.type === 'wall' ? 'wall' : s.type === 'floor' ? 'floor' : 'roof')),
+  );
+
+  const keyed = [];
+  for (const row of [...laid.into, ...laid.outOf]) {
+    const parts = [];
+    if (row.instant) parts.push(`${watts(row.instant)} instant`);
+    if (row.delayed) parts.push(`${watts(row.delayed)} delayed`);
+    if (row.latent) parts.push(`${watts(row.latent)} latent`);
+    // The split first, because it is a reading, then what the path is. The
+    // load band is the report's own total rather than a component, and says so
+    // where the others say what they are.
+    const says = row.isLoad
+      ? 'What the components above add up to, at the figure EnergyPlus computed. Drawn opposite them so the node closes.'
+      : componentNote(row.label, { adiabatic });
+    keyed.push({
+      label: row.label,
+      reading: watts(row.watts),
+      tone: row.tone,
+      note: [parts.join(' · '), says].filter(Boolean).join(' — '),
+    });
+  }
+  if (laid.residual) {
+    keyed.push({
+      label: 'Residual',
+      reading: watts(laid.residual.signed),
+      hatched: true,
+      note: 'EnergyPlus’s own difference between the peak it computed and this estimate. The delayed column comes from the decay curves rather than a measured flow, and the report publishes the gap.',
+    });
+  }
+
+  const plant = plantFor(which);
+  const fuel = fuelChain({ sensible: which === 'cooling' ? -Math.abs(half.peak) : Math.abs(half.peak), latent: 0, ...plant });
+  if (fuel) {
+    keyed.push({
+      label: fuel.plantLabel,
+      reading: `${watts(Math.abs(fuel.supply))} ÷ ${fuel.divisor ?? 1} = ${watts(fuel.draw)}`,
+      // The same division and the same distinction as the pinned hour's, said
+      // shorter because the mode's own lede has already spent a paragraph on
+      // what a sizing calculation is and is not.
+      note:
+        `${fuel.fuelLabel} drawn at the sizing condition. The peak is the report's; ` +
+        `the ${plant.noun ?? 'divisor'} of ${fuel.divisor ?? 1} is the Plant strip's, applied after the run as the bill applies it.`,
+    });
+  }
+  const loadBand = [...laid.into, ...laid.outOf].find((b) => b.isLoad);
+
+  // The chain hangs off the load band, which is the system's own ribbon here.
+  const systemBand = loadBand ?? null;
+
+  return {
+    layout: laid,
+    fuel,
+    systemBand,
+    format: watts,
+    keyed,
+    stamp: half.at?.text ?? null,
+    lede:
+      `The ${which} load at the sizing peak, decomposed into what caused it. ` +
+      `**This is not an hour of the run above**: it is a sizing calculation over the design day, at ${half.at?.text ?? 'an instant the report names'}, ` +
+      `and it cannot be moved — the delayed column is estimated inside the zone sizing routines and exists at this instant only. ` +
+      `Each component ribbon is divided into the part that hit the air at once and the part the mass gave back later. ` +
+      `The load they add up to is drawn opposite them, so the node closes to the report's own published residual and nothing else. ` +
+      `Per zone${params.multiplier > 1 ? `, one of the ${params.multiplier} stacked` : ''}.`,
+    summary:
+      `${which === 'cooling' ? 'Cooling' : 'Heating'} peak load components at ${half.at?.text ?? 'the sizing peak'}. ` +
+      `Peak ${watts(half.peak)}, estimated ${watts(half.estimated)}.`,
+  };
+}
+
+/**
+ * The three instants the drawing can be read at, as offers the panel draws.
+ *
+ * Refused with a reason rather than hidden when the run cannot answer one, by
+ * the same rule the hour bar's named instants follow: an offer that disappears
+ * teaches the reader nothing about why it is not there.
+ */
+function flowOffers() {
+  return [
+    { id: 'now', label: 'Pinned hour', sub: lastAt?.text ?? '—', available: Boolean(lastReadFrom),
+      blurb: 'Read the balance at the hour the plate is holding.',
+      refusal: 'Nothing has been solved yet.' },
+    { id: 'peakCool', label: 'Cooling peak', sub: lastComponents?.cooling?.at?.text ?? '—',
+      available: Boolean(lastComponents?.cooling),
+      blurb: 'Read the component decomposition at the sizing peak — a calculation over the design day, not an hour of this run.',
+      refusal: componentRefusal ?? 'This run carried no cooling sizing peak. The System strip has to be in the path.' },
+    { id: 'peakHeat', label: 'Heating peak', sub: lastComponents?.heating?.at?.text ?? '—',
+      available: Boolean(lastComponents?.heating),
+      blurb: 'Read the component decomposition at the sizing peak — a calculation over the design day, not an hour of this run.',
+      refusal: componentRefusal ?? 'This run carried no heating sizing peak. The System strip has to be in the path.' },
+  ].map((offer) => ({
+    ...offer,
+    active: flowMode === offer.id,
+    take: () => {
+      flowMode = offer.id;
+      renderFlow();
+    },
+  }));
+}
+
+/**
+ * Hand the rail the view for the instant it is lettering.
+ *
+ * The drawing is the rail opened out rather than a block of its own, so this
+ * does not draw anything: it builds the view and gives it to the console, which
+ * renders it only while the balance is open. That is the saving that makes the
+ * whole arrangement cheap — a plate drag re-letters on every frame, and a
+ * closed balance costs one object and no DOM at all.
+ */
+function renderFlow() {
+  // The offers stand even when there is nothing to draw: before the first run
+  // they are what says the drawing exists and what it will read at.
+  const view = flowView();
+  desk?.setFlow({ ...(view ?? { empty: true }), offers: flowOffers() });
 }
 
 /* ══ the hour bar ════════════════════════════════════════════════════════ */
@@ -5058,10 +5430,19 @@ $('t-engine-version').textContent = `EnergyPlus ${facts.version}`;
 
 renderTrace();
 renderSchedule(null);
+renderFlow();
 new ResizeObserver(() => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(renderTrace, 80);
 }).observe($('trace'));
+// The flow drawing deliberately gets no observer of its own. The plate needs
+// one because `renderTrace` builds a viewBox out of `host.clientWidth` — its
+// ruling, its ticks and its point spacing are all in host pixels. `renderSankey`
+// is the opposite arrangement: a fixed 820 × 320 viewBox scaled by `width:
+// 100%`, with the key reflowing under it on a CSS grid, so nothing it draws is
+// a function of the width it is drawn at. An observer here would re-run the
+// whole view — layout, key, SVG — 80 ms after every reflow to produce the same
+// bytes, and it would be watching the very element the render writes into.
 
 const ep = await enginePromise;
 
@@ -5288,6 +5669,26 @@ async function solve() {
   // meters, and the two describe the same run.
   lastGlass = glassProperties(wrote.html, WINDOW_CONSTRUCTION);
 
+  // The component decomposition, off the same report and for the same reason:
+  // it is a reading of this run, parsed once here rather than on every frame of
+  // a drag. Null when the run carried no such tables — System out of the path,
+  // or a lean profile — and the drawing refuses those modes by name.
+  //
+  // A table whose columns have moved makes `componentRows` throw, deliberately,
+  // rather than letter a zero out of a cell it cannot find. That throw is this
+  // run's own account of why there is no decomposition, so it is carried into
+  // the drawing's refusal instead of being allowed off the end of `solve`,
+  // where it would take every other panel's re-lettering down with it and say
+  // nothing.
+  try {
+    lastComponents = componentLoads(wrote.html, ZONE_NAME);
+    componentRefusal = null;
+  } catch (error) {
+    lastComponents = null;
+    componentRefusal = `This run's component load report could not be read: ${error.message}`;
+    log(`[reader] ${componentRefusal}`);
+  }
+
   const hasOutdoor = outPts.length > 0;
   const nn = hasOutdoor ? Math.min(zonePts.length, outPts.length) : zonePts.length;
   const zone = zonePts.slice(0, nn).map((p) => p.value);
@@ -5346,6 +5747,9 @@ async function solve() {
   // function.
   renderWhen();
   renderTrace();
+  // Third view of the same instant, drawn on the same terms and after the same
+  // gate: the drawing carries the stamp for the hour `readAt` just settled.
+  renderFlow();
 
   // The end-use meters ride in on the same ESO -- `Output:Meter` writes to both
   // the .eso and the .mtr -- so the bill is priced off the run that is already

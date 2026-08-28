@@ -15,7 +15,7 @@ import { END_USES, J_TO_KWH, meterTotal } from './bill.js';
 // The month names belong to the calendar control, which is the one place the
 // year is declared; re-exported here because every reader of a run letters its
 // timestamps with them and `main.js` has always taken them from this module.
-import { MONTHS } from './controls.js';
+import { MONTHS, TRIBUTARIES } from './controls.js';
 
 export { MONTHS };
 
@@ -747,17 +747,33 @@ export function glassProperties(html, construction) {
 /**
  * The Envelope Summary's exterior fenestration table, as rows of trimmed cells.
  *
+ * The comment is what is matched rather than the visible heading, since
+ * "Exterior Fenestration" is also the prefix of "Exterior Fenestration Shaded
+ * State" a few tables further down.
+ */
+function fenestrationRows(html) {
+  return tableRows(html, 'Envelope Summary_Entire Facility_Exterior Fenestration');
+}
+
+/* ══ the flows ═══════════════════════════════════════════════════════════ */
+
+/**
+ * The rows of one tabular report table, by the `FullName` comment naming it.
+ *
  * A regex parse rather than `DOMParser`, because this module is DOM-free on
  * purpose — the harnesses that check these readers run in Node. The report is
  * machine-written and its markup is accordingly rigid: one `<table>` after the
- * `FullName` comment that names the table, `<tr>` per row, `<td>` per cell,
- * no nesting. The comment is what is matched rather than the visible heading,
- * since "Exterior Fenestration" is also the prefix of "Exterior Fenestration
- * Shaded State" a few tables further down.
+ * `FullName` comment that names the table, `<tr>` per row, `<td>` per cell, no
+ * nesting.
+ *
+ * The marker is a parameter because there is more than one caller now: the
+ * envelope summary's fenestration table, and the component load summary's six
+ * tables per zone, of which the drawing reads four. It was written twice for
+ * about a week; one copy is the whole of it.
  */
-function fenestrationRows(html) {
+function tableRows(html, fullName) {
   if (!html) return null;
-  const marker = '<!-- FullName:Envelope Summary_Entire Facility_Exterior Fenestration-->';
+  const marker = `<!-- FullName:${fullName}-->`;
   const at = html.indexOf(marker);
   if (at < 0) return null;
   const start = html.indexOf('<table', at);
@@ -767,4 +783,255 @@ function fenestrationRows(html) {
     [...row[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((cell) =>
       cell[1].replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()),
   );
+}
+
+/**
+ * A cell that EnergyPlus left blank is not a zero.
+ *
+ * The component tables are ragged on purpose: a wall has no instant column, a
+ * roof has no latent one, and the report writes `&nbsp;` in both. `Number('')`
+ * is 0, and a zero drawn where the engine declined to compute anything is the
+ * trap `glassProperties` already documents — here it would put a ribbon of no
+ * width under a component name and read as "this contributed nothing", which is
+ * a different statement from "this column does not apply".
+ */
+const cellValue = (text) => {
+  const trimmed = (text ?? '').trim();
+  if (!trimmed || trimmed === '-') return null;
+  const value = Number(trimmed);
+  return Number.isFinite(value) ? value : null;
+};
+
+/** The component rows, in the report's own order, minus the ones that are all absent. */
+function componentRows(html, zoneName, half) {
+  const rows = tableRows(html, `Zone Component Load Summary_${zoneName}_Estimated ${half} Peak Load Components`);
+  if (!rows || rows.length < 2) return null;
+  const [head, ...body] = rows;
+
+  // By column head rather than by position, for the reason `glassProperties`
+  // gives: this table has grown columns between versions — Sensible - Return
+  // Air sits between Delayed and Latent and was not always there — and a
+  // counted index would silently read the wrong one the next time it moves.
+  const at = (row, column) => {
+    const i = head.indexOf(column);
+    // A table this reader no longer understands is not a missing reading. It
+    // throws, so the drawing refuses whole rather than lettering a zero.
+    if (i < 0) throw new Error(`the ${half.toLowerCase()} component table has no "${column}" column`);
+    return cellValue(row[i]);
+  };
+
+  const components = [];
+  let grand = null;
+  for (const row of body) {
+    const label = row[0] ?? '';
+    if (!label) continue;
+    const entry = {
+      label,
+      instant: at(row, 'Sensible - Instant [W]'),
+      delayed: at(row, 'Sensible - Delayed [W]'),
+      returnAir: at(row, 'Sensible - Return Air [W]'),
+      latent: at(row, 'Latent [W]'),
+      total: at(row, 'Total [W]'),
+      area: at(row, 'Related Area [m2]'),
+    };
+    // The grand total is the report's own checksum and is kept apart from the
+    // components. Summed in with them it would double the diagram.
+    if (/^grand total$/i.test(label)) grand = entry;
+    else components.push(entry);
+  }
+  return { components, grand };
+}
+
+/** One peak's conditions, as a lookup by the report's own row labels. */
+function peakConditions(html, zoneName, half) {
+  const rows = tableRows(html, `Zone Component Load Summary_${zoneName}_${half} Peak Conditions`);
+  if (!rows) return null;
+  const found = new Map();
+  for (const row of rows) if (row[0]) found.set(row[0], row[1]);
+  return found;
+}
+
+/**
+ * `7/21 15:30:00` — the sizing peak, which is not an hour of the run.
+ *
+ * Kept as the report's own fields rather than resolved to an index into the
+ * ESO, and that is the whole point: this instant is sub-hourly, it falls on a
+ * design day, and when the weather picker has set `sizingPeriods = 'No'` that
+ * day is not among the run's environments at all. There is nothing to resolve
+ * it against, so the drawing letters it as the report states it and says which
+ * calculation it came from.
+ */
+function peakStamp(conditions) {
+  const raw = conditions?.get('Time of Peak Load');
+  const found = /^(\d+)\/(\d+)\s+(\d+):(\d+)/.exec(raw ?? '');
+  if (!found) return null;
+  const [, month, day, hour, minute] = found.map(Number);
+  return {
+    month,
+    day,
+    hour,
+    minute,
+    text: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}, ${day} ${MONTHS[month - 1]}`,
+  };
+}
+
+/**
+ * The component load decomposition, read off the tabular report.
+ *
+ * Returns `{ heating, cooling }`, either half null when the run did not carry
+ * it — a study sample under a lean profile, a desk with System out, a fatal
+ * before the tables were written. Null rather than an empty decomposition, so
+ * the drawing refuses that mode with a reason instead of drawing nothing and
+ * letting the reader conclude the loads were zero.
+ *
+ * Each half carries the report's own residual. That is not decoration: the
+ * delayed column is an estimate from the decay curves rather than a measured
+ * flow, and EnergyPlus publishes the difference between its estimate and the
+ * peak it actually computed. A diagram that balanced by construction would hide
+ * both facts, so the residual is drawn.
+ */
+export function componentLoads(html, zoneName) {
+  const half = (name) => {
+    const rows = componentRows(html, zoneName, name);
+    if (!rows) return null;
+    const conditions = peakConditions(html, zoneName, name);
+    const number = (label) => cellValue(conditions?.get(label));
+    return {
+      components: rows.components,
+      grand: rows.grand,
+      at: peakStamp(conditions),
+      peak: number('Peak Sensible Load [W]'),
+      estimated: number('Estimated Instant + Delayed Sensible Load [W]'),
+      // The report's own error term, signed as it publishes it.
+      residual: number('Difference Between Peak and Estimated Sensible Load [W]'),
+      outdoorC: number('Outside Dry Bulb Temperature [C]'),
+      zoneC: number('Zone Dry Bulb Temperature [C]'),
+      supplyC: number('Supply Air Temperature [C]'),
+    };
+  };
+  const heating = half('Heating');
+  const cooling = half('Cooling');
+  return heating || cooling ? { heating, cooling } : null;
+}
+
+/*
+ * What each component row of the report is, said in the reader's terms.
+ *
+ * The row names are EnergyPlus's own and several of them are opaque to anyone
+ * who has not read the I/O reference — `Fenestration Conduction` and
+ * `Fenestration Solar` are two different things through the same window, and
+ * `Interzone Floor` is the report's fall-through arm rather than a statement
+ * about the building (see `componentNote`). This sheet does not float a hint on
+ * hover, because a hint that exists only on hover does not exist on a phone; so
+ * the sentence goes in the key, which the drawing already treats as its real
+ * text and which survives 390 px and a screen reader.
+ *
+ * One line each. Every one says what the path *is*, never what the number
+ * means — a reader who wants to know whether 1.48 kW is a lot has the ribbon
+ * beside it and the rest of the desk.
+ */
+const COMPONENT_NOTES = Object.freeze({
+  People: 'Body heat, minus the part that leaves as moisture. The delayed share is radiant, warming the surfaces first.',
+  Lights: 'The whole lighting gain — an installed watt becomes a watt of heat. Most of it reaches the air through the surfaces rather than directly.',
+  Equipment: 'Plug and process loads, radiant and convective together.',
+  Refrigeration: 'Heat rejected into the zone by refrigerated cases and walk-ins.',
+  'Water Use Equipment': 'Heat and moisture given off by hot water in use.',
+  'HVAC Equipment Losses': 'Heat the plant sheds into the zone it is standing in.',
+  'Power Generation Equipment': 'Waste heat from on-site generation inside the thermal envelope.',
+  'DOAS Direct to Zone': 'Conditioned outdoor air delivered straight to the zone rather than through a mixing box.',
+  Infiltration: 'Outdoor air leaking in through the envelope, driven by wind and stack rather than by a fan.',
+  'Zone Ventilation': 'Outdoor air brought in on purpose — an opened window or a scheduled fan.',
+  'Interzone Mixing': 'Air traded with a neighbouring zone.',
+  Roof: 'Sun and outdoor air working down through the roof build-up. Almost entirely delayed, because the mass holds it first.',
+  'Exterior Wall': 'Sun and outdoor air through the opaque walls, arriving hours after the surface was warmed.',
+  'Exterior Floor': 'An exposed floor over open air — a soffit or an overhang.',
+  'Ground Contact Wall': 'A basement or retaining wall against soil, which damps the swing rather than following the weather.',
+  'Ground Contact Floor': 'A slab on grade. The ground below moves slowly, so this is steady where the roof is peaky.',
+  'Interzone Ceiling': 'The ceiling to whatever is above.',
+  'Interzone Wall': 'A party wall to whatever is beside.',
+  'Interzone Floor': 'The floor to whatever is below.',
+  'Other Roof': 'A roof whose far side is set by other-side coefficients rather than by the weather.',
+  'Other Wall': 'A wall whose far side is set by other-side coefficients rather than by the weather.',
+  'Other Floor': 'A floor whose far side is set by other-side coefficients rather than by the weather.',
+  'Opaque Door': 'Conduction through the doors.',
+  'Fenestration Conduction': 'Heat through the glass by temperature difference alone — the U-value half of the window.',
+  'Fenestration Solar': 'Sunlight transmitted through the glass and absorbed by whatever it lands on. It reaches the air later, off those surfaces, which is why it is all delayed.',
+});
+
+/**
+ * The note for one component row, corrected against the model where the
+ * report's own label is a guess.
+ *
+ * `ort.cc` sorts each opaque surface into a row by its outside boundary
+ * condition, and the arm that catches everything unrecognised is labelled
+ * *interzone*. An adiabatic surface is modelled as one facing itself, so it
+ * matches none of the named cases and lands there — on this desk the floor is
+ * adiabatic by default, and the report files it under `Interzone Floor` over a
+ * building that has no other zone in it. Both halves of that are worth saying:
+ * the heat flow is real (an adiabatic slab still stores and releases; only its
+ * far side is sealed), and the row name is not.
+ *
+ * `adiabatic` is the set of surface classes the document says are adiabatic,
+ * read off the model rather than assumed, so the correction cannot outlive the
+ * boundary that caused it.
+ */
+export function componentNote(label, { adiabatic = new Set() } = {}) {
+  const base = COMPONENT_NOTES[label] ?? null;
+  const face = { 'Interzone Floor': 'floor', 'Interzone Wall': 'wall', 'Interzone Ceiling': 'roof' }[label];
+  if (face && adiabatic.has(face)) {
+    return `Your ${face === 'roof' ? 'roof' : face} is adiabatic, and EnergyPlus files adiabatic surfaces under its interzone row — nothing is on the other side. The heat is real: the mass still takes it out of the air and gives it back later. Only the far side is sealed.`;
+  }
+  return base;
+}
+
+/**
+ * Every series the flow drawing reads, looked up once per run.
+ *
+ * `readMeters` re-scans the ESO for each rail term on every reading, which is
+ * four `findVariables` sweeps per frame and has never mattered at that size.
+ * The drawing adds ten more series and is re-lettered on every frame of a plate
+ * drag, so the lookup is hoisted here and cached on the ESO's identity by the
+ * caller — the same arrangement `offersFor` uses, and for the same reason.
+ */
+export function flowSeries(eso) {
+  const series = new Map();
+  const take = (variable) => {
+    if (series.has(variable)) return;
+    const points = hourly(eso, exactly(variable));
+    series.set(variable, points.length ? points : null);
+  };
+  for (const tributary of TRIBUTARIES) {
+    for (const term of tributary.terms) take(term.variable);
+  }
+  return series;
+}
+
+/**
+ * What each tributary reads at one instant, as plain watts.
+ *
+ * Absent is null and never zero, in two different ways that both matter: a
+ * series the run never carried (its channel was out of the path) and a series
+ * that is shorter than the reading index (which should not happen, and is
+ * refused rather than read past the end).
+ */
+export function flowsAt(series, at, { multiplier = 1, span = null } = {}) {
+  const read = (tributary) => {
+    let total = 0;
+    for (const term of tributary.terms) {
+      const points = series.get(term.variable);
+      // A series that does not span the same hours as the one the instant was
+      // chosen in cannot be indexed by the same `at`, and an off-by-one here
+      // would letter one hour's watts under another hour's stamp. The same
+      // guard `findInstant` keeps, for the same reason: refused rather than
+      // read, because a wrong number is worse than a missing one.
+      if (span != null && points != null && points.length !== span) return null;
+      const point = points?.[at];
+      if (!point) return null;
+      total += (term.sign * point.value) / (term.perBuilding ? multiplier : 1);
+    }
+    return total;
+  };
+  const flows = new Map();
+  for (const tributary of TRIBUTARIES) flows.set(tributary.id, read(tributary));
+  return flows;
 }

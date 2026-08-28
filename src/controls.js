@@ -1392,6 +1392,43 @@ export class Readout {
   }
 }
 
+/**
+ * One named contributor *inside* a rail term, for the flow drawing to letter.
+ *
+ * The rail's five terms are the whole zone air balance and they close. What
+ * they do not say is which part of a term is which: `Fabric 2,140 W` is the
+ * convection off every inside face at once, and a reader looking at a Sankey
+ * wants to know how much of that was the glass. A tributary names that finer
+ * quantity and the EnergyPlus variable carrying it.
+ *
+ * The critical thing about a tributary, and the reason it is a separate class
+ * rather than another `Term`: **it does not sum into its parent**. Windows
+ * total heat gain carries transmitted solar, which lands on the surfaces and
+ * reaches the air later; inside face conduction is not the same quantity as
+ * convection to air; people, lights and equipment are the convective *and*
+ * radiant fractions of gains whose radiant half arrives through the fabric.
+ * Every one is a true reading of a real quantity and none of them is a share of
+ * the ribbon it hangs under. So the drawing letters them as figures beside the
+ * ribbon and never as divisions of its width — the same distinction `Meter.rail`
+ * already draws between a term of the balance and a diagnostic beside it.
+ *
+ * `of` names the rail channel it is read against, `needs` the channels that
+ * have to be in the path for the variable to exist at all (any one of them, for
+ * the window pair, which either wall glass or a rooflight can produce), and
+ * `note` is the sentence the key prints so the caveat travels with the figure.
+ */
+export class Tributary {
+  constructor({ id, label, terms, of, needs, note = null }) {
+    this.id = id;
+    this.label = label;
+    this.terms = terms;
+    this.of = of;
+    this.needs = Object.freeze(Array.isArray(needs) ? [...needs] : [needs]);
+    this.note = note;
+    Object.freeze(this);
+  }
+}
+
 /* ══ channels ════════════════════════════════════════════════════════════ */
 
 /**
@@ -3052,7 +3089,7 @@ export const CHANNELS = Object.freeze([
       // The accumulation side of the balance, so it enters the rail negated:
       // heat going into store is heat the air does not keep.
       terms: [new Term({ variable: 'Zone Air Heat Balance Air Energy Storage Rate', sign: -1 })],
-      note: 'The negation of the run\'s own Zone Air Heat Balance Air Energy Storage Rate, which is positive when the zone air is warming. Storage is the accumulation side of the balance, so it crosses to the side the other four terms are on and its sign turns over with it: a reading out of the air is the air charging, and that is heat the other paths do not get. Turn the sign back over to check it against the ESO.',
+      note: 'What the air itself gave back as it cooled, or took up as it warmed — the room\'s own thermal inertia, which is small beside the fabric\'s. It is the negation of the run\'s own Zone Air Heat Balance Air Energy Storage Rate, which is positive when the zone air is warming. Storage is the accumulation side of the balance, so it crosses to the side the other four terms are on and its sign turns over with it: a reading out of the air is the air charging, and that is heat the other paths do not get. Turn the sign back over to check it against the ESO.',
     }),
     controls: [
       new Scale({
@@ -3105,6 +3142,7 @@ export const CHANNELS = Object.freeze([
       // Infiltration and ventilation together, which is the shape of the term
       // in the air balance — the two enter the zone air the same way.
       terms: [new Term({ variable: 'Zone Air Heat Balance Outdoor Air Transfer Rate' })],
+      note: 'Leakage and ventilation together, since the two reach the zone air the same way: outdoor air arriving at outdoor temperature and taking the room with it.',
     }),
     controls: [
       new Scale({
@@ -3186,6 +3224,9 @@ export const CHANNELS = Object.freeze([
       label: 'Internal convective gain',
       rail: true,
       terms: [new Term({ variable: 'Zone Air Heat Balance Internal Convective Heat Gain Rate' })],
+      // The convective share only, which is why the tributaries lettered under
+      // this band come to more than it does — see the `Tributary` comment.
+      note: 'The share of people, lights and equipment that heats the air directly. Their radiant share is not here: it warms the surfaces first and arrives later, in the fabric term.',
     }),
     controls: [
       new Scale({
@@ -3312,7 +3353,7 @@ export const CHANNELS = Object.freeze([
       terms: [
         new Term({ variable: 'Zone Air Heat Balance System Air Transfer Rate', perBuilding: true }),
       ],
-      note: 'Divided by the zone multiplier. EnergyPlus reports Zone Air Heat Balance System Air Transfer Rate for the whole building, already multiplied, where the other four rail terms are per zone — so it is brought back down to the one zone before it is summed with them. At a multiplier of 1 it is the ESO figure unchanged; at 3 the ESO reads three times what is lettered here.',
+      note: 'What the ideal unit put in or took out to hold the setpoint — the load the plant is being asked for, before any efficiency. Divided by the zone multiplier: EnergyPlus reports this one for the whole building, already multiplied, where the other four rail terms are per zone — so it is brought back down to the one zone before it is summed with them. At a multiplier of 1 it is the ESO figure unchanged; at 3 the ESO reads three times what is lettered here.',
     }),
     controls: [
       new Scale({
@@ -3613,6 +3654,160 @@ export const CHANNELS = Object.freeze([
     ],
   }),
 ]);
+
+/**
+ * What the flow drawing letters inside each rail term.
+ *
+ * Ten hourly series, which is roughly what the whole console costs today — and
+ * the reason every one of them names a *zone-level* variable. They go through
+ * `addVariable` like every other request here, which keys them `*`; on a
+ * one-zone model that is one series apiece, and what makes it safe is the
+ * variable being zone-level rather than the key being narrow. The regression
+ * that shaped this file's output policy took the ESO from 15 series to 173 and
+ * the annual run from 681 ms to 2,984 ms, and it did so entirely through
+ * per-surface variables under exactly that key.
+ *
+ * Each is gated on the channel that produces it, so a desk with Gains out asks
+ * for none of the three internal ones and EnergyPlus lists nothing it could not
+ * produce. Verified against the run's own `.rdd` rather than spelled from
+ * memory — `Zone Lights Total Heating Rate` and `Zone Electric Equipment Total
+ * Heating Rate`, not the `watts_per_zone_floor_area`-era names.
+ */
+export const TRIBUTARIES = Object.freeze([
+  new Tributary({
+    id: 'people',
+    label: 'People',
+    terms: [new Term({ variable: 'Zone People Sensible Heating Rate' })],
+    of: 'gains',
+    needs: 'gains',
+    note: 'The whole occupant gain, radiant share included — and sensible only: the moisture people give off is carried on the latent side.',
+  }),
+  new Tributary({
+    id: 'lights',
+    label: 'Lights',
+    terms: [new Term({ variable: 'Zone Lights Total Heating Rate' })],
+    of: 'gains',
+    needs: 'gains',
+    note: 'The whole lighting gain. Its radiant share reaches the air later, through the fabric.',
+  }),
+  new Tributary({
+    id: 'equipment',
+    label: 'Equipment',
+    terms: [new Term({ variable: 'Zone Electric Equipment Total Heating Rate' })],
+    of: 'gains',
+    needs: 'gains',
+    note: 'The whole equipment gain, radiant share included.',
+  }),
+  new Tributary({
+    id: 'opaque',
+    label: 'Opaque surfaces',
+    // The signed variable rather than the gain/loss pair: one series instead of
+    // two, and no arithmetic to get the sign back.
+    terms: [new Term({ variable: 'Zone Opaque Surface Inside Faces Conduction Rate' })],
+    of: 'fabric',
+    needs: 'fabric',
+    note: 'Conduction at the inside face, which is not the same quantity as the convection to the air beside it.',
+  }),
+  new Tributary({
+    id: 'windows',
+    label: 'Windows',
+    // No signed variable exists for this one, so the gain and the loss are read
+    // as a pair and differenced. Only one of the two is ever non-zero.
+    terms: [
+      new Term({ variable: 'Zone Windows Total Heat Gain Rate' }),
+      new Term({ variable: 'Zone Windows Total Heat Loss Rate', sign: -1 }),
+    ],
+    of: 'fabric',
+    needs: ['glazing', 'skylights'],
+    note: 'Everything crossing the glass, transmitted solar included — which lands on the surfaces, not in the air.',
+  }),
+  /*
+   * The four ideal-loads readings are **per building**, exactly as the rail's
+   * own `Zone Air Heat Balance System Air Transfer Rate` is, and for the same
+   * reason: the ideal unit answers the zone's demand after the multiplier has
+   * been applied to it. Found by arithmetic rather than by reading, the way
+   * `Term.perBuilding` was found the first time — a design-day desk solved at a
+   * multiplier of 1 and again at 3 reads 11,484.5 W and 34,453.5 W of sensible
+   * heating at the same hour, a ratio of exactly 3.000, while the opaque and
+   * window tributaries beside them do not move at all (−4,694.1 W both times).
+   *
+   * Unmarked they would letter 34.5 kW under a System ribbon of 11.5 kW — the
+   * one figure on the drawing that is three times the band it hangs on — and
+   * the fuel wedge, which is scaled by the ribbon's own watts, would be drawn
+   * three times wider than the ribbon it continues.
+   */
+  new Tributary({
+    id: 'heatSensible',
+    label: 'Sensible heating',
+    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Sensible Heating Rate', perBuilding: true })],
+    of: 'system',
+    needs: 'system',
+    note: 'What the unit added to hold the temperature. Sensible is the temperature half of the duty; the moisture half is lettered beside it.',
+  }),
+  new Tributary({
+    id: 'coolSensible',
+    label: 'Sensible cooling',
+    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Sensible Cooling Rate', sign: -1, perBuilding: true })],
+    of: 'system',
+    needs: 'system',
+    note: 'What the unit removed to hold the temperature, before any efficiency or COP.',
+  }),
+  new Tributary({
+    id: 'heatLatent',
+    label: 'Latent heating',
+    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Latent Heating Rate', perBuilding: true })],
+    of: 'system',
+    needs: 'system',
+    note: 'Humidification — the moisture half of the duty. It reaches no term of the air heat balance, which is a temperature balance, so it is lettered and never drawn.',
+  }),
+  new Tributary({
+    id: 'coolLatent',
+    label: 'Latent cooling',
+    terms: [new Term({ variable: 'Zone Ideal Loads Supply Air Latent Cooling Rate', sign: -1, perBuilding: true })],
+    of: 'system',
+    needs: 'system',
+    note: 'Dehumidification — the moisture the coil condensed out. Outside the air heat balance for the same reason, and often the larger half in a humid climate.',
+  }),
+]);
+
+// Every `of` and every `needs` has to name a channel that exists, or a rename
+// would leave a tributary hanging on nothing and the drawing would quietly lose
+// a figure. Thrown at module load, like the landmark rules.
+{
+  const ids = new Set(CHANNELS.map((c) => c.id));
+  const rails = new Set(CHANNELS.filter((c) => c.meter?.rail).map((c) => c.id));
+  for (const tributary of TRIBUTARIES) {
+    if (!rails.has(tributary.of)) {
+      throw new Error(`tributary "${tributary.id}" hangs on "${tributary.of}", which is not a rail channel`);
+    }
+    for (const need of tributary.needs) {
+      if (!ids.has(need)) {
+        throw new Error(`tributary "${tributary.id}" needs "${need}", which is not a channel`);
+      }
+    }
+    /*
+     * And a note, for the reason a `Landmark` requires one.
+     *
+     * A tributary's whole job is to be a figure that does *not* divide the band
+     * it sits under, and the reader has no way to know that from the number.
+     * Five of the nine shipped without a sentence, which read as four caveats
+     * and five bare figures — a reader seeing Lights explained and People not
+     * has to conclude that People is a different kind of quantity, when it is
+     * the same one with the same caveat. The rule is cheaper than the
+     * inconsistency: a tributary with no note throws at module load.
+     */
+    if (!tributary.note) {
+      throw new Error(`tributary "${tributary.id}" has no note, and a figure that does not divide its band has to say so`);
+    }
+  }
+  // Same rule for the bands themselves. A rail term with no note is a name and
+  // a number, and two of the five shipped that way.
+  for (const channel of CHANNELS) {
+    if (channel.meter?.rail && !channel.meter.note) {
+      throw new Error(`rail term "${channel.meter.label}" has no note, and every band on the drawing says what its path is`);
+    }
+  }
+}
 
 /**
  * Parameters no single control owns.
