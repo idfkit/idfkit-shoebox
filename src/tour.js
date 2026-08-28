@@ -104,7 +104,8 @@ export const NOTES = Object.freeze([
       'The scheme link re-solves this desk in any browser; the run bundle ' +
       'carries the exact IDF this sheet handed the engine, for a local ' +
       'EnergyPlus — a run that failed included, which is when it is worth ' +
-      'the most. Both sit under the run log.',
+      'the most. Both sit under the run log. Sign the title block and the ' +
+      'model goes out with your name on it.',
     target: '.ledger-take',
     focus: '#share',
   }),

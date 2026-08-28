@@ -65,6 +65,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only under the sheet's own reporting profile and only with System in the path,
   since zone sizing an unconditioned zone is a fatal rather than a warning.
 
+- **The title block can be signed.** Type a name into the `Drawn by` cell and
+  every model this desk hands over carries it: at the head of the IDF, as a
+  comment, and in the run bundle's `MANIFEST.txt` — beside the toolkit that
+  wrote the file and the build of this sheet. An IDF outlives the tab that
+  wrote it, and "the results moved" and "the writer moved" are different
+  problems that a line at the top tells apart.
+
+  The cell is empty until you fill it, because this sheet has no author of its
+  own: a title block names whoever drew *that* drawing, and here that is
+  whoever is at the console. The name is kept in this browser and never in a
+  link — a scheme you send carries the building, not whoever drew it. Signing
+  runs nothing and moves no reading. Names are normalised and never refused.
+  The header carries no date, so two models of the same desk stay
+  byte-identical and worth diffing; the manifest has the date.
+
+- **The page says who built it.** The Disclosure band has always been a
+  colophon and only ever carried the negative half — who this page is *not*,
+  and the terms the engine arrives under. It now says who it is. The head's
+  stamp gains a **Toolkit** row beside Engine, Runtime and Upload, so the page
+  states what it is a demo of without anyone opening a band to find out.
+
 ### Changed
 
 - **Every flow on the drawing now says what it is.** The key carried a name and

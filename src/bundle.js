@@ -9,7 +9,10 @@
  * requirement above all others: the bytes have to be the genuine ones. The IDF
  * is the text passed to `ep.run`, not a fresh `writeIdf` that might have moved
  * since; the EPW is the file as fetched; `eplustbl.htm` is what EnergyPlus
- * wrote. Nothing is fabricated to fill a gap — a design-day run carries no
+ * wrote. The one addition is a header of `!` comments above the model, naming
+ * the toolkit, the sheet's build and whoever signed it — stated in the manifest
+ * rather than left for a reader to notice, and above the model rather than in
+ * it: delete those lines and what remains is byte-for-byte what ran. Nothing is fabricated to fill a gap — a design-day run carries no
  * weather file, and the manifest says so rather than inventing one, the same
  * refusal the weather picker makes when a station's design conditions can't be
  * read.
@@ -36,7 +39,8 @@
  */
 
 import { controlFor, isWholeYear } from './controls.js';
-import { REVISION } from './version.js';
+import { REVISION, TOOLKIT } from './version.js';
+import { cleanSignature, idfHeader } from './model.js';
 
 const enc = new TextEncoder();
 
@@ -187,7 +191,15 @@ function runLine(run) {
  */
 function members(run) {
   return [
-    { name: 'model.idf', text: run.idf, note: 'the model, with its design days written in' },
+    {
+      name: 'model.idf',
+      // The header is put on here rather than at the solve, so a sheet signed a
+      // moment ago downloads signed. Everything below it is `run.idf`
+      // untouched — the exact bytes the engine was handed — which is the
+      // guarantee this bundle exists for and which a comment cannot affect.
+      text: idfHeader({ author: run.author, revision: REVISION.version, toolkit: TOOLKIT }) + run.idf,
+      note: 'the model, with its design days written in, under a header saying what wrote it',
+    },
     run.epw && {
       name: `${run.weatherStem ?? 'weather'}.epw`,
       text: run.epw,
@@ -224,8 +236,17 @@ function manifest(run, list) {
   // where there was none. `severe` stands for the pair — the counts are read
   // off the same parsed error file in the same breath.
   const dash = (value, format) => (value == null ? '—' : format(value));
+  // Cleaned here as well as inside `idfHeader`, so the name in this ledger and
+  // the name at the top of `model.idf` are the same string by construction
+  // rather than by both happening to be handed the same input.
+  const signed = cleanSignature(run.author);
   const rows = [
     ['EnergyPlus', run.version],
+    // What wrote the file, beside what ran it. The IDF says this at its own
+    // head too, and deliberately twice: the manifest is the first thing a
+    // reader opens and the model is the thing that gets separated from it, so
+    // neither can be the only copy.
+    ['Toolkit', dash(TOOLKIT, (v) => `@idfkit/core ${v}`)],
     // Which build of the page derived the numbers this bundle is offered
     // against. The IDF and the EPW below reproduce the run in any
     // EnergyPlus; this line is what reproduces the *sheet*, months later,
@@ -251,6 +272,13 @@ function manifest(run, list) {
       dash(run.seconds, (s) => `${s.toFixed(2)} s, in-browser WebAssembly`),
     ],
     ['Bundled', run.date.toLocaleString('en-CA')],
+    // Unsigned reads as an em dash here and writes no line at all in the IDF,
+    // and the two are not inconsistent — they are the same rule meeting
+    // different stationery. This is a ruled ledger where every row is present
+    // and `—` is how it says a figure was not stated, so a missing signature
+    // belongs in the column like any other. A comment header has no ruling, so
+    // an em dash there would be inventing a field in order to leave it empty.
+    ['Drawn by', signed || '—'],
   ];
   const pad = Math.max(...rows.map(([k]) => k.length));
 
@@ -306,9 +334,9 @@ function manifest(run, list) {
       `\n` +
       `This is the exact input and output of a run performed in your browser at\n` +
       `shoebox.idfkit.com. Nothing here is re-derived: the IDF is the text handed\n` +
-      `to the engine, the EPW is the weather file as downloaded, and the report is\n` +
-      `what EnergyPlus wrote back. Re-run it to reproduce every number the page\n` +
-      `showed.\n`;
+      `to the engine under a header of comments naming what wrote it, the EPW is\n` +
+      `the weather file as downloaded, and the report is what EnergyPlus wrote\n` +
+      `back. Re-run it to reproduce every number the page showed.\n`;
 
   // The sentence the sheet reported, quoted rather than paraphrased: it is
   // frequently the engine's own fatal message, and re-wording it here would
