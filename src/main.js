@@ -29,13 +29,14 @@ import {
 } from './controls.js';
 import { mountConsole } from './console.js';
 import { describeDesk } from './describe.js';
-import { quantityField } from './field.js';
+import { quantityField, textField } from './field.js';
 import { mountTour } from './tour.js';
 import { COARSE_SAMPLES, SWEEP_SAMPLES, samplePoints, sampleOrder } from './study.js';
 import { createEnginePool, poolLimit } from './pool.js';
 import { createStudyScheduler, makeStudyJob } from './scheduler.js';
 import { runBundle } from './bundle.js';
 import { REVISION, revisionHref } from './version.js';
+import { readSignature, writeSignature } from './sign.js';
 import { END_USES, GROUPS, computeBill, meterTotal } from './bill.js';
 import { assume, isRate, placeName, resolveRates } from './rates.js';
 import {
@@ -91,6 +92,64 @@ import {
 const ENERGYPLUS_VERSION = '26.1.0';
 
 const $ = (id) => document.getElementById(id);
+
+/* ══ the signature ═══════════════════════════════════════════════════════ */
+
+/**
+ * Who drew this, and what wrote it: the three lines at the top of every IDF
+ * this desk hands out.
+ *
+ * Declared here, above everything, for the reason the study controls are
+ * declared at the head of their section: a permalink carrying a station
+ * attaches during the boot awaits, and the download reaches it long before
+ * the foot of this module has been evaluated. A `const` in its temporal dead
+ * zone does not have the `?.` spelling that saves the rest of those references
+ * — it simply throws, and it would throw on the one path a link arrives by.
+ *
+ * The name is **not on `params`**, and that is the whole reason it works. The
+ * shape key is `JSON.stringify([params, patching()])`, so a signature carried
+ * there would start a fresh 8,760-hour solve on every keystroke of somebody
+ * typing their own name — and the runs would be identical, since a comment
+ * changes nothing the engine computes. It is `pinnedHour`'s arrangement: state
+ * that reaches the output without reaching the physics, held beside `params`
+ * rather than in it. Nor is it on a `prices: true` channel, which is the other
+ * home for such a thing, because those are controls that re-letter a reading
+ * and this re-letters nothing — it is not a control at all, it is a signature.
+ */
+let signature = readSignature();
+
+/**
+ * The signature is stamped onto the **download**, not onto the copy the engine
+ * is handed, and that difference is what makes it work.
+ *
+ * `lastBundle.idf` is held at the solve so the ZIP can offer the exact bytes
+ * that produced the numbers on the sheet: a slider nudged since would otherwise
+ * ship inputs that never made those results. Signing is not such a nudge — a
+ * comment cannot move a reading — so stamping the header later costs that
+ * guarantee nothing, and it is the only arrangement in which a name typed after
+ * a run reaches the file you download a second afterwards. Stamped at the solve
+ * instead, this failed exactly where a reader would find it: sign the sheet,
+ * press Download, and the model arrives unsigned, because it was written before
+ * you signed it.
+ *
+ * So the header goes on in `bundle.js`, where the ZIP is assembled and where
+ * the revision it also carries is already read. The only thing that has to
+ * travel there is who signed it.
+ */
+
+const drawnField = textField({
+  name: 'Drawn by',
+  // States what the drawing is rather than instructing the reader, the way an
+  // absent reading is an em dash and not "run a simulation".
+  placeholder: 'Unsigned',
+  read: () => signature,
+  write: (text) => {
+    signature = writeSignature(text);
+    drawnField.show();
+  },
+});
+$('drawn-field').append(drawnField.node);
+drawnField.show();
 const runBtn = $('run');
 const statusEl = $('status');
 const logEl = $('log');
@@ -1816,7 +1875,7 @@ downloadBtn.addEventListener('click', async () => {
   bundling = true;
   syncDownload();
   try {
-    const { blob, filename } = await runBundle(lastBundle);
+    const { blob, filename } = await runBundle({ ...lastBundle, author: signature });
     const url = URL.createObjectURL(blob);
     const a = Object.assign(document.createElement('a'), { href: url, download: filename });
     document.body.append(a);

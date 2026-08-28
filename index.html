@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Shoebox: EnergyPlus in the browser</title>
+    <!-- The author of the document, which is the instrument. The drawing it
+         draws has a different author every time somebody moves a slider, and
+         nothing on this page claims otherwise. -->
+    <meta name="author" content="Samuel Letellier-Duchesne" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -164,6 +168,12 @@
         font: 400 11.5px/1 var(--mono);
         color: var(--ink);
       }
+      /* Underlined in the rule hairline rather than in the ink, the same way
+         the title block's revision and the bill's citations are: the stamp is
+         read as a block of facts, and one cell advertising itself in link blue
+         would be the loudest thing on the quietest part of the sheet. */
+      .stamp b a { color: inherit; text-decoration-color: var(--rule); }
+      .stamp b a:hover { color: var(--ink-3); }
 
       /* ── the general notes ──────────────────────────────────────────
          The onboarding, carried the way a drawing set carries it: a
@@ -2004,6 +2014,64 @@
       .titleblock b a { color: inherit; text-decoration-color: var(--rule); }
       .titleblock b a:hover { color: var(--ink-3); }
 
+      /* The signature course. Drawn as another cell of the block above — the
+         same 16px inset, the same hairline between courses, the same
+         label-over-value lettering — because that is what it is, and the only
+         reason it is not literally a ninth cell is the eight-cell rule stated
+         at the head of this block.
+         Two columns splitting at the quarter, which is where the four cells
+         above rule their first column: courses of one block share a grid or
+         they are two blocks. */
+      .drawn {
+        display: grid;
+        grid-template-columns: 1fr 3fr;
+        align-items: start;
+        border-top: 1px solid var(--rule-soft);
+        padding: 12px 16px 14px;
+        column-gap: 24px;
+      }
+      .drawn-sign { min-width: 0; }
+      .drawn-sign > span {
+        display: block;
+        font: 500 9.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+        color: var(--ink-3);
+        margin-bottom: 6px;
+      }
+      .drawn > p {
+        margin: 0;
+        max-width: 62ch;
+        padding-top: 19px;
+        font: 400 11px/1.55 var(--sans);
+        color: var(--ink-3);
+      }
+      /* The name takes the mono face every stated fact in the block above takes,
+         and the field fills its cell rather than sizing to its content the way
+         a quantity does: a number is short and shares its row with a study
+         offer, whereas this one is alone in a 25 % column and a box that shrank
+         to its text would leave the caret floating mid-cell on an empty sheet. */
+      .drawn .text-field {
+        width: 100%;
+        font: 400 12.5px/1.35 var(--mono);
+        color: var(--ink);
+        background: none;
+        border: 0;
+        border-radius: 0;
+        padding: 0;
+        margin: 0;
+        min-width: 0;
+        cursor: text;
+      }
+      .drawn .text-field:focus { outline: none; }
+      .drawn .text-field::selection { background: var(--redline-wash); }
+      /* Ghost weight, which is what this sheet letters every empty reading in.
+         `Unsigned` and not `Your name`: the placeholder states what the drawing
+         currently is, the way an em dash states that a reading is absent, and
+         an instruction in a cell would be the one imperative on a page of
+         facts. */
+      .drawn .text-field::placeholder { color: var(--ink-ghost); opacity: 1; }
+
       /* ── field notes ────────────────────────────────────────────── */
 
       .notes { border-top: 1px solid var(--rule); }
@@ -2081,6 +2149,30 @@
         color: var(--ink-ghost);
         letter-spacing: 0.08em;
       }
+      /* The colophon is prose, so it takes the disclaimers' face and measure
+         rather than a face of its own — it is the same kind of fine print, and
+         a credit set larger than the licence it sits above would be the page
+         ranking itself over the terms it runs under. Its links are underlined
+         in the rule hairline, the convention every citation on this sheet
+         follows; the flat `a` above deliberately carries no underline because
+         the disclaimers only ever link a `code` span, which is already marked
+         out by its face. */
+      .colophon p {
+        margin: 0;
+        max-width: 74ch;
+        font: 400 12px/1.6 var(--sans);
+        color: var(--ink-3);
+      }
+      .colophon p + p { margin-top: 10px; }
+      .colophon b { font-weight: 500; color: var(--ink-2); }
+      .colophon h2 { margin-bottom: 10px; }
+      .colophon a {
+        text-decoration: underline;
+        text-decoration-color: var(--rule);
+        text-underline-offset: 2px;
+      }
+      .colophon a:hover { color: var(--ink-2); }
+
       .disclosure-body pre {
         margin: 8px 0 0;
         padding: 13px 15px;
@@ -3337,6 +3429,12 @@
         .titleblock div:nth-child(2n) { border-right: 0; }
         .titleblock div:nth-child(n + 5) { border-bottom: 1px solid var(--rule-soft); }
         .titleblock div:nth-child(n + 7) { border-bottom: 0; }
+        /* The signature follows the block it closes into one column, and the
+           note stops hanging off the field's baseline — stacked, that offset is
+           a gap in the middle of a paragraph rather than an alignment to
+           anything. */
+        .drawn { grid-template-columns: 1fr; }
+        .drawn > p { padding-top: 10px; max-width: none; }
         /* The register's tables stop being tables.
            A criterion row is five columns and a kept scheme is ten, which is
            two and four columns more than the schedules above have ever had to
@@ -3611,9 +3709,16 @@
             simulation server behind this page.
           </p>
         </div>
+        <!-- What the page is made of, which is why a toolkit row belongs here
+             and a name does not: every row here is a fact about this page
+             rather than a reading off the run, and `idfkit` is another one of
+             them — it is what parses the model and writes the IDF the engine is
+             handed. It also says, without opening a fold, what this page is a
+             demo of; the colophon at the foot says who built it. -->
         <div class="stamp">
           <div><span>Engine</span><b id="t-engine-version">EnergyPlus 26.1.0</b></div>
           <div><span>Runtime</span><b>WebAssembly</b></div>
+          <div><span>Toolkit</span><b><a href="https://idfkit.com" target="_blank" rel="noreferrer">idfkit</a></b></div>
           <div><span>Simulation server</span><b>None</b></div>
         </div>
       </header>
@@ -3880,6 +3985,36 @@
         <div><span>Sheet</span><b id="t-rev">E-01</b><i id="t-date">—</i></div>
       </div>
 
+      <!-- The one cell on this sheet that is not read back off the model, and
+           the only one that could not be: nobody but the reader knows whose
+           drawing this is. It is the last course of the title block rather than
+           a ninth cell, because the block above is closed at eight by its own
+           rule — a filled grid, never a ragged last row.
+
+           This is where a `Drawn by` belongs and where the page's own byline
+           deliberately did not go. A title block names whoever drew *that*
+           sheet, and every scheme here is a different drawing: the person at
+           the console is the draughtsman, so the cell is theirs, and it is
+           empty until they fill it. What they write is what the IDF says at the
+           top, so the cell is checkable after all — against the file it signs
+           rather than against the document it describes. -->
+      <div class="drawn">
+        <!-- The label and the name are one block rather than two cells of the
+             outer grid: as siblings of the note they spanned its two rows, and
+             a grid distributes a spanning item's height across the rows it
+             covers — which pushed the name three lines clear of the word above
+             it, on a course whose whole job is to match the cells above. -->
+        <div class="drawn-sign">
+          <span>Drawn by</span>
+          <div id="drawn-field"></div>
+        </div>
+        <p>
+          Signs the models this desk writes: your name goes at the top of the IDF, above the
+          toolkit that wrote it and the build of this sheet. Kept in this browser, and never
+          in a shared link — a scheme you send carries the building, not whoever drew it.
+        </p>
+      </div>
+
       <details class="notes" id="notes">
         <summary>Engine console</summary>
         <pre id="log"></pre>
@@ -3897,6 +4032,48 @@
       <details class="notes" id="disclosure">
         <summary>Disclosure</summary>
         <div class="disclosure-body">
+          <!-- The positive half of a statement this band already made in the
+               negative. It said who the page is not — not NREL, not the DoE —
+               and under what terms the engine arrives, and it never said who it
+               is; a colophon is exactly that missing half, and it is the reason
+               the credit is here rather than in the title block. A colophon has
+               never been an authorship claim over what it is bound into: it is
+               the printer's note about the object, what it was set in and by
+               whom, which is the genus this belongs to.
+
+               The toolkit is named without a language attached, and that is the
+               claim rather than vagueness: idfkit is meant to be one set of
+               ideas wherever the work happens, and calling it "a Python
+               toolkit" here would describe the half of it this page does not
+               run. What this tab runs is the JavaScript side, which is named by
+               its packages instead — checkable against the imports in
+               `src/main.js` rather than asserted.
+
+               Nothing is written in a tense that expires. "Coming soon" on a
+               page deployed from `main` on every push is a sentence that goes
+               quietly false on release day and is never edited, which is the
+               same failure as a hand-lettered `Rev A`. The links carry what is
+               current; the prose says only what is true in both directions. -->
+          <article class="colophon">
+            <h2>Colophon</h2>
+            <p>
+              Built by Samuel Letellier-Duchesne, who works on building energy simulation at
+              <a href="https://www.introba.com" target="_blank" rel="noreferrer">Introba</a>
+              and maintains <a href="https://idfkit.com" target="_blank" rel="noreferrer"><b>idfkit</b></a>:
+              an open-source toolkit for reading, writing and running EnergyPlus models, meant to
+              be one set of ideas in whatever language the work is in rather than a library tied
+              to one of them. Shoebox is that toolkit in a browser — <code>@idfkit/core</code>
+              builds and writes the model every figure on this sheet is read back off,
+              <code>@idfkit/weather</code> finds the stations the picker offers, and
+              <code>@idfkit/engine</code> runs them.
+            </p>
+            <p>
+              The drawing itself has no author but whoever is at the console. That is why the
+              credit sits here and not in the title block, where every cell is read back off the
+              model and a name would be the one thing on it you could not check.
+            </p>
+          </article>
+
           <div class="disclaimers">
             <p class="disclaimer">
               <b>This demo is an independent project.</b> It is not affiliated with, endorsed by,
