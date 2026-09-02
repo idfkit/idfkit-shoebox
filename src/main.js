@@ -3285,8 +3285,17 @@ function syncSweepGate() {
  * The sheet ships with Denver's two design days. Choosing a station swaps the
  * run for a real year at a real place — which means the drawing has to change
  * with it: the titleblock names the site, and the datum lines are redrawn from
- * that station's own 99% heating and 1% cooling drybulb, because a Denver datum
- * across a Singapore year would be a lie told in ink.
+ * that station's own annual heating and cooling design conditions, because a
+ * Denver datum across a Singapore year would be a lie told in ink.
+ *
+ * Which conditions those are is not one answer. onebuilding omits whole
+ * families of design day where a station has no record to build them from, so
+ * `designConditionsFrom` takes the first it will accept from a declared order
+ * and the plate letters whichever it got — `1% clg dp` over a station with no
+ * wetbulb record, not `1% clg db` over a day that is not one. A station
+ * publishing none it can accept is refused entirely, which is the same
+ * sentence as the Denver-datum one above: a design day borrowed from anywhere
+ * is a lie told in ink.
  */
 
 const panel = $('site-panel');
@@ -3407,6 +3416,43 @@ function showFlavors(row) {
   foot.replaceChildren(back, document.createTextNode(label));
 }
 
+/**
+ * A refusal that carries its next step.
+ *
+ * Saying why a station cannot be used and then handing back an empty field is
+ * a stop, not an answer -- and the reader who met it typed a city name, so the
+ * one thing they have already told us is where they want to be. The picker
+ * reopens on the stations nearest the refused one, which for the case that
+ * prompted this work is the whole fix: Boston 994971 publishes no annual
+ * cooling conditions in any of its five windows, and Boston-Logan is 2 km away
+ * and clean.
+ *
+ * The refused site itself is filtered out. Its other windows are still one
+ * `← All locations` away, but offering them first would be offering four more
+ * archives of the file that was just refused -- and they carry the identical
+ * three design days, measured.
+ *
+ * The offer is a courtesy and the refusal has already been stated in full, so
+ * a failure here is swallowed rather than replacing one refusal with another.
+ */
+async function offerNearby(refused, reason) {
+  try {
+    const token = ++queryToken;
+    const found = await nearestSites(refused.latitude, refused.longitude, 8);
+    if (token !== queryToken) return;
+    const elsewhere = found.filter((row) => String(row.station.wmo) !== String(refused.wmo));
+    site.classList.add('open');
+    panel.hidden = false;
+    $('site-field').setAttribute('aria-expanded', 'true');
+    resetFoot();
+    render(elsewhere, { distances: true, onPick: showFlavors });
+    say(`${reason}. These are the nearest stations to it.`, true);
+    search.focus();
+  } catch {
+    // Nothing to say: the reason is already on the sheet and in the status line.
+  }
+}
+
 function setCursor(next, { scroll = true } = {}) {
   if (!rows.length) return;
   cursor = next;
@@ -3516,26 +3562,37 @@ async function choose(row, pick, sizing = 'No') {
   statusEl.className = 'status';
   statusEl.textContent = `Downloading TMYx ${pick.label} for ${siteName(picked)}…`;
 
-  // Hand the field back, saying why. The sheet keeps whatever climate it
-  // already had, which is the one it is still lettered with.
-  const refuse = (message) => {
+  // Hand the field back, saying why, and reopen the picker on somewhere the
+  // reader can actually go. The sheet keeps whatever climate it already had,
+  // which is the one it is still lettered with.
+  const refuse = (what, reason) => {
+    const message = `${siteName(picked)} ${what}: ${reason}`;
     site.classList.remove('picked');
     $('site-main').textContent = 'Choose a weather location';
     $('site-sub').textContent = 'Any of 17,292 TMYx stations, for a full 8,760-hour year';
     statusEl.className = 'status bad';
     statusEl.textContent = message;
+    offerNearby(picked, message);
+    return reason;
   };
 
-  // Three outcomes, told apart for the permalink boot: true is attached, false
-  // is refused (and `refuse` has already said why), null is superseded by a
-  // later choice and calls for nothing at all.
+  // Three outcomes, told apart for the permalink boot: true is attached, null
+  // is superseded by a later choice and calls for nothing at all, and a string
+  // is a refusal, and the string is the reason.
+  //
+  // The reason is handed back rather than only lettered because the link path
+  // has its own sentence to write and used to write it over the top of this
+  // one: `attachFromLink` lettered "could not be attached, so the whole link
+  // was set aside" into the same status line `refuse` had just explained
+  // itself in. A reader arriving on a link to a station with no annual cooling
+  // conditions was told only that something had failed, which is the sheet
+  // knowing exactly what was wrong and saying none of it.
   let files;
   try {
     files = await weatherFor(picked, signal);
   } catch (error) {
     if (signal.aborted) return null;
-    refuse(`${siteName(picked)} could not be fetched: ${error.message}`);
-    return false;
+    return refuse('could not be fetched', error.message);
   }
   if (signal.aborted) return null;
 
@@ -3549,8 +3606,7 @@ async function choose(row, pick, sizing = 'No') {
     if (!files.ddy) throw new Error('its archive carries no DDY');
     conditions = designConditionsFrom(files.ddy, schema);
   } catch (error) {
-    refuse(`${siteName(picked)} cannot be used: ${error.message}`);
-    return false;
+    return refuse('cannot be used', error.message);
   }
 
   const zone = document.createElement('span');
@@ -3828,9 +3884,13 @@ async function attachFromLink(linked) {
       );
       return;
     }
-    if (took === false && JSON.stringify([params, patching()]) === untouched) {
+    // `choose` hands back the reason it refused, and it is lettered rather
+    // than summarised: "publishes no annual cooling design conditions" tells
+    // the reader which link they were sent and what is wrong with it, where
+    // "could not be attached" tells them only that today is not going well.
+    if (typeof took === 'string' && JSON.stringify([params, patching()]) === untouched) {
       refuseLink(
-        `The linked ${named} could not be attached, so the whole link was set aside and the sheet is at its defaults.`,
+        `The linked ${named} could not be attached — ${took} — so the whole link was set aside and the sheet is at its defaults.`,
       );
       return;
     }
