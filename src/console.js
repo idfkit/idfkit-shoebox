@@ -9,7 +9,6 @@ import {
   labelFor,
   parseHolidays,
   parsePattern,
-  refuses,
   resolveHoliday,
   runDays,
   serializeHolidays,
@@ -62,122 +61,13 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 /* ══ the pattern's own face ══════════════════════════════════════════════ */
 
-/**
- * The stops one hour of a pattern is brought onto.
- *
- * Every other margin number on this desk reads its stops off the control —
- * `Ruled` carries `min` and `max`, and `readQuantity` clamps to them. A
- * `Pattern` has no face to carry stops: twenty-four numbers is a shape rather
- * than a position, which is exactly why it is not sweepable and carries no
- * landmarks. Its admissible set is stated once, in `patternFault` in
- * `controls.js`, as a fraction of the peak between 0 and 1.
- *
- * So this is the console's restatement of somebody else's rule, which is the
- * drift this codebase throws over everywhere else — and `assertPatternStops`
- * below is what turns the drift into a throw at module load rather than a
- * clamp that quietly disagrees with the declaration. If a pattern ever admits
- * something other than 0 to 1, the desk fails at mount naming the control,
- * instead of clamping a typed 1.4 to a 1.0 the parser would have taken.
- */
-const PATTERN_STOPS = Object.freeze({ min: 0, max: 1 });
-
-/**
- * One hour of a pattern, as a face `quantityField` can letter and read back.
- *
- * `field.js` asks its subject for two things — `format` to letter with and
- * `parse` to undo that lettering — and the whole pattern's own `format` says
- * the shape of the day in one line, which is the right answer for the margin
- * and the wrong one for a single hour. So the hour gets a face of its own,
- * carrying nothing but the precision it is drawn to, which it takes off the
- * declaration rather than choosing: `occPattern` is written to three decimals
- * because TM59's fractions are divisions of Table E.1's watts and 85 / 450 is
- * 0.1889, and a face rounding that to two would commit 0.19 under a
- * declaration that says 0.189.
- *
- * One instance serves all twenty-four fields of a control. There is nothing
- * per-hour about it: which hour a box holds is the business of the closure
- * that reads and writes it.
- */
-class HourFace {
-  constructor(control) {
-    this.digits = control.digits;
-    Object.freeze(this);
-  }
-
-  format(v) {
-    return v.toFixed(this.digits);
-  }
-
-  /**
-   * What a reader typing in one of the boxes means, or null if it is not a
-   * number.
-   *
-   * The same three rules `readQuantity` follows for a quantity, for the same
-   * reasons: clamped to the stops, rounded to the control's own precision
-   * because `0.1 + 0.2` is not 0.3 and that number would ride the permalink
-   * into the IDF, and refused whole for anything that is not a number at all —
-   * no half-reading of `0.7abc`, the way a bad link is refused entire. There
-   * is no snapping because there is no step grid to snap to; the precision is
-   * the whole of the resolution here.
-   *
-   * The grammar is `readQuantity`'s rather than the canonical `FRACTION` the
-   * parser reads a link with, and deliberately wider than it: a reader typing
-   * `.5` means a half, and what lands on `params` is re-serialized canonically
-   * by `serializePattern` anyway, so the link never carries the spelling that
-   * was typed.
-   */
-  parse(text) {
-    const said = String(text).trim();
-    if (!said) return null;
-    if (!/^[+-]?(\d+(\.\d+)?|\.\d+)$/.test(said)) return null;
-    const n = Number(said);
-    if (!Number.isFinite(n)) return null;
-    return Number(clamp(n, PATTERN_STOPS.min, PATTERN_STOPS.max).toFixed(this.digits));
-  }
-}
-
-/** A whole day standing at one figure, which is what a stop is tested with. */
-const flatAt = (control, v) =>
-  Array.from({ length: PATTERN_HOURS }, () => v.toFixed(control.digits)).join(',');
-
-/**
- * That the stops above are the declaration's own, asserted at module load.
- *
- * Both directions, because both fail silently and in opposite ways. A stop
- * narrower than the declaration clamps a value the reader was entitled to set
- * and the box re-letters as though they had asked for the clamp; a stop wider
- * than it hands `serializePattern` a fraction it throws on, from inside a blur
- * handler where nothing on the sheet would say what happened. Asked of
- * `refuses`, which is where the rule actually lives, and of every declared
- * pattern rather than of one, since `digits` differs between them and the
- * probe just outside a stop is a decimal place of that precision.
- */
-const assertPatternStops = () => {
-  for (const channel of CHANNELS) {
-    for (const control of channel.controls) {
-      if (control.kind !== 'pattern') continue;
-      const outside = 10 ** -control.digits;
-      const probes = [
-        [PATTERN_STOPS.min, true],
-        [PATTERN_STOPS.max, true],
-        [PATTERN_STOPS.min - outside, false],
-        [PATTERN_STOPS.max + outside, false],
-      ];
-      for (const [v, admissible] of probes) {
-        const refused = refuses(control, flatAt(control, v));
-        const admits = refused === null;
-        if (admits === admissible) continue;
-        throw new Error(
-          admissible
-            ? `${control.key} refuses a day at ${v}, which the console's own stops offer: it ${refused}`
-            : `${control.key} admits a day at ${v}, which the console's own stops clamp away`,
-        );
-      }
-    }
-  }
-};
-
-assertPatternStops();
+// There is nothing here any more, and that is the fix. `Pattern` carries an
+// `hourFace` in `controls.js`, beside the `patternFault` and the `format` it
+// undoes, so the console asks the declaration what an hour may hold instead of
+// saying so a second time. This block used to be a copy of the 0-to-1 range, a
+// copy of `readQuantity`'s numeric grammar, and a load-time probe whose only
+// job was to catch those two copies drifting from the original — about forty
+// lines existing because a two-line declaration had been skipped.
 
 /* ══ mounting ════════════════════════════════════════════════════════════ */
 
@@ -1342,8 +1232,8 @@ export function mountConsole({
     fold.setAttribute('aria-label', `${control.label}, hour by hour`);
     // One face for all twenty-four boxes: which hour a box holds is the
     // business of the closure that reads and writes it, and the face carries
-    // only the precision, which is the control's.
-    const face = new HourFace(control);
+    // only the lettering and its undoing, both at the control's own precision.
+    const face = control.hourFace;
     const fields = Array.from({ length: PATTERN_HOURS }, (_, h) => {
       const cell = el('div', 'pattern-hour');
       const at = `${String(h).padStart(2, '0')}:00`;

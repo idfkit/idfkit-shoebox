@@ -39,7 +39,7 @@
  * desk in front of the reader.
  */
 
-import { environmentRuns, hourly } from './readings.js';
+import { environmentRuns, exactly, hourly } from './readings.js';
 // The calendar is declared once, on the Run channel's own controls, and every
 // reader of a run letters its timestamps with it — which is why `readings.js`
 // re-exports `MONTHS` rather than keeping a second copy. This module needs the
@@ -1051,7 +1051,7 @@ export const weatherRuns = (points, environments) =>
  * TM59's name, which is exactly the silent substitution Principle IV forbids.
  */
 export function operativeSeries(eso) {
-  const points = hourly(eso, new RegExp(`^${OPERATIVE}$`, 'i'));
+  const points = hourly(eso, exactly(OPERATIVE));
   if (!points.length) return { points: null, runs: null, absence: ABSENCE.operative };
   return { points, runs: weatherRuns(points, eso.environments ?? []), absence: null };
 }
@@ -1184,7 +1184,7 @@ export function occupancySeries(eso) {
   // unanchored `Occupancy` would also match a future `Zone People Occupant
   // Count`. `applyGains` names the people object `Occupants` and the schedule
   // `Occupancy`, so this resolves to exactly one series.
-  const points = hourly(eso, new RegExp(`^${OCCUPANCY_SCHEDULE}$`, 'i'));
+  const points = hourly(eso, exactly(OCCUPANCY_SCHEDULE));
   if (!points.length) return { points: null, absence: ABSENCE.schedule };
   return { points, absence: null };
 }
@@ -1257,7 +1257,10 @@ export const PARTIAL_PERIOD = Object.freeze({
  * naming it when it is missing.
  *
  * @param {object} eso        the parsed ESO the run returned
- * @param {RunningMean} trm   the running mean off the weather file, not off the run
+ * @param {RunningMean | {mean: RunningMean|null, absence: string|null}} trm
+ *   the running mean off the weather file, not off the run — or the pair a
+ *   caller holding the file already has, which is what lets the absence of a
+ *   comfort line be answered in this function's own precedence. See below.
  * @param {Category} category which of the two adaptive lines to read against
  * @param {number} floor      the value the occupancy schedule takes when nobody is there
  * @returns {Reading}
@@ -1267,11 +1270,29 @@ export function readCriterionA(eso, trm, category, floor) {
   if (!(category instanceof Category)) {
     throw new Error('readCriterionA: expected one of the two declared categories');
   }
-  if (!(trm instanceof RunningMean)) {
+  // Either the line itself, or the `{ mean, absence }` pair a caller holding a
+  // weather file already has. Both, because the absence of a comfort line
+  // belongs in this function's own precedence and nowhere else: a caller that
+  // had to decide for itself what to letter when the line is missing would be
+  // holding the second copy of an ordering that lives here, and the two would
+  // drift on the first edit — the sheet telling a reader with Gains patched out
+  // to go and fetch a year it would then read nothing over. Handing the pair in
+  // is what lets the answer stay in one place.
+  //
+  // The pair is checked in both of its halves, not merely for having one of
+  // them. `mean` present but not a `RunningMean` passes a test that only asks
+  // "is either half filled in", and then reaches `adaptive.mean.at(n)` two
+  // hundred lines down and inside the day loop, where the failure is a bare
+  // `.at is not a function` naming nothing a caller could act on — a silent
+  // fallback's twin, refused here for the same reason.
+  const adaptive = trm instanceof RunningMean ? { mean: trm, absence: null } : trm;
+  const given = adaptive?.mean ?? null;
+  if (!adaptive || (given === null ? !adaptive.absence : !(given instanceof RunningMean))) {
     throw new Error(
-      'readCriterionA: expected the running mean built from the weather file. The comfort line is a ' +
-        'property of the climate rather than of the run, which is what makes a June-to-August calendar ' +
-        'judged against the line a full year would have produced',
+      'readCriterionA: expected the running mean built from the weather file, or the {mean, absence} ' +
+        'pair saying why there is none. The comfort line is a property of the climate rather than of ' +
+        'the run, which is what makes a June-to-August calendar judged against the line a full year ' +
+        'would have produced',
     );
   }
   const absent = (absence) => new Reading({ criterion, category, absence, coverage: null });
@@ -1282,6 +1303,8 @@ export function readCriterionA(eso, trm, category, floor) {
   // Gains in rather than sent to fetch a year it would then read nothing over.
   const occupancy = occupancySeries(eso);
   if (occupancy.absence) return absent(occupancy.absence);
+  // And the line after both of them, for the same reason in the same order.
+  if (!adaptive.mean) return absent(adaptive.absence);
   if (!series.runs.length) return absent(ABSENCE.weather);
 
   const { points } = series;
@@ -1324,7 +1347,7 @@ export function readCriterionA(eso, trm, category, floor) {
         const n = dayNumber(t);
         inSeason = n >= SEASON_FIRST && n <= SEASON_LAST;
         if (inSeason) {
-          const mean = trm.at(n);
+          const mean = adaptive.mean.at(n);
           if (mean === null) {
             throw new Error(
               `readCriterionA: the running mean carries no value for ${dayText(n)}, which is inside the ` +
@@ -1904,7 +1927,7 @@ export function qualificationsFor(eso, params, bypass, weather) {
  * their own sentences are the thing to read.
  */
 function coolingHours(eso) {
-  const points = hourly(eso, /^Zone Air Heat Balance System Air Transfer Rate$/i);
+  const points = hourly(eso, exactly('Zone Air Heat Balance System Air Transfer Rate'));
   if (!points.length) return null;
   const runs = weatherRuns(points, eso.environments ?? []);
   if (!runs.length) return null;

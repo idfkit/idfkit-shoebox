@@ -130,10 +130,23 @@ function readQuantity(control, text) {
   const bare = unit && said.toLowerCase().endsWith(unit)
     ? said.slice(0, said.length - unit.length).trim()
     : said;
-  if (!/^[+-]?(\d+(\.\d+)?|\.\d+)$/.test(bare)) return null;
+  if (!TYPED_NUMBER.test(bare)) return null;
   const n = Number(bare);
   return Number.isFinite(n) ? onFace(control, n) : null;
 }
+
+/**
+ * What a reader is allowed to type into any margin box on this desk.
+ *
+ * Wider than the canonical `FRACTION` a link is read with, and deliberately:
+ * somebody typing `.5` means a half, and what lands on `params` is
+ * re-serialized canonically before it ever reaches a link. It is named here
+ * because two faces undo two different lettering rules with it — `readQuantity`
+ * above for a quantity and `Pattern`'s hour face below for one hour of a day —
+ * and a grammar widened in one of them and not the other is a box that accepts
+ * what its twin refuses.
+ */
+const TYPED_NUMBER = /^[+-]?(\d+(\.\d+)?|\.\d+)$/;
 
 /**
  * A named stretch of a scale — the repère a number is read against.
@@ -870,6 +883,37 @@ export class Pattern extends Control {
         );
       }
     });
+    // The face one hour of the day is lettered and read back with.
+    //
+    // `field.js` asks its subject for two things, a `format` to letter with and
+    // a `parse` to undo it, and the whole pattern's own `format` says the shape
+    // of the day in one line — the right answer for the margin and the wrong
+    // one for a single box. So the hour gets a face of its own, and it lives
+    // here beside `patternFault` rather than in the console, for the reason
+    // `Ruled.parse` lives beside `Ruled.format`: the rules for what a control
+    // can hold belong with the declaration, and the console restating them was
+    // the drift this codebase throws over everywhere else. One instance serves
+    // all twenty-four boxes; which hour a box holds is the business of the
+    // closure that reads it.
+    //
+    // Clamped and rounded for the two reasons `readQuantity` is: `0.1 + 0.2` is
+    // not 0.3 and that number would ride the permalink into the IDF, and a
+    // value outside the stops would reach `serializePattern`, which throws,
+    // from inside a blur handler where nothing on the sheet would say what
+    // happened. There is no snapping because there is no step grid to snap to.
+    // It carries `format` and `parse` and nothing else, because those are the
+    // two things `quantityField` asks of a subject and a face with a third
+    // property is a property nobody reads.
+    this.hourFace = Object.freeze({
+      format: (v) => v.toFixed(digits),
+      parse(text) {
+        const said = String(text).trim();
+        if (!said || !TYPED_NUMBER.test(said)) return null;
+        const n = Number(said);
+        if (!Number.isFinite(n)) return null;
+        return Number(Math.min(PATTERN_MAX, Math.max(PATTERN_MIN, n)).toFixed(digits));
+      },
+    });
     Object.freeze(this);
   }
 
@@ -899,7 +943,13 @@ export class Pattern extends Control {
 /* ══ the holiday grammar ═════════════════════════════════════════════════ */
 
 const WEEKDAYS = Object.freeze(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
-const MONTH_NAMES = Object.freeze([
+// Exported for the reason `DAYS_IN_MONTH` is: the year is declared once and
+// every module that letters a date reads it from here. `epw.js` names a month
+// in the sentence refusing a record, and a second copy of these twelve strings
+// there would be the same drift as a second copy of the twelve lengths beside
+// it — the one it kept until the length array was deduplicated and this was
+// not.
+export const MONTH_NAMES = Object.freeze([
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ]);
@@ -1237,6 +1287,20 @@ export const PATTERN_HOURS = 24;
 const FRACTION = /^-?\d+(\.\d+)?$/;
 
 /**
+ * The stops a pattern's hours run between.
+ *
+ * A fraction of peak has no other admissible set, and it is named rather than
+ * written twice because the face the console types into clamps to it and
+ * `patternFault` below refuses outside it: one of those written 0 to 1 and the
+ * other 0 to 1.2 is a box that letters a clamp the parser would have thrown on.
+ * The refusal's own sentence is lettered from them for the same reason — a
+ * message still saying "0–1" over a range that had moved would be the third
+ * copy, and the only one the reader ever sees.
+ */
+const PATTERN_MIN = 0;
+const PATTERN_MAX = 1;
+
+/**
  * Why a text cannot be read as a pattern, as a phrase, or null when it can.
  *
  * One implementation of the rules, in two shapes: `parsePattern` throws this
@@ -1257,8 +1321,11 @@ function patternFault(text) {
     // The range test is also what excludes an infinity: four hundred digits
     // pass the regex above and come back as `Infinity`, which is not between
     // 0 and 1 and is refused here rather than needing a check of its own.
-    if (!(value >= 0 && value <= 1)) {
-      return `stands at ${fields[h]} at ${at}, outside the 0–1 a fraction of peak runs between`;
+    if (!(value >= PATTERN_MIN && value <= PATTERN_MAX)) {
+      return (
+        `stands at ${fields[h]} at ${at}, outside the ${PATTERN_MIN}–${PATTERN_MAX} ` +
+        'a fraction of peak runs between'
+      );
     }
   }
   return null;

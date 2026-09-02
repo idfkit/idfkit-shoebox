@@ -153,10 +153,26 @@ const TARGET_NEEDS = Object.freeze(['run', 'season', 'year']);
 export class Target {
   constructor({
     id, label, metric, needs = 'year', limit = null, above = null, unit, asks,
-    note = null, category = null,
+    note = null, category = null, digits = 1,
   }) {
     this.id = id;
     this.label = label;
+    // How many decimals the board letters this line to. On the declaration
+    // rather than in `renderScore`, because the alternative is a display rule
+    // keyed off a metric id at every call site that letters a figure — and the
+    // one line here that is not a continuous quantity proves why that fails
+    // quietly: criterion b counts whole nights, and a `scoreFigure` arm that
+    // forgot it would print `4.0 nights` with nothing anywhere saying so.
+    //
+    // Refused in the constructor, exactly as `needs` and `category` are, and
+    // for the sharper version of the same reason. `scoreFigure` letters this
+    // through `toFixed`, which takes 0 to 100 and throws outside it — so a
+    // declaration of `-1` or `'0'` would not be a wrong number in the margin
+    // but a `RangeError` or a `1` where a `0` was meant, thrown or lettered
+    // from inside a board that redraws on every gesture. There is nothing on
+    // the sheet that could say what happened, which is what makes this a
+    // throw at mount naming the target.
+    this.digits = digits;
     // Which reading answers it: 'tedi', 'cedi', 'eui' off the meters,
     // 'overheat' off the hourly zone temperature, 'peakHeat' / 'peakCool'
     // off the system's hourly transfer rate, or 'tm59a' / 'tm59b' / 'tm59c'
@@ -196,6 +212,11 @@ export class Target {
     }
     if (category !== null && !(category instanceof Category)) {
       throw new Error(`the target "${id}" carries a category that is not one of TM59's declared pair`);
+    }
+    if (!Number.isInteger(digits) || digits < 0 || digits > 20) {
+      throw new Error(
+        `the target "${id}" is lettered to ${digits} decimals, which is not a count of decimal places`,
+      );
     }
     Object.freeze(this);
   }
@@ -913,7 +934,7 @@ export const PRESETS = Object.freeze([
       new Target({
         id: 'tm59-b-I',
         label: `${CRITERION_BY_ID.b.label} · ${CATEGORY_BY_ID.I.label}`,
-        metric: 'tm59b',
+        metric: 'tm59b', digits: 0,
         needs: 'season',
         category: CATEGORY_BY_ID.I,
         limit: CRITERION_BY_ID.b.limit,
@@ -929,7 +950,7 @@ export const PRESETS = Object.freeze([
       new Target({
         id: 'tm59-b-II',
         label: `${CRITERION_BY_ID.b.label} · ${CATEGORY_BY_ID.II.label}`,
-        metric: 'tm59b',
+        metric: 'tm59b', digits: 0,
         needs: 'season',
         category: CATEGORY_BY_ID.II,
         limit: CRITERION_BY_ID.b.limit,

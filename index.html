@@ -1673,14 +1673,8 @@
         padding-bottom: 11px;
         border-top: 1px solid var(--rule-soft);
       }
-      .qualifications dt {
-        font: 400 11.5px/1.45 var(--sans);
-        color: var(--ink-2);
-      }
       .qualifications dd {
         padding-left: 18px;
-        font: 400 11px/1.45 var(--sans);
-        color: var(--ink-ghost);
         /* The weather qualification quotes the file label WFR:2026 asks for,
            `Zone Reference_DSY1_2050s_HIGH50_CIBSE_v1.1`, which is 43
            characters with nothing in it a browser will break on. In a 1fr
@@ -1970,14 +1964,25 @@
       .unjudged {
         margin: 10px 0 0;
       }
-      .unjudged dt {
+      /* One type scale for both lists, because they make the same kind of
+         claim: what this sheet is not answering, printed beside what it is.
+         `.unjudged` is the register's static list and `.qualifications` the
+         run-dependent one, and they sit a few centimetres apart on the same
+         board — retuned separately they would drift into two sizes of the same
+         statement. Only what genuinely differs stays below: the margins here,
+         the grid and its rules there. */
+      .unjudged dt,
+      .qualifications dt {
         font: 400 11.5px/1.45 var(--sans);
         color: var(--ink-2);
       }
-      .unjudged dd {
-        margin: 2px 0 9px;
+      .unjudged dd,
+      .qualifications dd {
         font: 400 11px/1.45 var(--sans);
         color: var(--ink-ghost);
+      }
+      .unjudged dd {
+        margin: 2px 0 9px;
       }
       .unjudged dd:last-child { margin-bottom: 0; }
       .preset-caveat {
@@ -3841,8 +3846,14 @@
           justify-content: space-between;
           gap: 10px;
         }
+        /* The sheet's one convention for "the column head, beside the figure"
+           once a row has folded into a block. The two schedules and the
+           scoreboard's qualifications all fold at this width and all letter
+           the head the same way; only the box differs, which is what the
+           two rules underneath set. */
         .schedule td[data-head]::before,
-        .bill td[data-head]::before {
+        .bill td[data-head]::before,
+        .qualifications dd[data-head]::before {
           content: attr(data-head);
           flex: none;
           min-width: 0;
@@ -3949,14 +3960,11 @@
           border-top: 0;
         }
         .qualifications > dt:first-child + dd { padding-top: 4px; }
+        /* A block on its own line rather than a flex item beside the figure:
+           a qualification's `because` is a paragraph, not a cell. */
         .qualifications dd[data-head]::before {
-          content: attr(data-head);
           display: block;
           margin-bottom: 3px;
-          font: 500 9.5px/1.5 var(--cond);
-          text-transform: uppercase;
-          letter-spacing: 0.11em;
-          color: var(--ink-3);
         }
       }
     </style>

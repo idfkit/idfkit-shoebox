@@ -72,7 +72,10 @@ Each takes the ESO the run returned, and returns a `Reading` whose `value` and
 /**
  * Criterion a: occupied hours with rounded dT >= 1 K, as a share.
  * @param {Eso} eso
- * @param {RunningMean} trm
+ * @param {RunningMean | {mean, absence}} trm  the line, or the pair saying why
+ *   there is none. The pair form is what keeps the precedence of a missing
+ *   comfort line — after the two series criterion a needs, before the season —
+ *   inside this function rather than restated at every call site.
  * @param {Category} category
  * @returns {Reading}
  */

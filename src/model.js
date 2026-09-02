@@ -234,7 +234,7 @@ function must(doc, type, name = null) {
  * hazard is general and is written down here; the fix stays where the new
  * question is asked.
  */
-const holds = (doc, type) => doc.types().includes(type);
+export const holds = (doc, type) => doc.types().includes(type);
 
 /** Remove every object of a type, if any. */
 function clear(doc, type) {

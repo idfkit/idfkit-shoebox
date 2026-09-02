@@ -6,7 +6,7 @@
  * cannot be imported from Node, and this is exactly the kind of parsing whose
  * only honest test is a real file.
  */
-import { parseHolidays, serializeHolidays } from './controls.js';
+import { DAYS_IN_MONTH, MONTH_NAMES, parseHolidays, serializeHolidays } from './controls.js';
 
 /**
  * What calendar an EPW actually carries.
@@ -231,7 +231,7 @@ export function dailyMeans(epw) {
       month > 12 ||
       !Number.isInteger(day) ||
       day < 1 ||
-      day > MONTH_LENGTHS[month - 1]
+      day > DAYS_IN_MONTH[month - 1]
     ) {
       throw new Error(
         `record ${at - header} of this weather file names month ${fields[1]} day ${fields[2]},` +
@@ -273,25 +273,21 @@ export function dailyMeans(epw) {
   return means;
 }
 
-const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-
-const MONTH_LENGTHS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-
-/** The day of the year each month begins at, zero-based, on a 365-day calendar. */
-const MONTH_STARTS = MONTH_LENGTHS.reduce(
+/**
+ * The day of the year each month begins at, zero-based, on a 365-day calendar.
+ *
+ * The calendar itself — the twelve lengths and the twelve names — is taken off
+ * the declaration rather than restated. A further copy in `src/` is the drift
+ * Principle III exists to prevent, and the lengths would have been the sharpest
+ * of them: `dailyMeans` counts each day's records against them and `tm59.js`
+ * indexes the comfort line by a day number taken off `controls.js`'s, so a
+ * February that ever differed between the two would shift the whole season's
+ * line with nothing in the curve's shape showing it. The names carry no
+ * arithmetic, only the sentence a refusal is written in, and they come from the
+ * same place for the plainer reason that two lists of one year is one list too
+ * many.
+ */
+const MONTH_STARTS = DAYS_IN_MONTH.reduce(
   (starts, length, month) => (month === 11 ? starts : [...starts, starts[month] + length]),
   [0],
 );

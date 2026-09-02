@@ -313,3 +313,15 @@ and `model.js` but never wired into `main.js`; and `studyCard` in `console.js` d
 only the two signed pairs, so a criterion-a curve rendered an empty plot.
 
 All eight harnesses exit 0, discharging quickstart §1 to §9 and constitution gates 1 to 5.
+
+---
+
+## Phase 10: Convergence
+
+Appended by `/speckit-converge`. Each task traces to the artifact clause it closes.
+T075 and T076 are still open above and are not repeated here.
+
+- [ ] T079 Assert in `.harness/criteria.mjs` that criterion b's night count responds to glazing ratio, openable area and shading, per SC-003 (missing). §8 currently proves this of criterion a alone — three design responses and the two-climate comfort line — while criterion b is tested only for its nine hours, its opening date, its last night and its denominator. SC-003 names both readings, and the night criterion is the one TM59 says most often governs, so a sweep that cannot move it is the more useful thing to know.
+- [ ] T080 Settle whether criteria b and c are selectable as study metrics in `src/study.js` and `src/main.js`, per FR-025 (partial). `METRIC_BY_ID` carries `tm59a` alone. FR-025 says "the criteria" in the plural; US6 and `contracts/scoreboard.md` both describe one curve of the exceedance share. Either widen the declaration to `tm59b` and `tm59c` — b is a night count rather than a share, so `studyCard` needs a third tick and unit the way it just learned the share — or record in the spec why the sweep is criterion a's alone. Do not leave the two documents disagreeing.
+- [ ] T081 Resolve the `roomType` gate on the `tm59a` study metric in `src/main.js:6667`, per US6/AC1 and FR-003a (contradicts). `studyMetric` offers criterion a only where `snapshot.roomType !== AS_DRAWN`. US6/AC1 conditions the curve on a year being attached and nothing else, and FR-003a says which criteria are asked is not a setting the desk holds. The gate was a deliberate judgement — that answerable is not the same as wanted, and a free-running insulation sweep should not silently trade its winter low for a summer share — which is a real argument and may well be the right one. It is not in the specification. Either write it in as a requirement with that reasoning, or delete the one condition and let any answerable desk offer the curve.
+- [ ] T082 Read the occupied-hour floor off the schedule the applier wrote rather than deriving it from `params.roomType` in `src/model.js:1997`, per FR-024 and Constitution III (partial). `occupiedFloor` is handed a snapshot rather than live parameters, so it cannot disagree with the document today, and `roomType` is a `Selector`, which the console can never hang a Study card on — the trigger is currently unreachable. But the floor is a property of what `applyGains` wrote, and this is the one figure in the feature that is computed from a parameter instead of read back. Either take it off the written `Schedule:Compact`, or record the reachability argument in a comment beside it so a later author who makes room type sweepable finds the reason rather than the bug: the wrong floor counts 3,672 occupied hours where the answer is 1,100.

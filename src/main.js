@@ -98,12 +98,9 @@ import {
   COUNT_CATEGORY,
   CRITERION_BY_ID,
   PARTIAL_PERIOD,
-  Reading,
   SEASON,
   WeatherFile,
   clearedCount,
-  occupancySeries,
-  operativeSeries,
   qualificationsFor,
   readCriterionA,
   readCriterionB,
@@ -4263,23 +4260,14 @@ function readTm59(eso, snapshot, patched, epw) {
   const trm = runningMeanFor(epw);
   const readings = [];
   for (const category of CATEGORIES) {
-    readings.push(
-      trm.mean
-        ? readCriterionA(eso, trm.mean, category, floor)
-        : new Reading({
-            criterion: CRITERION_BY_ID.a,
-            category,
-            coverage: null,
-            // The reader's own precedence, borrowed rather than restated. A
-            // missing comfort line stands exactly where `readCriterionA` puts
-            // its weather absence — after the two series it needs and before
-            // the season — so a desk with Gains patched out is still told to
-            // patch Gains in rather than sent to fetch a year it would then
-            // read nothing over. Restating the order here would be the second
-            // copy of it, and the two would drift on the first edit.
-            absence: operativeSeries(eso).absence ?? occupancySeries(eso).absence ?? trm.absence,
-          }),
-    );
+    // The whole `{ mean, absence }` pair, not the line out of it. A missing
+    // comfort line stands in the reader's own precedence — after the two series
+    // it needs and before the season — so a desk with Gains patched out is told
+    // to patch Gains in rather than sent to fetch a year it would then read
+    // nothing over. Deciding that here is what would make it the second copy of
+    // an ordering that lives in one place, and re-scanning the ESO twice per
+    // category to do it.
+    readings.push(readCriterionA(eso, trm, category, floor));
     readings.push(readCriterionB(eso, category));
   }
   readings.push(readCriterionC(eso, floor));
@@ -4947,8 +4935,17 @@ function syncStandards() {
  * a night would be, on a criterion whose whole 2026 revision was the move from
  * counting hours to counting nights. The margin takes the same treatment, or a
  * row reading `3` would be `over by 1.0` beside itself.
+ *
+ * The precision is the target's own, not a question about which metric this
+ * is. Asked of the declaration, a line that counts whole things letters whole
+ * things wherever it is drawn — and there are six call sites. `toFixed` rather
+ * than a branch between two spellings, so `digits` means what it says: a
+ * two-decimal line declared later letters two decimals, where a `digits === 0`
+ * test would have sent it to the one-decimal arm and printed a figure short of
+ * its declaration with nothing anywhere saying so. `Target` refuses a `digits`
+ * `toFixed` cannot take, which is what keeps this total.
  */
-const scoreFigure = (target, value) => (target.metric === 'tm59b' ? String(value) : f1c(value));
+const scoreFigure = (target, value) => value.toFixed(target.digits);
 
 /**
  * Whether the criteria were read over the desk as it was drawn.
@@ -4993,8 +4990,43 @@ const readAsDrawn = (tm59) => !tm59.qualifications.some((q) => q.id === 'profile
  * Nothing here is lettered for a row with no value. An absent reading carries
  * its own sentence in the margin cell, and a paragraph explaining the
  * arithmetic of a figure that is an em dash is furniture.
+ *
+ * The words themselves are `tm59NotesFor` below; this is the memo in front of
+ * it, which is where the rest of this note is about.
+ *
+ * `renderScore` clears and rebuilds the whole board, and `syncStandards` calls
+ * it from `applyGeometry` — so on a desk with a station attached it runs on
+ * every pointermove of every drag, while `lastOutcome` stands unchanged until
+ * the release solve lands. Rebuilt each time, the five rows concatenate about
+ * twenty-two fresh strings and eight kilobytes of text for a set of sentences
+ * that cannot have moved: the whole TM59 read is 2.44 ms once per solve, and
+ * this was paying a fraction of it again sixty times a second to arrive at the
+ * same words.
+ *
+ * Keyed on the `Reading` object itself, which is frozen and is replaced
+ * wholesale at each solve, so identity is exactly the question "is this still
+ * the same reading". The same cache-on-identity `offersFor` and `calendarFor`
+ * keep against the ESO. Five entries at a time, one per criterion row, and the
+ * map is weak so a solve's readings take their prose with them when the next
+ * solve replaces them.
  */
+const noteCache = new WeakMap();
+
 function tm59Notes(reading, asDrawn) {
+  if (reading) {
+    const held = noteCache.get(reading);
+    // `asDrawn` is part of the key: it is read off the run rather than off live
+    // params, so it moves only when a solve does, but a cache that ignored it
+    // would letter "the building as drawn" over a desk that had since been
+    // given the method's own profiles.
+    if (held && held.asDrawn === asDrawn) return held.notes;
+  }
+  const notes = tm59NotesFor(reading, asDrawn);
+  if (reading) noteCache.set(reading, { asDrawn, notes });
+  return notes;
+}
+
+function tm59NotesFor(reading, asDrawn) {
   if (!reading || reading.value === null) return [];
   const { criterion, category, coverage, line } = reading;
   const notes = [];

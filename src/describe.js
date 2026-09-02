@@ -31,7 +31,7 @@
  */
 
 import { DEFAULT_BYPASS, DEFAULT_PARAMETERS, controlFor } from './controls.js';
-import { WALLS, geometryFacts } from './model.js';
+import { WALLS, geometryFacts, holds } from './model.js';
 
 /**
  * A quantity, which the sheet letters in its mono face.
@@ -298,6 +298,24 @@ const TERRAIN = Object.freeze({
 });
 
 /**
+ * Whether the document actually holds an object of a type — asked once, for
+ * every clause here that reads a setting off the object it reached.
+ *
+ * The type is asked of `doc.types()` before `doc.all()`, because `all()` goes
+ * through the document's own `collection()` and *inserts* an empty collection
+ * for a type it has never seen, at the position of the question — which moves
+ * every later object of that type up the file for no reason a reader of the
+ * IDF could ever work out. `model.js` exports the guard; this is the one
+ * question about the *contents* built on top of it.
+ *
+ * One helper rather than one per clause, and not named `holds`: a local
+ * `holds(type)` beside the imported `holds(doc, type)` is two functions of one
+ * name and two arities in one module, where calling the wrong one is not an
+ * error but a silent `false` — `doc.types().includes(undefined)`.
+ */
+const standing = (doc, type) => holds(doc, type) && doc.all(type).size > 0;
+
+/**
  * The ideal unit as the document holds it, not as the desk asked for it.
  *
  * *Available* is not a setting the unit takes alongside two setpoints: at "Heat
@@ -315,18 +333,17 @@ const TERRAIN = Object.freeze({
  * occupied hours on a desk whose unit runs all of them.
  */
 function unit(doc, params) {
-  const holds = (type) => doc.all(type).size > 0;
   const ideal = doc.all('ZoneHVAC:IdealLoadsAirSystem').first;
   const schedule = ideal ? String(ideal.availability_schedule_name) : 'AlwaysOn';
   const hours = schedule === 'AlwaysOn' ? [] : [' in occupied hours'];
 
-  if (holds('ThermostatSetpoint:SingleHeating')) {
+  if (standing(doc, 'ThermostatSetpoint:SingleHeating')) {
     return ['an ideal unit heating to ', num('heatSet', params.heatSet), ' °C', hours];
   }
-  if (holds('ThermostatSetpoint:SingleCooling')) {
+  if (standing(doc, 'ThermostatSetpoint:SingleCooling')) {
     return ['an ideal unit cooling to ', num('coolSet', params.coolSet), ' °C', hours];
   }
-  if (holds('ThermostatSetpoint:DualSetpoint')) {
+  if (standing(doc, 'ThermostatSetpoint:DualSetpoint')) {
     return [
       'an ideal unit holding ',
       num('heatSet', params.heatSet),
@@ -433,19 +450,17 @@ function network(doc, params, facts) {
  * hand the engine a document with no air-exchange object in it, and the engine
  * cannot tell them apart either.
  *
- * The types are asked of `doc.types()` before `doc.all()`, because `all()` goes
- * through the document's own `collection()` and *inserts* an empty collection
- * for a type it has never seen, at the position of the question — which moves
- * every later object of that type up the file for no reason a reader of the IDF
- * could ever work out. Every type asked for here is swept by `applyAir` or
+ * The types go through `standing` above rather than `doc.all()` directly, for
+ * the reason written there. Every type asked for here is swept by `applyAir` or
  * `applySystem` on each apply and so is registered long before this runs, but
  * the guarded form cannot introduce the hazard and costs nothing.
  */
 function airflow(doc, params, facts) {
-  const standing = (type) => doc.types().includes(type) && doc.all(type).size > 0;
-
-  if (standing('AirflowNetwork:SimulationControl')) return network(doc, params, facts);
-  if (standing('ZoneInfiltration:DesignFlowRate') || standing('ZoneVentilation:DesignFlowRate')) {
+  if (standing(doc, 'AirflowNetwork:SimulationControl')) return network(doc, params, facts);
+  if (
+    standing(doc, 'ZoneInfiltration:DesignFlowRate') ||
+    standing(doc, 'ZoneVentilation:DesignFlowRate')
+  ) {
     return schedule(params);
   }
 
@@ -458,7 +473,9 @@ function airflow(doc, params, facts) {
   // ventilated one, so the object is worth the clause rather than only worth
   // the caveat. Read as the document holds it and not off `params.outdoorAir`,
   // since `applySystem` writes it only where the System channel is in the path.
-  const spec = standing('DesignSpecification:OutdoorAir') ? doc.all('DesignSpecification:OutdoorAir').first : null;
+  const spec = standing(doc, 'DesignSpecification:OutdoorAir')
+    ? doc.all('DesignSpecification:OutdoorAir').first
+    : null;
   if (!spec) return ['no air exchange in the model'];
 
   // The method decides which field carries the rate, and this sheet only ever
