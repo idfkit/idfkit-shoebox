@@ -254,6 +254,39 @@ and its subject on the sheet is circled with the dashed markup hairline
 reads — the index sheet's rule; retired, they are gone. If a feature changes
 what a step points at or teaches, the note changes with it — see CLAUDE.md.
 
+### What the model was given, under the setting itself (`.ctl-derived`)
+
+Where a control's number is not what reaches the document — where an applier
+converts it into some other quantity — the converted figure is lettered on a
+line under the face, in **mono**, with the arithmetic that made it on a second
+line. The Air strip's envelope leakiness is the case: the face carries
+`0.50 ACH`, the line under it carries
+
+```
+0.072 kg/s at 1 Pa over 511.0 m² of envelope
+0.5 ACH · 1061.9 m³ / 3600 · 1.2041 kg/m³ / 4^0.65
+```
+
+and the readout beside the meter carries what the run then made of it. **Three
+figures, three different things, and they must stand apart**: on the measured
+desk the stated and computed rates differ by about a factor of three, and a
+reader who took that gap for a failure to apply the setting would be wrong about
+the model.
+
+Same rule as the bill's rate build-up and the register's blower-door conversion,
+one level down: a derivation the reader cannot redo is a number applied out of
+sight. Mono rather than the note's sans, because that is what tells a
+derivation apart from prose at a glance — the sheet already letters every
+quantity in its mono face.
+
+Two lines of height are **held** whatever it says, the way `.ctl-standing` holds
+one: this line re-letters on every frame of a drag, and a wrap that came and
+went would relayout the strip's column under the reader's hand.
+
+Reach for it only where the conversion is real. A control whose number is
+written into the field as it stands needs no second line, and a blank one under
+every face would be sixty lines of nothing.
+
 ### Naming a control the reader has never met
 
 A control whose label is a bare verb — **Chase**, **Solo**, **Pin** — tells a

@@ -6,4 +6,7 @@ public/weather/
 
 # scratch for scripts/build-rates.mjs
 .rates-cache/
+
+# Throwaway verification harnesses (see CLAUDE.md, "Verifying changes").
 harness/
+.harness/

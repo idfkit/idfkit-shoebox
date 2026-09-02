@@ -31,7 +31,7 @@
  */
 
 import { DEFAULT_BYPASS, DEFAULT_PARAMETERS, controlFor } from './controls.js';
-import { geometryFacts } from './model.js';
+import { WALLS, geometryFacts } from './model.js';
 
 /**
  * A quantity, which the sheet letters in its mono face.
@@ -52,6 +52,15 @@ const num = (key, value) => q(value.toFixed(controlFor(key).control.digits));
 const option = (key, value) => controlFor(key).control.format(value).toLowerCase();
 
 const hhmm = (hour) => `${String(hour).padStart(2, '0')}:00`;
+
+/**
+ * Which surface of the box each compass name belongs to.
+ *
+ * `geometryFacts().faces` is keyed by the wall's declared side and the
+ * document's links are keyed by surface name, so one of the two has to be
+ * translated. Taken off `WALLS`, which is the one list that carries both.
+ */
+const WALL_BY_SIDE = new Map(WALLS.map((w) => [w.side, w.name]));
 
 /* ══ how far a desk has been moved ═══════════════════════════════════════ */
 
@@ -330,6 +339,56 @@ function unit(doc, params) {
   throw new Error('the System channel is in the path with no thermostat setpoint object in the document');
 }
 
+/** The scheduled model in a clause: a rate stated, and a flush that gates it. */
+function schedule(params) {
+  const leak = params.infiltration > 0 ? [num('infiltration', params.infiltration), ' ACH of leakage'] : [];
+  const flush =
+    params.ventilation > 0
+      ? ['a night flush of ', num('ventilation', params.ventilation), ' ACH above ', num('ventMinIndoor', params.ventMinIndoor), ' °C']
+      : [];
+  const both = [leak, flush].filter((c) => c.length);
+  return both.length ? series(both) : ['no air exchange'];
+}
+
+/**
+ * The pressure network in a clause, read off what it reached.
+ *
+ * The rule comes off `ventilation_control_mode` in the document, so a mode the
+ * applier did not write cannot be described; the openable walls come off the
+ * linkages the applier actually made, so a wall whose glass is gone is not
+ * claimed as an opening. The computed rate is deliberately not here: this
+ * paragraph is captured before the await, off the snapshot the run was written
+ * from, and a reading taken after it would be describing one building over
+ * another building's chart. The rate is the strip's readout and the finding's
+ * to say.
+ */
+function network(doc, params, facts) {
+  const parts = ['a pressure network at ', num('envLeak', params.envLeak), ' ACH'];
+
+  // Every opening the network actually linked, by the wall the document says
+  // hosts it — and the wall is named by its own outward normal, so a building
+  // turned 40° has its south wall lettered south-east.
+  const hosts = new Set(
+    doc
+      .all('AirflowNetwork:MultiZone:Surface')
+      .toArray()
+      .map((link) => doc.get('FenestrationSurface:Detailed', String(link.surface_name)))
+      .filter(Boolean)
+      .map((w) => String(w.building_surface_name)),
+  );
+  const open = facts.faces.filter((f) => hosts.has(WALL_BY_SIDE.get(f.side)));
+  if (open.length) {
+    parts.push(
+      ', openable ',
+      open.length === facts.faces.length ? ['all round'] : ['on the ', series(open.map((f) => facing(f.bearing)))],
+    );
+    const rule = doc.all('AirflowNetwork:MultiZone:Zone').first;
+    const mode = rule ? String(rule.ventilation_control_mode) : null;
+    if (mode && mode !== 'NoVent') parts.push(' on ', option('openRule', mode).toLowerCase());
+  }
+  return parts;
+}
+
 function moves(doc, params, facts, state) {
   const on = (id) => Boolean(state.get(id)?.engaged);
   const out = [];
@@ -416,14 +475,21 @@ function moves(doc, params, facts, state) {
   // out of the path, so having them at all is the move; the numbers ride along
   // in the same clause because a mechanism named without its setting is not a
   // description of anything.
+  // Which of the two air models produced the flow, read off the document and
+  // not off `params`, by the rule the thermostat clause already follows: a
+  // setting is described by the object it reached. The network's own clause
+  // names the leakiness as the document holds it and the walls that are
+  // actually openable — a desk whose four openable walls are all solid has no
+  // opening in the model and the sentence must not claim one.
+  //
+  // `FLIP.air` is unchanged at 1.4, and **switching models is not a flip**: it
+  // is a change within an engaged channel and ranks as a scalar move would. A
+  // paragraph that ranked it above a channel appearing would describe the air
+  // model of a building whose ideal unit it never mentioned.
   if (on('air')) {
-    const leak = params.infiltration > 0 ? [num('infiltration', params.infiltration), ' ACH of leakage'] : [];
-    const flush =
-      params.ventilation > 0
-        ? ['a night flush of ', num('ventilation', params.ventilation), ' ACH above ', num('ventMinIndoor', params.ventMinIndoor), ' °C']
-        : [];
-    const both = [leak, flush].filter((c) => c.length);
-    say('air', FLIP.air, both.length ? series(both) : ['no air exchange']);
+    say('air', FLIP.air, doc.all('AirflowNetwork:SimulationControl').size
+      ? network(doc, params, facts)
+      : schedule(params));
   }
 
   if (on('gains')) {

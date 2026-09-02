@@ -76,6 +76,9 @@ export function mountConsole({
   const rows = new Map();
   const cards = new Map(); // parameter key -> { node, kind, study, syncTick }
   const studyButtons = new Map(); // parameter key -> that scale's Study button
+  // parameter key -> the line under its face that letters what the model was
+  // given for it. See `setDerived`.
+  const derivedLines = new Map();
   const daysWidgets = new Map(); // parameter key -> that list's weather-file offer
   let solo = null;
   // The instant every meter on the desk is reading at: `{ text, pinned,
@@ -472,6 +475,16 @@ export function mountConsole({
     }
     const standing = marks ? el('p', 'ctl-standing') : null;
     if (standing) row.append(standing);
+    // What the model was actually given for this setting, where the applier
+    // derives it into some other quantity. It sits between the landmark
+    // reading and the note because that is the order the three answer in: where
+    // the tick stands, what the document holds because of it, and why. Empty
+    // and hidden until something fills it, so a control with no derivation
+    // carries no blank line.
+    const derived = el('p', 'ctl-derived');
+    derived.hidden = true;
+    row.append(derived);
+    derivedLines.set(control.key, derived);
     if (control.note) row.append(el('p', 'ctl-note', control.note));
 
     input.addEventListener('input', () => {
@@ -1915,7 +1928,16 @@ export function mountConsole({
         const dir = here.meter.dir ? flowWord(w) : null;
         if (here.meter.dir) here.meter.dir.textContent = dir ?? '';
         here.meter.value.textContent = lettered;
-        here.read.textContent = dir ? `${lettered} ${dir}` : lettered;
+        // A readout may put a word in front of the folded row. The Air strip is
+        // the case it exists for: one channel with two models of its own
+        // subject, where the watts alone say nothing about which model produced
+        // them, and the folded row is the whole reading at 390 px. It is a
+        // prefix rather than a replacement because the reading column is also
+        // this channel's term of the balance rail, and dropping that for one
+        // strip would make the index's five terms four.
+        const said = dir ? `${lettered} ${dir}` : lettered;
+        const front = readouts?.get(channel.id)?.fold ?? null;
+        here.read.textContent = front ? `${front} · ${said}` : said;
         const has = Number.isFinite(w);
         here.meter.fill.hidden = !has;
         if (!has) continue;
@@ -1926,6 +1948,25 @@ export function mountConsole({
       }
 
       drawRail(readings);
+    },
+
+    /**
+     * Letter what the model was given for a setting, under the setting itself.
+     *
+     * A map of parameter key to a sentence, or to null for a control whose
+     * derivation is not reaching the document as the desk stands. Three figures
+     * for one question have to stand apart to be read: what the reader asked
+     * for is on the face, what the model was given is here, and what the run
+     * produced is the readout beside the meter. The register prints its
+     * blower-door conversion the same way and for the same reason — a
+     * derivation the reader cannot redo is a number applied out of sight.
+     */
+    setDerived(lines) {
+      for (const [key, node] of derivedLines) {
+        const said = lines?.get(key) ?? null;
+        node.textContent = said ?? '';
+        node.hidden = !said;
+      }
     },
 
     /**

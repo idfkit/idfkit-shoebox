@@ -672,6 +672,85 @@ export function readDemand(eso, floorArea) {
   return demandOver(eso, new Set(year.map((r) => r.key)), floorArea);
 }
 
+/**
+ * What the pressure network actually moved, off the run.
+ *
+ * The rate is the **sum of two series**, and that is the whole reason this is a
+ * function rather than an `hourly()` call at the sheet:
+ *
+ *   AFN Zone Infiltration Air Change Rate   is the cracks
+ *   AFN Zone Ventilation Air Change Rate    is the openings
+ *
+ * Measured on the stock desk with a south opening: 0.0007 and 0.684 ACH.
+ * "Infiltration" is the engine's word for "through a crack", not for the
+ * infiltration of this building, so reading it alone letters a number three
+ * orders of magnitude under the truth beneath a label claiming the whole
+ * building. Neither series is optional and neither is the answer.
+ *
+ * Read over the billed environments, derived here by the same rule
+ * `readExtremes` and `readDemand` follow rather than passed in — a year where
+ * there is one, so sizing days kept on the Run strip stay out of an annual
+ * mean; otherwise the design days, which are themselves.
+ *
+ * Returns null where the network was not in the run at all. That is not a
+ * measurement of no flow: a missing series means the channel was out, or the
+ * scheduled model was in force, and a zero there would letter "0.00 ACH" over a
+ * building running on a stated rate. A network that genuinely moved no air
+ * reports `ach: 0`, which is a measurement.
+ */
+export function networkFlow(eso) {
+  const inf = hourly(eso, exactly('AFN Zone Infiltration Air Change Rate'));
+  const vent = hourly(eso, exactly('AFN Zone Ventilation Air Change Rate'));
+  if (!inf.length || !vent.length) return null;
+
+  const zr = zoneRuns(eso);
+  if (!zr) return null;
+  const year = zr.runs.filter((r) => r.kind === null);
+  const billed = year.length ? year : zr.runs;
+  if (!billed.length) return null;
+
+  // One series per openable window, so an hour in which two openings stood open
+  // is **one** hour: counted over the union rather than the sum. The same
+  // discipline the Run channel's special days keep — the engine marks a day once
+  // however many entries claim it, and summing entries read eleven days where
+  // it had flagged ten.
+  const factors = findVariables(eso, exactly('AFN Surface Venting Window or Door Opening Factor'))
+    .filter((v) => v.reportFrequency === 'hourly')
+    .map((v) => getTimeSeries(eso, v.id)?.data ?? []);
+
+  let total = 0;
+  let sum = 0;
+  let min = Infinity;
+  let max = -Infinity;
+  let open = 0;
+  for (const r of billed) {
+    for (let i = r.start; i <= r.end; i += 1) {
+      const rate = (inf[i]?.value ?? 0) + (vent[i]?.value ?? 0);
+      sum += rate;
+      if (rate < min) min = rate;
+      if (rate > max) max = rate;
+      total += 1;
+      if (factors.some((f) => (f[i]?.value ?? 0) > 0)) open += 1;
+    }
+  }
+  if (!total) return null;
+
+  return Object.freeze({
+    ach: sum / total,
+    achMin: min,
+    achMax: max,
+    // Null is no opening at all and zero is an opening that never opened. The
+    // distinction is the same one the demand rows already draw: a building with
+    // no openings is not a building whose openings never opened.
+    hoursOpen: factors.length ? open : null,
+    hoursTotal: total,
+    // The bill's own rule: an annual mean of a two-design-day run has no use but
+    // to be mistaken for a year's, so where this is false the readout letters
+    // the range and not the mean.
+    wholeYear: year.length > 0 && year.reduce((n, r) => n + r.months, 0) === 12,
+  });
+}
+
 /* ══ what the engine made of the assembly ════════════════════════════════ */
 
 /**

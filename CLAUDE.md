@@ -477,6 +477,136 @@ it reports every other one. It is not an input error and there is nothing to
 fix in the model — raising the warmup limit would cost every run on the desk to
 flatter one corner of it.
 
+### Two air models (channel 09)
+
+The Air strip states its subject two ways and the engine simulates one of them.
+`airModel` chooses; every control on the strip carries `needs: scheduled` or
+`needs: network`, which is the arrangement Glazing already uses for `uFactor`
+against `panes`. The objects of the model that is out are **deleted, not
+zeroed** — `AIR_TYPES` is cleared on every apply whichever is in force — which
+is what keeps EnergyPlus from writing `..ZoneInfiltration objects will not be
+simulated` into a file nobody opens while the title block counts the warning.
+
+- **The crack coefficient is per surface, not per square metre**, and getting
+  that wrong runs clean. `air_mass_flow_coefficient_at_reference_conditions` is
+  the coefficient for that entire surface, so the whole-envelope figure is split
+  between the exterior surfaces by area at the call site. Written per square
+  metre it validates, warns about nothing, completes with exit 0 and is wrong by
+  about **eightyfold** — 0.0007 ACH computed against a stated 0.5. The only
+  thing that catches it is that the right answer is **linear**: `envLeak` 0.5
+  computes 0.154 ACH and 1.5 computes 0.451, a ratio of 2.92 against a wanted 3.
+- **The computed rate is the sum of two series.** `AFN Zone Infiltration Air
+  Change Rate` is the cracks and `AFN Zone Ventilation Air Change Rate` is the
+  openings. "Infiltration" is the engine's word for "through a crack", not for
+  the infiltration of this building, so reading it alone letters a number about
+  part of the building under a label claiming the whole of it.
+- **Three get-input fatals are reachable from the sliders, and all three are
+  answered by the channel's `requires` rather than caught.** No exterior surface
+  left (`An AirflowNetwork:MultiZone:Surface object is required but not found`),
+  fewer than **two** ways through the envelope (`has only one surface defined in
+  AirflowNetwork:MultiZone:Surface` — the physics saying a network with one hole
+  has nowhere for the air to go), and an adaptive venting rule with nobody in
+  the room (`ASHRAE55 ventilation control … requires connection to a people
+  object that uses ASHRAE55 model calculations`). The first two were found by
+  the harness at positions of shipped sliders: `envLeak` at its own `Sealed`
+  stop writes a coefficient of exactly zero, which the schema refuses outright.
+- **`requires.reason` may be a function of `(params, on, off)`**, for the reason
+  `Side.unreached` already may: this channel has three ways to be blocked and
+  one sentence would name the wrong one. Two of the three are states no
+  parameter records — Fabric patched out is read through `off`.
+- **The adaptive comfort model is written by `applyGains`, not by `applyAir`.**
+  Gains runs at 10 and clears `People` on every apply, so anything the air
+  applier hung on that object would be thrown away. It reads which rule was
+  actually written off `AirflowNetwork:MultiZone:Zone` in the document rather
+  than off `params.openRule`, so a rule that reached no object cannot put a
+  comfort model on somebody. `mean_radiant_temperature_calculation_type` was set
+  beside it on the first pass at `ZoneAveraged`, which is that field's name in
+  an older EnergyPlus and `EnclosureAveraged` in 26.1 — the drift invariant, in
+  one fatal.
+- **The venting rule and its bounds are written only where an opening exists.**
+  Those four controls are withdrawn from the strip on exactly that condition,
+  and a control that is hidden while still moving the model is worse than a dead
+  one: the reader has no way to see what changed the answer. So the zone object
+  is written *after* the openings are decided, and takes `NoVent` with none.
+- **A rooflight leaks but can never be opened.** Both opening models refuse a
+  near-horizontal surface — the vertical one because a flat opening has no
+  bottom and top for a neutral plane to sit between, the horizontal one because
+  it is formulated between two zones and outdoors is an external node with a
+  wind pressure rather than a zone with a density — and both refusals are fatal
+  on every rooflight. So the applier loops the *walls* and the Skylights strip
+  says so where the reader would look for the control.
+- **The wind bound is EMS, and its `Null` release is the whole design.** No
+  AirflowNetwork object carries a wind speed, so `openMaxWind` reaches the run
+  through a five-line Erl program on the `Venting Opening Factor` actuator. An
+  actuator holds whatever it was last set to, so writing a value in the
+  else-branch — `SET Vent0 = 0.5`, the obvious thing — **replaces** the opening
+  rule instead of bounding it: measured 8,808 hours open of 8,808 and 4.160 ACH
+  against 2,628 hours and 0.684 ACH with `SET Vent0 = Null`, exit 0, zero
+  warnings, nothing in the error file. Verified the other way too: with the
+  bound set where it cannot bite, the `Zone Air Heat Balance Outdoor Air
+  Transfer Rate` series matches a run with the EMS objects absent to **0 W over
+  every hour**. The threshold is a literal inside generated program text, which
+  makes it the one thing here whose serialised form changes with a slider in a
+  way that is not a field value — so idempotence is asserted over the program
+  text, not over the object count.
+- **The four `EnergyManagementSystem:*` types are cleared by type**, which is
+  safe *only* while nothing else on this desk uses EMS. The day a second feature
+  wants an Erl program, that sweep has to narrow to what `applyAir` wrote by
+  name, and there is no symptom for getting it wrong: a program that is not in
+  the document simply does not run.
+- **The `*` key on `AFN Surface Venting Window or Door Opening Factor` is the
+  exception that proves the per-surface rule.** The warning about per-surface
+  variables is about a request across 158 surfaces, which took an annual run
+  from 681 ms to 2,984 ms. This one resolves to one series per openable window,
+  at most four, and it is the only variable the engine publishes for the
+  hours-open reading. An hour in which two openings stood open is **one** hour,
+  counted over the union rather than the sum.
+- **The network costs about +20 ms on a design day and 3.1× on a year**,
+  measured five interleaved passes with openings and the EMS bound in place:
+  147 ms against 165 ms of wall clock, 0.47 s against 1.44 s of engine time.
+  Twenty milliseconds is 40 % of the desk's 50 ms live budget. It is spent, and
+  a later feature that wants 20 ms of that budget needs to know this one took
+  it. Measure the design day off the **wall clock**: 30 ms is three of the
+  engine's own reporting ticks on a run that is only five or six of them.
+- **A free-running zone under the network can raise
+  `Temperature out of range [-100. to 200.] (PsyPsatFnTemp)`.** Three times in
+  8,760 hours on Denver TMYx with System patched out, at intermediate values
+  the AFN solver passes to the wet-bulb routine. The run completes, the results
+  are written, and there is nothing in the input to fix — it is the same kind of
+  thing as the warmup non-convergence a nearly sealed box reports. It does not
+  appear with System in the path.
+- **The engine is deterministic on one input, but the app reuses one WASM
+  instance across solves.** Two cold boots of the same link agree exactly —
+  511 hours open of 8,760, 0.26 ACH; the same link solved as a warm session's
+  tenth run read 512 hours and two more warnings. The mean was identical either
+  way. Nothing on the desk was fine-grained enough to show this before an hours
+  count; it is engine-instance state, not the model, and the harness confirms
+  the IDF is byte-identical between a desk walked to a position and one built at
+  it.
+
+### Reading an absent type registers it (src/model.js)
+
+`doc.all(type)` and `doc.get(type, name)` both go through the document's own
+`collection()`, which **inserts an empty collection for a type it has never
+seen** — and `types()` is insertion order, which is the order the IDF is written
+in. So merely asking whether a type is present moves every later object of that
+type to the position of the question.
+
+Measured: `applyAir` gained a `drop(doc, 'Schedule:Compact', 'AFN Setpoint')`
+to take the network's setpoint schedule out, and because Air is applied at 09
+and Gains writes the occupancy schedule at 10, that one question moved all three
+`Schedule:Compact` objects seventy lines up the file. Nothing about the model
+changed and the engine could not tell the difference, which is exactly why it is
+worth a guard: a reordering with no symptom is one nobody would find.
+
+`holds(doc, type)` is that guard, and it is used at that one call site rather
+than folded into `clear` and `drop` themselves. Every existing sweep in the file
+already registers whatever it clears, and the current object order of every IDF
+this page publishes is the accumulated result of that — guarding the helpers
+rewrites all of it, which is not a change to make inside a feature about air
+flow. Any *new* question about a type the document may not yet hold needs the
+guard.
+
 ### Channels that price rather than simulate
 
 `Plant` and `Tariff` carry `prices: true`. Nothing they own reaches the IDF, so:

@@ -8,6 +8,7 @@ import {
   designConditionsFrom,
   designDayDatums,
   geometryFacts,
+  leakageBuildUp,
   modelFacts,
   setAnnual,
   setDesignConditions,
@@ -63,6 +64,7 @@ import {
   environmentRuns,
   exactly,
   glassProperties,
+  networkFlow,
   hourly,
   instantOffers,
   pinAt,
@@ -1412,6 +1414,7 @@ function reprice() {
   bill = billFrom(lastRun);
   renderBill();
   desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt, readouts());
+  desk?.setDerived(derivedLines());
 }
 
 /**
@@ -1976,8 +1979,10 @@ function clearReadings() {
   lastReadings = new Map();
   // The window's computed figures go with the rest: they are a reading off a
   // run, and a U-factor left standing over a fatal would be the one number on
-  // the strip claiming a run that did not happen.
+  // the strip claiming a run that did not happen. The network's computed air
+  // change rate is the same kind of thing and leaves in the same breath.
   lastGlass = null;
+  lastNetwork = null;
   renderBill();
   // The hour bar goes with the instant it was lettering. It is not hidden by
   // `markStale` -- that dims -- and a picker still standing over a cleared
@@ -2193,6 +2198,7 @@ function applyGeometry() {
   syncStudies();
   syncRunSub();
   desk?.setReadings(engagedReadings(), derivedReadings(facts), lastAt, readouts());
+  desk?.setDerived(derivedLines());
   // Whether the desk is built to a standard is a measurement of the desk, not
   // a flag set when a button was pressed, so it is re-taken here — the one
   // place every change to the parameters passes through. Nudge a wall
@@ -2471,6 +2477,34 @@ function syncRunSub() {
  * quantities panel is — so they are right before the first run, and stay right
  * between runs.
  */
+/**
+ * What the model was *given* for a setting, under the setting itself.
+ *
+ * Three figures answer the leakiness question and they are three different
+ * things: what the reader asked for is on the face (`0.50 ACH` at a 4 Pa
+ * reference), what the model was given is here (a mass flow coefficient over an
+ * envelope area), and what the run produced is the readout beside the meter.
+ * They must not be lettered as one quantity — on the measured desk the stated
+ * and computed rates differ by about a factor of three, and a reader who took
+ * that gap for a failure to apply the setting would be wrong about the model.
+ *
+ * Read off the document rather than off `params`, so a channel patched out from
+ * under the control letters nothing rather than an arithmetic about objects
+ * that are not there.
+ */
+function derivedLines() {
+  const lines = new Map();
+  if (modelState?.get('air')?.engaged && params.airModel === 'Network') {
+    const b = leakageBuildUp(model, params.envLeak);
+    lines.set(
+      'envLeak',
+      `${b.coefficient.toFixed(3)} kg/s at 1 Pa over ${b.area.toFixed(1)} m² of envelope\n` +
+        `${b.ach} ACH · ${b.volume.toFixed(1)} m³ / 3600 · ${b.density} kg/m³ / ${b.deltaP}^${b.exponent}`,
+    );
+  }
+  return lines;
+}
+
 function derivedReadings(facts) {
   const hours = runHours();
 
@@ -2541,7 +2575,19 @@ function derivedReadings(facts) {
 let lastGlass = null;
 
 /**
- * The readouts, which is one strip: what the engine made of the glazing.
+ * What the pressure network moved, as the last run computed it — or null before
+ * there has been one, after one that failed, and on any run the network was not
+ * in the path of.
+ *
+ * Null rather than zero is the whole of it: a missing series means the channel
+ * was out or the scheduled model was in force, and lettering 0.00 ACH over a
+ * building running on a stated rate would be a reading with nothing behind it.
+ */
+let lastNetwork = null;
+
+/**
+ * The readouts: what the engine made of the glazing, and what it made of the
+ * air.
  *
  * Two lines where the opening carries a frame. The first is the glass, which
  * is what the layered controls above it build and what the simple model's
@@ -2551,15 +2597,59 @@ let lastGlass = null;
  * the frame that makes them differ.
  */
 function readouts() {
+  const out = new Map();
   const glass = lastGlass;
-  if (!glass) return new Map();
-  const trio = (t) =>
-    `U ${or(t.u, (v) => v.toFixed(2))} W/m²K · SHGC ${or(t.shgc, (v) => v.toFixed(2))} · VT ${or(t.vt, (v) => v.toFixed(2))}`;
-  const framed = Number.isFinite(glass.assembly.u);
-  return new Map([
-    ['glazing', { text: trio(glass), sub: framed ? `Whole window · ${trio(glass.assembly)}` : null }],
-  ]);
+  if (glass) {
+    const trio = (t) =>
+      `U ${or(t.u, (v) => v.toFixed(2))} W/m²K · SHGC ${or(t.shgc, (v) => v.toFixed(2))} · VT ${or(t.vt, (v) => v.toFixed(2))}`;
+    const framed = Number.isFinite(glass.assembly.u);
+    out.set('glazing', {
+      text: trio(glass),
+      sub: framed ? `Whole window · ${trio(glass.assembly)}` : null,
+    });
+  }
+  // The Air strip's entry is written whenever the channel is in the path, even
+  // with nothing to letter yet, because it carries two different things. The
+  // rate is a reading and is absent until a run produces one — an em dash, by
+  // the readout's own rule, and under the scheduled model there is no computed
+  // rate to have. The **model in force** is not a reading at all: it is what
+  // the strip is currently about, it is true before the first solve, and the
+  // folded index row is the whole reading at 390 px, so a rate with no model
+  // beside it would say nothing about which of the two produced it.
+  if (modelState?.get('air')?.engaged) {
+    const n = lastNetwork;
+    out.set('air', {
+      // A mean is only a thing a whole year can support, by the bill's own
+      // rule; a run that is two design days, or ten months of one, letters the
+      // range it actually saw rather than an average nobody can benchmark.
+      text: n
+        ? n.wholeYear
+          ? `${n.ach.toFixed(2)} ACH`
+          : `${n.achMin.toFixed(2)}–${n.achMax.toFixed(2)} ACH`
+        : null,
+      sub: n ? openSub(n) : null,
+      fold: params.airModel === 'Network' ? 'Network' : 'Scheduled',
+    });
+  }
+  return out;
 }
+
+/**
+ * The hours the openings actually stood open, and the two ways of having
+ * nothing to say about it.
+ *
+ * `null` is no opening at all and the line is left off, the way the demand rows
+ * are omitted when their meters are absent. Zero is an opening that never
+ * opened, which *is* a reading, so it is said in words — a zero lettered beside
+ * a count reads as a measurement of almost-never rather than of never, and this
+ * sheet exists not to print that.
+ */
+const openSub = (n) =>
+  n.hoursOpen === null
+    ? null
+    : n.hoursOpen === 0
+      ? 'The openings never opened'
+      : `Open ${n.hoursOpen.toLocaleString('en-US')} of ${n.hoursTotal.toLocaleString('en-US')} h`;
 
 /**
  * Everything the instant is chosen from, kept so the pin can be turned without
@@ -2690,6 +2780,7 @@ function pinFromPlate(index, snap, { hold = false, address = true } = {}) {
  */
 function reletterReading({ address = true } = {}) {
   desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt, readouts());
+  desk?.setDerived(derivedLines());
   renderWhen();
   renderTrace();
   // Held back for the frames inside a plate drag, the rule every gesture on
@@ -5347,6 +5438,10 @@ async function solve() {
   // lettered from `setReadings` at the foot of this function, with the
   // meters, and the two describe the same run.
   lastGlass = glassProperties(wrote.html, WINDOW_CONSTRUCTION);
+  // And what the pressure network moved, off the ESO. Null on every run the
+  // network was not in the path of, which is what keeps the readout an em dash
+  // rather than a zero under the scheduled model.
+  lastNetwork = networkFlow(eso);
 
   const hasOutdoor = outPts.length > 0;
   const nn = hasOutdoor ? Math.min(zonePts.length, outPts.length) : zonePts.length;
@@ -5444,6 +5539,7 @@ async function solve() {
   renderRegister();
 
   desk?.setReadings(lastReadings, derivedReadings(geometryFacts(model)), lastAt, readouts());
+  desk?.setDerived(derivedLines());
 
   // Denver is named only where Denver is what was solved. A short weather run
   // — January alone is 744 hours, and 792 with the sizing days kept — falls
