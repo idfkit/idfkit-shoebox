@@ -1587,6 +1587,113 @@
       }
       .pin-sm .mark { width: 8px; height: 8px; }
 
+      /* ── prose on the board: a count, and what qualifies it ───────
+         TM59 is the first standard on this board whose lines cannot be left
+         to stand on their own. Two of its four criteria are read here and
+         two are not, so a reader has to be told which; and what is read is
+         one zone, over whatever weather file happened to be attached, under
+         the desk's own occupancy rather than the method's — so a reader has
+         to be told that too, in place, before they carry a number away.
+
+         Neither of those is a reading. They are statements *about* the rows
+         above them, and a column of right-aligned mono is the wrong place
+         for a sentence, so they ride as full-width rows of their own. Inside
+         `#score` rather than as a block after the table, because the board is
+         five published documents end to end and a block under the table sits
+         beneath whichever one is last — which is not the one the sentence is
+         about. A spanning cell is what `tr.score-head` already does for a
+         standard's name, so this is that arrangement a second time rather
+         than a second arrangement.
+
+         `width: auto` for exactly the reason the subhead needs it: the
+         criterion rows' first column is set to 44 % through an id selector,
+         and a spanning cell is a first child too, so without this a
+         paragraph is laid out inside 44 % of the board. */
+      .register #score tr.score-prose td {
+        width: auto;
+        padding: 16px 0 0;
+        border: 0;
+        text-align: left;
+        white-space: normal;
+      }
+
+      /* The count is a sentence and it is never a score. It names both
+         numbers — how many criteria were read and how many of those cleared
+         — and its scope, and it takes no figure face, no marker, no rule
+         above it and no colour, because every one of those would make it the
+         board's verdict on TM59. The method's verdict is the one thing this
+         page is not entitled to letter: it is a compliance procedure with a
+         modelling strategy, a prescribed occupancy and a mandated weather
+         file behind it, and a shoebox that computes two of its criteria has
+         not performed it. A row that looked like a total would be read as
+         one whatever the words in it said. */
+      .score-count {
+        margin: 0;
+        max-width: 62ch;
+        font: 400 11.5px/1.55 var(--sans);
+        color: var(--ink-2);
+      }
+      .score-count b { font-weight: 500; color: var(--ink); }
+
+      /* The qualifications: what each TM59 figure on this sheet does not
+         answer, printed under the rows it is about and never on hover, by
+         the rule that put what *Chase* means above the board. `pointer:
+         coarse` has no hover at all, so a caveat that floats does not exist
+         on the phone where this sheet is most often read and least often
+         checked against the method it names.
+
+         Two tracks, because each entry is two different kinds of statement:
+         `says` is the gap in one sentence, `because` is what that gap is
+         measured or read from. SC-005 asks that a reader who reads only this
+         block can state four specific reasons why what they are looking at
+         is not a TM59 assessment, and four reasons have to be countable
+         down a column. Set as one paragraph each they would be four grey
+         blocks a reader skims, which is a caveat that has been printed and
+         not one that has been read.
+
+         Lettered exactly as `.unjudged` is, one level up on the console:
+         both lists say "here is what is not being judged", and two type
+         scales for one statement would read as two different kinds of
+         claim. */
+      .qualifications {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+        margin: 12px 0 0;
+        max-width: 96ch;
+      }
+      /* The rule between entries is drawn on both cells rather than on a
+         wrapper, since a grid has no row box to put a border on. The gutter
+         between the tracks is therefore `padding-left` on the `dd` and not a
+         `column-gap`: a gap would cut an 18px hole in every one of those
+         rules and leave the block ruled in dashes. */
+      .qualifications dt,
+      .qualifications dd {
+        margin: 0;
+        padding-top: 11px;
+        padding-bottom: 11px;
+        border-top: 1px solid var(--rule-soft);
+      }
+      .qualifications dt {
+        font: 400 11.5px/1.45 var(--sans);
+        color: var(--ink-2);
+      }
+      .qualifications dd {
+        padding-left: 18px;
+        font: 400 11px/1.45 var(--sans);
+        color: var(--ink-ghost);
+        /* The weather qualification quotes the file label WFR:2026 asks for,
+           `Zone Reference_DSY1_2050s_HIGH50_CIBSE_v1.1`, which is 43
+           characters with nothing in it a browser will break on. In a 1fr
+           track at 390px that one word sets the block's minimum width and
+           pushes the sheet sideways, which is the one thing a folded reading
+           may never do. `anywhere` rather than `break-word` deliberately:
+           only `anywhere` takes the break into the min-content size, and it
+           is the min-content size a grid track is refusing to go below. */
+        overflow-wrap: anywhere;
+      }
+      .qualifications > dt:first-child,
+      .qualifications > dt:first-child + dd { border-top: 0; padding-top: 0; }
+
       /* ── the register of presets, on the console head ───────────── */
 
       /* The standards sit with the controls they set, not with the results:
@@ -2920,6 +3027,111 @@
       .band { display: block; width: 100%; height: auto; }
       .band-grab { cursor: ew-resize; }
 
+      /* ── a day, hour by hour ──────────────────────────────────────────
+         The fold behind a pattern's silhouette (`buildPattern`). Twenty-four
+         margin numbers, laid out as the day they are rather than as
+         twenty-four unrelated fields: six across and four down, so the rows
+         are the quarters the drawing above is already ticked at — 00, 06, 12,
+         18, 24 — and a reader looking for the afternoon finds it as the third
+         band instead of counting boxes. Four across would have been roomier
+         and would have ruled the day at four-hour boundaries nothing on this
+         sheet draws; twelve across would have been the drawing's own shape and
+         does not fit at all, since a box letters five mono characters and
+         twelve of those want about 440px.
+
+         Both ends of the width this is sized against, because the strip has
+         two narrowest cases and they are not the same number. On the phone the
+         strip's content is 330px: 390 less the body's 12px margins and the
+         strip's own 18px sides. On the multicolumn desk a column is never
+         narrower than `--card`, so the floor there is 320 less those same
+         sides, 284px — which is the one to design to, since it is reached
+         every time the desk widens far enough to open another column. Measured
+         at that floor: six cells of 47px, a 43px box inside each, and "0.000"
+         is 33.00px in IBM Plex Mono at 11px. Nothing clips, and a pattern ever
+         declared to four decimals would letter 39.60px and still stand.
+
+         `grid` rather than `flex`, for the reason the year's twelve cells are
+         a grid: every hour is exactly the same width whatever it holds. On a
+         proportional row the boxes would drift out of column as the reader
+         typed and the block would stop reading as a day. */
+      .pattern-hours {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        margin-top: 9px;
+      }
+      /* The twin every author's `display` owes the `hidden` attribute, and the
+         one this control cannot be shipped without. The fold starts shut and
+         is worked by setting `hidden`, and an author declaration beats the
+         user agent's `[hidden] { display: none }` outright. Measured by
+         deleting this rule out of the live stylesheet: a shut fold went
+         straight back to computing `display: grid` and put its twenty-four
+         boxes into the tab order, which across the Gains strip's three
+         patterns is seventy-two stops nobody can see. The same failure
+         `.link[hidden]` was written for after `#studies-stop` was found
+         rendering at all times. */
+      .pattern-hours[hidden] { display: none; }
+
+      /* The hour above its box rather than beside it: the pair has to stand in
+         a sixth of the strip, and the two side by side are 58.5px of lettering
+         in 43px of room — 25.5px for the hour at 8.5px mono against the box's
+         own 33px. The row is then 36.8px tall, which is the same trade the
+         index sheet's own rows make — under a thumb's 44px, and accepted for
+         the same reason: four rows of six standing on one screen beats a
+         taller cell you have to scroll past to reach the evening.
+
+         Ruled along the top of each cell rather than around the grid: a band
+         per quarter of the day is the structure worth drawing, and the ends of
+         those rules are also what says the fold has begun. The column gutter
+         is `padding` and not a `column-gap` for the reason the qualification
+         block's is — a gap cuts a hole in every one of those hairlines and the
+         four bands read as ruled in dashes. */
+      .pattern-hour {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+        padding: 5px 4px 6px 0;
+        border-top: 1px solid var(--rule-soft);
+      }
+      /* The last column hands its gutter back, so the sixth box has the same
+         room as the five beside it. The same line `.month:last-child` carries,
+         one axis over. */
+      .pattern-hour:nth-child(6n) { padding-right: 0; }
+      /* Ghost ink and the smallest mono on the desk: the hour is the box's
+         address, not one of the day's readings. The readings are the
+         twenty-four figures under them, and the silhouette above states the
+         whole shape in one mark. */
+      .pattern-at {
+        font: 400 8.5px/1 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink-ghost);
+      }
+      /* The same 11px tabular mono every other reading on this desk is
+         lettered in, and settable in place like all of them: `.num-field`
+         above has already taken the box, the border and the fill off, so what
+         stands in the grid is the figure and nothing else. Held to the cell's
+         width rather than to the `size` attribute `field.js` fits to the text,
+         because focus swaps the lettering for the value itself — "0.500"
+         becomes "0.5" — and a box that narrowed by two characters as it was
+         entered would walk the whole column sideways under the caret. */
+      .pattern-value {
+        font: 400 11px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+        width: 100%;
+      }
+      /* The fold's offer stands where a scale's Study offer stands, hard
+         against the reading with the label taking the slack, because it is the
+         same thing in the same place: the one gesture this control's head
+         affords. It whispers at the offer's size rather than the status row's,
+         for the offer's own reason — three patterns stand on the Gains strip,
+         and a 10px tracked capital beside a 9.5px label is the loudest thing
+         in a strip made otherwise of hairlines. Which way the fold stands is
+         not said again here: `aria-expanded` carries it, and the boxes being
+         there is what a reader sees. */
+      .ctl-pattern .ctl-label { margin-right: auto; }
+      .pattern-toggle { font-size: 9px; letter-spacing: 0.11em; }
+
       /* The year, as twelve cells. Ruled like the segmented selector, because
          it is the same object — a row of states on one rule — but the cells
          are independent and a set month is filled with the markup wash the
@@ -3706,6 +3918,46 @@
         /* One column: the ranking is the point, and at this width the second
            column was cut off at the edge of the sheet. */
         .bar-key { grid-template-columns: minmax(0, 1fr); gap: 0; }
+
+        /* The qualifications block loses its second track here, and with it
+           the adjacency that was saying what the second paragraph was. Above
+           this width a `because` stands beside the `says` it belongs to and
+           needs no head; stacked under it in ghost type it is simply another
+           paragraph, so it letters the head it lost from `data-head` through
+           the same `attr()` the two schedules use a few rules up. Written
+           once where the cell is built, so the word beside a paragraph and
+           the relation the layout was drawing cannot come to disagree.
+
+           620 rather than the register's own 780. The board's *table* stops
+           being a table at 780 because five columns, four of them figures,
+           will not go into a thumb's width; this is two tracks of prose,
+           which survive some way further down — the same argument the two
+           schedules make against the desk's breakpoint, in the same
+           direction. So this block reuses the schedules' threshold and no
+           third one is declared. Between 620 and 780 the criterion rows are
+           stacks and their qualifications are still two tracks, which is
+           correct: they are two different squeezes and they arrive at
+           different widths. */
+        .qualifications { grid-template-columns: minmax(0, 1fr); }
+        /* Side by side the two cells were one row and shared its padding;
+           stacked they are two, and the 11px that was holding the entries
+           apart is now sitting between a statement and its own evidence. It
+           goes back to the foot of the pair, where the separation belongs. */
+        .qualifications dt { padding-bottom: 0; }
+        .qualifications dd {
+          padding: 4px 0 11px;
+          border-top: 0;
+        }
+        .qualifications > dt:first-child + dd { padding-top: 4px; }
+        .qualifications dd[data-head]::before {
+          content: attr(data-head);
+          display: block;
+          margin-bottom: 3px;
+          font: 500 9.5px/1.5 var(--cond);
+          text-transform: uppercase;
+          letter-spacing: 0.11em;
+          color: var(--ink-3);
+        }
       }
     </style>
   </head>

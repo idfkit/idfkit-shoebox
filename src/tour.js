@@ -5,25 +5,43 @@
  *
  * The governing rule holds here too. Each note bears the run ledger's square
  * marker, and a marker fills only when its step has actually happened on this
- * desk — the first solve landing, a station attaching, a channel patched out —
- * reported by main.js from the genuine event through `note()`. There is no
- * Next button, because a Next button is the onboarding taking the reader's
- * word for it, which is exactly what this page never does. The first unfilled
- * note is the reader's next move: it takes the redline, and its subject on
- * the sheet is circled with the markup pen — the same dashed hairline a
- * blocked strip carries — one region at a time. Clicking a note stages its
- * scene (scrolls to the subject, opens the desk when the subject lives
- * there), but staging never fills the marker; only the step itself does.
+ * desk — the first solve landing, a station attaching, a channel patched out,
+ * the summer criteria coming back with numbers in them — reported by main.js
+ * from the genuine event through `note()`. There is no Next button, because a
+ * Next button is the onboarding taking the reader's word for it, which is
+ * exactly what this page never does. The first unfilled note is the reader's
+ * next move: it takes the redline, and its subject on the sheet is circled
+ * with the markup pen — the same dashed hairline a blocked strip carries —
+ * one region at a time. Clicking a note stages its scene (scrolls to the
+ * subject, opens the desk when the subject lives there), but staging never
+ * fills the marker; only the step itself does.
  *
  * What has been read is kept in localStorage under a versioned key. Bump the
  * key whenever the steps change meaning, so a returning reader gets the new
- * sheet rather than stale ticks against notes they never read. All six taken
- * retires the sheet on the next visit; a reader who sets it aside early keeps
- * a one-line row that still reads — the index sheet's rule, applied here.
+ * sheet rather than stale ticks against notes they never read. All of them
+ * taken retires the sheet on the next visit; a reader who sets it aside early
+ * keeps a one-line row that still reads — the index sheet's rule, applied here.
  */
 
-const STORE = 'shoebox-general-notes-v2';
+// v3 because the TM59 work added a step. A reader carrying a v2 entry has six
+// squares filled against a sheet that now has seven, and the seventh would
+// stand unfilled beside six ticks as though they had skipped it — or, worse,
+// the sheet would have retired itself under v2's "all taken" rule and the note
+// about the criteria would never be shown at all. The key is the only thing
+// that separates "read the old sheet" from "read this one".
+const STORE = 'shoebox-general-notes-v3';
 const VIEWS = ['open', 'folded', 'retired'];
+
+// A sheet counts its own notes in words, and the count is read off the
+// declaration rather than typed into the prose: the lede read "Six steps" for
+// as long as there were six, and this feature's note would have left it saying
+// so over seven. `RUN_TALLY` in main.js is the same arrangement for the same
+// reason. It is closed at what this block can plausibly carry and asserted at
+// module load below, because a lede reading "undefined steps" is the kind of
+// defect nobody finds until a reader meets it.
+const TALLY = Object.freeze([
+  '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+]);
 
 class Note {
   constructor({ id, title, body, target, focus = null, desk = false }) {
@@ -97,6 +115,34 @@ export const NOTES = Object.freeze([
     focus: '#desk .patch',
     desk: true,
   }),
+  // The board has never had a note, and until this feature there was less to
+  // say about it: a target is a published number read off the run, and the
+  // reader who got as far as attaching a year met it on the way past. TM59's
+  // criteria are the first lines here that cannot be reached by a year alone —
+  // they want some part of May to September *and* somebody in the room — so
+  // the board is now a step rather than a consequence, and this is the note
+  // that says what it is for. Its square fills off the criteria actually being
+  // lettered; see the call site in main.js for why the count's pair is the
+  // test rather than any one reading.
+  new Note({
+    id: 'tm59',
+    title: 'Read the overheating criteria',
+    body:
+      'The board under the results reads one run against every published line at ' +
+      'once — no standard is selected and none is remembered, so the score is only ' +
+      'ever what this building would clear today. CIBSE TM59\'s criteria ask more ' +
+      'of the run than the rest: some part of May to September, and Gains patched ' +
+      'in, because with nobody home there are no occupied hours for criterion a to ' +
+      'be a share of. What they cannot answer is printed under them, at the same ' +
+      'size as what they can.',
+    // The whole block, not the table: the two ledes over it are what say the
+    // board keeps a score and decides nothing, and a pen circling the rows
+    // alone would point at the readings while the note is about the reading.
+    target: '.score-wrap',
+    // A click goes to the rows, because that is where the criteria are and the
+    // ledes are already in view above them once the table is centred.
+    focus: '#score',
+  }),
   new Note({
     id: 'link',
     title: 'Carry the scheme away',
@@ -110,6 +156,23 @@ export const NOTES = Object.freeze([
     focus: '#share',
   }),
 ]);
+
+// Two things the declaration has to be true of before anything is drawn, both
+// checked here rather than at render time, by the same rule the landmarks and
+// the register follow: a sheet that letters "undefined steps" or quietly drops
+// a note because two of them share an id is a defect discovered by a reader.
+if (!TALLY[NOTES.length]) {
+  throw new Error(`The general notes number ${NOTES.length} and TALLY carries no word for that many`);
+}
+{
+  const ids = new Set(NOTES.map((n) => n.id));
+  if (ids.size !== NOTES.length) {
+    throw new Error('Two general notes share an id, so one of them can never be filled');
+  }
+}
+
+/** The count in words, for the prose that has to say it. */
+const TALLIED = TALLY[NOTES.length];
 
 /**
  * Read what the last visit left. A browser that refuses storage, or a
@@ -212,8 +275,8 @@ export function mountTour({ openDesk } = {}) {
         </div>
         <p class="notes-lede">${
           finished
-            ? 'All six steps taken. These notes retire on the next visit — the sheet is yours.'
-            : 'Six steps. Each square fills when its step has actually happened on this desk — the notes read the model, they do not take your word for it.'
+            ? `All ${TALLIED.toLowerCase()} steps taken. These notes retire on the next visit — the sheet is yours.`
+            : `${TALLIED} steps. Each square fills when its step has actually happened on this desk — the notes read the model, they do not take your word for it.`
         }</p>
         <ol class="notes-grid">
           ${NOTES.map((n, i) => {
