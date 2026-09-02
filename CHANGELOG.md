@@ -30,6 +30,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stamp gains a **Toolkit** row beside Engine, Runtime and Upload, so the page
   states what it is a demo of without anyone opening a band to find out.
 
+### Fixed
+
+- **A station whose design conditions cannot be read is refused, instead of
+  fatalling the run.** Searching `Boston` puts WMO 994971 at the top of the
+  list, ahead of Boston-Logan, and attaching it stopped the engine dead before
+  a single hour was simulated: `Fatal: Errors occurred on processing input
+  file`. The first thing a new reader did on this page could be watch it fail.
+
+  Two faults under one error message, and both were the no-silent-fallbacks
+  rule broken. The reader asked for one design day by name and, failing to find
+  it, took the first day of the right *season* in the file. For station 994971
+  that is a **January** day, because the site publishes no annual cooling
+  condition at all, and it carries the literal text `N` where onebuilding had
+  no number to publish. EnergyPlus rejects `N` in a numeric field, which is the
+  fatal. Sizing a New England summer against 16.6 °C on 21 January would have
+  been wrong even if it had run.
+
+  The obvious fix was the wrong one. A survey of 120 sites says the name the
+  reader used to ask for, `Ann Clg 1% Condns DB=>MWB`, is published for only 69
+  of them: simply requiring it would have refused **51 sites in 120, 39 of them
+  working perfectly**. So the sheet now declares an ordered list of annual
+  design days it will accept, at the severity it has always claimed, and takes
+  the first one published whose numbers parse. Measured over the same sample:
+  108 attach, 12 are refused, and every one of the 12 is a marine `99xxxx`
+  station publishing no annual cooling condition whatsoever. No ordinary WMO
+  site is refused.
+
+- **The plate letters the design day it actually got.** The cooling datum was
+  hard-coded to `1% clg db` for whatever day the model held, which for 39 sites
+  in every 120 was a claim about an object the document did not contain: those
+  stations were being sized on a `.4%` dewpoint-basis day and lettered as
+  though on a 1% dry-bulb one. The label is now read off the day itself, so a
+  station with no wetbulb record reads `1% clg dp` and says what it is.
+
+- **A refused station now says what to do instead.** The picker reopens on the
+  nearest other stations, which is the whole fix for the reported case: all
+  five published windows of Boston 994971 carry the identical three design
+  days, and Boston-Logan is 3.5 km away and clean. Two clicks from the refusal
+  to a solved Boston-Logan year.
+
+- **A link naming an unusable station now says why.** `attachFromLink` lettered
+  its own "could not be attached, so the whole link was set aside" over the top
+  of the specific sentence the attach had just written into the same status
+  line, so a reader arriving on such a link was told only that something had
+  failed. The reason now travels out of the attach and is lettered in place of
+  the summary. The link was already refused whole, back to defaults, with
+  auto-solve stopped; that is unchanged.
+
 ### Changed
 
 - **The heat balance says which way it points.** The rail lettered five signed

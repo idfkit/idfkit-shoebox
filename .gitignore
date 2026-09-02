@@ -6,3 +6,4 @@ public/weather/
 
 # scratch for scripts/build-rates.mjs
 .rates-cache/
+harness/

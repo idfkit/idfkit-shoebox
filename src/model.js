@@ -2148,6 +2148,175 @@ export function shadeGeometry(doc) {
 }
 
 /**
+ * One design day this sheet is willing to be sized against.
+ *
+ * onebuilding names a design day `<site> Ann Clg 1% Condns DB=>MWB`: the season,
+ * the severity, and the humidity basis the dry bulb was drawn against. Which of
+ * those it publishes depends on what the station recorded -- a site with no
+ * wetbulb record gets no `DB=>MWB` family at all -- so the sheet has to state
+ * which ones it will accept, in what order, rather than name one and improvise.
+ */
+class DesignDayWanted {
+  constructor({ suffix, dayType, label, note }) {
+    this.suffix = suffix;
+    this.dayType = dayType;
+    this.label = label;
+    this.note = note;
+    Object.freeze(this);
+  }
+
+  /** Whether a design day in a DDY is this one. Name and season must agree. */
+  holds(day) {
+    const name = String(day.name);
+    return (
+      name.toLowerCase().endsWith(this.suffix.toLowerCase()) &&
+      String(day.day_type) === this.dayType
+    );
+  }
+}
+
+/**
+ * The design days, most wanted first. The first one published whose numbers
+ * parse is the one the station is sized against.
+ *
+ * Two rules decide this list, and both were forced by measurement over 120
+ * sampled sites:
+ *
+ * **The severity never moves.** The sheet has always said 99% heating and 1%
+ * cooling, so only the humidity basis is allowed to vary. Falling back from 1%
+ * to .4% would change what the number means rather than how its dry bulb was
+ * derived, and the reader would be sized against a severity nobody asked for.
+ * That is what used to happen: with no candidate list, the reader took the
+ * first `SummerDesignDay` in the file, which for 39 sites in 120 is the .4%
+ * dewpoint day, lettered on the plate as `1% clg db`.
+ *
+ * **Annual only, never monthly.** A DDY carries twelve monthly design days
+ * after its annual ones, and taking one of those is how station 994971
+ * (Boston) sized a New England summer against 16.6 °C on 21 January. That site
+ * publishes no annual cooling day whatsoever, and the monthly day it fell to
+ * carries the text `N` where onebuilding had no number, which EnergyPlus
+ * rejects outright:
+ *
+ *     ** Severe ** <root>[SizingPeriod:DesignDay][Boston January .4% Condns
+ *                  DB=>MCWB][wetbulb_or_dewpoint_at_maximum_dry_bulb]
+ *                  - Value type "string" for input "N" not permitted by
+ *                    'type' constraint.
+ *     **  Fatal ** Errors occurred on processing input file.
+ *
+ * That fatal is why the pair is now checked rather than assumed, and why a
+ * month name in a suffix throws at module load below.
+ *
+ * The list is names, and names are a convention rather than a structure:
+ * `SizingPeriod:DesignDay` carries no field saying whether a day is annual or
+ * monthly, so the only signal is that onebuilding writes `Ann Htg` and
+ * `Ann Clg`. That is safe here because every archive the picker can reach comes
+ * from onebuilding -- the heating name was found in 120 of 120 sites sampled --
+ * and it would stop being safe the day this page accepts a DDY from anywhere
+ * else.
+ */
+const DESIGN_DAYS = {
+  heating: [
+    { suffix: 'Ann Htg 99% Condns DB', label: '99% htg db', note: 'dry-bulb basis' },
+    {
+      suffix: 'Ann Htg 99.6% Condns DB',
+      label: '99.6% htg db',
+      note: 'the 99.6% day: this station publishes no 99% heating condition',
+    },
+  ],
+  cooling: [
+    { suffix: 'Ann Clg 1% Condns DB=>MWB', label: '1% clg db', note: 'dry-bulb basis' },
+    {
+      suffix: 'Ann Clg 1% Condns WB=>MDB',
+      label: '1% clg wb',
+      note: 'wetbulb basis: this station publishes no coincident-wetbulb dry-bulb day',
+    },
+    {
+      suffix: 'Ann Clg 1% Condns DP=>MDB',
+      label: '1% clg dp',
+      note: 'dewpoint basis: this station publishes no wetbulb record',
+    },
+    {
+      suffix: 'Ann Clg 1% Condns Enth=>MDB',
+      label: '1% clg enth',
+      note: 'enthalpy basis: this station publishes no wetbulb or dewpoint record',
+    },
+  ],
+};
+
+const MONTHS_IN_A_NAME =
+  /\b(January|February|March|April|May|June|July|August|September|October|November|December)\b/i;
+
+/**
+ * The declaration, checked at module load in the way `readLandmarks` checks its
+ * own. Five rules, and the last two are the ones that would otherwise fail
+ * silently: an empty list refuses every station on the planet while looking
+ * like a list, and a month in a suffix reopens the exact fatal this exists to
+ * close.
+ *
+ * Exported so the harness drives the real checker rather than a copy of it,
+ * for the same reason `readings.js` is DOM-free.
+ */
+export function readDesignDays(declared) {
+  const seasons = { heating: 'WinterDesignDay', cooling: 'SummerDesignDay' };
+  const seen = new Set();
+  const read = {};
+  for (const [season, dayType] of Object.entries(seasons)) {
+    const list = declared[season];
+    if (!Array.isArray(list) || !list.length)
+      throw new Error(`DESIGN_DAYS.${season} is empty: a station could never be sized`);
+    read[season] = list.map((entry) => {
+      if (seen.has(entry.suffix))
+        throw new Error(`DESIGN_DAYS names ${entry.suffix} twice`);
+      seen.add(entry.suffix);
+      if (!entry.label) throw new Error(`${entry.suffix} carries no label for the plate`);
+      if (!entry.note) throw new Error(`${entry.suffix} carries no note saying what it is`);
+      if (MONTHS_IN_A_NAME.test(entry.suffix))
+        throw new Error(
+          `${entry.suffix} names a month: a monthly design day is never an annual sizing condition`
+        );
+      return new DesignDayWanted({ ...entry, dayType });
+    });
+  }
+  return Object.freeze(read);
+}
+
+const WANTED = readDesignDays(DESIGN_DAYS);
+
+/** Every design day the sheet will accept, either season, for the labeller. */
+const EVERY_WANTED = [...WANTED.heating, ...WANTED.cooling];
+
+/**
+ * The fields a design day must hold a number in, read off the schema rather
+ * than listed here.
+ *
+ * onebuilding writes the literal text `N` into a numeric field where it had no
+ * value to publish, and nothing upstream catches it: `parseIdf` carries `"N"`
+ * through as a string under `strict: true` as readily as under `strict: false`,
+ * and the document parses clean. The engine is the first thing to object, by
+ * which point the run is dead. So the check is here, and it asks the schema
+ * which fields are numeric instead of restating a list that would go stale the
+ * next time EnergyPlus adds one -- the same drift that made
+ * `watts_per_zone_floor_area` wrong.
+ *
+ * An empty field is not a bad value. It means the object declined an optional
+ * field and EnergyPlus will supply its own default.
+ */
+function unreadableNumber(object, schema, type) {
+  for (const [field, value] of Object.entries(object.toJSON())) {
+    if (value === '' || value == null) continue;
+    let spec;
+    try {
+      spec = schema.field(type, field);
+    } catch {
+      continue; // a field this schema version does not know is not ours to judge
+    }
+    if (spec?.t !== 'n') continue;
+    if (!Number.isFinite(Number(value))) return field;
+  }
+  return null;
+}
+
+/**
  * A station's design conditions, read out of the DDY that ships beside its EPW.
  *
  * Parsed non-strictly on purpose: a DDY carries object types this model has no
@@ -2155,25 +2324,55 @@ export function shadeGeometry(doc) {
  * tolerated is coming out the other side without the pair, which throws — the
  * caller has a station to refuse, and no business running one city's year
  * against another city's design conditions.
+ *
+ * The pair is chosen through `WANTED` above, in declared order, and every
+ * candidate has to survive `unreadableNumber` before it is taken. A station
+ * that publishes a day the sheet wants but cannot read is not the same failure
+ * as one that publishes no such day at all, and the two say so differently,
+ * because they are different things for the reader to do something about.
  */
 export function designConditionsFrom(text, schema) {
   const { document } = parseIdf(text, schema, { strict: false });
   const days = document.all('SizingPeriod:DesignDay').toArray();
-  const pick = (pattern, dayType) =>
-    days.find((day) => pattern.test(String(day.name))) ??
-    days.find((day) => String(day.day_type) === dayType);
   const site = document.all('Site:Location').toArray()[0];
   const carry = (object) => ({ name: object.name, values: object.toJSON() });
 
-  const winter = pick(/Ann Htg 99% Condns DB$/i, 'WinterDesignDay');
-  const summer = pick(/Ann Clg 1% Condns DB=>MWB$/i, 'SummerDesignDay');
-  if (!winter || !summer) {
-    const missing = [!winter && 'heating', !summer && 'cooling'].filter(Boolean).join(' or ');
-    throw new Error(`its DDY names no ${missing} design day this sheet can read`);
+  // The first candidate that is published *and* parses. A published day with a
+  // bad number is stepped over rather than refused on, so a station carrying
+  // both a broken 1% day and a clean dewpoint day is sized on the clean one --
+  // but the field that stopped the preferred day is kept, because if nothing
+  // else qualifies that field is the whole reason the station cannot be used.
+  const choose = (season) => {
+    let unreadable = null;
+    for (const wanted of WANTED[season]) {
+      const day = days.find((candidate) => wanted.holds(candidate));
+      if (!day) continue;
+      const field = unreadableNumber(day, schema, 'SizingPeriod:DesignDay');
+      if (field) {
+        unreadable ??= field;
+        continue;
+      }
+      return { day, wanted };
+    }
+    return { day: null, unreadable };
+  };
+
+  const winter = choose('heating');
+  const summer = choose('cooling');
+  for (const [season, found] of [
+    ['heating', winter],
+    ['cooling', summer],
+  ]) {
+    if (found.day) continue;
+    throw new Error(
+      found.unreadable
+        ? `its published annual ${season} design conditions carry no usable value for ${found.unreadable}`
+        : `it publishes no annual ${season} design conditions`
+    );
   }
   if (!site) throw new Error('its DDY carries no Site:Location');
 
-  return { location: carry(site), days: [winter, summer].map(carry) };
+  return { location: carry(site), days: [winter.day, summer.day].map(carry) };
 }
 
 /** Put a station's design conditions in the model, in place of Denver's. */
@@ -2203,12 +2402,29 @@ export function surfaceGeometry(doc) {
   }));
 }
 
-/** The design conditions the zone is drawn against, straight off the model. */
+/**
+ * The design conditions the zone is drawn against, straight off the model.
+ *
+ * The label is read off the day that is actually in the document, not chosen by
+ * season. Those are different claims the moment more than one cooling day can
+ * be taken: a station with no wetbulb record is sized on its .4%-family
+ * dewpoint day, and lettering that `1% clg db` -- which this did, for 39 sites
+ * in every 120 -- is the plate stating a severity and a basis that no object in
+ * the document has.
+ *
+ * A day matching no candidate cannot arrive here: `designConditionsFrom` writes
+ * only candidates, and the built-in Denver pair is named to match. So it throws
+ * rather than lettering a blank, by the same rule as `must`.
+ */
 export function designDayDatums(doc) {
-  return doc.all('SizingPeriod:DesignDay').map((day) => ({
-    value: Number(day.maximum_dry_bulb_temperature),
-    label: /winter/i.test(String(day.day_type)) ? '99% htg db' : '1% clg db',
-  }));
+  return doc.all('SizingPeriod:DesignDay').map((day) => {
+    const wanted = EVERY_WANTED.find((candidate) => candidate.holds(day));
+    if (!wanted)
+      throw new Error(
+        `the model carries a design day this sheet cannot letter: ${String(day.name)}`
+      );
+    return { value: Number(day.maximum_dry_bulb_temperature), label: wanted.label };
+  });
 }
 
 /** Values the title block reports, so the sheet cannot drift from the model. */

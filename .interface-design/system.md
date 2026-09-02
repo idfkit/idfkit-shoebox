@@ -443,6 +443,38 @@ total. Zero is a measurement; missing is not one. Never substitute a previous
 value or a default, and say in the interface which term is missing and why.
 This is the visual half of the project's no-silent-fallbacks rule.
 
+### A refusal that carries its next step
+
+The visual other half of `Absence is not zero`. That pattern governs a reading
+with no data behind it; this one governs an *operation* the sheet declines to
+perform.
+
+Stating the reason is necessary and it is not sufficient. A refusal that hands
+the reader an empty field is a stop, and the reader is left to guess what would
+have worked. So a refusal has three parts, in one place:
+
+1. **What was refused**, named as the reader named it, not as the system knows
+   it.
+2. **Why**, specifically enough to act on. Not "could not be attached" but
+   "publishes no annual cooling design conditions".
+3. **Where to go instead**, as targets rather than as advice. The offer is the
+   control itself, reopened on candidates: pointer targets and tab stops, never
+   a sentence telling the reader to go and look somewhere.
+
+Two rules the weather picker's refusal had to learn:
+
+- **The thing just refused is filtered out of its own offer.** Nearest-station
+  ordering puts the refused site first at 0 km, which offers the reader exactly
+  what they cannot have.
+- **The offer is a courtesy and the reason is not.** If building the offer
+  fails, it is swallowed. Replacing a specific refusal with a second, vaguer
+  one because the courtesy could not be paid is the worse outcome of the two.
+
+Where an operation is refused on two paths, the reason travels rather than
+being re-summarised at each surface. A path that writes its own sentence over
+the top of the specific one is the sheet knowing exactly what is wrong and
+saying none of it.
+
 ### Dimming conventions
 
 - `.idle` at `opacity: 0.4`: the control is set but not currently reaching the

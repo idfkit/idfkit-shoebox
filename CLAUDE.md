@@ -1305,6 +1305,45 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   "From file" reads an empty list, and the daylight saving control beside it is
   inert for the same reason. `src/epw.js` reads the header so the strip can say
   that rather than let an empty reading pass for a zero.
+- **A DDY can carry `N` where a number belongs, and nothing upstream catches
+  it.** onebuilding writes the literal text `N` into a numeric field for a
+  station with no record to publish there. `parseIdf` carries it through as the
+  string `"N"` under `strict: true` exactly as under `strict: false`, and the
+  document parses clean, so the engine is the first thing to object and by then
+  the run is dead: `Value type "string" for input "N" not permitted by 'type'
+  constraint`, twice, then `Fatal: Errors occurred on processing input file`.
+  `designConditionsFrom` therefore checks every field the *schema* types
+  numeric (`schema.field(type, name).t === 'n'`) before accepting a design day.
+  Read it off the schema, never from a hand-written field list, or it goes
+  stale the next time EnergyPlus adds a field.
+
+- **Most stations do not publish the design day this sheet asks for, and the
+  old fallback was load-bearing.** Surveyed over 120 sites: `Ann Clg 1% Condns
+  DB=>MWB` is published for **69**, while `Ann Htg 99% Condns DB` is published
+  for all 120. onebuilding omits the whole `DB=>MWB`, `WB=>MDB` and `Enth=>MDB`
+  families where a station has no wetbulb record, leaving only the `DP=>MDB`
+  trio. So requiring the named day outright would refuse 51 sites in 120, 39 of
+  them working perfectly. `DESIGN_DAYS` in `src/model.js` is the answer: an
+  ordered list of acceptable annual days at a **fixed severity** (1% and 99%),
+  varying only the humidity basis, since the basis is what the publisher omits
+  and the severity is what a reader would notice changing.
+
+- **A monthly design day is never an annual sizing condition.** A DDY lists
+  twelve monthly days after its annual ones, and they are typed
+  `SummerDesignDay` like any other. Selecting by `day_type` therefore reaches
+  them: station 994971 (Boston) publishes no annual cooling day at all, and the
+  old reader sized a New England summer against 16.6 °C on 21 January. There is
+  no field distinguishing annual from monthly, so the only signal is that
+  onebuilding writes `Ann Htg` / `Ann Clg` into the name. That is safe only
+  because every archive the picker can reach comes from onebuilding.
+  `readDesignDays` throws at module load on a month name in a candidate.
+
+- **The plate must letter the design day it got, not the season.**
+  `designDayDatums` hard-coded `1% clg db` for any non-winter day. With more
+  than one acceptable cooling day that is a claim about an object the document
+  may not hold, and it was already wrong for 39 sites in 120 that were sized on
+  a `.4%` dewpoint day under a `1%` dry-bulb label.
+
 - **Field names drift between EnergyPlus versions.** `Lights` and
   `ElectricEquipment` use `watts_per_floor_area`, not
   `watts_per_zone_floor_area`. In 26.1 transmitted solar is
