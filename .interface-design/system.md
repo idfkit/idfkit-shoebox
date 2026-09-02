@@ -508,10 +508,46 @@ being re-summarised at each surface. A path that writes its own sentence over
 the top of the specific one is the sheet knowing exactly what is wrong and
 saying none of it.
 
+### Withdrawing a control: dim it, or do not draw it
+
+Two different facts, two treatments, and one treatment for both was misreading
+the more important of them.
+
+**Not drawn** — the control belongs to a model that is not in force. A strip
+that offers two models of its own subject withdraws a whole block at once: the
+Air strip's scheduled rate against its pressure network, Glazing's simple unit
+against its layered one, the rooflights' own glass against the walls'. Nothing
+near those controls brings them back; the only thing that does is a selector at
+the top of the strip. So the strip does not draw them, using the `hidden`
+attribute, which takes them out of the tab order too.
+
+Dimming them instead says *these are inert right now* when what is true is
+*these belong to the other instrument*, and it leaves the reader working out
+why a whole section has gone grey. It is also a dead control by this desk's own
+definition: a dimmed slider is still draggable, still tabbable, and still moves
+under an arrow key.
+
+**Dimmed** (`.idle`) — the control belongs to the model in force but is not
+reaching it at this setting of the rest. `infConstant` while `infiltration` is
+zero. Here the control that revives it is the one directly above, so dimming
+keeps that relationship visible and teaches it, and a row appearing and
+disappearing under the reader's hand would be worse than a grey one.
+
+The rule of thumb: **if the thing that brings it back is adjacent, dim it; if it
+is a mode switch, do not draw it.** In code this is `Control.when` against
+`Control.needs`, and it also makes the declaration read as the two facts it is
+— `when: scheduled, needs: (p) => p.infiltration > 0` rather than one predicate
+doing both jobs.
+
+A block that is not drawn changes the strip's height when the model is
+switched. That is accepted, and it is the point: the strip is a different
+instrument, and it should look like one.
+
 ### Dimming conventions
 
 - `.idle` at `opacity: 0.4`: the control is set but not currently reaching the
-  model, given the rest of the configuration.
+  model, given the rest of the configuration. Never for a control belonging to
+  a model that is out — see above.
 - `.out` at `opacity: 0.38` on the body and meter only, never the header: the
   whole path is out of the model. Values stay legible and settable.
 - `.stale` at `opacity: 0.42`: results that describe a state the model no longer

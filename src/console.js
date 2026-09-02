@@ -519,7 +519,13 @@ export function mountConsole({
       const show = was != null && was !== v;
       ghostTick.hidden = !show;
       if (show) ghostTick.style.left = `${clamp(control.fraction(was), 0, 1) * 100}%`;
-      const idle = control.needs ? !control.needs(params) : false;
+      // Two questions, two treatments — see `Control.when`. A control that
+      // belongs to the model that is out is not drawn at all, and `hidden`
+      // takes it out of the tab order with it; one that belongs to the model in
+      // force but is not reaching it right now is dimmed, because the control
+      // that revives it is the one directly above.
+      const idle = control.idle(params);
+      row.hidden = !control.shown(params);
       row.classList.toggle('idle', idle);
       syncStudyOffer(studyBtn, channel, { idle });
       // Dragging the swept control just walks the study's tick along its curve.
@@ -561,7 +567,8 @@ export function mountConsole({
         button.classList.toggle('here', here);
         button.setAttribute('aria-checked', String(here));
       }
-      row.classList.toggle('idle', control.needs ? !control.needs(params) : false);
+      row.hidden = !control.shown(params);
+      row.classList.toggle('idle', control.idle(params));
     });
     return row;
   }
@@ -808,7 +815,8 @@ export function mountConsole({
 
     const redraw = () => {
       turning.setAttribute('transform', `rotate(${params.northAxis})`);
-      const spent = control.needs ? !control.needs(params) : false;
+      row.hidden = !control.shown(params);
+      const spent = control.idle(params);
       for (const bar of bars) {
         const v = params[bar.side.key];
         const f = clamp(control.fraction(v), 0, 1);
@@ -1483,7 +1491,8 @@ export function mountConsole({
         ? ''
         : `${lost} of the ${listed} days listed fall in months the run does not cover, and the engine drops them without saying so.`;
 
-      row.classList.toggle('idle', control.needs ? !control.needs(params) : false);
+      row.hidden = !control.shown(params);
+      row.classList.toggle('idle', control.idle(params));
     };
     faces.set(control.key, redraw);
 
