@@ -2582,6 +2582,21 @@
         font: 400 10.5px/1.45 var(--sans);
         color: var(--ink-ghost);
       }
+      /* What the model was given for a setting, under the setting itself: the
+         derived quantity on the first line and the arithmetic that made it on
+         the second. Mono, because these are figures and not prose, and because
+         that is what tells a derivation apart from the note below it at a
+         glance. Two lines of height are held whatever it says, for the reason
+         `.ctl-standing` holds one: this line re-letters on every frame of a
+         drag, and a wrap that came and went would relayout the strip's column
+         under the reader's hand. */
+      .ctl-derived {
+        margin: 5px 0 0;
+        min-height: 30px;
+        font: 400 10px/1.5 var(--mono);
+        color: var(--ink-3);
+        white-space: pre-line;
+      }
       /* Set, but not reaching the model in the current configuration. */
       .ctl.idle { opacity: 0.4; }
 

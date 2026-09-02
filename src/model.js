@@ -1,7 +1,10 @@
 import { IDFDocument, parseIdf } from '@idfkit/core';
 import {
   ADIABATIC,
+  ADAPTIVE_RULES,
   BOUNDARY_KEYS,
+  NEEDS_SETPOINT,
+  OPENABLE_KEYS,
   CHANNELS,
   controlFor,
   DAYS_IN_MONTH,
@@ -62,7 +65,13 @@ export const WALLS = Object.freeze([
   { name: 'Zn001:Wall002', side: 'east', label: 'E', wwr: 'wwrE', overhang: 'ohE' },
   { name: 'Zn001:Wall003', side: 'north', label: 'N', wwr: 'wwrN', overhang: 'ohN' },
   { name: 'Zn001:Wall004', side: 'west', label: 'W', wwr: 'wwrW', overhang: 'ohW' },
-].map((wall) => Object.freeze({ ...wall, boundary: BOUNDARY_KEYS[wall.side] })));
+].map((wall) =>
+  Object.freeze({
+    ...wall,
+    boundary: BOUNDARY_KEYS[wall.side],
+    openable: OPENABLE_KEYS[wall.side],
+  }),
+));
 
 export { DEFAULT_PARAMETERS };
 
@@ -84,6 +93,10 @@ const BOUNDARY_OF = new Map([
   [FLOOR, BOUNDARY_KEYS.floor],
 ]);
 for (const key of BOUNDARY_OF.values()) controlFor(key); // throws naming an unowned key
+// And the openable-area keys, by the same rule and against the same silence:
+// `params[undefined]` is not greater than zero, so a wall would simply never
+// open rather than failing.
+for (const wall of WALLS) controlFor(wall.openable);
 
 /**
  * Which parameter a surface of the drawing belongs to, by name.
@@ -129,6 +142,50 @@ const PANE_MAX = controlFor('panes').control.max;
 const paneName = (i) => `GLZ-PANE-${i}`;
 const cavityName = (i) => `GLZ-CAVITY-${i}`;
 const BLIND = 'WINDOW BLIND';
+
+/* ── the pressure network's constants ───────────────────────────────────── */
+
+/**
+ * Air at the reference temperature, in kg/m3.
+ *
+ * 1.2041 is dry air at 20 degrees and one standard atmosphere, which is the
+ * figure every published leakage conversion is written against. It converts the
+ * volumetric rate the reader states into the mass flow the engine's crack
+ * coefficient is defined in, so it has to be the same density the reference
+ * conditions below declare — a coefficient derived at one temperature and
+ * declared at another is a silent scaling error of a few percent.
+ */
+const AIR_DENSITY = 1.2041;
+/**
+ * The reference pressure difference the stated leakiness is quoted at, in Pa.
+ *
+ * 4 Pa is the natural-conditions reference the scheduled model's `infiltration`
+ * already works in — its own note says "not the ACH50 a blower door reports",
+ * and the usual rule divides one by about twenty to get the other. Keeping one
+ * reference across both models is what lets `envLeak` reuse `infiltration`'s
+ * landmark bands rather than declaring a second set that would disagree with
+ * them about what "background ventilation" means.
+ */
+const REF_DELTA_P = 4;
+/**
+ * The flow exponent of a distributed crack, dimensionless.
+ *
+ * 0.65 is the midpoint of the 0.5 (fully turbulent, a large sharp orifice) to
+ * 1.0 (fully laminar, a long thin crack) range, and is what the engine's own
+ * documentation and every blower-door standard use where nothing is measured.
+ */
+const FLOW_EXPONENT = 0.65;
+/** The temperature `AIR_DENSITY` is taken at, declared to the engine in °C. */
+const REF_TEMP_C = 20;
+
+const REF_CONDITIONS = 'Site Conditions';
+const CRACK = 'Crack';
+const OPENING = 'Openable';
+const AFN_SETPOINT = 'AFN Setpoint';
+const WIND_SENSOR = 'WindSpeed';
+const WIND_PROGRAM = 'ShutOnWind';
+const WIND_MANAGER = 'WindManager';
+
 const INTERNAL_MASS = 'Internal Mass';
 const INTERNAL_MASS_CON = 'INTERNALMASS';
 
@@ -150,6 +207,32 @@ function must(doc, type, name = null) {
   if (!found) throw new Error(`the model has no ${type}${name ? ` named ${name}` : ''}`);
   return found;
 }
+
+/**
+ * Whether the document carries a type at all, asked without creating it.
+ *
+ * `doc.all(type)` and `doc.get(type, name)` both go through the document's own
+ * `collection()`, which *inserts an empty collection* for a type it has never
+ * seen — and `types()` is insertion order, which is the order the IDF is
+ * written in. So merely asking whether a type is present moves every later
+ * object of that type to the position of the question.
+ *
+ * Measured: `applyAir` gained a `drop(doc, 'Schedule:Compact', …)` to take the
+ * network's setpoint schedule out, and because Air is applied at 09 and Gains
+ * writes the occupancy schedule at 10, that one question moved all three
+ * `Schedule:Compact` objects seventy lines up the file. Nothing about the model
+ * changed and the engine could not tell the difference, which is exactly why it
+ * is worth a guard: a reordering with no symptom is one nobody would find.
+ *
+ * Used at that one call site rather than folded into `clear` and `drop`
+ * themselves, deliberately. Every existing sweep in this file already registers
+ * whatever it clears, and the current ordering of the whole document is the
+ * accumulated result of that — guarding the helpers rewrites the object order
+ * of every IDF this page has ever published, in a change about air flow. The
+ * hazard is general and is written down here; the fix stays where the new
+ * question is asked.
+ */
+const holds = (doc, type) => doc.types().includes(type);
 
 /** Remove every object of a type, if any. */
 function clear(doc, type) {
@@ -797,7 +880,16 @@ export function channelState(params, bypass) {
     state.set(channel.id, {
       engaged: !out && !blocked,
       bypassed: out,
-      blocked: blocked ? channel.requires.reason : null,
+      // A reason may be a sentence or a function of the parameters, for the
+      // same reason `Side.unreached` grew that ability: a channel can now have
+      // more than one way to be blocked — the Air strip's network needs a
+      // surface with an outside *and* something to leak through or open — and
+      // one sentence covering both would name the wrong cause half the time.
+      blocked: blocked
+        ? typeof channel.requires.reason === 'function'
+          ? channel.requires.reason(params, on, patchedOut)
+          : channel.requires.reason
+        : null,
     });
   }
   return state;
@@ -1285,12 +1377,69 @@ function applyBlinds(doc, params, engaged) {
   control.set('fenestration_surfaces', windows.map((name) => ({ fenestration_surface_name: name })));
 }
 
-/** 09 — leakage, and openings that answer the temperature. */
+/**
+ * Every type either air model owns, cleared on every apply whichever one is in
+ * force.
+ *
+ * Clear-and-rewrite rather than differential, for the reason `syncReporting`
+ * gives: it is the only arrangement under which a desk that has just shrunk —
+ * four openable walls down to one, six exterior surfaces down to three, or the
+ * whole model switched — serialises byte-identically to one built that way.
+ *
+ * It is also what keeps the engine quiet. Engaging a network makes EnergyPlus
+ * *discard* every scheduled infiltration and ventilation object rather than
+ * reject it — `..Specified AirflowNetwork Control = "MultizoneWithoutDistribution"
+ * and ZoneInfiltration:* objects are present. ..ZoneInfiltration objects will
+ * not be simulated.` — one warning line in a file nobody opens, and the warning
+ * count is something the title block reports. Removing the objects is what
+ * makes the drawing, the IDF and the engine agree about what is in the path.
+ */
+const AIR_TYPES = Object.freeze([
+  'ZoneInfiltration:DesignFlowRate',
+  'ZoneVentilation:DesignFlowRate',
+  'AirflowNetwork:SimulationControl',
+  'AirflowNetwork:MultiZone:Zone',
+  'AirflowNetwork:MultiZone:ReferenceCrackConditions',
+  'AirflowNetwork:MultiZone:Surface:Crack',
+  'AirflowNetwork:MultiZone:Component:SimpleOpening',
+  'AirflowNetwork:MultiZone:Surface',
+  // The wind bound. Cleared by type like the rest, which is safe *only* while
+  // nothing else on this desk uses EMS — the day a second feature wants an Erl
+  // program, this sweep has to narrow to the objects `applyAir` wrote by name
+  // or it will delete that feature's program on every apply. There is no
+  // symptom for that: an EMS program that is not in the document simply does
+  // not run, and the run completes.
+  'EnergyManagementSystem:Sensor',
+  'EnergyManagementSystem:Actuator',
+  'EnergyManagementSystem:Program',
+  'EnergyManagementSystem:ProgramCallingManager',
+]);
+
+/**
+ * 09 — the air the building trades with outdoors, by one of two models.
+ *
+ * The model that is out has its objects **deleted, not zeroed**, which is
+ * Bypass's own rule extended to a selector. There is no `_MAX` constant here,
+ * unlike `SKY_MAX` and `PANE_MAX`: those exist because their appliers sweep
+ * names generated from a slider, whereas here the object count comes off the
+ * document's own surfaces and the clear is by type, so a shrink is covered by
+ * construction.
+ */
 function applyAir(doc, params, engaged) {
-  clear(doc, 'ZoneInfiltration:DesignFlowRate');
-  clear(doc, 'ZoneVentilation:DesignFlowRate');
+  for (const type of AIR_TYPES) clear(doc, type);
+  // By name, not by type: `clear(doc, 'Schedule:Compact')` would take the
+  // occupancy band and the always-on schedule with it. Guarded on the type
+  // being present at all, because asking for a name in a type the document has
+  // never held *registers* that type at this point in the file — see `holds`.
+  if (holds(doc, 'Schedule:Compact')) drop(doc, 'Schedule:Compact', AFN_SETPOINT);
   if (!engaged) return;
 
+  if (params.airModel === 'Network') applyNetwork(doc, params);
+  else applyScheduled(doc, params);
+}
+
+/** The rate you state, which the weather only gates. */
+function applyScheduled(doc, params) {
   if (params.infiltration > 0) {
     doc.add('ZoneInfiltration:DesignFlowRate', 'Infiltration', {
       zone_or_zonelist_or_space_or_spacelist_name: ZONE_NAME,
@@ -1325,6 +1474,362 @@ function applyAir(doc, params, engaged) {
       delta_temperature: params.ventDeltaT,
       maximum_wind_speed: params.ventMaxWind,
     });
+  }
+}
+
+/**
+ * Site pressure from elevation, by the standard atmosphere the engine uses.
+ *
+ * Worth a run rather than a default: left at sea level this raises
+ *
+ *   ** Warning ** Pressure = 101325 differs by more than 10% from Standard
+ *                 Barometric Pressure = 81198.
+ *
+ * on the desk's own default station, which stands at 1,829 m. The title block
+ * letters the warning count, so a warning nobody can act on is a number on the
+ * sheet that means nothing. Set from the site, measured: gone.
+ */
+const barometric = (z) => 101325 * (1 - 2.25577e-5 * z) ** 5.2559;
+
+/**
+ * The bearing of the building's longer plan dimension, folded into 0 to 180.
+ *
+ * Off each wall's own outward normal rather than off the width and depth
+ * parameters, so it stays true under `turn()` — the vertices carry the
+ * orientation and `Building.north_axis` is pinned at 0, so a building turned
+ * 40° has walls whose bearings are 40, 130, 220, 310 and nothing named "south"
+ * facing south. The field's range is 0 to 180 because an axis has no front.
+ *
+ * Read off `geometryFacts(doc).faces` and never off `params.width` /
+ * `params.depth`, by the rule the whole sheet is built on: `buildSample` hands
+ * this applier a document carrying a sweep's overlay, and a fact taken from
+ * live parameters would describe the desk instead of the sample.
+ */
+function longAxis(facts) {
+  const faces = facts.faces.filter((f) => f.length > 0);
+  if (!faces.length) throw new Error('the model has no wall to take a long axis off');
+  const longest = faces.reduce((best, f) => (f.length > best.length ? f : best));
+  // A wall's outward normal is perpendicular to the axis it runs along, so the
+  // axis is the normal turned a quarter turn. Folded into 0–180: an axis has
+  // no front, and the field refuses anything above 180.
+  return (((longest.bearing + 90) % 180) + 180) % 180;
+}
+
+/**
+ * Short plan dimension over long, in (0, 1].
+ *
+ * Clamped at 1 because the field's maximum is 1 and a square box computes to
+ * exactly that; floating point can put it a hair over.
+ */
+function widthRatio(facts) {
+  const lengths = facts.faces.map((f) => f.length).filter((l) => l > 0);
+  if (!lengths.length) throw new Error('the model has no wall to take a width ratio off');
+  const ratio = Math.min(...lengths) / Math.max(...lengths);
+  return Math.min(1, ratio);
+}
+
+/**
+ * A stated air change rate, as the whole envelope's mass flow coefficient.
+ *
+ *   Q  = ach · V / 3600        m³/s
+ *   ṁ  = ρ · Q                 kg/s
+ *   C  = ṁ / ΔP^n              kg/s at 1 Pa
+ *
+ * at ΔP = 4 Pa, which is the natural-conditions reference the scheduled
+ * model's `infiltration` already works in ("not the ACH50 a blower door
+ * reports"). Keeping one reference is what lets both models share the
+ * `INFILTRATION` landmark bands.
+ *
+ * The figure returned is for the envelope **as a whole** and is split between
+ * the surfaces by area at the call site. That split is not cosmetic:
+ * `air_mass_flow_coefficient_at_reference_conditions` is the coefficient for
+ * that entire surface, not per square metre, and writing a per-square-metre
+ * figure there runs clean, validates clean, warns about nothing, and is wrong
+ * by about eightyfold — measured at 0.0007 ACH computed against a stated 0.5.
+ * The check that the split is right is that it is linear: tripling `ach`
+ * triples the computed rate (0.154 → 0.451 on Golden, a factor of 2.93).
+ *
+ * `grossVolume` carries the zone multiplier, so a stacked building leaks in
+ * proportion to its size and the resulting rate is per building, as every other
+ * intensity on this sheet is.
+ */
+const crackCoefficient = (ach, volume) =>
+  ((AIR_DENSITY * ach * volume) / 3600) / REF_DELTA_P ** FLOW_EXPONENT;
+
+/**
+ * The leakage build-up, for the strip that has to print it.
+ *
+ * Exported so the sheet letters the arithmetic the applier actually did rather
+ * than a second copy of it: the constants, the volume and the envelope area all
+ * come from here, and a reader who wants to redo the division has every term.
+ * The register prints its blower-door conversion the same way and for the same
+ * reason — a derivation nobody can redo is a number applied out of sight.
+ *
+ * Read off the document, so it describes whatever was last applied, including a
+ * sweep's overlay.
+ */
+export function leakageBuildUp(doc, envLeak) {
+  const facts = geometryFacts(doc);
+  return {
+    ach: envLeak,
+    volume: facts.grossVolume,
+    area: facts.grossExposed,
+    density: AIR_DENSITY,
+    deltaP: REF_DELTA_P,
+    exponent: FLOW_EXPONENT,
+    coefficient: crackCoefficient(envLeak, facts.grossVolume),
+  };
+}
+
+/**
+ * The setpoint the venting rule is read against, as a flat `Schedule:Compact`.
+ *
+ * Flat because the control is one number: a band would be a second control
+ * nobody declared, and this sheet does not letter settings it did not offer.
+ */
+function writeSetpoint(doc, celsius) {
+  const schedule = doc.add('Schedule:Compact', AFN_SETPOINT, {
+    schedule_type_limits_name: 'Any Number',
+  });
+  // `Until: 24:00` and the value after it are two extensible fields, not one
+  // comma-bearing string — joined, they produce a malformed IDF line.
+  schedule.set('data', [
+    { field: 'Through: 12/31' },
+    { field: 'For: AllDays' },
+    { field: 'Until: 24:00' },
+    { field: celsius },
+  ]);
+  return AFN_SETPOINT;
+}
+
+/**
+ * Shut the openings above a wind speed. FR-012, and the one part of this
+ * feature that reaches the run through a program rather than through a field.
+ *
+ * No AirflowNetwork object carries a wind speed: not `MultiZone:Zone`, not
+ * `MultiZone:Surface`, and not `OccupantVentilationControl`, which carries
+ * comfort curves, a PPD threshold and opening probabilities and nothing about
+ * wind. `venting_availability_schedule_name` is a schedule and cannot read one
+ * either. The engine does expose it, though, and the actuator dictionary says
+ * so:
+ *
+ *   EnergyManagementSystem:Actuator Available,ZN001:WALL001:WIN001,
+ *     AirFlow Network Window/Door Opening,Venting Opening Factor,[Fraction]
+ *
+ * with `Site Wind Speed` sensed off `Environment`. So the bound is a short Erl
+ * program called at `BeginTimestepBeforePredictor`.
+ *
+ * Written only where something is openable: a bound on openings that do not
+ * exist reaches no actuator.
+ */
+function applyWindBound(doc, params, windows) {
+  if (!windows.length) return;
+
+  doc.add('EnergyManagementSystem:Sensor', WIND_SENSOR, {
+    output_variable_or_output_meter_index_key_name: 'Environment',
+    output_variable_or_output_meter_name: 'Site Wind Speed',
+  });
+
+  const lines = [{ program_line: `IF ${WIND_SENSOR} > ${params.openMaxWind}` }];
+  windows.forEach((name, i) => {
+    doc.add('EnergyManagementSystem:Actuator', `Vent${i}`, {
+      actuated_component_unique_name: name,
+      actuated_component_type: 'AirFlow Network Window/Door Opening',
+      actuated_component_control_type: 'Venting Opening Factor',
+    });
+    lines.push({ program_line: `SET Vent${i} = 0.0` });
+  });
+  lines.push({ program_line: 'ELSE' });
+  // `Null` hands the actuator back to the engine's own venting control, which
+  // is what makes this a **bound on** the opening rule rather than a
+  // **replacement for** it. An EMS actuator holds whatever it was last set to,
+  // so writing a value here instead -- `SET Vent0 = 0.5`, the obvious thing --
+  // overrides the rule outright for every hour the wind is below the limit.
+  // Measured on the stock desk with the zone on `Temperature` at 22 degrees:
+  // 8,808 hours open of 8,808 and 4.160 ACH, against 2,601 hours and 0.419 ACH
+  // with the release. Exit 0, zero warnings, nothing in the error file. There
+  // is no signal for this anywhere but the reading, which is why its gate is a
+  // number.
+  windows.forEach((_, i) => lines.push({ program_line: `SET Vent${i} = Null` }));
+  lines.push({ program_line: 'ENDIF' });
+
+  doc.add('EnergyManagementSystem:Program', WIND_PROGRAM, {}).set('lines', lines);
+  doc
+    .add('EnergyManagementSystem:ProgramCallingManager', WIND_MANAGER, {
+      energyplus_model_calling_point: 'BeginTimestepBeforePredictor',
+    })
+    .set('programs', [{ program_name: WIND_PROGRAM }]);
+}
+
+/** Every fenestration surface cut into one host, by the host the document gives it. */
+const openingsOn = (doc, host) =>
+  doc
+    .all('FenestrationSurface:Detailed')
+    .toArray()
+    .filter((w) => String(w.building_surface_name) === host);
+
+/**
+ * The rate the weather computes, out of a pressure network.
+ *
+ * Every fact here comes off the document — the volume, the surface areas, the
+ * boundaries, the site's elevation — and none off `params` beyond the reader's
+ * own settings, for the reason `geometryFacts` gives: a sweep sample is applied
+ * to a document carrying an overlay, and a fact taken from live parameters
+ * would describe the desk instead of the sample.
+ */
+function applyNetwork(doc, params) {
+  const facts = geometryFacts(doc);
+  const ext = surfaceGeometry(doc).filter((s) => s.boundary === 'outdoors');
+  // The channel's own `requires` has already refused this case, so an empty
+  // list here is a bug rather than a state — the engine's answer to it is a
+  // get-input fatal — and it throws by the same rule `must` does.
+  if (!ext.length) throw new Error('a pressure network with no exterior surface to leak through');
+
+  // `SurfaceAverageCalculation` is what avoids `ExternalNode`,
+  // `WindPressureCoefficientArray` and `WindPressureCoefficientValues`
+  // entirely. The engine documents it for rectangular buildings, which this box
+  // is, and it is why a reader entering measured pressure coefficients is out
+  // of scope here.
+  doc.add('AirflowNetwork:SimulationControl', 'Network', {
+    airflownetwork_control: 'MultizoneWithoutDistribution',
+    wind_pressure_coefficient_type: 'SurfaceAverageCalculation',
+    height_selection_for_local_wind_pressure_calculation: 'OpeningHeight',
+    building_type: 'LowRise',
+    azimuth_angle_of_long_axis_of_building: longAxis(facts),
+    ratio_of_building_width_along_short_axis_to_width_along_long_axis: widthRatio(facts),
+  });
+
+  // Off `Site:Location` in the document rather than off the station the picker
+  // holds, for the reason every fact here is: the document is what was
+  // simulated.
+  doc.add('AirflowNetwork:MultiZone:ReferenceCrackConditions', REF_CONDITIONS, {
+    reference_temperature: REF_TEMP_C,
+    reference_barometric_pressure: barometric(Number(must(doc, 'Site:Location').elevation)),
+    reference_humidity_ratio: 0,
+  });
+
+  // Every exterior surface leaks, the roof included, and nothing is subtracted
+  // for the glazing: the opaque area and the glazed area both leak, and
+  // splitting the envelope's coefficient by full surface area is what makes the
+  // sum come back to the stated rate.
+  const total = ext.reduce((sum, s) => sum + polygonArea(s.verts), 0);
+  const coefficient = crackCoefficient(params.envLeak, facts.grossVolume);
+  // At the `Sealed` stop there is no crack to write, and writing one anyway is
+  // a get-input fatal rather than a network that leaks nothing:
+  //
+  //   ** Severe ** <root>[AirflowNetwork:MultiZone:Surface:Crack][Crack
+  //                Zn001:Roof001][air_mass_flow_coefficient_at_reference_conditions]
+  //                - "0.000000" - Expected number greater than 0.000000
+  //
+  // The channel's `requires` refuses a desk that would end up with no linkage
+  // at all, so a sealed envelope reaches here only when something is openable.
+  for (const surface of params.envLeak > 0 ? ext : []) {
+    const name = `${CRACK} ${surface.name}`;
+    doc.add('AirflowNetwork:MultiZone:Surface:Crack', name, {
+      air_mass_flow_coefficient_at_reference_conditions:
+        coefficient * (polygonArea(surface.verts) / total),
+      air_mass_flow_exponent: FLOW_EXPONENT,
+      reference_crack_conditions: REF_CONDITIONS,
+    });
+    doc.add('AirflowNetwork:MultiZone:Surface', null, {
+      surface_name: surface.name,
+      leakage_component_name: name,
+      window_door_opening_factor_or_crack_factor: 1,
+    });
+  }
+
+  // ── the openings ──────────────────────────────────────────────────────
+  //
+  // `opensOutdoors(doc, name)`, not `params`: the same question `applyGlazing`,
+  // `applySkylights` and `applyShading` ask, and it covers both ways a wall
+  // loses its outside — its own face of the boundary key, and the Fabric
+  // channel patched out, which no parameter records at all. The appliers run in
+  // strip order and Fabric is 07 to Air's 09, so the boundaries are written.
+  const walls = WALLS.filter(
+    (wall) => params[wall.openable] > 0 && opensOutdoors(doc, wall.name),
+  );
+  const openable = []; // the window names, for the wind bound's actuators
+  if (walls.length) {
+    doc.add('AirflowNetwork:MultiZone:Component:SimpleOpening', OPENING, {
+      // A near-shut opening still leaks, and the engine wants a figure for it
+      // rather than a zero, exactly as the cracks above do.
+      air_mass_flow_coefficient_when_opening_is_closed: 0.001,
+      air_mass_flow_exponent_when_opening_is_closed: FLOW_EXPONENT,
+      minimum_density_difference_for_two_way_flow: 0.0001,
+      discharge_coefficient: 0.6,
+    });
+    for (const wall of walls) {
+      // Only fenestration hosted on a **wall**, which is why this loops the
+      // walls rather than the windows. A window whose host is the roof is
+      // within 10° of horizontal, and *both* opening models refuse it:
+      //
+      //   ** Severe ** … which is within 10 deg of being horizontal. Airflows
+      //                through horizontal openings are not allowed.
+      //   ** Severe ** The horizontal opening must be located between two
+      //                thermal zones
+      //
+      // The first because the vertical model's two-way flow comes from the
+      // pressure difference varying between the opening's bottom and top, and a
+      // flat opening gives it no neutral plane to place; the second because the
+      // horizontal model compares an upper zone's air density against a lower
+      // zone's, and outdoors is an external node carrying a wind pressure
+      // rather than a zone with a density. Neither covers "horizontal, to
+      // outdoors", both are fatal, and on every rooflight. So a roof window is
+      // linked to no opening component — the roof surface itself still carries
+      // its crack — and the Skylights strip says so where the reader would look
+      // for the control.
+      for (const window of openingsOn(doc, wall.name)) {
+        openable.push(String(window.name));
+        doc.add('AirflowNetwork:MultiZone:Surface', null, {
+          surface_name: window.name,
+          leakage_component_name: OPENING,
+          window_door_opening_factor_or_crack_factor: params[wall.openable],
+          ventilation_control_mode: 'ZoneLevel',
+        });
+      }
+    }
+  }
+
+  // The wind bound acts on the openings, so it is written from the list the
+  // linkages already collected rather than recomputed from the parameters.
+  applyWindBound(doc, params, openable);
+
+  // The rule the openings obey, and the two temperature-difference bounds
+  // outside which they shut — written **after** the openings, because whether
+  // there are any decides whether there is a rule at all. A network with no
+  // opening has nothing to obey one, so it takes `NoVent` and none of the four
+  // venting controls reaches an object. That matters beyond tidiness: those
+  // four are withdrawn from the strip on exactly that condition, and a control
+  // that is hidden while still moving the model is worse than a dead one — the
+  // reader has no way to see what changed the answer.
+  //
+  // `NEEDS_SETPOINT` is imported from `controls.js` and never restated, so the
+  // one place deciding whether a setpoint is needed is the one place deciding
+  // whether it is offered — see its declaration for the get-input fatal that
+  // splitting the two would make reachable.
+  const venting = openable.length;
+  const setpoint =
+    venting && NEEDS_SETPOINT.has(params.openRule)
+      ? writeSetpoint(doc, params.openSetpoint)
+      : undefined;
+  doc.add('AirflowNetwork:MultiZone:Zone', null, {
+    zone_name: ZONE_NAME,
+    ventilation_control_mode: venting ? params.openRule : 'NoVent',
+    ventilation_control_zone_temperature_setpoint_schedule_name: setpoint,
+    indoor_and_outdoor_temperature_difference_lower_limit_for_maximum_venting_open_factor:
+      venting ? params.openDeltaLo : undefined,
+    indoor_and_outdoor_temperature_difference_upper_limit_for_minimum_venting_open_factor:
+      venting ? params.openDeltaHi : undefined,
+  });
+
+  // The engine's own precondition, checked here rather than discovered there:
+  // `** Severe ** AirflowNetwork::Solver::get_input: An
+  // AirflowNetwork:MultiZone:Surface object is required but not found.` The
+  // channel's `requires` has already refused every desk that reaches it, so
+  // this is a bug rather than a state, and it throws by the same rule `must`
+  // does.
+  if (!doc.all('AirflowNetwork:MultiZone:Surface').size) {
+    throw new Error('a pressure network with nothing to leak through and nothing to open');
   }
 }
 
@@ -1391,7 +1896,7 @@ function applyGains(doc, params, engaged) {
     hourly_value: params.activity,
   });
 
-  doc.add('People', 'Occupants', {
+  const people = doc.add('People', 'Occupants', {
     zone_or_zonelist_or_space_or_spacelist_name: ZONE_NAME,
     number_of_people_schedule_name: 'Occupancy',
     number_of_people_calculation_method: 'Area/Person',
@@ -1400,6 +1905,25 @@ function applyGains(doc, params, engaged) {
     sensible_heat_fraction: 'Autocalculate',
     activity_level_schedule_name: 'Activity',
   });
+
+  // An adaptive venting rule on the Air strip is answered here, because this is
+  // where the occupant it asks about is written. Read off the document rather
+  // than off `params.openRule`: `applyAir` runs at 09 and this at 10, so the
+  // network's zone object already says which rule was actually written — and a
+  // rule that reached no object, on a channel that turned out to be blocked,
+  // must not put a comfort model on somebody.
+  //
+  // It has to be set *here* rather than in `applyAir` for the plainer reason
+  // that this applier clears `People` and rewrites it, so anything an earlier
+  // one hung on that object would be thrown away every apply.
+  const rule = doc.all('AirflowNetwork:MultiZone:Zone').first;
+  const comfort = rule ? ADAPTIVE_RULES.get(String(rule.ventilation_control_mode)) : undefined;
+  // The comfort model and nothing else. `mean_radiant_temperature_calculation_type`
+  // was set here too on the first pass, at `ZoneAveraged` — which is the name
+  // that field carried in an older EnergyPlus and is `EnclosureAveraged` in
+  // 26.1, so it fatalled on an enum mismatch. It is the field's own default,
+  // so the honest fix is to leave it alone: the drift invariant in one line.
+  if (comfort) people.thermal_comfort_model_1_type = comfort;
 
   if (params.lighting > 0) {
     doc.add('Lights', 'Lighting', {
@@ -1856,6 +2380,35 @@ function syncReporting(doc, state, reporting) {
   }
   for (const name of wanted) {
     if (!base.has(name)) addVariable(doc, name, 'Hourly');
+  }
+
+  // What the pressure network moved, where there is one. Asked of the document
+  // rather than of `params` and the channel state, because `applyAir` has
+  // already run by the time this does and the document is the record of what it
+  // decided — one question covers the model in force, the channel being patched
+  // out, and the channel being blocked by its own `requires`.
+  //
+  // The gate is not optional: without it EnergyPlus lists every unproducible
+  // variable at the end of the error file and inflates the warning count the
+  // title block reports, which is the reason the rail terms and the end-use
+  // meters are gated already.
+  if (holds(doc, 'AirflowNetwork:SimulationControl') && doc.all('AirflowNetwork:SimulationControl').size) {
+    // The rate is the sum of these two and neither is optional: "infiltration"
+    // is the engine's word for "through a crack", not for the infiltration of
+    // this building. Measured on the stock desk with a south opening, 0.0007
+    // and 0.684 ACH — reading either alone letters a number three orders of
+    // magnitude out, under a label claiming the whole building.
+    addVariable(doc, 'AFN Zone Infiltration Air Change Rate', 'Hourly', ZONE_NAME);
+    addVariable(doc, 'AFN Zone Ventilation Air Change Rate', 'Hourly', ZONE_NAME);
+    // The hours the openings actually stood open, which is the only variable
+    // the engine publishes for that reading. The key `*` is safe here and is
+    // the exception that proves the rule: the warning about per-surface
+    // variables is about a request across 158 surfaces, which took an annual
+    // run from 681 ms to 2,984 ms. This one resolves to one series per openable
+    // *window*, at most four on this desk.
+    if (doc.all('AirflowNetwork:MultiZone:Component:SimpleOpening').size) {
+      addVariable(doc, 'AFN Surface Venting Window or Door Opening Factor', 'Hourly');
+    }
   }
 
   doc.add('Output:VariableDictionary', null, { key_field: 'IDF' });

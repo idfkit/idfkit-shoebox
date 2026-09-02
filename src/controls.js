@@ -2373,10 +2373,10 @@ const STOREYS = [
  * overhang ends up asking about the east wall's glass.
  */
 const WALL_FACES = Object.freeze([
-  { face: 'north', label: 'N', wwr: 'wwrN', overhang: 'ohN', boundary: 'wallBoundaryN' },
-  { face: 'east', label: 'E', wwr: 'wwrE', overhang: 'ohE', boundary: 'wallBoundaryE' },
-  { face: 'south', label: 'S', wwr: 'wwrS', overhang: 'ohS', boundary: 'wallBoundaryS' },
-  { face: 'west', label: 'W', wwr: 'wwrW', overhang: 'ohW', boundary: 'wallBoundaryW' },
+  { face: 'north', label: 'N', wwr: 'wwrN', overhang: 'ohN', openable: 'openN', boundary: 'wallBoundaryN' },
+  { face: 'east', label: 'E', wwr: 'wwrE', overhang: 'ohE', openable: 'openE', boundary: 'wallBoundaryE' },
+  { face: 'south', label: 'S', wwr: 'wwrS', overhang: 'ohS', openable: 'openS', boundary: 'wallBoundaryS' },
+  { face: 'west', label: 'W', wwr: 'wwrW', overhang: 'ohW', openable: 'openW', boundary: 'wallBoundaryW' },
 ].map(Object.freeze));
 
 /**
@@ -2396,6 +2396,37 @@ export const BOUNDARY_KEYS = Object.freeze({
 
 /** Whether a surface has anything on the other side of it, as the desk stands. */
 export const opensOut = (params, face) => params[BOUNDARY_KEYS[face]] !== ADIABATIC;
+
+/**
+ * The surfaces that can face the weather, which is not all six.
+ *
+ * A wall or a roof opens onto `Outdoors`; a floor opens onto `Ground`, and the
+ * pressure network has nothing to do with a slab — an
+ * `AirflowNetwork:MultiZone:Surface` links a surface to an external node
+ * carrying a wind pressure, and a floor on grade has none. `applyNetwork`
+ * filters on the boundary the document holds, so this list has to be the same
+ * set or the channel's precondition would pass a box the applier then finds
+ * nothing to leak through.
+ *
+ * The roof is in it deliberately: a box whose four walls are all adiabatic but
+ * whose roof is not still has an envelope to leak through, and gating on the
+ * walls alone would refuse a building the engine runs perfectly.
+ */
+export const WEATHER_FACES = Object.freeze([...WALL_FACES.map((w) => w.face), 'roof']);
+
+/**
+ * Which parameter carries each wall's openable area.
+ *
+ * Exported for the same reason `BOUNDARY_KEYS` is, and against the same silent
+ * failure: `applyNetwork` decides which walls get an opening linkage, and a
+ * misspelled key there is `params[undefined]`, which is `undefined`, which is
+ * not greater than zero — so the wall would quietly never open on a desk whose
+ * plan key says it does. Assembled from the one table rather than written out
+ * again, and asserted against the declarations at `model.js`'s module load.
+ */
+export const OPENABLE_KEYS = Object.freeze(
+  Object.fromEntries(WALL_FACES.map((w) => [w.face, w.openable])),
+);
 
 /**
  * An adiabatic wall has no outside, and EnergyPlus refuses a subsurface cut
@@ -2438,6 +2469,30 @@ const SHADE_SIDES = WALL_FACES.map(({ face, label, wwr, overhang }) => ({
   unreached: (p) => (opensOut(p, face) ? noOpening(face) : noOutside(face)),
 }));
 
+/**
+ * An operable window is cut from the opening it sits in, so a wall with no
+ * glass has nothing to open — the same fact `noOpening` states for an overhang,
+ * and a different sentence, because a refusal naming the wrong cause is exactly
+ * what the `Side` class exists to prevent. "The north wall has no opening, so an
+ * overhang there hangs on nothing" is true of a wall and wrong about a window.
+ */
+const noneToOpen = (wall) =>
+  `The ${wall} wall has no opening, so there is nothing there to open.`;
+
+/**
+ * The same two questions the overhang key already asks, of the same four walls,
+ * because they are the same two questions: an operable window is cut from the
+ * opening it sits in, so a wall with no glass has nothing to open, and a wall
+ * with no outside has nowhere to open onto.
+ */
+const OPENABLE_SIDES = WALL_FACES.map(({ face, label, wwr, openable }) => ({
+  key: openable,
+  side: face,
+  label,
+  needs: (p) => opensOut(p, face) && p[wwr] > 0,
+  unreached: (p) => (opensOut(p, face) ? noneToOpen(face) : noOutside(face)),
+}));
+
 // An opening exists where the ratio is off zero *and* the wall it would be cut
 // into has an outside — the applier writes exactly that set, so every
 // precondition asking "is there any glass" has to ask the same question or it
@@ -2454,6 +2509,112 @@ const skylit = (p) => p.skyRatio > 0 && opensOut(p, 'roof');
 // construction, so a rooflight glazed in its own simple unit is one the Blinds
 // channel cannot reach.
 const skyAsWalls = (p) => p.skyGlass === 'Walls';
+
+/**
+ * Which of the Air strip's two models is in force.
+ *
+ * One channel, two models of its own subject, and the engine simulates one or
+ * the other and never both -- so every control on that strip carries one of
+ * these, and a control belonging to the model that is out reaches nothing. This
+ * is the mechanism the Glazing strip already uses for `uFactor` against `panes`,
+ * and it is the whole of User Story 2's guarantee: the console draws from the
+ * declaration, `applyAir` writes from it, and neither can offer a control the
+ * other would ignore.
+ */
+const scheduled = (p) => p.airModel === 'Scheduled';
+const network = (p) => p.airModel === 'Network';
+
+/** Whether any wall has an area to open at all, asked of the parameters. */
+const anyOpenable = (p) =>
+  WALL_FACES.some(({ face, wwr, openable }) => opensOut(p, face) && p[wwr] > 0 && p[openable] > 0);
+
+/**
+ * How many ways through the envelope a pressure network would have, counted the
+ * way `applyNetwork` writes them.
+ *
+ * Every surface with an outside carries a crack, unless the leakiness is at its
+ * `Sealed` stop, where there is no crack to write — a coefficient of exactly
+ * zero is a get-input fatal rather than a crack that leaks nothing. And every
+ * openable wall that has glass carries an opening.
+ *
+ * It has to reach **two**, which is the engine's own rule and not ours:
+ *
+ *   ** Severe ** AirflowNetwork::Solver::get_input: AirflowNetwork:Multizone:Zone
+ *                = ZONE ONE has only one surface defined in
+ *                AirflowNetwork:MultiZone:Surface
+ *   **  Fatal ** Errors found getting inputs.
+ *
+ * Which is the physics saying so: a pressure network with one hole in it has
+ * nowhere for the air to go, so there is nothing to solve. Counted off the
+ * faces rather than off the document because a precondition runs before any
+ * applier does — and the two agree, since `WEATHER_FACES` is exactly the set
+ * `applyNetwork`'s own `outdoors` filter returns.
+ */
+const networkPaths = (p) =>
+  (p.envLeak > 0 ? WEATHER_FACES.filter((face) => opensOut(p, face)).length : 0) +
+  WALL_FACES.filter(({ face, wwr, openable }) => opensOut(p, face) && p[wwr] > 0 && p[openable] > 0)
+    .length;
+
+/**
+ * The venting rules that will not run without a setpoint schedule.
+ *
+ * Declared here, beside the selector that offers them, and read by `applyAir`
+ * rather than restated there — so the one place deciding whether a setpoint is
+ * *needed* is the same place deciding whether it is *offered*. Split between the
+ * two, a mode added to the selector and missed in the applier is a get-input
+ * fatal the schema cannot catch, because the schema marks the field optional:
+ *
+ *   ** Severe ** AirflowNetwork::Solver::get_input: : AirflowNetwork:MultiZone:Zone
+ *                = ZONE ONE  Ventilation Control Zone Temperature Setpoint Schedule
+ *                Name cannot be empty when Ventilation Control Mode = TEMPERATURE.
+ *   **  Fatal ** Errors found getting inputs.
+ */
+export const NEEDS_SETPOINT = Object.freeze(new Set(['Temperature', 'Enthalpy']));
+
+/**
+ * The venting rules that read the occupants rather than the thermometer.
+ *
+ * Both adaptive standards are written about what people in a free-running
+ * building will accept, so the engine will not run one without an occupant to
+ * ask — it wants a `People` object carrying the matching comfort model, and
+ * says so as a get-input fatal:
+ *
+ *   ** Severe ** ASHRAE55 ventilation control for zone ZONE ONE requires
+ *                connection to a people object that uses ASHRAE55 model
+ *                calculations.
+ *   **  Fatal ** Errors found getting inputs.
+ *
+ * Which means these two rules genuinely need the Gains channel in the path.
+ * That is a precondition on the rest of the desk, so it is stated as one.
+ */
+export const ADAPTIVE_RULES = Object.freeze(
+  new Map([
+    ['ASHRAE55Adaptive', 'AdaptiveASH55'],
+    ['CEN15251Adaptive', 'AdaptiveCEN15251'],
+  ]),
+);
+
+/**
+ * And it has to name modes the selector actually offers.
+ *
+ * Both directions fail, in opposite ways. A mode in this set but not in the
+ * selector is dead code nobody would notice; a mode in the selector that needs
+ * a setpoint and is missing from the set is the measured get-input fatal. One
+ * assertion covers both, and it belongs beside the declaration rather than in
+ * the applier, by the rule that declaration errors throw at module load rather
+ * than degrade at run time. Run at the foot of this file, where `CHANNEL_BY_ID`
+ * exists — see `assertSetpointModes`.
+ */
+const assertSetpointModes = () => {
+  const offered = new Set(
+    CHANNEL_BY_ID.air.controls.find((c) => c.key === 'openRule').options.map((o) => o.value),
+  );
+  for (const mode of NEEDS_SETPOINT) {
+    if (!offered.has(mode)) {
+      throw new Error(`NEEDS_SETPOINT names "${mode}", which openRule does not offer`);
+    }
+  }
+};
 
 export const CHANNELS = Object.freeze([
   new Channel({
@@ -2765,7 +2926,17 @@ export const CHANNELS = Object.freeze([
         digits: 3,
         zero: 'Solid',
         landmarks: SKY_RATIO,
-        note: 'Of the gross roof.',
+        // The second sentence is FR-008, and it belongs here for the same
+        // reason the glass selector below says a rooflight falls outside the
+        // blind: the reader is told where they would look for the control,
+        // rather than left to discover that the network never opens the roof.
+        // Both opening models refuse a near-horizontal surface — the vertical
+        // one because a flat opening has no bottom and top for a neutral plane
+        // to sit between, the horizontal one because it is formulated between
+        // two zones and outdoors is an external node with a wind pressure
+        // rather than a zone with a density — and both refusals are fatal.
+        note:
+          'Of the gross roof. A rooflight leaks under the Air strip\u2019s pressure network but can never be opened by it: a near-horizontal opening has no bottom and top for a neutral plane to sit between. Roof ventilation needs the scheduled air model.',
       }),
       new Selector({
         key: 'skyForm',
@@ -3097,50 +3268,205 @@ export const CHANNELS = Object.freeze([
     name: 'Air',
     term: 'Qinf',
     blurb:
-      'Leakage you did not ask for, and ventilation you did. The night-flush controls only open the building when it actually helps: warm inside, cooler out, and a real difference between the two.',
+      'Leakage you did not ask for, and ventilation you did, by one of two models: a rate you state and the weather only gates, or a pressure network that computes the flow from wind and stack effect each timestep.',
     bypassed: true,
+    requires: {
+      // A pressure network needs something to leak through. With Fabric patched
+      // out, or every surface of its key set adiabatic, there is no exterior
+      // surface left and the engine stops at get-input:
+      //
+      //   ** Severe ** AirflowNetwork::Solver::get_input: An
+      //                AirflowNetwork:MultiZone:Surface object is required but
+      //                not found.
+      //   ** Fatal  ** Errors found getting inputs.
+      //
+      // The scheduled model has no such requirement: it puts air into a zone
+      // without asking where it came through, which is exactly the difference
+      // between the two models. So the precondition is conditional on which one
+      // is in force, and the channel stays engaged under the scheduled one.
+      //
+      // `off` rather than `on`, for the reason the Glazing strip's gate gives:
+      // Fabric is declared at 07, two strips above this one, so `on('fabric')`
+      // would be reading a channel this loop has not decided yet. Being patched
+      // out is an *input* to that loop rather than something it decides, and
+      // can be asked of any channel in any order.
+      // And it needs at least two ways *through* that surface — see
+      // `networkPaths`, which counts them the way the applier writes them and
+      // carries both fatals it makes unreachable.
+      test: (p, on, off) =>
+        p.airModel !== 'Network' ||
+        (!off('fabric') &&
+          WEATHER_FACES.some((face) => opensOut(p, face)) &&
+          networkPaths(p) >= 2 &&
+          // The adaptive rules read the occupants, and the engine refuses one
+          // with no `People` object to read. `off` rather than `on`, for the
+          // same reason as Fabric above: Gains is declared at 10, one strip
+          // below this, so `on('gains')` would be asking about a channel this
+          // loop has not decided — but being patched out is an input to it.
+          (!(ADAPTIVE_RULES.has(p.openRule) && anyOpenable(p)) || !off('gains'))),
+      // Handed the same three readers `test` is, so the sentence can tell the
+      // causes apart — and one of them, Fabric patched out, is a state no
+      // parameter records at all.
+      reason: (p, on, off) =>
+        off('fabric') || !WEATHER_FACES.some((face) => opensOut(p, face))
+          ? 'The pressure network needs a surface with an outside to leak through — every surface of this box is adiabatic.'
+          : networkPaths(p) < 2
+            ? 'A pressure network needs at least two ways through the envelope, and this box has fewer — give it some leakiness, or open a second wall.'
+            : 'The adaptive comfort rules ask what the occupants will accept, so the engine needs somebody in the room — patch Gains in, or choose another rule for the openings.',
+    },
+    readout: new Readout({
+      label: 'As run',
+      note:
+        'The air change rate the weather actually produced, off the run: the cracks and the openings together. It is a result and not a setting — the rate above is what the envelope was specified at, this is what this climate did with it.',
+    }),
     meter: new Meter({
       label: 'Outdoor air transfer',
       rail: true,
       // Infiltration and ventilation together, which is the shape of the term
-      // in the air balance — the two enter the zone air the same way.
+      // in the air balance — the two enter the zone air the same way. One term
+      // and one meter across both models: the balance does not care which of
+      // them put the air in the zone, and a second meter would put two terms on
+      // the rail where the physics has one.
       terms: [new Term({ variable: 'Zone Air Heat Balance Outdoor Air Transfer Rate' })],
     }),
     controls: [
+      // The choice, first, because everything under it belongs to one model or
+      // the other and a reader has to know which one they are working in before
+      // the numbers mean anything.
+      new Selector({
+        key: 'airModel', label: 'Air model', value: 'Scheduled',
+        note:
+          'Scheduled states a rate and the weather only gates it. The network states how leaky the envelope is and how large the openings are, and computes the rate from wind and stack effect each timestep. The engine simulates one or the other, never both. The network cannot open a rooflight: a near-horizontal opening has no bottom and top for a neutral plane to sit between, so a desk that needs roof ventilation stays on the scheduled model.',
+        options: [
+          { value: 'Scheduled', label: 'Scheduled' },
+          { value: 'Network', label: 'Network' },
+        ],
+      }),
+      // ── the network's own controls ──────────────────────────────────────
+      new Scale({
+        key: 'envLeak', label: 'Envelope leakiness', value: 0.5,
+        min: 0, max: 3, step: 0.01, digits: 2, unit: 'ACH', zero: 'Sealed',
+        // `INFILTRATION` reused rather than copied. Both quantities are air
+        // changes per hour at natural conditions, so the published cases a
+        // reader reads 0.5 against are the same cases — and the range and step
+        // match `infiltration`'s exactly, so all four `readLandmarks` rules
+        // already hold. A second set of bands would be the second source of
+        // truth Principle III forbids, in the one place where the two models
+        // have to agree about what a word means.
+        landmarks: INFILTRATION,
+        needs: network,
+        note:
+          'At a 4 Pa reference, split over every surface with an outside by its own area. What the model was given for it, and what the run made of it, are both lettered below.',
+      }),
+      new Selector({
+        key: 'openRule', label: 'Openings obey', value: 'Temperature',
+        needs: (p) => network(p) && anyOpenable(p),
+        // The values are the enum of `ventilation_control_mode` verbatim, so
+        // nothing is translated on the way into the document and a value that
+        // reaches the field cannot be one the engine rejects. `CEN15251Adaptive`
+        // is labelled EN 16798 because that is the standard which replaced
+        // EN 15251; the engine's field name is the old one and the label is the
+        // reader's.
+        options: [
+          { value: 'NoVent', label: 'Never' },
+          { value: 'Constant', label: 'Always' },
+          { value: 'Temperature', label: 'Indoor temperature' },
+          { value: 'Enthalpy', label: 'Enthalpy difference' },
+          { value: 'ASHRAE55Adaptive', label: 'ASHRAE 55 adaptive' },
+          { value: 'CEN15251Adaptive', label: 'EN 16798 adaptive' },
+        ],
+      }),
+      new Scale({
+        key: 'openSetpoint', label: 'Open above indoor', value: 22,
+        min: 10, max: 32, step: 0.5, digits: 1, unit: '°C',
+        // Offered exactly when the schedule will be written, because
+        // `NEEDS_SETPOINT` decides both. See its declaration for the fatal that
+        // splitting the two would make reachable.
+        needs: (p) => network(p) && anyOpenable(p) && NEEDS_SETPOINT.has(p.openRule),
+      }),
+      new Scale({
+        key: 'openDeltaLo', label: 'Full open at ΔT', value: 0,
+        min: 0, max: 20, step: 0.5, digits: 1, unit: 'K',
+        needs: (p) => network(p) && anyOpenable(p),
+        note: 'Indoor minus outdoor. Below this the opening is held at its smallest venting factor; at and above it, at its largest.',
+      }),
+      new Scale({
+        key: 'openDeltaHi', label: 'Shut above ΔT', value: 100,
+        min: 1, max: 100, step: 1, digits: 0, unit: 'K',
+        needs: (p) => network(p) && anyOpenable(p),
+        note: 'Left at the stop the opening never shuts on ΔT alone: 100 K is past any weather.',
+      }),
+      new Scale({
+        key: 'openMaxWind', label: 'Shut above wind', value: 40,
+        min: 1, max: 40, step: 0.5, digits: 1, unit: 'm/s',
+        landmarks: WIND,
+        // Gated on there being an opening and not on the model alone, because a
+        // bound on openings that do not exist reaches no actuator:
+        // `applyWindBound` writes nothing where no wall is openable, so
+        // offering it there would be the dead control this whole arrangement is
+        // built to prevent.
+        needs: (p) => network(p) && anyOpenable(p),
+        note: 'No AirflowNetwork object carries a wind speed, so this one reaches the run through a short EMS program rather than through a field. Left at the stop the window never shuts: 40 m/s is past a hurricane.',
+      }),
+      // ── the scheduled model's controls ──────────────────────────────────
+      // Unchanged in every respect but their `needs`. No default, range, step
+      // or landmark moves, which is what keeps `DEFAULTS_BY_VERSION.v1` frozen
+      // as it stands, `LINK_VERSION` at 1 and `MIGRATIONS` empty: every key
+      // this feature adds is an addition, and additions are free under delta
+      // encoding.
+      // A `Facade` and not four `Scale`s, for the reason the glazing ratio and
+      // the overhang projection already are: four walls are four subjects, each
+      // gets its own study offer and its own curve, and `controlFor` already
+      // resolves a wall key to `{ control, side }`. It is also the whole
+      // argument for the network — the facade a window is on reaches the
+      // result, which no stated rate can say.
+      new Facade({
+        key: 'openable',
+        label: 'Openable area',
+        short: 'Openable',
+        sides: OPENABLE_SIDES,
+        min: 0, max: 1, step: 0.01, digits: 2,
+        zero: 'Shut',
+        needs: network,
+        note:
+          'The fraction of each wall\u2019s own window that can be opened. Rooflights are not offered: a near-horizontal opening has no bottom and top for a neutral plane to sit between, and the engine refuses one.',
+      }),
       new Scale({
         key: 'infiltration', label: 'Infiltration', value: 0.5,
         min: 0, max: 3, step: 0.01, digits: 2, unit: 'ACH', zero: 'Sealed',
         landmarks: INFILTRATION,
+        needs: scheduled,
         note: 'Air changes at natural pressure, not the ACH50 a blower door reports — the usual rule divides one by about twenty to get the other.',
       }),
       new Scale({
         key: 'infConstant', label: 'Constant coefficient', value: 1,
         min: 0, max: 1, step: 0.01, digits: 2,
         landmarks: INF_CONSTANT,
-        needs: (p) => p.infiltration > 0,
+        needs: (p) => scheduled(p) && p.infiltration > 0,
         note: 'The A of A + B·ΔT + C·v. Move weight off it and on to the two below to make leakage answer the weather.',
       }),
       new Scale({
         key: 'infWind', label: 'Wind coefficient', value: 0,
         min: 0, max: 0.4, step: 0.005, digits: 3, zero: 'None',
         landmarks: INF_WIND,
-        needs: (p) => p.infiltration > 0,
+        needs: (p) => scheduled(p) && p.infiltration > 0,
       }),
       new Scale({
         key: 'infStack', label: 'Stack coefficient', value: 0,
         min: 0, max: 0.1, step: 0.001, digits: 3, zero: 'None',
         landmarks: INF_STACK,
-        needs: (p) => p.infiltration > 0,
+        needs: (p) => scheduled(p) && p.infiltration > 0,
       }),
       new Scale({
         key: 'ventilation', label: 'Ventilation', value: 0,
         min: 0, max: 12, step: 0.05, digits: 2, unit: 'ACH', zero: 'None',
         landmarks: VENTILATION,
+        needs: scheduled,
         note: 'Openable area, as air changes. Night flush lives here.',
       }),
       new Selector({
         key: 'ventType', label: 'Driven by', value: 'Natural',
-        needs: (p) => p.ventilation > 0,
+        needs: (p) => scheduled(p) && p.ventilation > 0,
         options: [
           { value: 'Natural', label: 'Stack' },
           { value: 'Intake', label: 'Supply fan' },
@@ -3151,24 +3477,24 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'ventMinIndoor', label: 'Open above indoor', value: 22,
         min: 10, max: 32, step: 0.5, digits: 1, unit: '°C',
-        needs: (p) => p.ventilation > 0,
+        needs: (p) => scheduled(p) && p.ventilation > 0,
       }),
       new Scale({
         key: 'ventMaxOutdoor', label: 'Open below outdoor', value: 20,
         min: 5, max: 32, step: 0.5, digits: 1, unit: '°C',
-        needs: (p) => p.ventilation > 0,
+        needs: (p) => scheduled(p) && p.ventilation > 0,
       }),
       new Scale({
         key: 'ventDeltaT', label: 'Minimum ΔT', value: 2,
         min: 0, max: 10, step: 0.5, digits: 1, unit: 'K',
-        needs: (p) => p.ventilation > 0,
+        needs: (p) => scheduled(p) && p.ventilation > 0,
         note: 'Indoor minus outdoor. Below this the opening is not worth the draught.',
       }),
       new Scale({
         key: 'ventMaxWind', label: 'Shut above wind', value: 40,
         min: 1, max: 40, step: 0.5, digits: 1, unit: 'm/s',
         landmarks: WIND,
-        needs: (p) => p.ventilation > 0,
+        needs: (p) => scheduled(p) && p.ventilation > 0,
         note: 'Left at the stop the window never shuts: 40 m/s is past a hurricane.',
       }),
     ],
@@ -3633,6 +3959,12 @@ const LOOSE = Object.freeze({
   ohE: 0,
   ohS: 0.6,
   ohW: 0,
+  // Every wall shut, so a reader who engages the pressure network gets the
+  // envelope's leakage alone until they open something on purpose.
+  openN: 0,
+  openE: 0,
+  openS: 0,
+  openW: 0,
 });
 
 /** Every control's starting position, flattened. */
@@ -3731,6 +4063,8 @@ export function phraseFor(key) {
 }
 
 export const CHANNEL_BY_ID = Object.freeze(Object.fromEntries(CHANNELS.map((c) => [c.id, c])));
+
+assertSetpointModes();
 
 /** Every parameter key, in strip order. Used to key a solve. */
 export const ALL_KEYS = Object.freeze([...CHANNELS.flatMap((c) => c.keys()), 'occFrom', 'occTo'].filter(
