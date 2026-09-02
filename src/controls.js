@@ -20,7 +20,7 @@
  * carried here rather than looked up somewhere else at draw time.
  */
 class Control {
-  constructor({ key, label, value, note = null, needs = null }) {
+  constructor({ key, label, value, note = null, needs = null, when = null }) {
     if (!key) throw new Error('a control needs a key');
     this.key = key;
     this.label = label;
@@ -30,6 +30,46 @@ class Control {
     // doing anything right now — the strip greys it and says why rather than
     // letting you turn something that is not connected to the model.
     this.needs = needs;
+    // And a second predicate, for a different question: does this control
+    // belong to the configuration at all? False means the strip does not draw
+    // it, rather than drawing it dim.
+    //
+    // The two are kept apart because they are two different facts about a
+    // control, and one treatment for both was misreading the more important of
+    // them. A strip that offers two models of its own subject — Air's scheduled
+    // rate against its pressure network, Glazing's simple unit against its
+    // layered one, the rooflights' own glass against the walls' — withdraws
+    // whole blocks of controls when the model is switched, and nothing near
+    // those controls brings them back: the only thing that does is a selector
+    // at the top of the strip. Dimming ten rows says "these are inert right
+    // now" when what is true is "these belong to the other instrument", and a
+    // reader is left working out why a whole section has gone grey. Worse, a
+    // dimmed control is still draggable, still in the tab order, and still
+    // moves under an arrow key, which is exactly the dead control this desk
+    // refuses to offer.
+    //
+    // `needs` keeps the case it was written for and is the right instrument
+    // there: `infConstant` is inert while `infiltration` is zero, and the
+    // control that revives it is the one directly above it, so dimming keeps
+    // that relationship visible instead of making a row appear and disappear
+    // under the reader's hand.
+    this.when = when;
+  }
+
+  /** Whether the strip draws this control at all, as the desk stands. */
+  shown(params) {
+    return this.when ? Boolean(this.when(params)) : true;
+  }
+
+  /**
+   * Whether it is reaching the model, which is only asked of one it draws.
+   *
+   * A control the strip is not drawing is not idle, it is absent — asking both
+   * questions of one predicate is what put `.idle` on rows that had no business
+   * being on the strip in the first place.
+   */
+  idle(params) {
+    return this.shown(params) && Boolean(this.needs) && !this.needs(params);
   }
 
   /** How this control's value reads in the margin. Overridden per kind. */
@@ -242,9 +282,9 @@ function readLandmarks(list, control) {
 class Ruled extends Control {
   constructor({
     key, label, value, min, max, step,
-    unit = '', digits = 2, zero = null, note = null, needs = null, landmarks = [],
+    unit = '', digits = 2, zero = null, note = null, needs = null, when = null, landmarks = [],
   }) {
-    super({ key, label, value, note, needs });
+    super({ key, label, value, note, needs, when });
     this.min = min;
     this.max = max;
     this.step = step;
@@ -367,8 +407,8 @@ export class Scale extends Ruled {
  * current state of every channel without opening anything.
  */
 export class Selector extends Control {
-  constructor({ key, label, value, options, note = null, needs = null }) {
-    super({ key, label, value, note, needs });
+  constructor({ key, label, value, options, note = null, needs = null, when = null }) {
+    super({ key, label, value, note, needs, when });
     this.kind = 'selector';
     this.options = options.map((o) => Object.freeze({ ...o }));
     Object.freeze(this);
@@ -388,8 +428,8 @@ export class Selector extends Control {
  * before it means anything. Set on a rose, it is the thing itself.
  */
 export class Bearing extends Control {
-  constructor({ key, label, value, note = null, needs = null }) {
-    super({ key, label, value, note, needs });
+  constructor({ key, label, value, note = null, needs = null, when = null }) {
+    super({ key, label, value, note, needs, when });
     this.kind = 'bearing';
     Object.freeze(this);
   }
@@ -556,10 +596,10 @@ export class Face {
  * its own account to the channels that were going to cut an opening into it.
  */
 export class Boundary extends Control {
-  constructor({ key, label, faces, note = null, needs = null }) {
+  constructor({ key, label, faces, note = null, needs = null, when = null }) {
     // The key names the group; the six faces own the parameters, as a plan
     // key's four walls do.
-    super({ key, label, value: null, note, needs });
+    super({ key, label, value: null, note, needs, when });
     this.kind = 'boundary';
     this.faces = Object.freeze(faces.map((f) => new Face(f)));
     Object.freeze(this);
@@ -670,8 +710,8 @@ const sentenceList = (items) =>
  * fact rather than a preference.
  */
 export class Calendar extends Control {
-  constructor({ key, label, value, note = null, needs = null }) {
-    super({ key, label, value, note, needs });
+  constructor({ key, label, value, note = null, needs = null, when = null }) {
+    super({ key, label, value, note, needs, when });
     this.kind = 'calendar';
     if (!isMonthMask(value)) throw new Error(`${key} starts at "${value}", which is not a mask`);
     Object.freeze(this);
@@ -702,8 +742,8 @@ export class Calendar extends Control {
  * writes a `Schedule:Compact`, so the band is the schedule.
  */
 export class Profile extends Control {
-  constructor({ key, label, from, to, note = null, needs = null }) {
-    super({ key, label, value: null, note, needs });
+  constructor({ key, label, from, to, note = null, needs = null, when = null }) {
+    super({ key, label, value: null, note, needs, when });
     this.kind = 'profile';
     this.from = from; // key holding the first occupied hour
     this.to = to; // key holding the first unoccupied hour
@@ -730,8 +770,8 @@ export class Profile extends Control {
  * days themselves. `parseHolidays` below is that boundary.
  */
 export class Days extends Control {
-  constructor({ key, label, value, presets = [], max = 24, note = null, needs = null }) {
-    super({ key, label, value, note, needs });
+  constructor({ key, label, value, presets = [], max = 24, note = null, needs = null, when = null }) {
+    super({ key, label, value, note, needs, when });
     this.kind = 'days';
     this.presets = Object.freeze([...presets]);
     // Most entries the list may hold. A cap exists because the list travels in a
@@ -2605,6 +2645,30 @@ export const ADAPTIVE_RULES = Object.freeze(
  * than degrade at run time. Run at the foot of this file, where `CHANNEL_BY_ID`
  * exists — see `assertSetpointModes`.
  */
+/**
+ * Only the kinds the console can actually withdraw may carry `when`.
+ *
+ * `buildControl` dispatches to a builder per kind and each registers its own
+ * redraw, so a kind whose builder never reads `shown()` would take the
+ * declaration and silently ignore it — a control declared as belonging to one
+ * model, drawn under both. That is precisely the class of silent breakage this
+ * file throws at module load over, so it throws here too. Teach a new kind by
+ * adding `row.hidden = !control.shown(params)` to its builder and its name
+ * here, in that order.
+ */
+const HIDEABLE = Object.freeze(new Set(['scale', 'selector', 'facade', 'days']));
+const assertHideable = () => {
+  for (const channel of CHANNELS) {
+    for (const control of channel.controls) {
+      if (control.when && !HIDEABLE.has(control.kind)) {
+        throw new Error(
+          `${control.key} is a "${control.kind}" and carries \`when\`, which the console cannot draw`,
+        );
+      }
+    }
+  }
+};
+
 const assertSetpointModes = () => {
   const offered = new Set(
     CHANNEL_BY_ID.air.controls.find((c) => c.key === 'openRule').options.map((o) => o.value),
@@ -2812,21 +2876,21 @@ export const CHANNELS = Object.freeze([
         step: 0.01,
         unit: 'W/m²K',
         landmarks: GLASS_U,
-        needs: (p) => !layered(p),
+        when: (p) => !layered(p),
       }),
       new Scale({
         key: 'shgc',
         label: 'SHGC',
         value: 0.4, min: 0.05, max: 0.9, step: 0.01, digits: 2,
         landmarks: GLASS_SHGC,
-        needs: (p) => !layered(p),
+        when: (p) => !layered(p),
       }),
       new Scale({
         key: 'visT',
         label: 'Visible transmittance',
         value: 0.6, min: 0.05, max: 0.9, step: 0.01, digits: 2,
         landmarks: GLASS_VT,
-        needs: (p) => !layered(p),
+        when: (p) => !layered(p),
       }),
       new Scale({
         key: 'panes',
@@ -2837,7 +2901,7 @@ export const CHANNELS = Object.freeze([
         step: 1,
         digits: 0,
         landmarks: PANE_COUNT,
-        needs: layered,
+        when: layered,
         note: 'Sheets of glass, with a cavity of the width below between each pair. The simple model has no pane count to give — its three numbers are the whole assembly already — so this is the one place on the desk where a window is built rather than specified.',
       }),
       new Scale({
@@ -2849,7 +2913,7 @@ export const CHANNELS = Object.freeze([
         step: 0.01,
         digits: 2,
         landmarks: PANE_EMISS,
-        needs: layered,
+        when: layered,
         note: 'Inboard pane, outside face.',
       }),
       new Scale({
@@ -2862,7 +2926,7 @@ export const CHANNELS = Object.freeze([
         digits: 3,
         unit: 'm',
         landmarks: GAP_WIDTH,
-        needs: layered,
+        when: layered,
       }),
       new Scale({
         key: 'frameWidth',
@@ -2994,7 +3058,8 @@ export const CHANNELS = Object.freeze([
         step: 0.01,
         unit: 'W/m²K',
         landmarks: ROOFLIGHT_U,
-        needs: (p) => skylit(p) && !skyAsWalls(p),
+        when: (p) => !skyAsWalls(p),
+        needs: skylit,
         note: 'A domed unit is a worse assembly than a wall window of the same generation, and it loses to a colder sky.',
       }),
       new Scale({
@@ -3006,7 +3071,8 @@ export const CHANNELS = Object.freeze([
         step: 0.01,
         digits: 2,
         landmarks: GLASS_SHGC,
-        needs: (p) => skylit(p) && !skyAsWalls(p),
+        when: (p) => !skyAsWalls(p),
+        needs: skylit,
       }),
       new Scale({
         key: 'skyVisT',
@@ -3017,7 +3083,8 @@ export const CHANNELS = Object.freeze([
         step: 0.01,
         digits: 2,
         landmarks: GLASS_VT,
-        needs: (p) => skylit(p) && !skyAsWalls(p),
+        when: (p) => !skyAsWalls(p),
+        needs: skylit,
       }),
     ],
   }),
@@ -3354,13 +3421,31 @@ export const CHANNELS = Object.freeze([
         // truth Principle III forbids, in the one place where the two models
         // have to agree about what a word means.
         landmarks: INFILTRATION,
-        needs: network,
+        when: network,
         note:
           'At a 4 Pa reference, split over every surface with an outside by its own area. What the model was given for it, and what the run made of it, are both lettered below.',
       }),
+      // A `Facade` and not four `Scale`s, for the reason the glazing ratio and
+      // the overhang projection already are: four walls are four subjects, each
+      // gets its own study offer and its own curve, and `controlFor` already
+      // resolves a wall key to `{ control, side }`. It is also the whole
+      // argument for the network — the facade a window is on reaches the
+      // result, which no stated rate can say.
+      new Facade({
+        key: 'openable',
+        label: 'Openable area',
+        short: 'Openable',
+        sides: OPENABLE_SIDES,
+        min: 0, max: 1, step: 0.01, digits: 2,
+        zero: 'Shut',
+        when: network,
+        note:
+          'The fraction of each wall\u2019s own window that can be opened. Rooflights are not offered: a near-horizontal opening has no bottom and top for a neutral plane to sit between, and the engine refuses one.',
+      }),
       new Selector({
         key: 'openRule', label: 'Openings obey', value: 'Temperature',
-        needs: (p) => network(p) && anyOpenable(p),
+        when: network,
+        needs: anyOpenable,
         // The values are the enum of `ventilation_control_mode` verbatim, so
         // nothing is translated on the way into the document and a value that
         // reaches the field cannot be one the engine rejects. `CEN15251Adaptive`
@@ -3382,30 +3467,35 @@ export const CHANNELS = Object.freeze([
         // Offered exactly when the schedule will be written, because
         // `NEEDS_SETPOINT` decides both. See its declaration for the fatal that
         // splitting the two would make reachable.
-        needs: (p) => network(p) && anyOpenable(p) && NEEDS_SETPOINT.has(p.openRule),
+        when: (p) => network(p) && NEEDS_SETPOINT.has(p.openRule),
+        needs: anyOpenable,
       }),
       new Scale({
         key: 'openDeltaLo', label: 'Full open at ΔT', value: 0,
         min: 0, max: 20, step: 0.5, digits: 1, unit: 'K',
-        needs: (p) => network(p) && anyOpenable(p),
+        when: network,
+        needs: anyOpenable,
         note: 'Indoor minus outdoor. Below this the opening is held at its smallest venting factor; at and above it, at its largest.',
       }),
       new Scale({
         key: 'openDeltaHi', label: 'Shut above ΔT', value: 100,
         min: 1, max: 100, step: 1, digits: 0, unit: 'K',
-        needs: (p) => network(p) && anyOpenable(p),
+        when: network,
+        needs: anyOpenable,
         note: 'Left at the stop the opening never shuts on ΔT alone: 100 K is past any weather.',
       }),
       new Scale({
         key: 'openMaxWind', label: 'Shut above wind', value: 40,
         min: 1, max: 40, step: 0.5, digits: 1, unit: 'm/s',
         landmarks: WIND,
-        // Gated on there being an opening and not on the model alone, because a
-        // bound on openings that do not exist reaches no actuator:
-        // `applyWindBound` writes nothing where no wall is openable, so
-        // offering it there would be the dead control this whole arrangement is
-        // built to prevent.
-        needs: (p) => network(p) && anyOpenable(p),
+        // Drawn under the network and dimmed until a wall is openable, which is
+        // the split the two predicates are for: it belongs to this model, and a
+        // bound on openings that do not exist reaches no actuator —
+        // `applyWindBound` writes nothing where no wall is openable. Dimming
+        // rather than hiding is right here because the control that revives it
+        // is the plan key three rows up.
+        when: network,
+        needs: anyOpenable,
         note: 'No AirflowNetwork object carries a wind speed, so this one reaches the run through a short EMS program rather than through a field. Left at the stop the window never shuts: 40 m/s is past a hurricane.',
       }),
       // ── the scheduled model's controls ──────────────────────────────────
@@ -3414,59 +3504,46 @@ export const CHANNELS = Object.freeze([
       // as it stands, `LINK_VERSION` at 1 and `MIGRATIONS` empty: every key
       // this feature adds is an addition, and additions are free under delta
       // encoding.
-      // A `Facade` and not four `Scale`s, for the reason the glazing ratio and
-      // the overhang projection already are: four walls are four subjects, each
-      // gets its own study offer and its own curve, and `controlFor` already
-      // resolves a wall key to `{ control, side }`. It is also the whole
-      // argument for the network — the facade a window is on reaches the
-      // result, which no stated rate can say.
-      new Facade({
-        key: 'openable',
-        label: 'Openable area',
-        short: 'Openable',
-        sides: OPENABLE_SIDES,
-        min: 0, max: 1, step: 0.01, digits: 2,
-        zero: 'Shut',
-        needs: network,
-        note:
-          'The fraction of each wall\u2019s own window that can be opened. Rooflights are not offered: a near-horizontal opening has no bottom and top for a neutral plane to sit between, and the engine refuses one.',
-      }),
       new Scale({
         key: 'infiltration', label: 'Infiltration', value: 0.5,
         min: 0, max: 3, step: 0.01, digits: 2, unit: 'ACH', zero: 'Sealed',
         landmarks: INFILTRATION,
-        needs: scheduled,
+        when: scheduled,
         note: 'Air changes at natural pressure, not the ACH50 a blower door reports — the usual rule divides one by about twenty to get the other.',
       }),
       new Scale({
         key: 'infConstant', label: 'Constant coefficient', value: 1,
         min: 0, max: 1, step: 0.01, digits: 2,
         landmarks: INF_CONSTANT,
-        needs: (p) => scheduled(p) && p.infiltration > 0,
+        when: scheduled,
+        needs: (p) => p.infiltration > 0,
         note: 'The A of A + B·ΔT + C·v. Move weight off it and on to the two below to make leakage answer the weather.',
       }),
       new Scale({
         key: 'infWind', label: 'Wind coefficient', value: 0,
         min: 0, max: 0.4, step: 0.005, digits: 3, zero: 'None',
         landmarks: INF_WIND,
-        needs: (p) => scheduled(p) && p.infiltration > 0,
+        when: scheduled,
+        needs: (p) => p.infiltration > 0,
       }),
       new Scale({
         key: 'infStack', label: 'Stack coefficient', value: 0,
         min: 0, max: 0.1, step: 0.001, digits: 3, zero: 'None',
         landmarks: INF_STACK,
-        needs: (p) => scheduled(p) && p.infiltration > 0,
+        when: scheduled,
+        needs: (p) => p.infiltration > 0,
       }),
       new Scale({
         key: 'ventilation', label: 'Ventilation', value: 0,
         min: 0, max: 12, step: 0.05, digits: 2, unit: 'ACH', zero: 'None',
         landmarks: VENTILATION,
-        needs: scheduled,
+        when: scheduled,
         note: 'Openable area, as air changes. Night flush lives here.',
       }),
       new Selector({
         key: 'ventType', label: 'Driven by', value: 'Natural',
-        needs: (p) => scheduled(p) && p.ventilation > 0,
+        when: scheduled,
+        needs: (p) => p.ventilation > 0,
         options: [
           { value: 'Natural', label: 'Stack' },
           { value: 'Intake', label: 'Supply fan' },
@@ -3477,24 +3554,28 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'ventMinIndoor', label: 'Open above indoor', value: 22,
         min: 10, max: 32, step: 0.5, digits: 1, unit: '°C',
-        needs: (p) => scheduled(p) && p.ventilation > 0,
+        when: scheduled,
+        needs: (p) => p.ventilation > 0,
       }),
       new Scale({
         key: 'ventMaxOutdoor', label: 'Open below outdoor', value: 20,
         min: 5, max: 32, step: 0.5, digits: 1, unit: '°C',
-        needs: (p) => scheduled(p) && p.ventilation > 0,
+        when: scheduled,
+        needs: (p) => p.ventilation > 0,
       }),
       new Scale({
         key: 'ventDeltaT', label: 'Minimum ΔT', value: 2,
         min: 0, max: 10, step: 0.5, digits: 1, unit: 'K',
-        needs: (p) => scheduled(p) && p.ventilation > 0,
+        when: scheduled,
+        needs: (p) => p.ventilation > 0,
         note: 'Indoor minus outdoor. Below this the opening is not worth the draught.',
       }),
       new Scale({
         key: 'ventMaxWind', label: 'Shut above wind', value: 40,
         min: 1, max: 40, step: 0.5, digits: 1, unit: 'm/s',
         landmarks: WIND,
-        needs: (p) => scheduled(p) && p.ventilation > 0,
+        when: scheduled,
+        needs: (p) => p.ventilation > 0,
         note: 'Left at the stop the window never shuts: 40 m/s is past a hurricane.',
       }),
     ],
@@ -4064,6 +4145,7 @@ export function phraseFor(key) {
 
 export const CHANNEL_BY_ID = Object.freeze(Object.fromEntries(CHANNELS.map((c) => [c.id, c])));
 
+assertHideable();
 assertSetpointModes();
 
 /** Every parameter key, in strip order. Used to key a solve. */
