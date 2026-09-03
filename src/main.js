@@ -84,8 +84,8 @@ import {
   Measure,
   PRESETS,
   PRESET_BY_ID,
-  Scheme,
   SHELF_LIMIT,
+  Scheme,
   Shelf,
   applyPreset,
   chaseVerdict,
@@ -2248,6 +2248,20 @@ function commit(key, value, done = false) {
     params[key] = value;
     syncSlider[key]?.();
     desk?.sync(key);
+    // What this control's value settles besides itself, asked of the
+    // declaration rather than by name. `roomType` is the first control here
+    // that writes others — naming a published room brings that room's figures
+    // with it — and the question is put generically so the second one costs a
+    // field in `controls.js` rather than another arm in the desk's one funnel.
+    //
+    // Written straight onto `params` rather than through a nested `commit`: a
+    // second commit would open a gesture inside this one and take the ghost
+    // with it, and the `applyGeometry` below covers every key at once anyway.
+    const implied = controlFor(key).control.implies?.(value);
+    if (implied) {
+      Object.assign(params, implied);
+      desk?.sync();
+    }
     applyGeometry();
     if (priced) reprice();
     else if (continuous()) pump();

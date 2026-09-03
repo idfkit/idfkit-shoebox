@@ -14,7 +14,7 @@
 // `scripts/build-tm59.mjs`. Imported rather than restated so the Room type
 // selector and the profile library cannot name different spaces; see
 // `TM59_SPACES` below for what happened the one time they did.
-import { PROFILE_IDS } from './tm59.data.js';
+import { LIGHTING_PATTERN, PROFILE_IDS, profileFor } from './tm59.data.js';
 
 /* ══ controls ════════════════════════════════════════════════════════════ */
 
@@ -26,12 +26,25 @@ import { PROFILE_IDS } from './tm59.data.js';
  * carried here rather than looked up somewhere else at draw time.
  */
 class Control {
-  constructor({ key, label, value, note = null, needs = null, when = null }) {
+  constructor({ key, label, value, note = null, needs = null, when = null, implies = null }) {
     if (!key) throw new Error('a control needs a key');
     this.key = key;
     this.label = label;
     this.value = value;
     this.note = note;
+    // What else this control's value settles, as the parameters that follow
+    // from it. Most controls settle nothing but themselves and leave this null.
+    //
+    // It is declared here rather than handled where the gesture lands, because
+    // a fact about a control belongs with the control: five separate routes
+    // write `params` — a commit, a preset, a revert, a scheme restore and a
+    // link decode — and a consequence attached to one of them is a consequence
+    // the other four cannot see. Declared, they can all ask the same question.
+    //
+    // A function of the value rather than a table, because the answer is a
+    // lookup into a published library and a table here would be that library's
+    // second copy.
+    this.implies = implies;
     // A predicate on the whole parameter set. False means this control is not
     // doing anything right now — the strip greys it and says why rather than
     // letting you turn something that is not connected to the model.
@@ -426,8 +439,8 @@ export class Scale extends Ruled {
  * current state of every channel without opening anything.
  */
 export class Selector extends Control {
-  constructor({ key, label, value, options, note = null, needs = null, when = null }) {
-    super({ key, label, value, note, needs, when });
+  constructor({ key, label, value, options, note = null, needs = null, when = null, implies = null }) {
+    super({ key, label, value, note, needs, when, implies });
     this.kind = 'selector';
     this.options = options.map((o) => Object.freeze({ ...o }));
     Object.freeze(this);
@@ -2896,6 +2909,61 @@ const FLAT_DAY = Object.freeze(Array.from({ length: PATTERN_HOURS }, () => 1));
  */
 export const TM59_SPACES = PROFILE_IDS;
 
+/**
+ * The gains a named room implies, as the controls that carry them.
+ *
+ * Thirteen rooms are tabulated in Appendix E and every one of their figures is
+ * generated into `tm59.data.js`, and until this existed none of them reached
+ * the desk. `roomType` chose which *branch* of `applyGains` ran — a headcount
+ * rather than a density — and then took the headcount from `peopleCount`,
+ * which does not move when the room does. So all thirteen rooms wrote one
+ * model: measured, a desk at "Studio" and a desk at "Double bedroom"
+ * serialised byte-identically, both at one person around the clock, which is
+ * not any space the method describes. Twelve of the thirteen were unreachable
+ * by any gesture and the thirteenth arrived only with the whole preset.
+ *
+ * It is here rather than in the register for the reason every other fact about
+ * a control is here: this is what `roomType` *means*, and it is consulted on an
+ * ordinary turn of a selector that has nothing to do with applying a standard.
+ * `schemes.js` reads it to build the TM59 preset's clauses rather than
+ * restating the arithmetic, so the register and the selector cannot load two
+ * different bedrooms.
+ *
+ * Only what the *room* publishes. `weekend` and `infiltration` are clauses of
+ * the method rather than properties of a space, so they stay with the preset:
+ * naming a bedroom is not asking to be assessed to TM59.
+ *
+ * @param {string} id  a room from `PROFILE_IDS`, or `AS_DRAWN` for none
+ * @returns {object}   the parameters that room implies, empty under `AS_DRAWN`
+ * @throws  through `profileFor`, naming the thirteen it has
+ */
+export function gainsForRoom(id) {
+  if (id === AS_DRAWN) return NO_ROOM;
+  const profile = profileFor(id);
+  // Each pattern is written at the precision of the control that will hold it,
+  // read off that control rather than assumed: `occPattern` carries three
+  // decimals because TM59's fractions are divisions of Table E.1's watts and
+  // 85 / 450 is 0.1889, which two decimals would commit as 0.19 under a
+  // declaration saying 0.189.
+  const asText = (key, hours) => serializePattern(hours, controlFor(key).control.digits);
+  return Object.freeze({
+    peopleCount: profile.people,
+    // Table E.2 gives the person as sensible and latent apart; the activity
+    // level is one number and is their sum.
+    activity: profile.sensible + profile.latent,
+    occPattern: asText('occPattern', profile.occupied),
+    equipPeak: profile.equipPeak,
+    equipPattern: asText('equipPattern', profile.equipment),
+    lighting: profile.lighting,
+    // Its own band, 18:00 to 23:00, and the same for every space — which is why
+    // it is a constant of the library rather than a field of the room.
+    lightPattern: asText('lightPattern', LIGHTING_PATTERN),
+  });
+}
+
+/** What a room implies when there is no room: the desk as the reader drew it. */
+const NO_ROOM = Object.freeze({});
+
 /** Whether any wall has an area to open at all, asked of the parameters. */
 const anyOpenable = (p) =>
   WALL_FACES.some(({ face, wwr, openable }) => opensOut(p, face) && p[wwr] > 0 && p[openable] > 0);
@@ -3936,7 +4004,8 @@ export const CHANNELS = Object.freeze([
           { value: AS_DRAWN, label: 'As drawn' },
           ...TM59_SPACES.map((space) => ({ value: space, label: space })),
         ],
-        note: 'Naming a space swaps the densities for the counts and the band for three profiles. The published figures arrive with it from the register, not from here.',
+        implies: gainsForRoom,
+        note: 'Naming a space swaps the densities for the counts and the band for three profiles, and brings that space\u2019s published figures with it.',
       }),
       new Scale({
         key: 'occupancy', label: 'Occupant density', value: 12,

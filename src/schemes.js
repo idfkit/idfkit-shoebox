@@ -51,6 +51,7 @@ import {
   DEFAULT_PARAMETERS,
   controlFor,
   formatValue,
+  gainsForRoom,
   labelFor,
   refuses,
   serializePattern,
@@ -63,7 +64,7 @@ import {
   QUALIFICATIONS,
   SEASON,
 } from './tm59.js';
-import { LIGHTING_PATTERN, PROFILE_IDS, profileFor } from './tm59.data.js';
+import { PROFILE_IDS, profileFor } from './tm59.data.js';
 
 /* ══ what a preset is allowed to touch ═══════════════════════════════════ */
 
@@ -373,6 +374,21 @@ const fromN50 = (n50) => Math.round((n50 / 20) * 1000) / 1000;
  */
 const TM59_ROOM = 'Double bedroom';
 const TM59_PROFILE = profileFor(TM59_ROOM);
+
+/**
+ * The figures that room implies, read off the control rather than restated.
+ *
+ * Every `value:` in the TM59 clauses below is one of these. Computed a second
+ * time here — `profile.sensible + profile.latent` for the activity level, a
+ * `serializePattern` for each of the three days — the register and the selector
+ * would be two expressions of one fact, and this file's own rule is that a
+ * register restating what it cites is the second source of truth the page
+ * exists not to hold. Composed instead, applying the standard and naming its
+ * room cannot come apart, and the assertion that used to police them agreeing
+ * is down to the one thing composition does not settle: whether the preset has
+ * a clause for every key the room writes.
+ */
+const TM59_GAINS = gainsForRoom(TM59_ROOM);
 
 /**
  * One line of a profile's published citation, found by what it opens with.
@@ -794,7 +810,7 @@ export const PRESETS = Object.freeze([
       }),
       new Spec({
         key: 'peopleCount',
-        value: TM59_PROFILE.people,
+        value: TM59_GAINS.peopleCount,
         why:
           `${cite(TM59_PROFILE, 'Occupancy,')}\nThe peak headcount, which the occupancy pattern below ` +
           'is a fraction of. A count and not a density, and that is load bearing rather than a ' +
@@ -804,7 +820,7 @@ export const PRESETS = Object.freeze([
       }),
       new Spec({
         key: 'activity',
-        value: TM59_PROFILE.sensible + TM59_PROFILE.latent,
+        value: TM59_GAINS.activity,
         why:
           `Table E.2 gives the person as ${TM59_PROFILE.sensible} W sensible and ` +
           `${TM59_PROFILE.latent} W latent at the peak. This desk states one figure, total heat, so ` +
@@ -817,7 +833,7 @@ export const PRESETS = Object.freeze([
       }),
       new Spec({
         key: 'occPattern',
-        value: patternText('occPattern', TM59_PROFILE.occupied),
+        value: TM59_GAINS.occPattern,
         why:
           `${cite(TM59_PROFILE, 'Occupancy,')}\nWritten as twenty-four fractions of that peak ` +
           'headcount, hour by hour, because a from/to band cannot say what this profile says. It ' +
@@ -830,7 +846,7 @@ export const PRESETS = Object.freeze([
       }),
       new Spec({
         key: 'equipPeak',
-        value: TM59_PROFILE.equipPeak,
+        value: TM59_GAINS.equipPeak,
         why:
           `${cite(TM59_PROFILE, 'Equipment,')}\nThe peak in watts, absolute, for the same reason the ` +
           'headcount is: W/m² would be a reading of the Massing channel a preset is forbidden to ' +
@@ -839,7 +855,7 @@ export const PRESETS = Object.freeze([
       }),
       new Spec({
         key: 'equipPattern',
-        value: patternText('equipPattern', TM59_PROFILE.equipment),
+        value: TM59_GAINS.equipPattern,
         why:
           `${cite(TM59_PROFILE, 'Equipment,')}\n${cite(TM59_PROFILE, 'Table E.2')}\nSo the base gain ` +
           'rides this pattern rather than a control of its own, which is where a standing load has ' +
@@ -849,7 +865,7 @@ export const PRESETS = Object.freeze([
       }),
       new Spec({
         key: 'lighting',
-        value: TM59_PROFILE.lighting,
+        value: TM59_GAINS.lighting,
         why:
           `${cite(TM59_PROFILE, 'Lighting,')}\nThe one prescribed figure on this list that needs no ` +
           'conversion at all: TM59 states the lighting per square metre of usable floor area and the ' +
@@ -858,7 +874,7 @@ export const PRESETS = Object.freeze([
       }),
       new Spec({
         key: 'lightPattern',
-        value: patternText('lightPattern', LIGHTING_PATTERN),
+        value: TM59_GAINS.lightPattern,
         why:
           `${cite(TM59_PROFILE, 'Lighting,')}\nOn its own band, and this is the fourth and hardest of ` +
           'the ways TM59\'s gains do not fit the desk as it was: the lights run 18:00 to 23:00 ' +
@@ -1128,6 +1144,47 @@ export const PRESETS = Object.freeze([
 export const PRESET_BY_ID = Object.freeze(Object.fromEntries(PRESETS.map((p) => [p.id, p])));
 
 /* ══ the assertions ══════════════════════════════════════════════════════ */
+
+/**
+ * That every room the selector offers writes values the desk will accept, and
+ * that the register has a clause for each of them.
+ *
+ * Two gaps, and neither was covered before. A `Spec` is run through
+ * `refuses(control, value)` further down, so a preset cannot write a figure
+ * outside a control's own face; a room's figures reach `params` through
+ * `Control.implies` and were checked by nothing at all. All thirteen pass
+ * today — `peopleCount` runs to 10 and the largest room asks for 3, `activity`
+ * runs 70 to 400 and every room is 130 — but they pass by arithmetic rather
+ * than by construction, and a corrected transcription in `tm59.data.js` could
+ * put one outside its face with the only symptom a silently clamped desk.
+ *
+ * The second half is what survives of the guard that used to sit above
+ * `PRESET_BY_ID`. Composition settles the *values* — the clauses are built from
+ * `gainsForRoom` now, so they cannot differ from it — and leaves exactly one
+ * thing unsettled: a key the room writes that the preset says nothing about,
+ * which would make applying the standard and naming its room two different
+ * desks.
+ */
+{
+  for (const room of PROFILE_IDS) {
+    for (const [key, value] of Object.entries(gainsForRoom(room))) {
+      const { control } = controlFor(key);
+      const fault = refuses(control, value);
+      if (fault) {
+        throw new Error(
+          `the room "${room}" writes ${key} = ${JSON.stringify(value)}, which ${control.label} ${fault}`,
+        );
+      }
+    }
+  }
+  for (const key of Object.keys(TM59_GAINS)) {
+    if (PRESET_BY_ID.tm59.specs.some((spec) => spec.key === key)) continue;
+    throw new Error(
+      `naming the room "${TM59_ROOM}" writes ${key}, and the TM59 preset has no clause for it: ` +
+      'applying the standard and choosing its room would build two different desks',
+    );
+  }
+}
 
 /*
  * Run at module load, so a preset that cannot be applied cannot ship. This is
