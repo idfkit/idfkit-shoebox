@@ -318,13 +318,21 @@ function manifest(run, list) {
   // heading says which one this is before anything else does, so a file that
   // has been sitting in a downloads folder for a week cannot be mistaken for a
   // good run.
+  //
+  // Neither names a host, and that is the point. The page is published at three
+  // addresses — the release at shoebox.idfkit.com, `main` under /dev/, an open
+  // pull request under its number — so a literal here would be wrong for most
+  // of the bundles that get downloaded, and wrong in the one direction this
+  // file cannot afford: claiming a run came off the released sheet when it came
+  // off a development build. The exact address is stated below anyway, in the
+  // `live` line, where it is read off `location` rather than typed.
   const lede = run.failure
     ? `idfkit shoebox — simulation bundle (FAILED RUN)\n` +
       `\n` +
-      `This run, in your browser at shoebox.idfkit.com, produced no readings, so\n` +
-      `there is nothing in here to check the page against. What there is, is\n` +
-      `everything the run did leave: the exact IDF and weather the engine was\n` +
-      `handed, and whatever it wrote before it stopped, if it got that far.\n` +
+      `This run, in your browser, produced no readings, so there is nothing in\n` +
+      `here to check the page against. What there is, is everything the run did\n` +
+      `leave: the exact IDF and weather the engine was handed, and whatever it\n` +
+      `wrote before it stopped, if it got that far.\n` +
       `Nothing is re-derived and nothing is filled in — figures the run never\n` +
       `reached read as em dashes below, and what went wrong is quoted under\n` +
       `"Why it stopped".\n` +
@@ -332,11 +340,11 @@ function manifest(run, list) {
       readFirst
     : `idfkit shoebox — simulation bundle\n` +
       `\n` +
-      `This is the exact input and output of a run performed in your browser at\n` +
-      `shoebox.idfkit.com. Nothing here is re-derived: the IDF is the text handed\n` +
-      `to the engine under a header of comments naming what wrote it, the EPW is\n` +
-      `the weather file as downloaded, and the report is what EnergyPlus wrote\n` +
-      `back. Re-run it to reproduce every number the page showed.\n`;
+      `This is the exact input and output of a run performed in your browser.\n` +
+      `Nothing here is re-derived: the IDF is the text handed to the engine under\n` +
+      `a header of comments naming what wrote it, the EPW is the weather file as\n` +
+      `downloaded, and the report is what EnergyPlus wrote back. Re-run it to\n` +
+      `reproduce every number the page showed.\n`;
 
   // The sentence the sheet reported, quoted rather than paraphrased: it is
   // frequently the engine's own fatal message, and re-wording it here would

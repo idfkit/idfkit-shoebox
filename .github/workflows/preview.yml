@@ -6,6 +6,10 @@
 # page — the `/onebuilding` weather origin and the pre-compressed engine — exist
 # only at the edge and cannot be exercised on localhost at all. A preview served
 # from anywhere else would test the half that never fails.
+#
+# It is the same arrangement `main` itself is published under — a channel one
+# directory in, at a reserved top-level name — and the release at the root is
+# that same artefact moved there by a tag. See `.github/workflows/deploy.yml`.
 name: Preview
 
 on:
@@ -70,7 +74,7 @@ jobs:
       - run: npm run deploy
         env:
           SHOEBOX_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-          SHOEBOX_PREVIEW: ${{ github.event.number }}
+          SHOEBOX_PREFIX: ${{ github.event.number }}
 
       # The comment comes from the idfkit app rather than github-actions[bot] so
       # that the link is posted by the same identity the organisation's other
@@ -100,7 +104,8 @@ jobs:
               '',
               `Built from ${sha}. It is the whole page, engine and schema bundle and`,
               'weather proxy, served from the same distribution as the site. It is',
-              'removed when this pull request closes.',
+              'removed when this pull request closes; once merged, `main` is at',
+              'https://shoebox.idfkit.com/dev/ until the next release.',
             ].join('\n');
             // Resolved against the workspace: `require` inside github-script
             // otherwise looks in the action's own directory, not the checkout.
@@ -138,7 +143,7 @@ jobs:
       - run: npm run undeploy
         env:
           SHOEBOX_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-          SHOEBOX_PREVIEW: ${{ github.event.number }}
+          SHOEBOX_PREFIX: ${{ github.event.number }}
 
       - name: Mint app token
         id: app-token
@@ -159,8 +164,9 @@ jobs:
               '<!-- shoebox-preview-comment -->',
               `**Preview** for this pull request has been removed.`,
               '',
-              'It was published while the pull request was open; the current page is',
-              'at https://shoebox.idfkit.com/.',
+              'It was published while the pull request was open. `main` is at',
+              'https://shoebox.idfkit.com/dev/, and the last release is at',
+              'https://shoebox.idfkit.com/.',
             ].join('\n');
             const comment = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/preview-comment.cjs`);
             await comment({ github, context, body, edit: true });

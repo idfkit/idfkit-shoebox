@@ -10,7 +10,7 @@ npm run dev       # predev stages ~50 MB of engine assets, schemas and the stati
 npm run build     # prebuild does the same staging
 npm run preview
 npm run deploy    # compresses dist/ and publishes it; needs a built dist/ and AWS credentials
-npm run undeploy  # removes a preview; needs SHOEBOX_PREVIEW=<pr number>
+npm run undeploy  # removes a preview; needs SHOEBOX_PREFIX=<pr number>
 ```
 
 `predev` / `prebuild` copy `@idfkit/engine-assets` into `public/energyplus/`, the
@@ -1551,31 +1551,52 @@ has the console and `applyModel`.
 
 Served at `shoebox.idfkit.com` from an S3 bucket behind CloudFront, defined as a
 CDK app in `infra/` (TypeScript, its own `package.json`, so the page's toolchain
-stays vite and nothing else). Pushing to `main` publishes:
-`.github/workflows/deploy.yml` assumes a role by GitHub OIDC and runs
-`npm run deploy`. No AWS key is stored.
+stays vite and nothing else). `.github/workflows/deploy.yml` assumes a role by
+GitHub OIDC and runs `npm run deploy`. No AWS key is stored.
 
-Opening a pull request publishes a preview at `shoebox.idfkit.com/<number>/`
-(`.github/workflows/preview.yml`), and closing it takes the preview down again.
+**Only a tag publishes the site itself.** The address `shoebox.idfkit.com` is a
+released issue of the drawing and nothing else, for the same reason the title
+block carries a revision at all: a reading is only worth arguing with when you
+know which issue produced it, and `main` is pushed to far more often than it is
+tagged. So a `v*` tag publishes the root, and every other push to `main`
+publishes the **development channel** at `shoebox.idfkit.com/dev/`. Opening a
+pull request publishes a **preview** at `shoebox.idfkit.com/<number>/`
+(`.github/workflows/preview.yml`), and closing it takes that preview down again.
+Nothing else about the three runs differs.
 
-- **A preview is the same bucket and the same distribution**, under the pull
-  request's number as a key prefix. A separate host would leave the two things
-  that actually break a deployment of this page untested: the `/onebuilding`
-  weather origin and the pre-compressed engine both exist only at the edge.
-- **The preview build carries its base**: `npm run build -- --base=/42/`.
-  `src/main.js` and `src/weather.js` resolve the engine, the schema bundle and
-  the station index against `import.meta.env.BASE_URL` for this reason. Written
-  as `/energyplus`, a preview would load the published site's staged assets and
-  report on those. `/onebuilding` is the exception and stays root-absolute — it
-  is a distribution behavior, not a file this site publishes.
-- **The top-level numeric directory is reserved.** `scripts/deploy.mjs` spares
-  keys matching `^\d+/` when it prunes the site, and a preview run
-  (`SHOEBOX_PREVIEW=42`) never lists or deletes outside its own prefix. Without
-  the first half, the next push to main would delete every open pull request's
-  preview.
-- **`/42` and `/42/` reach the preview through a CloudFront function.**
-  `defaultRootObject` covers exactly one path, `/`, so a subdirectory index has
-  to be appended by hand; the bare `/42` is redirected rather than rewritten.
+- **A channel is the same bucket and the same distribution**, one directory in.
+  A separate host would leave the two things that actually break a deployment of
+  this page untested: the `/onebuilding` weather origin and the pre-compressed
+  engine both exist only at the edge. A release is therefore the same artefact
+  that has been served under `/dev/` since it was merged, moved to the root.
+- **A channel build carries its base**: `npm run build -- --base=/dev/`, or
+  `/42/`. `src/main.js` and `src/weather.js` resolve the engine, the schema
+  bundle and the station index against `import.meta.env.BASE_URL` for this
+  reason. Written as `/energyplus`, a channel would load the published release's
+  staged assets and report on those. `/onebuilding` is the exception and stays
+  root-absolute — it is a distribution behavior, not a file this site publishes.
+- **The top-level names `dev` and any directory of digits are reserved.**
+  `scripts/deploy.mjs` declares that shape once, as `CHANNEL`, and builds three
+  rules from it: a release spares keys matching it when it prunes, a channel run
+  never lists or deletes outside its own prefix, and a release refuses outright
+  to publish a build that writes into the namespace. Without the first, the next
+  tag would delete `/dev` and every open pull request's preview.
+- **`/dev`, `/dev/`, `/42` and `/42/` reach a channel through a CloudFront
+  function.** `defaultRootObject` covers exactly one path, `/`, so a subdirectory
+  index has to be appended by hand; the bare `/dev` is redirected rather than
+  rewritten. The pattern is interpolated from the stack's own `CHANNEL` regex,
+  because a channel served at a path the deploy script does not consider
+  reserved would be pruned by the next release, hours later and nowhere near
+  either file.
+- **A tag ref is not a branch ref, and the deploy role has to say so.** GitHub's
+  OIDC subject carries `ref:refs/tags/v0.2.0` for a release, which the branch
+  subject does not cover, so `RELEASE_TAGS` in `infra/lib/shoebox-stack.ts` adds
+  a third trusted pattern and the condition operator becomes `StringLike` (IAM
+  will not mix operators over one key; the two wildcard-free patterns match
+  exactly under it, so nothing is widened). It has to agree with the `tags:`
+  filter in `deploy.yml`, or a release fails at the credentials step naming
+  neither file. This does not widen who may deploy: pushing a tag here already
+  takes the write access that pushing to `main` takes.
 - **The preview job is gated twice.** GitHub gives a fork's pull request a
   read-only token whatever `permissions` says, so no OIDC token is minted and
   the role is unreachable; the job additionally refuses to run unless the head
@@ -1599,7 +1620,9 @@ Opening a pull request publishes a preview at `shoebox.idfkit.com/<number>/`
   title block's Sheet cell reads `E-01 · Rev 0.2.0` on a tagged build and
   `E-01 · Rev 0.2.0+cd5881e` on everything else, because this page is published
   from `main` far more often than it is tagged and a reading is only worth
-  arguing with when you know which issue of the drawing produced it.
+  arguing with when you know which issue of the drawing produced it. The address
+  now says the same thing the stamp does: a `+sha` build is served under `/dev/`
+  and a bare version at the root.
   `scripts/revision.mjs` resolves it — `git describe --tags --exact-match` for
   the tag, `package.json` plus the short sha as semver build metadata otherwise
   — and `vite.config.js` freezes the result in as `__SHEET_REVISION__`; a page
