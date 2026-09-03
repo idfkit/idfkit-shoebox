@@ -2723,16 +2723,33 @@
          does, which is the more honest drawing as well — a card that has ended
          is ruled off, and what lies under it is desk.
 
-         `align-items: start` is not cosmetic and is the whole of FR-006: it
-         holds every card at its own height, so an opening card grows downward
-         from its own top edge and its row-mates do not move. Stretched, a card
-         opening would resize every card beside it, which moves edges under the
-         pointer that is doing the opening. */
+         **Cards in a row share its height.** This was `align-items: start`,
+         on the argument that holding each card at its own height is what keeps
+         an opening card from resizing its neighbours — and the measurement says
+         otherwise. Opening a card in the middle row moves the cards beside it by
+         `dx 0, dy 0, dw 0, dh 0`: they do not move under either rule, because
+         the opening card grows in the block direction and a grid row's width is
+         not up for negotiation. What `start` actually bought was a hole. A row
+         is as tall as its tallest card, so an opened card left its two row-mates
+         ending 172px early with the desk showing through, and the row carrying
+         a blocked channel's sentence read 52 / 52 / 107. Stretched, the same
+         rows read as three ruled cells of equal height, and the grid is exactly
+         as tall either way — measured at 367px under both.
+
+         What `start` was really guarding is a hit area: a stretched card is
+         hoverable over the blank part of its cell, where a peek would open it
+         from a distance. That case only arises beside an already-open card, and
+         the blank part is that card's own cell — hovering a card and having
+         that card open is the rule everywhere else on this grid, so it is
+         consistent rather than surprising.
+
+         The thing FR-006 is actually about is untouched by either: an opening
+         card's own top-left corner is a fixed point, so the pointer that opened
+         it is still over it afterwards. */
       .strip-grid {
         --cols: 3;
         display: grid;
         grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
-        align-items: start;
       }
       @container desk (min-width: 840px) { .strip-grid { --cols: 4; } }
       @container desk (min-width: 1050px) { .strip-grid { --cols: 5; } }

@@ -832,12 +832,26 @@ was a single column.
 
 Three mechanics that cost real debugging:
 
-- **`align-items: start` is a correctness rule, not a cosmetic one.** It holds
-  every card at its own height so an opening card grows downward from its own
-  top edge. Stretched, a card opening resizes every card beside it, which moves
-  edges under the pointer that is doing the opening — and a card whose edge
-  moves past the pointer sets its neighbour opening, which shrinks the first,
-  which puts the pointer back on it.
+- **Cards in a row share its height, and the argument for the opposite did not
+  survive measurement.** `align-items: start` was set on the reasoning that
+  holding each card at its own height stops an opening card resizing its
+  neighbours. Measured, the cards beside an opening one move by `dx 0, dy 0,
+  dw 0, dh 0` under either rule — a card grows in the block direction and a grid
+  row's width is not up for negotiation. What `start` bought was a hole: a row is
+  as tall as its tallest card, so an opened card left its row-mates ending 172 px
+  early with the desk showing through, and the row carrying a blocked channel's
+  sentence read 52 / 52 / 107. Stretched, those rows read as ruled cells of equal
+  height, and the grid is exactly as tall either way (367 px under both).
+
+  The real trade is a hit area, and it is worth knowing: a stretched card is
+  hoverable over the blank part of its cell. That only arises beside an
+  already-open card, and the blank part is that card's own cell — hovering a card
+  and having it open is the rule everywhere else on the grid.
+
+  What the anti-oscillation rule is actually about survives either way: an
+  opening card's top-left corner is a fixed point, so the pointer that opened it
+  is still over it afterwards. A card that grew *inline* is the one that breaks
+  this, by moving its own edge past the pointer.
 - **An opened card is bounded, and the bound is on the card rather than on the
   fold inside it.** The largest channel is 1,513 px of controls against a 388 px
   scroller; unbounded, a pointer merely passing over it pushes every later card
@@ -897,23 +911,21 @@ feedback that a state changed, never an event in its own right.
   animation drops. A guard that also removed the state change would be a
   reader's motion preference deciding what they may use.
 
-**A row's height is set by its tallest card, and nothing else in the row moves.**
-Measured on opening one card in the middle row: earlier rows `dy 0`, the two
-cards beside it `dx 0, dy 0, dw 0, dh 0`, and every later row moved down by
-exactly the growth. That is the "neighbours give way" the grid is for; the only
-alternative that leaves later rows still is an overlay, which this sheet does not
-have. A card that grew *inline* instead would resize its row-mates, and a card
-wide enough to do that is wide enough to move its own edge past the pointer that
-opened it.
+**A row's height is set by its tallest card, and every later row moves down by
+exactly the growth.** Measured on opening one card in the middle row: earlier
+rows `dy 0`, the cards beside it unmoved and unresized, later rows `dy +208`.
+That is the "neighbours give way" the grid is for. The only arrangement that
+leaves later rows still is an overlay, which this sheet does not have; the only
+one that fills the space beside a tall card is dense packing, which takes the
+channels out of the order they are numbered in.
 
-**A row that carries a blocked channel's sentence grows, and the sentence is not
-what gives way.** Outside the fold it took its card from 52 px to 129, and with
-`align-items: start` that leaves its row-mates ending 77 px early. The sentence
-is compacted while the card is shut — 10 px over about three lines instead of
-11.5 over four, the same size the card's own reading is set in — and nothing is
-clamped, hidden or moved behind a `title`. Buying the row back by truncating an
-explanation trades the thing that must be legible for the thing that must be
-complete.
+**A row that carries a blocked channel's sentence still grows, and the sentence
+is not what gives way.** Outside the fold it took its card from 52 px to 129.
+The sentence is compacted while the card is shut — 10 px over about three lines
+instead of 11.5 over four, the same size the card's own reading is set in — and
+nothing is clamped, hidden or moved behind a `title`. Buying the row back by
+truncating an explanation trades the thing that must be legible for the thing
+that must be complete.
 
 ### A card's face must not move when it opens
 
