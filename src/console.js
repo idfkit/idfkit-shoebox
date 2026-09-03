@@ -252,12 +252,24 @@ export function mountConsole({
    */
   function bringIntoView(id) {
     if (indexing) return;
-    const room = getComputedStyle(stripHost);
-    const next = parseFloat(room.getPropertyValue('--next-row')) || 0;
-    const box = strips.get(id).strip.getBoundingClientRect();
-    const view = stripHost.getBoundingClientRect();
-    const short = box.bottom + next - view.bottom;
-    if (short > 0) stripHost.scrollTop += Math.min(short, box.top - view.top);
+    const settle = () => {
+      // Still the reader's card: a press and an immediate second press would
+      // otherwise have the frame below scrolling a card that has just shut.
+      if (cardState.get(id) !== REVEALED) return;
+      const next = parseFloat(getComputedStyle(stripHost).getPropertyValue('--next-row')) || 0;
+      const box = strips.get(id).strip.getBoundingClientRect();
+      const view = stripHost.getBoundingClientRect();
+      const short = box.bottom + next - view.bottom;
+      if (short > 0) stripHost.scrollTop += Math.min(short, box.top - view.top);
+    };
+    settle();
+    // And again on the next frame. The card's height is capped in container
+    // units off the scroller, and a container query that has not resolved by
+    // the time the click handler measures would leave this scrolling against a
+    // height that is about to change. Measured, it does resolve synchronously
+    // here — but the cost of asking twice is one clamped assignment, and the
+    // cost of being wrong is the reader losing the row they were promised.
+    requestAnimationFrame(settle);
   }
 
   /**
@@ -2796,6 +2808,9 @@ export function mountConsole({
       if (peeking === channelId) peeking = null;
       setCard(channelId, on ? REVEALED : CLOSED);
       keepReveals();
+      // A card opened from outside — the general notes staging the patch step —
+      // owes the reader the same sight of the row under it as one they pressed.
+      if (on) bringIntoView(channelId);
     },
 
     /** Which cards the reader has open, in strip order. */
