@@ -877,6 +877,17 @@ Three mechanics that cost real debugging:
 
   A card the reader opens is then scrolled just far enough that the row under it
   shows — never on a peek, which must move no scroll position at all.
+- **The cards fill the room between the head and the rail.** Eighteen closed
+  cards are shorter than the scroller on any generous window — measured, 367 px
+  of grid in a 420 px scroller — so the grid stopped 53 px short of the footer it
+  is ruled against. `min-height: 100%` gives it the height to fill and
+  `align-content: stretch` hands the free space to the rows. Write it that way
+  and not as `grid-auto-rows: 1fr`: an `fr` track is sized by the largest of
+  every track's base over its factor, so one row carrying a blocked channel's
+  107 px sentence raises *every* row to 107 and the grid overflows the scroller
+  it was meant to fit — 639 px in a 420 px box. Free-space distribution floors
+  each row at its own content, which is what "fill the space" has to mean when
+  the rows are not alike.
 - **Give the desk a height, not just a ceiling.** The console is a fixed head and
   a fixed rail either side of one scroller, and with a content-driven height
   those three only add up to the window when the strips are long enough to fill

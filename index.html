@@ -2751,6 +2751,32 @@
         display: grid;
         grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
       }
+      /* The cards take the room between the head and the rail, all of it.
+         Eighteen closed cards are shorter than the scroller on any generous
+         window — measured, 367px of grid in a 420px scroller, so 53px of desk
+         showed under the last row and the grid stopped short of the footer it
+         is ruled against.
+
+         `min-height: 100%` gives the grid the scroller's height to fill, and
+         the free space goes to the rows, which is what `align-content: stretch`
+         does. It is the grid's initial behaviour and is stated anyway, because
+         the whole effect depends on it and a later `align-content` set for some
+         other reason would take the fill away with no other symptom.
+
+         `grid-auto-rows: 1fr` is the obvious way to write this and is wrong:
+         an `fr` track's size is the largest of every track's base divided by
+         its factor, so one row carrying a blocked channel's 107px sentence
+         raises *every* row to 107 and the grid overflows a scroller it was
+         supposed to fit. Measured, 639px in a 420px box. Free-space
+         distribution floors each row at its own content instead, which is what
+         "fill the space" has to mean when the rows are not alike.
+
+         Only where the desk has a scroller to fill. Below `--index` the console
+         scrolls with the page and there is no height to distribute. */
+      .strips:not(.index) .strip-grid {
+        min-height: 100%;
+        align-content: stretch;
+      }
       @container desk (min-width: 840px) { .strip-grid { --cols: 4; } }
       @container desk (min-width: 1050px) { .strip-grid { --cols: 5; } }
 
