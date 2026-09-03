@@ -15,6 +15,9 @@ import {
   serializePattern,
 } from './controls.js';
 import { quantityField } from './field.js';
+// The searchable declaration and the edit list. DOM-free, so the same functions
+// the Node harness asserts over are the ones the desk runs.
+import { VOCABULARY, edits, find } from './finder.js';
 // The rail's own units, from the module that owns reading a run. One
 // definition: a second copy here would be the first thing to drift the day a
 // figure changed precision on one surface and not the other.
@@ -85,6 +88,12 @@ export function mountConsole({
   // `restoreReveals`; the desk degrades to "not remembered" and never to
   // "fails to boot".
   store = null,
+  // What is actually out of the path, which under solo is not the patch bay:
+  // soloing a channel takes every other bypassable one out without touching
+  // `bypass`. Handed in as the caller's own reader rather than recomputed here,
+  // because a second copy of `patching()` is a second answer to "what is in the
+  // model", and the search would give it while the strips gave the other.
+  patching = () => bypass,
 }) {
   const strips = new Map(); // channel id -> { redraw(), meter, patch, solo }
   const faces = new Map(); // parameter key -> redraw for that control
@@ -92,6 +101,8 @@ export function mountConsole({
   // for the kinds that own one key, and a per-wall anchor for a plan key,
   // which owns four and can carry four curves at once.
   const rows = new Map();
+  // Control -> the row it is drawn on, which is what a search hides and shows.
+  const controlRows = new Map();
   const cards = new Map(); // parameter key -> { node, kind, study, syncTick }
   const studyButtons = new Map(); // parameter key -> that scale's Study button
   // parameter key -> the line under its face that letters what the model was
@@ -112,6 +123,7 @@ export function mountConsole({
   // Off until the caller says otherwise: the engine is not resident at mount.
   let sweepGate = { ok: false, reason: 'The engine is still arriving.' };
 
+  const finderHost = el('div', 'finder');
   const stripHost = el('div', 'strips');
   // The ruled column set the strips lie on, one element inside the scroller
   // rather than the scroller itself: the desk fixes `stripHost`'s height so it
@@ -123,7 +135,7 @@ export function mountConsole({
 
   for (const channel of CHANNELS) stripGrid.append(buildStrip(channel));
   stripHost.append(stripGrid);
-  host.append(stripHost, railHost);
+  host.append(finderHost, stripHost, railHost);
 
   /* ── the index sheet ─────────────────────────────────────────────────────
    *
@@ -260,7 +272,10 @@ export function mountConsole({
   }
 
   function keepReveals() {
-    if (!store) return;
+    // A search's own reveals are the search's, not the reader's. Written, they
+    // would be restored on the next visit as though the reader had opened six
+    // cards themselves, and the question that opened them would be gone.
+    if (!store || asking) return;
     try {
       store.setItem(REVEAL_STORE, JSON.stringify(revealedIds()));
     } catch {
@@ -280,11 +295,213 @@ export function mountConsole({
    * forgotten them.
    */
   function restoreReveals() {
+    // A question outranks the layout's opinion about which cards are open: a
+    // reader who crosses the breakpoint mid-search is still asking it.
+    if (asking) return;
     const keep = indexing ? [] : keptReveals();
     for (const id of cardState.keys()) cardState.set(id, keep.includes(id) ? REVEALED : CLOSED);
     peeking = null;
     drawCards();
   }
+
+  /* ── asking the desk a question ──────────────────────────────────────────
+   *
+   * A search reveals the controls it names, wherever they live, through the
+   * card mechanism above rather than through a second one of its own: the
+   * matching cards open, and inside them the rows the query did not name go
+   * behind the `hidden` attribute, which takes them out of the tab order as
+   * well as off the page. So there is one gesture to learn and one set of
+   * states to reason about, and a control arrived at by searching is turned
+   * exactly where it stands rather than in some results pane of its own.
+   *
+   * Nothing in here calls `onChange`, `onPatch`, `onSolo` or `onReset`, and
+   * `pump()` is reachable from nowhere else in the application. Finding is
+   * free, and that is structural rather than a promise about intent.
+   */
+
+  // Null when no question is being asked. Otherwise the reader's own reveal
+  // state, stacked, so that clearing puts the desk back the way they left it
+  // rather than the way it starts. A search that opened a card the reader had
+  // deliberately closed must not leave it open.
+  let asking = null; // { kind: 'query' | 'edits', restore: string[] }
+
+  const said = el('p', 'finder-said');
+  said.hidden = true;
+  // `status` rather than `alert`: what a search found is a result to be read
+  // when the reader gets to it, not an interruption, and a polite region gives
+  // one announcement when the typing stops instead of one per keystroke.
+  said.setAttribute('role', 'status');
+
+  const field = document.createElement('input');
+  Object.assign(field, {
+    type: 'search', id: 'desk-find', className: 'finder-field',
+    placeholder: 'Find a control', autocomplete: 'off',
+  });
+  field.setAttribute('aria-label', 'Find a control anywhere on the desk');
+  const fieldLabel = el('label', 'finder-label', 'Find');
+  fieldLabel.htmlFor = 'desk-find';
+
+  const editsBtn = el('button', 'link finder-edits', 'What have I changed?');
+  editsBtn.type = 'button';
+  editsBtn.setAttribute('aria-pressed', 'false');
+  editsBtn.title =
+    'Reveal every control sitting off its default, and every channel patched away from where it starts';
+
+  finderHost.append(fieldLabel, field, editsBtn, said);
+
+  /**
+   * The swept curves, as a search reports them.
+   *
+   * Staleness is read off the card's own class rather than recomputed: whether
+   * a curve still describes the desk is a question about `restShapeKey`, which
+   * lives in `main.js`, and the card is where that answer was already written.
+   */
+  const studyCurves = () => new Map(
+    [...cards].map(([key, card]) => [key, { study: card.study, stale: card.node.classList.contains('stale') }]),
+  );
+
+  /** Take down every note a previous question left in the cards. */
+  function clearNotes() {
+    for (const note of stripGrid.querySelectorAll('.finder-note')) note.remove();
+  }
+
+  /**
+   * Put a question onto the desk.
+   *
+   * `wanted` maps a channel id to the rows that channel has to show and the
+   * note each of them carries. A channel absent from it is closed; a channel in
+   * it is revealed with exactly those rows shown and the rest hidden.
+   */
+  function ask(kind, wanted, sentence) {
+    // Stacked once per question, not once per keystroke: the reader's own
+    // reveal state is what the *first* search displaced, and re-reading it on
+    // the second character would stack the first search's own result.
+    asking = { kind, restore: asking ? asking.restore : revealedIds() };
+    // Under a question the channel's blurb is noise: the reader asked for a
+    // control, not for a description of the channel it happens to live on, and
+    // four lines of prose above each match is what pushes the thing they were
+    // looking for off the bottom of the card.
+    stripHost.classList.add('asking');
+    clearNotes();
+    for (const channel of CHANNELS) {
+      const here = wanted.get(channel.id) ?? null;
+      setCard(channel.id, here ? REVEALED : CLOSED);
+      if (here?.channelNote) {
+        strips.get(channel.id).fold.prepend(el('p', 'finder-note', here.channelNote));
+      }
+      for (const control of channel.controls) {
+        const node = controlRows.get(control);
+        if (!node) continue;
+        const shown = here ? here.rows.has(control) : true;
+        node.hidden = Boolean(here) && !shown;
+        const note = here?.rows.get(control) ?? null;
+        if (shown && note) node.prepend(el('p', 'finder-note', note));
+      }
+    }
+    peeking = null;
+    said.textContent = sentence ?? '';
+    said.hidden = !sentence;
+  }
+
+  /** Put the desk back the way the reader left it. */
+  function unask() {
+    const restore = asking?.restore ?? [];
+    asking = null;
+    stripHost.classList.remove('asking');
+    clearNotes();
+    for (const channel of CHANNELS) {
+      for (const control of channel.controls) {
+        const node = controlRows.get(control);
+        if (node) node.hidden = false;
+      }
+      setCard(channel.id, restore.includes(channel.id) ? REVEALED : CLOSED);
+    }
+    said.textContent = '';
+    said.hidden = true;
+  }
+
+  /** How a match that cannot be turned says so, and what would bring it back. */
+  const blockedNote = (blocked) => (blocked.fix ? `${blocked.sentence} ${blocked.fix}` : blocked.sentence);
+
+  function runSearch(query) {
+    if (!String(query).trim()) {
+      // An empty query is not "no matches", it is "no question". The first puts
+      // the desk back, the second says so in place, and telling them apart is
+      // what stops a reader who has just cleared the box being told that
+      // nothing matches.
+      if (asking?.kind === 'query') unask();
+      return { matches: [], revealed: revealedIds() };
+    }
+    const matches = find(VOCABULARY, query, params, patching(), { studies: studyCurves() });
+    const wanted = new Map();
+    for (const match of matches) {
+      const at = wanted.get(match.channel.id) ?? { rows: new Map(), channelNote: null };
+      // A row is named by any of the keys drawn on it, and it carries the note
+      // of the first key that had one: a plan key is one row for four walls, so
+      // "the west wall reaches nothing" is a note about that row.
+      const note = match.blocked ? blockedNote(match.blocked) : null;
+      if (!at.rows.has(match.control) || (note && !at.rows.get(match.control))) {
+        at.rows.set(match.control, note);
+      }
+      wanted.set(match.channel.id, at);
+    }
+    const rows = [...wanted.values()].reduce((n, at) => n + at.rows.size, 0);
+    const term = query.trim();
+    ask('query', wanted, matches.length
+      ? `${rows} control${rows === 1 ? '' : 's'} on ${wanted.size} channel${wanted.size === 1 ? '' : 's'} `
+        + `match${rows === 1 ? 'es' : ''} “${term}”.`
+      // Said in place rather than by drawing nothing. The sentence also says
+      // what kind of search this is, because the honest answer to a term that
+      // finds nothing is that the desk knows the names its controls carry and
+      // nothing besides — there is no synonym it failed to think of.
+      : `Nothing on the desk is called “${term}”. The desk matches the names its own controls, `
+        + 'channels and landmarks carry, and nothing besides.');
+    return { matches, revealed: revealedIds() };
+  }
+
+  function showEditsIn(on) {
+    editsBtn.setAttribute('aria-pressed', String(Boolean(on)));
+    if (!on) {
+      if (asking?.kind === 'edits') unask();
+      return [];
+    }
+    const moved = edits(params, bypass);
+    const wanted = new Map();
+    for (const edit of moved) {
+      const at = wanted.get(edit.channel.id) ?? { rows: new Map(), channelNote: null };
+      if (edit.key === null) {
+        at.channelNote = `${edit.channel.name} is ${edit.said.toLowerCase()}, where it starts ${edit.wasSaid.toLowerCase()}.`;
+      } else {
+        // The value and the default it left, both lettered through the control
+        // that owns the key, so the words here and the words on the face below
+        // are the same words.
+        const line = `${edit.label}: ${edit.said}, from ${edit.wasSaid}.`;
+        const already = at.rows.get(edit.control);
+        at.rows.set(edit.control, already ? `${already} ${line}` : line);
+      }
+      wanted.set(edit.channel.id, at);
+    }
+    ask('edits', wanted, moved.length
+      ? `${moved.length} thing${moved.length === 1 ? '' : 's'} changed from where the desk starts.`
+      // Not an empty grid. An empty list of edits would tell the reader they
+      // have never changed anything, which is a different statement from the
+      // true one, and it is the silent fallback this codebase refuses.
+      : 'Every control is where the desk starts it, and every channel is patched as it starts.');
+    return moved;
+  }
+
+  field.addEventListener('input', () => runSearch(field.value));
+  field.addEventListener('keydown', (event) => {
+    // Escape clears from inside the box, where the reader's hands already are.
+    if (event.key !== 'Escape') return;
+    field.value = '';
+    runSearch('');
+  });
+  editsBtn.addEventListener('click', () => {
+    const on = editsBtn.getAttribute('aria-pressed') !== 'true';
+    if (on) field.value = '';
+    showEditsIn(on);
+  });
 
   function relayout() {
     const on = indexMode();
@@ -397,7 +614,14 @@ export function mountConsole({
     fold.append(el('p', 'strip-blurb', channel.blurb));
 
     const body = el('div', 'strip-body');
-    for (const control of channel.controls) body.append(buildControl(control, channel));
+    for (const control of channel.controls) {
+      const node = buildControl(control, channel);
+      // Keyed by the control rather than by a parameter key, because a plan
+      // key's four walls and a boundary key's six surfaces are one row between
+      // them: a search naming one wall reveals the row that wall is drawn on.
+      controlRows.set(control, node);
+      body.append(node);
+    }
     fold.append(body);
 
     const readout = buildReadout(channel);
@@ -2536,6 +2760,27 @@ export function mountConsole({
 
     /** Which cards the reader has open, in strip order. */
     revealed: () => revealedIds(),
+
+    /**
+     * Ask the desk for every control a word names.
+     *
+     * Reads the live `params` and `bypass` the console already holds by
+     * reference — never a copy, so a search run mid-drag answers about the desk
+     * as it stands rather than as it stood at mount.
+     */
+    search: (query) => runSearch(query),
+
+    /** Put the desk back the way the reader left it. */
+    clearSearch() {
+      field.value = '';
+      runSearch('');
+    },
+
+    /** Everything sitting off its default, measured now. */
+    edits: () => edits(params, bypass),
+
+    /** Reveal exactly those, or put the desk back. */
+    showEdits: (on = true) => showEditsIn(on),
   };
 
   /**

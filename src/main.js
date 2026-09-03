@@ -3258,6 +3258,9 @@ desk = mountConsole({
   // temporal dead zone here. A browser that refuses storage hands back null and
   // the desk simply opens closed.
   store: probedStorage(),
+  // What is really out of the path. Under solo that is not the patch bay, and
+  // the console must not carry a second copy of the answer.
+  patching,
 });
 
 function openDesk(open) {

@@ -2543,6 +2543,79 @@
         body.desk-open .desk-widen { display: none; }
       }
 
+      /* ── the finder ───────────────────────────────────────────────
+         One line between the desk's fixed head and its scroller, so it is
+         reachable from any scroll position and at every size — a search box
+         that scrolled away with the cards would be a search box you have to
+         find before you can find anything.
+
+         Ruled top and bottom rather than boxed, like every other band on this
+         sheet. The field takes the room and the two words either side of it are
+         a label and a link, not buttons: pressing them changes what is drawn
+         and nothing about the model. */
+      .finder {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 8px 12px;
+        padding: 9px 18px 10px;
+        border-bottom: 1px solid var(--rule);
+      }
+      .finder[hidden] { display: none; }
+      .finder-label {
+        font: 400 10px/1 var(--mono);
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        color: var(--ink-ghost);
+      }
+      /* The box taken off, exactly as the margin numbers wear it: a rule under
+         the line you type on and nothing else, so the field is lettering that
+         can be edited rather than a widget dropped onto the drawing. */
+      .finder-field {
+        all: unset;
+        box-sizing: border-box;
+        flex: 1 1 10ch;
+        min-width: 0;
+        min-height: 24px;
+        font: 400 12px/1.4 var(--sans);
+        color: var(--ink);
+        border-bottom: 1px solid var(--rule-firm);
+      }
+      .finder-field::placeholder { color: var(--ink-ghost); }
+      .finder-field:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+      .finder-edits { flex: none; }
+      /* What the question found, said in place. An empty result and an empty
+         query are different states and this is where the first one says so. */
+      .finder-said {
+        flex: 1 0 100%;
+        margin: 0;
+        font: 400 11.5px/1.45 var(--sans);
+        color: var(--ink-3);
+      }
+      .finder-said[hidden] { display: none; }
+      /* What a found control has to say for itself: why it cannot be turned as
+         the desk stands and what would bring it back, or — for the edit list —
+         what it holds and what it left. The markup pen's own hairline, because
+         this is the sheet annotating itself rather than the model reporting. */
+      .finder-note {
+        margin: 0 0 6px;
+        padding: 5px 8px;
+        font: 400 11px/1.45 var(--sans);
+        color: var(--ink-2);
+        border: 1px dashed var(--rule-firm);
+        border-radius: 1px;
+      }
+      .finder-note[hidden] { display: none; }
+      /* While a question is on the desk, a revealed card leads with what was
+         asked for rather than with what the channel is. The blurb comes back
+         the moment the question is cleared. */
+      .strips.asking .strip-blurb { display: none; }
+      /* A control row hidden by a search. `.ctl` sets no `display` of its own,
+         so the user agent's `[hidden]` rule already reaches it — this is stated
+         anyway, because the day somebody gives `.ctl` a `display` the rows stop
+         hiding and the only symptom is a search that reveals everything. */
+      .ctl[hidden] { display: none; }
+
       /* `--index` is the switch between the desk's two presentations. It is
          declared here and flipped in the one media query at the foot of this
          sheet, and `console.js` reads it back rather than repeating the
