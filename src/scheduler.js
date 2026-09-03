@@ -20,8 +20,8 @@
  *                                an await; this contract is what makes a pool
  *                                safe against the pump.
  *   runSample(built)           — the pool; resolves to an engine result
- *   readPoint(job, result, built) — extract the metric numbers, or null
- *   contextFor(job)            — SYNCHRONOUS: the facts this metric's reader
+ *   readPoint(job, result, built) — extract every answerable quantity, or null
+ *   contextFor(job)            — SYNCHRONOUS: facts the quantity readers
  *                                needs that the sweep does not change, built
  *                                once for the whole study (see below)
  *   paused()                   — true while a gesture is in progress
@@ -34,13 +34,10 @@
 /**
  * One study, as the queue holds it.
  *
- * `metric` is a `Metric` id declared in `study.js`, which is also where the
- * reporting profile a sample of that metric is written with, and the reader the
- * finished run is handed to, are declared beside it. It is *not* validated here
- * and deliberately so: this module imports nothing, because the interleavings
- * it owns are what the Node harness has to be able to script against a fake
- * pool, and a scheduler that pulls in the model to check a string would make
- * that harness carry the schema.
+ * `quantity` chooses one reading out of a landed sample, while `needed` and
+ * `carried` decide reuse. None enters the control-key identity of the study.
+ * The declarations stay outside this module so its interleavings can be driven
+ * from Node against a fake pool without carrying the model or schema.
  *
  * `points` is asserted, though, because two ways of getting it wrong both end
  * as a card that never finishes and never says why. A non-numeric position
@@ -50,7 +47,22 @@
  * leaves `job.done` short of `job.total` for ever, which draws as "Solving
  * 17 / 21" until the desk moves.
  */
-export function makeStudyJob({ key, snapshot, patch, epw = null, annual, metric, restShape, points, order, origin, asked }) {
+export function makeStudyJob({
+  key,
+  snapshot,
+  patch,
+  epw = null,
+  annual,
+  quantity,
+  needed,
+  carried = needed,
+  restShape,
+  points,
+  order,
+  origin,
+  asked,
+  openingBasis = null,
+}) {
   if (!Array.isArray(points) || !points.length || points.some((v) => !Number.isFinite(v))) {
     throw new Error(`makeStudyJob: the study of ${key} carries no numeric positions to sample`);
   }
@@ -61,22 +73,28 @@ export function makeStudyJob({ key, snapshot, patch, epw = null, annual, metric,
         `${named.size} of them, so it could never finish`,
     );
   }
+  if (!quantity || !needed?.serialize || !carried?.serialize || !carried.answers?.(needed)) {
+    throw new Error(`makeStudyJob: the study of ${key} needs a quantity and comparable carried contents`);
+  }
   return {
     key,
     snapshot,
     patch,
     epw,
     annual,
-    metric,
+    quantity,
+    needed,
+    carried,
     restShape,
     points,
     order,
     origin, // 'manual' | 'refresh'
     asked, // the sample count requested — the coarse pass is later densified
+    openingBasis,
     curve: new Array(points.length),
     started: new Set(),
     // What `contextFor` returned, and whether it has been asked. The two are
-    // separate fields because `null` is a legitimate answer — most metrics need
+    // separate fields because `null` is a legitimate answer — most quantities need
     // no context at all — and folding "nothing to carry" into "not yet built"
     // would have the hook called once per sample for every study on the desk,
     // which is the cost this exists to avoid.
@@ -102,20 +120,24 @@ export function createStudyScheduler({
 }) {
   const jobs = []; // active jobs in dispatch priority order
   const byKey = new Map(); // key -> job, same objects
-  // Metric numbers per sample shape — a couple of floats each, so hundreds of
+  // Quantity readings per sample shape — a handful of floats each, so hundreds of
   // entries cost nothing and revisited ground (a patch toggled back, a study
   // densified from its coarse pass) comes back without a run.
   //
   // A job's `context` is not part of that key and must never need to be. What a
-  // metric carries there is a fact about the climate rather than about the
+  // quantity carries there is a fact about the climate rather than about the
   // sample — TM59's running mean is the attached weather file's, read at the
   // same days whatever the sliders say — and the cache is already cleared whole
   // on a station change, which is the only thing that can move it.
   const cache = new Map();
-  // In-flight samples by cache key, so two studies wanting the same sample —
+  const compatible = new Map();
+  // In-flight samples by epoch and cache key, so two studies wanting the same sample —
   // every study includes the current desk value — share one run. The entry is
   // owned by no job: cancelling one sharer never strands another, and the
-  // result still lands in the cache for whoever asks next.
+  // result still lands in the cache for whoever asks next. The epoch is part
+  // of this identity even though it is not part of the cache identity: a
+  // station change leaves the old engine call in flight, and a new climate
+  // asking for the same desk shape must not ride that promise.
   const pending = new Map();
   let inFlight = 0;
   // Bumped by clearAll. A run that was in flight when the world changed — a
@@ -126,12 +148,52 @@ export function createStudyScheduler({
 
   const active = (job) => job.state === 'queued' && !job.cancelled;
 
-  function remember(ck, point) {
+  function identities(job, value, carried = job.carried) {
+    const identity = keyOf(job, value, carried);
+    if (!identity || typeof identity.exact !== 'string' || typeof identity.bucket !== 'string') {
+      throw new Error('study keyOf must return { exact, bucket } string identities');
+    }
+    return identity;
+  }
+
+  function forget(exact) {
+    const entry = cache.get(exact);
+    if (!entry) return;
+    cache.delete(exact);
+    const bucket = compatible.get(entry.bucket);
+    bucket?.delete(exact);
+    if (!bucket?.size) compatible.delete(entry.bucket);
+  }
+
+  function remember(identity, sample) {
     if (cache.size >= cacheLimit) {
       // Maps iterate in insertion order, so the first key is the oldest.
-      cache.delete(cache.keys().next().value);
+      forget(cache.keys().next().value);
     }
-    cache.set(ck, point);
+    const entry = Object.freeze({
+      bucket: identity.bucket,
+      carried: sample.carried,
+      readings: sample.readings,
+      meterBasis: sample.meterBasis,
+    });
+    cache.set(identity.exact, entry);
+    if (!compatible.has(identity.bucket)) compatible.set(identity.bucket, new Set());
+    compatible.get(identity.bucket).add(identity.exact);
+  }
+
+  function lookup(job, value) {
+    const identity = identities(job, value);
+    const exact = cache.get(identity.exact);
+    if (exact?.carried.answers(job.needed)) return { identity, entry: exact };
+
+    const candidates = [...(compatible.get(identity.bucket) ?? [])]
+      .map((key) => cache.get(key))
+      .filter((entry) => entry?.carried.answers(job.needed))
+      .sort((left, right) => {
+        const extras = left.carried.size - right.carried.size;
+        return extras || left.carried.serialize().localeCompare(right.carried.serialize());
+      });
+    return { identity, entry: candidates[0] ?? null };
   }
 
   /**
@@ -139,17 +201,22 @@ export function createStudyScheduler({
    *
    * `value` is the position on the face, which every sample has whether its run
    * answered or not, so it is the one key that says nothing. Everything else in
-   * the point is the metric's own — `low` and `high`, `tedi` and `cedi`, a
-   * criterion's `share` — and this is deliberately blind to which: a list of key
-   * names here has to be edited every time a metric is declared in `study.js`,
-   * and forgetting to has no symptom but a finished sweep reporting "failed"
-   * over a card the reader can see a curve on.
+  * `reading` is the desk quantity selected from the cached readings bag. The
+  * scheduler is deliberately blind to its id: a list here would have to change
+  * whenever a quantity is declared and would turn a complete curve into a
+  * reported failure when that second list drifted.
    */
-  const drew = (p) => p != null && Object.keys(p).some((k) => k !== 'value' && p[k] != null);
+  const readingOf = (entry, quantity) => entry?.readings?.[quantity] ?? null;
+  const drew = (point) => point?.reading != null;
 
-  function land(job, index, point) {
+  function land(job, index, sample) {
     if (!active(job)) return; // cancelled while this sample was in flight
-    job.curve[index] = { value: job.points[index], ...(point ?? {}) };
+    job.curve[index] = {
+      value: job.points[index],
+      reading: readingOf(sample, job.quantity),
+      ...(sample?.readings ?? {}),
+      sample,
+    };
     job.done += 1;
     onUpdate(job, 'point');
     if (job.done < job.total) return;
@@ -177,15 +244,14 @@ export function createStudyScheduler({
   function dispatch(job, index) {
     job.started.add(index);
     const value = job.points[index];
-    const ck = keyOf(job, value);
-
-    const hit = cache.get(ck);
-    if (hit !== undefined) {
+    const { identity, entry: hit } = lookup(job, value);
+    if (hit) {
       land(job, index, hit);
       return;
     }
 
-    const shared = pending.get(ck);
+    const pendingKey = JSON.stringify([epoch, identity.exact]);
+    const shared = pending.get(pendingKey);
     if (shared) {
       // Ride the run another job started; no capacity slot is consumed.
       // Drain after landing, as the owning run does: a job whose last sample
@@ -252,20 +318,20 @@ export function createStudyScheduler({
       const result = await runSample(built);
       return result?.success ? readPoint(job, result, built) : null;
     })();
-    pending.set(ck, promise);
+    pending.set(pendingKey, promise);
     promise.then(
-      (point) => {
-        pending.delete(ck);
+      (sample) => {
+        if (pending.get(pendingKey) === promise) pending.delete(pendingKey);
         inFlight -= 1;
         // A failed sample is a gap, never a cached fact: a transient engine
         // failure must not poison every future study of this shape.
-        if (point != null && epochAt === epoch) remember(ck, point);
-        land(job, index, point);
+        if (sample != null && epochAt === epoch) remember(identity, sample);
+        land(job, index, sample);
         drain();
       },
       () => {
         // The run could not be attempted at all. Same gap as a failed run.
-        pending.delete(ck);
+        if (pending.get(pendingKey) === promise) pending.delete(pendingKey);
         inFlight -= 1;
         land(job, index, null);
         drain();
@@ -328,6 +394,7 @@ export function createStudyScheduler({
     clearAll(reason = 'cleared') {
       epoch += 1;
       cache.clear();
+      compatible.clear();
       for (const job of [...jobs]) cancel(job, reason);
       drain();
     },
@@ -337,6 +404,26 @@ export function createStudyScheduler({
 
     /** Resume dispatching — call when a pause condition lifts. */
     drain,
+
+    /** Resolve a whole curve from exact or compatible cached samples without queueing. */
+    curveFor(job) {
+      const curve = [];
+      let missing = 0;
+      for (const value of job.points) {
+        const { entry } = lookup(job, value);
+        if (!entry) missing += 1;
+        curve.push({ value, reading: readingOf(entry, job.quantity), ...(entry?.readings ?? {}), sample: entry });
+      }
+      return { curve, missing };
+    },
+
+    /** Recompute price-derived readings from retained physical meter bases. */
+    reprice(transform) {
+      for (const [exact, entry] of cache) {
+        const readings = transform(entry.readings, entry.meterBasis);
+        cache.set(exact, Object.freeze({ ...entry, readings }));
+      }
+    },
 
     /**
      * One line's worth of drain state. `manual` counts the jobs the reader

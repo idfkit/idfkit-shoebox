@@ -189,6 +189,71 @@ Exclusive states on one segmented rule: `1px --rule` border, `var(--r)` radius,
 `--ink` with `--vellum` text. Native `select` cannot be styled and hides state;
 a console has to be readable without opening anything.
 
+### The desk quantity, chosen from every study card
+
+Eleven choices are too many for a segmented selector, and the choice
+belongs to the desk rather than to one card. Every open study therefore carries
+the same native disclosure: its closed summary states the selected quantity,
+and changing it from any card updates every card together. The disclosure is a
+working surface, not a menu hidden behind an unfamiliar icon.
+
+- **Closed, the card still reads.** The study heading names the swept control;
+  the quantity line names what the curve measures, its unit, and its precision.
+  A folded card never reduces the quantity to an unlabeled value.
+- **The first guess states its basis.** Only the first study initialized by the
+  desk's opening rule carries a short `Opened here` note from the declaration.
+  Linked and explicitly chosen quantities carry none, and the note remains a
+  historical explanation rather than mutable choice state.
+- **The complete offer is always present.** Opening the disclosure shows all
+  eleven choices in declaration order. An unavailable row stays in its
+  place, disabled, with both the specific reason and the action that would make
+  it available. No explanation depends on hover.
+- **Native controls carry the interaction.** Each offer is a radio input in one
+  desk-wide group. Arrow keys move through the set, Space selects, and the
+  disclosure summary is a native button. The visible focus treatment uses
+  `--rule-focus`; selected state is also stated in text and through
+  `aria-checked`, never by colour alone.
+- **The selected row uses graphite, not another hue.** A square marker and the
+  word `Selected` carry state. `--redline` remains reserved for the live pointer
+  and focus path; `--cold` and `--warm` remain reserved for signed physical
+  quantities.
+- **Waiting is a reading, not an empty card.** When cached samples cannot answer
+  a newly selected quantity, the card says `Waiting for <quantity>` in place and
+  keeps stable dimensions. An old curve may remain only while it keeps its old
+  quantity label and the waiting statement names the new one. It is never
+  relabelled as the requested quantity.
+- **Only natural pairs share one choice.** High and low zone temperature share
+  one run and one physical question; TEDI and CEDI are the heating and cooling
+  halves of thermal demand. Those two choices each draw both lines with the
+  established warm and cold pens. Every other metric stays scalar, and the
+  chooser does not repeat either member of a pair as a separate row.
+- **The chart uses the card without becoming tall.** Its wide `320 × 64` view
+  box takes the full available width; the plot expands while its end-label
+  gutter stays fixed in chart coordinates. The line legend carries each value's
+  unit, so the chart footer labels only the swept control's two endpoints and
+  does not repeat the metric unit at its centre. Its y-domain is never narrower
+  than two increments at the quantity's displayed precision, so floating-point
+  noise between values that all letter `20.0` cannot become a full-height
+  zigzag.
+- **The fold owns its tab order.** Offer controls are inside the disclosure, so
+  closing it removes them from sequential keyboard navigation. Any author rule
+  that gives the offer list a display value must include a matching `[hidden]`
+  rule.
+- **A refusal's fix returns to the refusal.** When a quantity says to attach a
+  weather file, a successful attachment invalidates the old samples but keeps
+  the study, open strip, open chooser, focus and viewport anchor. The card
+  returns in place as waiting for the new climate; following its instruction
+  must not make the reader find the question again.
+- **Landing results do not close the question.** A study card is rebuilt as
+  partial points and the finished curve arrive. Each rebuild preserves an open
+  chooser, its focus and its viewport anchor, so the context restored after a
+  weather attachment survives the solve it started.
+- **Width and height use the existing index decision.** At 390 px wide and at
+  600 px high, study cards and chooser disclosures live on the index sheet,
+  remain within the viewport, and introduce no horizontal scrolling. Offer
+  reason and fix text wraps below its label; no fixed row height clips it. No
+  additional breakpoint is declared.
+
 ### A list of dates, over a year rule
 
 A control holding a set of days is drawn as a 12-month rule with the entries

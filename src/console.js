@@ -79,7 +79,7 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
  * scales cannot drift apart. Every gesture goes back out through `onChange`.
  */
 export function mountConsole({
-  host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear, onPin,
+  host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear, onStudyQuantity, onPin,
 }) {
   const strips = new Map(); // channel id -> { redraw(), meter, patch, solo }
   const faces = new Map(); // parameter key -> redraw for that control
@@ -1737,20 +1737,58 @@ export function mountConsole({
     return side ? [el('span', 'study-side', labelFor(key))] : [];
   }
 
+  function studyQuantityChooser(key, study) {
+    const selectedOffer = study.offers.find((offer) => offer.quantity.id === study.quantity);
+    const selected = selectedOffer?.quantity;
+    if (!selectedOffer) throw new Error(`the study card has no declared offer for quantity "${study.quantity}"`);
+    const details = el('details', 'study-quantity');
+    const summary = el('summary', 'study-quantity-summary');
+    summary.append(
+      el('span', 'study-quantity-label', selected.label),
+      el('span', 'study-quantity-unit', selectedOffer.unit),
+    );
+    details.append(summary);
+
+    const choices = el('fieldset', 'study-quantity-choices');
+    choices.append(el('legend', 'sr-only', 'What every study plots'));
+    for (const offer of study.offers) {
+      const row = el('label', `study-quantity-offer${offer.available ? '' : ' unavailable'}`);
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = `study-quantity-${key}`;
+      input.value = offer.quantity.id;
+      input.checked = offer.quantity.id === study.quantity;
+      input.disabled = !offer.available;
+      input.addEventListener('change', () => {
+        if (input.checked) onStudyQuantity?.(offer.quantity.id);
+      });
+      const words = el('span', 'study-quantity-words');
+      const line = el('span', 'study-quantity-line');
+      line.append(
+        el('span', 'study-quantity-name', offer.quantity.label),
+        el('span', 'study-quantity-unit', offer.unit),
+      );
+      if (input.checked) line.append(el('span', 'study-quantity-selected', 'Selected'));
+      words.append(line);
+      if (!offer.available) {
+        words.append(el('span', 'study-quantity-reason', `${offer.reason} ${offer.fix}`));
+      }
+      row.append(input, words);
+      choices.append(row);
+    }
+    details.append(choices);
+    return details;
+  }
+
   /**
    * The curve a sweep drew, under the control it swept.
    *
    * The x axis is `control.fraction` — the same 0..1 the face tick above it
    * uses — so the curve and the calibration face are one axis, stacked. What
-   * the y axis reads is the study's `metric`: zone temperature extremes on a
-   * free-running desk (the design days' own, or the year's), or the demand
-   * intensities once ideal loads are in the path with a year to bill — where
-   * the extremes would only letter the setpoints, the demand the system pays
-   * to hold them is the curve worth drawing. A sample that failed is a gap in
-   * the line, never a point invented across it. The redline stands where the
-   * control stands now, and moving the control just walks it along the curve;
-   * on a conditioned design-day desk the temperature lines still run flat at
-   * the setpoints, which is not a failure of the study but its finding.
+  * the y axis reads is the desk's declared quantity, shared by every open
+  * study. A sample that failed is a gap in the line, never a point invented
+  * across it. The redline stands where the control stands now, and moving the
+  * control just walks it along the curve.
    */
   function studyCard(key, study) {
     const { control } = controlFor(key);
@@ -1774,96 +1812,81 @@ export function mountConsole({
       head.append(clear);
     }
     card.append(head);
+    card.append(studyQuantityChooser(key, study));
 
-    const W = 240;
+    if (study.openingBasis) {
+      card.append(el('p', 'study-opening-basis', `Opened here: ${study.openingBasis}`));
+    }
+
+    if (study.waiting) {
+      card.append(
+        el(
+          'p',
+          'study-quantity-waiting',
+          study.waiting.reason ??
+            `Waiting for ${study.waiting.quantity}: ${study.waiting.missing} sample${study.waiting.missing === 1 ? '' : 's'} still need a run.`,
+        ),
+      );
+    }
+
+    const W = 320;
     const H = 64;
-    const energy = study.metric === 'energy';
-    const criterion = study.metric === 'tm59a';
-    // Both metrics are the signed pair, which is why neither needs a third
-    // pen. TEDI and CEDI are the year's heat asked into and out of the zone —
-    // the rail's signed watts integrated, not a price or an emission — so
-    // warm-in / cold-out encodes exactly the sign it does everywhere else on
-    // the desk, exactly as the temperature extremes below do.
-    // A share is an unsigned magnitude, so it takes no hue: the same rule that
-    // leaves the bill entirely graphite. The signed pair below encodes heat
-    // into and out of the zone, and lending `--warm` to "how much of the summer
-    // was too warm" would be the pair saying something it does not mean —
-    // there is no cold half of an exceedance to answer it.
-    const series = criterion
-      ? [
-          {
-            sel: (p) => p.share,
-            pen: 'var(--ink)',
-            tick: (v) => `${v.toFixed(1)}%`,
-            // Named for the criterion rather than for the quantity, because a
-            // reader who has a TM59 curve up is reading it against the 3 %
-            // line and not against a share in the abstract.
-            said: 'TM59 criterion a exceedance',
-          },
-        ]
-      : energy
-      ? [
-          { sel: (p) => p.tedi, pen: 'var(--warm)', name: 'TEDI', tick: (v) => `TEDI ${v.toFixed(v >= 100 ? 0 : 1)}`, said: 'heating demand TEDI' },
-          { sel: (p) => p.cedi, pen: 'var(--cold)', name: 'CEDI', tick: (v) => `CEDI ${v.toFixed(v >= 100 ? 0 : 1)}`, said: 'cooling demand CEDI' },
-        ]
-      : [
-          {
-            sel: (p) => p.high,
-            pen: 'var(--warm)',
-            tick: (v) => `${v.toFixed(1)}°`,
-            // Three periods, because a weather file no longer implies a year:
-            // the extremes of a run period with months taken out of it are the
-            // run period's, and calling them annual would be the card
-            // reporting a figure the run never held.
-            said: !study.annual
-              ? 'summer design-day peak'
-              : study.wholeYear
-                ? 'annual peak'
-                : 'run-period peak',
-          },
-          {
-            sel: (p) => p.low,
-            pen: 'var(--cold)',
-            tick: (v) => `${v.toFixed(1)}°`,
-            said: !study.annual
-              ? 'winter design-day low'
-              : study.wholeYear
-                ? 'annual low'
-                : 'run-period low',
-          },
-        ];
+    const quantity = study.offers.find((offer) => offer.quantity.id === study.quantity)?.quantity;
+    const multiple = quantity.series.length > 1;
+    const readingOf = (point) => point.reading ?? point[quantity.id];
+    const series = quantity.series.map((line) => ({
+      sel: (point) => {
+        const value = line.select(readingOf(point));
+        return Number.isFinite(value) ? value : null;
+      },
+      pen: line.pen ? `var(${line.pen})` : 'var(--ink)',
+      format: (value, point) =>
+        line.format
+          ? line.format(value, readingOf(point))
+          : `${value.toFixed(quantity.digits)} ${quantity.unit}`,
+      tick: (value, point) => `${multiple ? `${line.label} ` : ''}${
+        line.format
+          ? line.format(value, readingOf(point))
+          : `${value.toFixed(quantity.digits)} ${quantity.unit}`
+      }`,
+      said: line.label.toLowerCase(),
+    }));
     // The right gutter holds the curves' end labels: six mono characters of
     // "−18.7°" in one mode, "TEDI 142" in the other, which needs the wider cut.
-    const plot = { x: 2, w: energy ? 190 : 200, top: 6, bottom: 42 };
+    const plot = { x: 2, w: W - 90, top: 6, bottom: 42 };
 
     const vals = series.flatMap((s) => study.curve.map(s.sel).filter((v) => v != null));
+    if (!vals.length) {
+      card.append(el('p', 'study-empty', `No ${quantity.label.toLowerCase()} readings are in hand.`));
+      return { node: card, kind: 'card', study, syncTick: () => {} };
+    }
     const lo = Math.min(...vals);
     const hi = Math.max(...vals);
-    const span = hi - lo || 1;
-    const [dMin, dMax] = [lo - span * 0.08, hi + span * 0.08];
+    // Do not turn floating-point noise into a full-height sawtooth. If every
+    // value letters identically at this quantity's own precision, the domain
+    // keeps two display increments around their midpoint and the line reads as
+    // the constant the card says it is. A real spread still gets the usual 8 %
+    // breathing room.
+    const observed = hi - lo;
+    const domainSpan = Math.max(observed * 1.16, 2 * 10 ** -quantity.digits);
+    const middle = (lo + hi) / 2;
+    const [dMin, dMax] = [middle - domainSpan / 2, middle + domainSpan / 2];
     const y = (v) => plot.bottom - ((v - dMin) / (dMax - dMin)) * (plot.bottom - plot.top);
     const x = (v) => plot.x + clamp(control.fraction(v), 0, 1) * plot.w;
 
-    const range = (arr) => `${Math.min(...arr).toFixed(1)} to ${Math.max(...arr).toFixed(1)}`;
-    // "A year" only when the run was one. The intensities are the same
-    // arithmetic over whatever months are in the run, and every sample on the
-    // curve shares them, so the comparison holds — but the figure is not an
-    // annual one and the card must not say it is.
-    const unit = criterion
-      ? 'per cent of the occupied hours of 1 May to 30 September'
-      : !energy
-      ? '°C'
-      : study.wholeYear
-        ? 'kWh per square metre a year'
-        : 'kWh per square metre over the run period';
     const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' });
     root.setAttribute(
       'aria-label',
       `Study of ${labelFor(key)} from ${control.format(control.min)} to ${control.format(control.max)}: ` +
         series
           .map((s) => {
-            const found = study.curve.map(s.sel).filter((v) => v != null);
-            return found.length ? `${s.said} ${range(found)} ${unit}` : `no ${s.said} readings`;
+            const found = study.curve.filter((point) => s.sel(point) != null);
+            if (!found.length) return `no ${s.said} readings`;
+            const ordered = [...found].sort((left, right) => s.sel(left) - s.sel(right));
+            return `${s.said} ${s.format(s.sel(ordered[0]), ordered[0])} to ${s.format(
+              s.sel(ordered.at(-1)),
+              ordered.at(-1),
+            )}`;
           })
           .join('; ') +
         '.',
@@ -1914,9 +1937,10 @@ export function mountConsole({
     for (const s of series) {
       const found = study.curve.filter((p) => s.sel(p) != null);
       if (!found.length) continue;
-      const v = s.sel(found[found.length - 1]);
+      const point = found[found.length - 1];
+      const v = s.sel(point);
       labels.push({
-        text: s.tick(v),
+        text: s.tick(v, point),
         pen: s.pen,
         y: clamp(y(v) + 2.5, plot.top + 5, plot.bottom),
       });
@@ -1944,8 +1968,6 @@ export function mountConsole({
     };
     foot(control.format(control.min), plot.x, 'start');
     foot(control.format(control.max), plot.x + plot.w, 'end');
-    // The intensities need their unit stated; degrees carry their own sign.
-    if (energy) foot(study.wholeYear ? 'kWh/m²·a' : 'kWh/m² per run', plot.x + plot.w / 2, 'middle');
 
     const tick = svg('line', {
       y1: plot.top - 2, y2: plot.bottom + 2, stroke: 'var(--redline)', 'stroke-width': 1,
@@ -2227,6 +2249,10 @@ export function mountConsole({
         have.node.classList.toggle('stale', stale);
         return;
       }
+      const details = have?.node.querySelector('.study-quantity');
+      const wasOpen = Boolean(details?.open);
+      const heldFocus = Boolean(have?.node.contains(document.activeElement));
+      const before = heldFocus ? have.node.getBoundingClientRect().top : null;
       have?.node.remove();
       cards.delete(key);
       if (!study) return;
@@ -2238,6 +2264,18 @@ export function mountConsole({
       made.node.classList.toggle('stale', stale);
       row.after(made.node);
       cards.set(key, made);
+      const nextDetails = made.node.querySelector('.study-quantity');
+      if (wasOpen && nextDetails) nextDetails.open = true;
+      if (heldFocus) {
+        made.node.querySelector('.study-quantity-summary')?.focus({ preventScroll: true });
+      }
+      if (before !== null) {
+        const moved = made.node.getBoundingClientRect().top - before;
+        if (moved) {
+          if (indexing) window.scrollBy(0, moved);
+          else stripHost.scrollTop += moved;
+        }
+      }
     },
 
     /** The sweep in flight: its button reads Stop, its card counts the runs. */
@@ -2302,7 +2340,50 @@ export function mountConsole({
      */
     studyCount: () => cards.size,
 
-    /** The studies go with the climate they were swept under. */
+    /**
+     * The study context a whole-console refresh would otherwise take away.
+     *
+     * A weather attach rebuilds every study card because none of the outgoing
+     * climate's samples may survive. The open chooser is still the question
+     * that led the reader to the weather picker, so keep its disclosure, strip
+     * and viewport anchor as interface state rather than making the reader find
+     * the same control again after doing what its refusal asked.
+     */
+    captureStudyContext() {
+      const expanded = [...cards]
+        .filter(([, card]) => card.node.querySelector('.study-quantity')?.open)
+        .map(([key]) => key);
+      const key = expanded[0] ?? null;
+      const anchor = key ? cards.get(key)?.node : null;
+      return {
+        expanded,
+        opened,
+        key,
+        top: anchor?.getBoundingClientRect().top ?? null,
+      };
+    },
+
+    restoreStudyContext(context) {
+      if (!context) return;
+      if (indexing) {
+        opened = context.opened;
+        refold();
+      }
+      for (const key of context.expanded) {
+        const details = cards.get(key)?.node.querySelector('.study-quantity');
+        if (details) details.open = true;
+      }
+      const card = context.key ? cards.get(context.key)?.node : null;
+      if (!card || context.top === null) return;
+      const summary = card.querySelector('.study-quantity-summary');
+      summary?.focus({ preventScroll: true });
+      const moved = card.getBoundingClientRect().top - context.top;
+      if (!moved) return;
+      if (indexing) window.scrollBy(0, moved);
+      else stripHost.scrollTop += moved;
+    },
+
+    /** Remove every study card when the reader clears the studies themselves. */
     clearStudies() {
       for (const { node } of cards.values()) node.remove();
       cards.clear();

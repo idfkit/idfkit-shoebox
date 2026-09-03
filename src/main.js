@@ -33,7 +33,21 @@ import { mountConsole } from './console.js';
 import { describeDesk } from './describe.js';
 import { quantityField, textField } from './field.js';
 import { mountTour } from './tour.js';
-import { COARSE_SAMPLES, METRIC_BY_ID, SWEEP_SAMPLES, samplePoints, sampleOrder } from './study.js';
+import {
+  COARSE_SAMPLES,
+  OPENING_QUANTITY_BASIS,
+  PricingAvailability,
+  PricingStatus,
+  QUANTITIES,
+  QUANTITY_BY_ID,
+  RunContents,
+  SWEEP_SAMPLES,
+  contentsFor,
+  offersFor as studyOffersFor,
+  openingQuantity,
+  samplePoints,
+  sampleOrder,
+} from './study.js';
 import { createEnginePool, poolLimit } from './pool.js';
 import { createStudyScheduler, makeStudyJob } from './scheduler.js';
 import { runBundle } from './bundle.js';
@@ -1428,6 +1442,7 @@ function billFrom(run) {
 function reprice() {
   if (!lastRun) return;
   bill = billFrom(lastRun);
+  repriceStudies();
   renderBill();
   desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt, readouts());
   desk?.setDerived(derivedLines());
@@ -2045,6 +2060,8 @@ let lastMean = null; // zone mean of the last run, for the axonometric tint
 let modelState = null; // which channels the model says are in the path
 let studyScheduler = null; // built with the engine pool once the engine section runs
 const studies = new Map(); // parameter key -> the study drawn under that control
+let studyQuantity = null; // initialized once, shared by every open study
+const openStudies = new Set(); // includes queued cards before their curves land
 // A Stop is a decision about this desk, not about this instant: the key stays
 // out of automatic refresh until the rest of the desk moves again, at which
 // point the stopped curve is stale history like any other.
@@ -3226,9 +3243,12 @@ desk = mountConsole({
   },
   onReset: () => revert(),
   onStudy: (key) => studyRun(key),
+  onStudyQuantity: (id) => chooseStudyQuantity(id),
   onStudyClear(key) {
     studies.delete(key);
+    openStudies.delete(key);
     desk.setStudy(key, null);
+    updatePermalink();
     // The desk head's Clear counts the cards, and one just came down.
     syncStudyControls();
   },
@@ -3375,6 +3395,7 @@ autoBox.addEventListener('change', () => {
   syncAuto();
   if (autoOn()) {
     pump();
+    resumeWaitingStudies();
     // Switching auto back on catches the studies up the way it catches the
     // sheet up: whatever went stale while solving by hand re-queues now.
     refreshStudies();
@@ -3679,6 +3700,7 @@ $('site-near').addEventListener('click', async () => {
  */
 async function choose(row, pick, sizing = 'No') {
   const picked = pick.station;
+  const studyContext = desk?.captureStudyContext();
   inflight?.abort();
   inflight = new AbortController();
   const { signal } = inflight;
@@ -3814,12 +3836,13 @@ async function choose(row, pick, sizing = 'No') {
   // `syncDownload`, back when the bundle rode on `lastRun` and clearing that
   // left the button lettered live over nothing; `lastBundle` cannot be in that
   // state, because lettered means loaded.
-  // The studies go the way the pin does, and for the same reason: they were
-  // swept under the old climate, and a curve of Denver design days under a
-  // Singapore titleblock would be a lie told in graphite. New sweeps read the
-  // new climate — a score of annual runs now, counted out on the strip.
-  studies.clear();
-  desk?.clearStudies();
+  // The old curves go; the studies do not. The chooser that sent a reader to
+  // fetch weather is still their question, so every card becomes an explicit
+  // wait under the incoming climate rather than disappearing with the outgoing
+  // samples. The scheduler and cache were cleared above, so this redraw can
+  // only show missing points and cannot accidentally carry Denver under this
+  // station's title block.
+  redrawStudiesForQuantity({ queue: false });
   syncStudyControls();
 
   // With a real year attached the sizing days stop earning their place. They
@@ -3838,6 +3861,11 @@ async function choose(row, pick, sizing = 'No') {
   // with the document. It also means auto-solve picks the change up, so the
   // year starts solving on the release rather than waiting to be asked.
   commit('sizingPeriods', sizing, true);
+  // `commit` queues stale studies when it changes the run setting. If that
+  // setting was already in place, queue them here; `has` prevents this pass
+  // from superseding work the commit already started.
+  redrawStudiesForQuantity({ queue: true });
+  desk?.restoreStudyContext(studyContext);
   // When the setting already stood where the link or the last station left
   // it, that commit moved nothing and its pump found nothing to solve — yet
   // the climate above genuinely changed, and the station is deliberately not
@@ -3890,7 +3918,14 @@ let linkAttachPending = false;
  * pre-solo patch state while the bundle's manifest carried the solo map.
  */
 const schemeHash = (p = params) =>
-  encodeState({ params: p, bypass: patching(), station: stationToken(), pin: pinnedHour });
+  encodeState({
+    params: p,
+    bypass: patching(),
+    station: stationToken(),
+    pin: pinnedHour,
+    quantity: studyQuantity,
+    studies: openStudies,
+  });
 
 /** The absolute form, for the clipboard and the run bundle's manifest. */
 const schemeUrl = (p = params) => {
@@ -3956,6 +3991,39 @@ function refuseLink(message) {
   statusEl.className = 'status bad';
   statusEl.textContent = message;
   refusalNote = message;
+}
+
+let linkedStudiesRestored = false;
+function restoreLinkedStudies(state) {
+  if (linkedStudiesRestored || !state?.quantity) return;
+  linkedStudiesRestored = true;
+  studyQuantity = quantityOf(state.quantity).id;
+  for (const key of state.studies ?? []) {
+    const job = jobForStudy(key);
+    const quantity = quantityOf(studyQuantity);
+    const offers = studyOffers(job.snapshot, job.patch, job.epw);
+    const selected = offers.find((offer) => offer.quantity.id === quantity.id);
+    const waiting = {
+      label: shapeLabel(job.snapshot),
+      restShape: job.restShape,
+      annual: job.annual,
+      wholeYear: job.annual && isWholeYear(job.snapshot.months),
+      quantity: quantity.id,
+      offers,
+      waiting: {
+        quantity: quantity.label,
+        missing: job.total,
+        reason: selected.available ? null : `${selected.reason} ${selected.fix}`,
+      },
+      curve: [],
+      coarse: false,
+    };
+    openStudies.add(key);
+    studies.set(key, waiting);
+    desk.setStudy(key, waiting, { stale: false });
+    if (selected.available && autoOn()) studyScheduler.enqueue(job);
+  }
+  syncStudyControls();
 }
 
 /**
@@ -4033,6 +4101,7 @@ async function attachFromLink(linked) {
     linkAttachPending = false;
     syncSweepGate();
   }
+  restoreLinkedStudies(linked);
   // The attach held the address still; now that the station is real, one
   // rewrite brings the bar back to lettering the desk.
   updatePermalink();
@@ -5975,6 +6044,7 @@ if (location.hash.length > 1) {
     linked = decodeState(location.hash.slice(1));
     Object.assign(params, linked.params);
     Object.assign(bypass, linked.bypass);
+    studyQuantity = linked.quantity ?? null;
     // The pinned hour is taken here rather than after the first solve, because
     // it has to be in force *for* that solve: honoured afterwards, the desk
     // would letter its own worst hour first and jump to the link's, which is
@@ -6516,7 +6586,7 @@ runBtn.addEventListener('click', () => {
 /*
  * A drag is authorship; a study is a question. The desk as it stands is
  * solved at each sample of one key — the run the sheet would solve, design
- * days or the attached year — and only the metric numbers are kept from each
+ * days or the attached year — and only quantity readings are kept from each
  * run. Live `params` are never touched: every sample is an overlay handed to
  * `applyModel`, so the sliders, the axonometric, the plate and the address
  * bar hold still while the pool tries a score of buildings the reader never
@@ -6551,13 +6621,8 @@ const studyPool = createEnginePool({
 /**
  * The declaration one sweep is read under, refused by name where there is none.
  *
- * `study.js` owns two facts about a metric that were one string only by luck,
- * while every metric's reporting profile happened to share its name: the
- * profile a sample's document is written with, and the reader the finished run
- * is handed to. They part company at the first criterion — `'tm59a'` is read
- * off the `'tm59'` profile, named for the method because criteria b and c would
- * be read off the same three series — so every use of a metric here goes
- * through the declaration rather than through the id.
+ * `study.js` owns the quantity's lettering, contents and reader together. The
+ * lookup here is the one refusal gate between persisted ids and declarations.
  *
  * The throw is the point. Both uses below sit inside the sample's own promise,
  * where the scheduler turns a rejection into a gap, so an id matching no
@@ -6565,12 +6630,155 @@ const studyPool = createEnginePool({
  * reporting no readings and nothing anywhere would say the id was wrong. That
  * is why `enqueueStudy` asks this at the mint too, out in its own stack.
  */
-function metricOf(id) {
-  const metric = METRIC_BY_ID[id];
-  if (!metric) {
-    throw new Error(`no study metric is declared as "${id}" — the declarations are METRICS in study.js`);
+function quantityOf(id) {
+  const quantity = QUANTITY_BY_ID[id];
+  if (!quantity) {
+    throw new Error(`no study quantity is declared as "${id}"; the declarations are QUANTITIES in study.js`);
   }
-  return metric;
+  return quantity;
+}
+
+class MeterBasis {
+  constructor({ series, floorArea, hours, engaged, annual, months }) {
+    this.series = Object.freeze(Object.fromEntries(series));
+    this.floorArea = floorArea;
+    this.hours = hours;
+    this.engaged = Object.freeze([...engaged]);
+    this.annual = annual;
+    this.months = months;
+    Object.freeze(this);
+  }
+}
+
+class LandedRun {
+  constructor({ eso, meters, environments, hours, months, annual, bill: landedBill }) {
+    this.eso = eso;
+    this.meters = meters;
+    this.environments = Object.freeze([...environments]);
+    this.hours = hours;
+    this.months = months;
+    this.annual = annual;
+    this.bill = landedBill;
+    Object.freeze(this);
+  }
+}
+
+function billFromBasis(basis, pricing) {
+  if (!basis || !Object.keys(basis.series).length) return null;
+  return computeBill({
+    series: new Map(Object.entries(basis.series)),
+    params: pricing,
+    card: assume(resolveRates(station), pricing),
+    floorArea: basis.floorArea,
+    hours: basis.hours,
+    engaged: new Set(basis.engaged),
+    annual: basis.annual,
+    months: basis.months,
+  });
+}
+
+function landedFrom(eso, job, built) {
+  const points = hourly(eso, exactly('Zone Mean Air Temperature'));
+  const runs = environmentRuns(points, eso?.environments ?? []);
+  const billedRuns = runs.some((run) => run.kind === null) ? runs.filter((run) => run.kind === null) : runs;
+  const environments = new Set(billedRuns.map((run) => run.key));
+  const annualRun = billedRuns.some((run) => run.kind === null);
+  const series = new Map();
+  for (const use of END_USES) {
+    const total = meterTotal(eso, use.meter, environments);
+    if (total != null) series.set(use.meter, total);
+  }
+  const sampleParams = { ...job.snapshot, [job.key]: built.value };
+  const engaged = new Set(
+    [...channelState(sampleParams, job.patch)].filter(([, state]) => state.engaged).map(([id]) => id),
+  );
+  const basis = new MeterBasis({
+    series,
+    floorArea: built.floorArea,
+    hours: billedRuns.reduce((total, run) => total + (run.end - run.start + 1), 0),
+    engaged,
+    annual: annualRun,
+    months: annualRun ? billedRuns.reduce((total, run) => total + run.months, 0) : null,
+  });
+  return {
+    basis,
+    landed: new LandedRun({
+      eso,
+      meters: series,
+      environments,
+      hours: basis.hours,
+      months: basis.months,
+      annual: basis.annual,
+      bill: billFromBasis(basis, sampleParams),
+    }),
+  };
+}
+
+function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? null) {
+  const state = channelState(snapshot, patch);
+  const channels = [...state].filter(([, value]) => value.engaged).map(([id]) => id);
+  const engaged = new Set(channels);
+  const card = assume(resolveRates(station), snapshot);
+  const uses = END_USES.filter((use) => !use.needs || engaged.has(use.needs));
+  const pricingStatus = (field) => {
+    const missing = [];
+    for (const use of uses) {
+      const gas = use.fuelFor(snapshot).id === 'gas';
+      const rate = field === 'cost' ? (gas ? card.gas : card.electricity) : (gas ? card.gasFactor : card.grid);
+      if (!isRate(rate)) missing.push(rate);
+    }
+    if (!missing.length) return new PricingStatus({ available: true });
+    return new PricingStatus({
+      available: false,
+      reason: [...new Set(missing.map((rate) => rate.reason))].join(' '),
+      fix:
+        field === 'cost'
+          ? 'Set the Tariff source to Assumed and enter the missing rate.'
+          : 'Set the carbon-factor source to Assumed and enter the missing factor.',
+    });
+  };
+  const pricing = new PricingAvailability({
+    currency: card.currency.code,
+    cost: pricingStatus('cost'),
+    carbon: pricingStatus('carbon'),
+  });
+  return studyOffersFor({
+    annual: Boolean(epw),
+    wholeYear: Boolean(epw) && isWholeYear(snapshot.months),
+    season: Boolean(epw) && touchesSeason(snapshot.months),
+    channels,
+    pricing,
+  });
+}
+
+function sampleContentsFor(quantity, snapshot, patch, epw) {
+  const state = channelState(snapshot, patch);
+  const channels = [...state].filter(([, value]) => value.engaged).map(([id]) => id);
+  const needed = contentsFor(quantity, channels);
+  const carried = new RunContents({
+    variables: needed.variables,
+    meters: needed.meters,
+    tables: needed.tables,
+    annual: Boolean(epw),
+    channels,
+    season: Boolean(epw) && touchesSeason(snapshot.months),
+  });
+  return { needed, carried };
+}
+
+function repriceStudies() {
+  if (!studyScheduler) return;
+  studyScheduler.reprice((readings, basis) => {
+    const priced = billFromBasis(basis, params);
+    const landed = { bill: priced };
+    return Object.freeze({
+      ...readings,
+      eui: QUANTITY_BY_ID.eui.read(landed),
+      cost: QUANTITY_BY_ID.cost.read(landed),
+      carbon: QUANTITY_BY_ID.carbon.read(landed),
+    });
+  });
+  if (studyQuantity) redrawStudiesForQuantity({ queue: false });
 }
 
 /**
@@ -6585,16 +6793,15 @@ function buildSample(job, value) {
     // ways: forgetting the restore half would leave the pump solving design
     // days as a year, or a fatal run of no environments at all.
     setAnnual(model, job.annual);
-    // The profile off the declaration, never the metric id itself: a `tm59a`
-    // job carrying its own id here would ask `syncReporting` for a profile
-    // called `tm59a`, which throws where every throw lands as a silent gap.
+    // Structured contents off the declaration, never a profile name inferred
+    // from the selected id.
     applyModel(model, { ...job.snapshot, [job.key]: value }, job.patch, {
-      reporting: metricOf(job.metric).reporting,
+      reporting: job.carried,
     });
     // Each sample's intensity divides by that sample's own floor, which the
     // swept key may itself be moving — the same live read the bill takes.
-    const floorArea = job.metric === 'energy' ? geometryFacts(model).grossFloor : null;
-    return { idf: writeIdf(model), epw: job.epw, floorArea };
+    const floorArea = geometryFacts(model).grossFloor;
+    return { idf: writeIdf(model), epw: job.epw, floorArea, carried: job.carried, value };
   } finally {
     applyModel(model, params, patching());
     setAnnual(model, annual());
@@ -6603,11 +6810,16 @@ function buildSample(job, value) {
 
 studyScheduler = createStudyScheduler({
   // The cache key is the sample's whole desk — the overlay's shape key —
-  // plus the metric and the run kind, so a lean design-day sample can never
-  // answer for an annual one or for the sheet's own solve. The station is
+  // plus the run kind and canonical carried contents, so a lean design-day
+  // sample can never answer for an annual one. The station is
   // deliberately absent, which is why a station change clears the cache.
-  keyOf: (job, value) =>
-    JSON.stringify([deskKey({ ...job.snapshot, [job.key]: value }, job.patch), job.metric, job.annual]),
+  keyOf: (job, value, carried) => {
+    const bucket = JSON.stringify([
+      deskKey({ ...job.snapshot, [job.key]: value }, job.patch),
+      job.annual ? 'year' : 'design-day',
+    ]);
+    return { bucket, exact: JSON.stringify([bucket, carried.serialize()]) };
+  },
   buildSample,
   runSample: async ({ idf, epw }) => {
     const result = await studyPool.run({ idf, epw });
@@ -6625,8 +6837,26 @@ studyScheduler = createStudyScheduler({
   // `built` is what `buildSample` returned and `context` is what `contextFor`
   // resolved once for the whole sweep; each reader takes the pair and helps
   // itself to the half it needs.
-  readPoint: (job, result, built) =>
-    result.eso ? metricOf(job.metric).read(result.eso, { built, context: job.context }) : null,
+  readPoint: (job, result, built) => {
+    if (!result.eso) return null;
+    const { landed, basis } = landedFrom(result.eso, job, built);
+    const readings = {};
+    const deskContext = {
+      runningMean: job.context?.runningMean ?? null,
+      occupiedFloor: job.context?.occupiedFloor,
+    };
+    for (const quantity of QUANTITIES) {
+      const needed = contentsFor(quantity, basis.engaged);
+      if (!built.carried.answers(needed)) continue;
+      const context = quantity.context ? quantity.context(deskContext) : null;
+      readings[quantity.id] = quantity.read(landed, { built, context });
+    }
+    return Object.freeze({
+      carried: built.carried,
+      readings: Object.freeze(readings),
+      meterBasis: basis,
+    });
+  },
   /**
    * The facts a sample's reader needs that the sweep itself does not change.
    *
@@ -6662,17 +6892,10 @@ studyScheduler = createStudyScheduler({
    * precisely so that such a fault throws in the caller's own stack instead of
    * landing as twenty-one gaps.
    */
-  contextFor: (job) => {
-    if (job.metric !== 'tm59a') return null;
-    const trm = runningMeanFor(job.epw).mean;
-    if (!trm) {
-      throw new Error(
-        `the study of ${job.key} is read for criterion a, and the weather file it was queued against ` +
-          'yields no running mean, so there is no adaptive line for a sample to be judged against',
-      );
-    }
-    return { trm, floor: occupiedFloor(job.snapshot) };
-  },
+  contextFor: (job) => ({
+    runningMean: job.epw ? runningMeanFor(job.epw).mean : null,
+    occupiedFloor: occupiedFloor(job.snapshot),
+  }),
   paused: () => gesture,
   capacity: () => studyCapacity,
   onUpdate: onStudyUpdate,
@@ -6688,11 +6911,22 @@ function studyRun(key) {
   if (studyScheduler.has(key)) {
     studyStops.set(key, restShapeKey(key));
     studyScheduler.cancel(key, 'stopped');
+    if (!studies.has(key)) openStudies.delete(key);
+    updatePermalink();
     return;
   }
   studyStops.delete(key);
+  let openingBasis = null;
+  if (!studyQuantity) {
+    const opening = openingQuantityForDesk(params, patching(), epwText ?? null);
+    studyQuantity = opening.id;
+    openingBasis = OPENING_QUANTITY_BASIS[opening.id];
+    updatePermalink();
+  }
+  openStudies.add(key);
+  updatePermalink();
   // Ahead of any refresh backlog: the reader asked for this one by name.
-  enqueueStudy(key, { origin: 'manual', front: true });
+  enqueueStudy(key, { origin: 'manual', front: true, openingBasis });
 }
 
 /**
@@ -6767,40 +7001,19 @@ const touchesSeason = (mask) => {
 /** The register entry whose criterion a study reads. */
 const TM59_PRESET = 'tm59';
 
-function studyMetric(snapshot, patch, epw) {
+function openingQuantityForDesk(snapshot, patch, epw) {
   const state = channelState(snapshot, patch);
-  if (epw && state.get('system').engaged) return 'energy';
-  // Criterion a is swept when the reader is *chasing* TM59, and not otherwise.
-  //
-  // It used to be swept whenever a room type was named, which was wrong in the
-  // way that matters: `roomType` says which gains model is in force and nothing
-  // more, so a reader who picked "Double bedroom" because they wanted a
-  // bedroom's gains silently lost the winter-low and summer-high curve on every
-  // study on the desk — and since `roomType` rides `restShapeKey`, every curve
-  // already up re-swept itself under a reading nobody had asked for. A control
-  // that quietly changes what a different part of the page measures is the
-  // failure this sheet's no-remembered-standard rule exists to prevent.
-  //
-  // The chase pin is the honest signal, and it is the only one on the desk: it
-  // is the reader saying outright which published line they are working
-  // against, it is one press to set and one to drop, and it deliberately stays
-  // off `params` and out of the permalink because it is how the desk is being
-  // read rather than what it holds. Chasing TM59 and sweeping a control against
-  // TM59's own criterion are the same intention.
-  if (
-    chased === TM59_PRESET &&
-    epw &&
-    state.get('gains').engaged &&
-    touchesSeason(snapshot.months) &&
-    runningMeanFor(epw).mean
-  ) {
-    return 'tm59a';
-  }
-  return 'extremes';
+  return openingQuantity({
+    annual: Boolean(epw),
+    system: state.get('system').engaged,
+    chasingTm59: chased === TM59_PRESET,
+    gains: state.get('gains').engaged,
+    season: touchesSeason(snapshot.months),
+    runningMean: Boolean(epw && runningMeanFor(epw).mean),
+  });
 }
 
-/** Queue one study of the desk as it stands right now. */
-function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES } = {}) {
+function jobForStudy(key, { origin = 'refresh', n = SWEEP_SAMPLES, openingBasis = null } = {}) {
   const { control } = controlFor(key);
   // The desk this study describes, read in one breath — the same capture
   // rule the solve follows, for the same reason: params keep moving between
@@ -6808,29 +7021,104 @@ function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES } = {}) {
   const snapshot = { ...params };
   const patch = patching();
   const epw = epwText ?? null;
-  // What each run is read for, and the id round-tripped through the declaration
-  // that owns it. Refused here rather than downstream because every use of a
-  // metric id after this point happens inside a sample's own promise, where a
-  // throw lands as a gap: a study named for a metric nobody declared would come
-  // back as twenty-one missing points under a card reporting no readings.
-  const metric = metricOf(studyMetric(snapshot, patch, epw)).id;
+  if (!studyQuantity) throw new Error(`the study of ${key} was queued before the desk quantity was initialized`);
+  const quantity = quantityOf(studyQuantity);
+  const { needed, carried } = sampleContentsFor(quantity, snapshot, patch, epw);
   const points = samplePoints(control, snapshot[key], n);
-  studyScheduler.enqueue(
-    makeStudyJob({
-      key,
-      snapshot,
-      patch,
-      epw,
-      annual: Boolean(epw),
-      metric,
-      restShape: restShapeKey(key, snapshot, patch),
-      points,
-      order: sampleOrder(points, snapshot[key]),
-      origin,
-      asked: n,
-    }),
-    { front },
-  );
+  return makeStudyJob({
+    key,
+    snapshot,
+    patch,
+    epw,
+    annual: Boolean(epw),
+    quantity: quantity.id,
+    needed,
+    carried,
+    restShape: restShapeKey(key, snapshot, patch),
+    points,
+    order: sampleOrder(points, snapshot[key]),
+    origin,
+    asked: n,
+    openingBasis: openingBasis ?? studies.get(key)?.openingBasis ?? null,
+  });
+}
+
+/** Queue one study of the desk as it stands right now. */
+function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES, openingBasis = null } = {}) {
+  const job = jobForStudy(key, { origin, n, openingBasis });
+  const quantity = quantityOf(job.quantity);
+  const offers = studyOffers(job.snapshot, job.patch, job.epw);
+  const selected = offers.find((offer) => offer.quantity.id === quantity.id);
+  if (!selected.available) {
+    const prior = studies.get(key);
+    const waiting = {
+      ...(prior ?? {}),
+      label: shapeLabel(job.snapshot),
+      restShape: job.restShape,
+      annual: job.annual,
+      wholeYear: job.annual && isWholeYear(job.snapshot.months),
+      quantity: quantity.id,
+      offers,
+      waiting: { quantity: quantity.label, missing: job.total, reason: `${selected.reason} ${selected.fix}` },
+      curve: [],
+      coarse: n === COARSE_SAMPLES,
+    };
+    openStudies.add(key);
+    studies.set(key, waiting);
+    desk.setStudy(key, waiting, { stale: false });
+    syncStudyControls();
+    return;
+  }
+  studyScheduler.enqueue(job, { front });
+}
+
+function redrawStudiesForQuantity({ queue = true } = {}) {
+  if (!studyScheduler || !studyQuantity) return;
+  const quantity = quantityOf(studyQuantity);
+  const offers = studyOffers();
+  for (const [key, prior] of studies) {
+    const job = jobForStudy(key, { n: prior.coarse ? COARSE_SAMPLES : SWEEP_SAMPLES });
+    const cached = studyScheduler.curveFor(job);
+    const selected = offers.find((offer) => offer.quantity.id === quantity.id);
+    const unavailable = !selected.available;
+    const study = {
+      ...prior,
+      quantity: quantity.id,
+      offers,
+      curve: unavailable ? [] : cached.curve,
+      waiting: unavailable
+        ? { quantity: quantity.label, missing: job.total, reason: `${selected.reason} ${selected.fix}` }
+        : cached.missing
+          ? { quantity: quantity.label, missing: cached.missing, reason: null }
+          : null,
+      restShape: job.restShape,
+    };
+    studies.set(key, study);
+    desk.setStudy(key, study, { stale: false });
+    if (!unavailable && cached.missing && queue && autoOn() && !studyScheduler.has(key)) {
+      studyScheduler.enqueue(job);
+    }
+  }
+  syncStudyControls();
+  updatePermalink();
+}
+
+function chooseStudyQuantity(id) {
+  const quantity = quantityOf(id);
+  if (studyQuantity === quantity.id) return;
+  studyQuantity = quantity.id;
+  redrawStudiesForQuantity({ queue: true });
+}
+
+/** Queue the current-shape studies that waited while auto-solve was off. */
+function resumeWaitingStudies() {
+  if (!studyScheduler || !autoOn() || linkAttachPending) return;
+  for (const [key, study] of [...studies].reverse()) {
+    if (!study.waiting || studyScheduler.has(key)) continue;
+    const rest = restShapeKey(key);
+    if (studyStops.get(key) === rest) continue;
+    enqueueStudy(key, { origin: 'refresh', n: COARSE_SAMPLES });
+  }
 }
 
 /**
@@ -6890,10 +7178,13 @@ const partialStudy = (job) => ({
   // one, which is what the card's own words turn on: the extremes of a run
   // period that stops in May are not "the annual peak".
   wholeYear: job.annual && isWholeYear(job.snapshot.months),
-  metric: job.metric,
+  quantity: job.quantity,
+  offers: studyOffers(job.snapshot, job.patch, job.epw),
+  waiting: null,
+  openingBasis: job.openingBasis,
   // Samples still in flight are simply absent, so the silhouette spans them
   // and sharpens as they land; a sample that failed stays in the curve with
-  // no metrics and draws as a gap, never a substituted value.
+  // no quantity reading and draws as a gap, never a substituted value.
   curve: job.curve.filter(Boolean),
   progress: { done: job.done, total: job.total },
 });
@@ -6998,8 +7289,10 @@ function syncStudyControls() {
 function clearAllStudies() {
   studyScheduler?.cancelWhere(() => true, 'cleared');
   studies.clear();
+  openStudies.clear();
   studyStops.clear();
   desk?.clearStudies();
+  updatePermalink();
   // Through `syncStudyStatus` rather than by writing the line here: it is the
   // one place that knows a run in flight or a refusal already owns the status
   // line, and it syncs both buttons on the way past.
@@ -7035,13 +7328,17 @@ function onStudyUpdate(job, event) {
       restShape: job.restShape,
       annual: job.annual,
       wholeYear: job.annual && isWholeYear(job.snapshot.months),
-      metric: job.metric,
+      quantity: job.quantity,
+      offers: studyOffers(job.snapshot, job.patch, job.epw),
+      waiting: null,
+      openingBasis: job.openingBasis,
       curve: job.curve,
       // A coarse first pass is a real study, drawn honestly at eleven points;
       // the flag is what tells the idle densify it is worth finishing.
       coarse: job.asked === COARSE_SAMPLES,
     };
     studies.set(key, study);
+    openStudies.add(key);
     desk.setStudyProgress(key, null);
     // Stale already, when the desk moved while the curve was landing — drawn
     // dimmed rather than fresh, so the card never claims a desk it missed.
@@ -7054,6 +7351,8 @@ function onStudyUpdate(job, event) {
   } else if (event === 'failed') {
     desk.setStudyProgress(key, null);
     restoreStudyCard(key);
+    if (!studies.has(key)) openStudies.delete(key);
+    updatePermalink();
     // The one branch that writes the status line itself and so never reaches
     // `syncStudyStatus`. A failed sweep can take the last card off the desk,
     // and Clear must go with it.
@@ -7069,6 +7368,8 @@ function onStudyUpdate(job, event) {
     // The study the key already had — still stored, still true — gets its
     // card back rather than reappearing on the next unrelated gesture.
     restoreStudyCard(key);
+    if (job.cancelled === 'stopped' && !studies.has(key)) openStudies.delete(key);
+    updatePermalink();
     // A global Set-aside suppresses each key the way a per-study Stop does,
     // or the next idle densify would quietly restart the work just shed.
     if (job.cancelled === 'shed') studyStops.set(key, restShapeKey(key));
@@ -7103,5 +7404,8 @@ if (linkError) {
   statusEl.textContent =
     'This scheme skips the sizing days but attaches no weather, so there is nothing to solve. Set Design days to Run on the Run strip, or pick a station.';
 } else if (autoOn()) {
+  restoreLinkedStudies(linked);
   pump();
+} else {
+  restoreLinkedStudies(linked);
 }

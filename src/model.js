@@ -16,6 +16,7 @@ import {
   parsePattern,
 } from './controls.js';
 import { END_USES } from './bill.js';
+import { RunContents } from './study.js';
 
 /**
  * The stock `1ZoneUncontrolled.idf` example from the EnergyPlus 26.1.0 release,
@@ -2543,33 +2544,31 @@ function syncReporting(doc, state, reporting) {
     doc.add('Output:Meter', null, { key_name: use.meter, reporting_frequency: 'Monthly' });
   const producible = (use) => !use.needs || state.get(use.needs)?.engaged;
 
-  if (reporting === 'extremes' || reporting === 'energy') {
-    // The one series both study readers open with: `zoneRuns` needs the hourly
-    // zone temperature even when the reading itself is meters.
-    addVariable(doc, 'Zone Mean Air Temperature', 'Hourly');
-    if (reporting === 'energy') {
-      // Only the building group — `readDemand` bills nothing else — and still
-      // gated per channel: the metric implies System is engaged, but Gains may
-      // be out, and its meters must leave with it.
-      for (const use of END_USES) {
-        if (use.group === 'building' && producible(use)) addMeter(use);
+  if (reporting instanceof RunContents) {
+    for (const channel of reporting.channels) {
+      if (!state.get(channel)?.engaged) {
+        throw new Error(`reporting contents require the "${channel}" channel, but it is not engaged`);
       }
+    }
+    for (const variable of reporting.variables) {
+      addVariable(doc, variable.name, variable.frequency, variable.key);
+    }
+    for (const name of reporting.meters) {
+      const use = END_USES.find((candidate) => candidate.meter === name);
+      if (!use) throw new Error(`reporting contents name unknown meter "${name}"`);
+      if (!producible(use)) {
+        throw new Error(`reporting contents require meter "${name}", but its channel is not engaged`);
+      }
+      addMeter(use);
+    }
+    if (reporting.tables) {
+      doc.add('OutputControl:Table:Style', null, { column_separator: 'All' });
+      const summary = doc.add('Output:Table:SummaryReports', null);
+      summary.extensible.push({ report_name: 'AllSummary' });
     }
     return;
   }
-  if (reporting === 'tm59') {
-    // Three series against the sheet's fifteen, and every one of them is read.
-    // `zoneRuns` splits the run into environments off the zone air temperature,
-    // so a sample that only wanted operative temperature would have no way to
-    // tell one environment from the next; the criteria themselves are read off
-    // `Zone Operative Temperature`, never off air temperature, which is a
-    // different question by several degrees on a desk with heavy solar gain and
-    // a cold slab; and the schedule series is the denominator.
-    addVariable(doc, 'Zone Mean Air Temperature', 'Hourly');
-    addVariable(doc, 'Zone Operative Temperature', 'Hourly');
-    addOccupancyValue(doc);
-    return;
-  }
+
   if (reporting !== 'sheet') throw new Error(`unknown reporting profile "${reporting}"`);
 
   const diagnostics = doc.add('Output:Diagnostics', null);
