@@ -237,6 +237,30 @@ export function mountConsole({
   }
 
   /**
+   * Bring a card the reader has just opened far enough into view that the row
+   * under it still shows.
+   *
+   * The stylesheet bounds an opened card to the scroller less a row, so this
+   * is always possible; it is not automatic, because a card low in the grid
+   * opens with its foot below the scroller's. Scrolls by the least that will
+   * do, and never past putting the card's own top at the top — the card the
+   * reader pressed stays the thing they are looking at.
+   *
+   * Only ever from a reveal. A peek moves no scroll position at all: the
+   * pointer merely passing over a card is not a reason to move the page under
+   * it, and a sweep across the grid that scrolled would be unusable.
+   */
+  function bringIntoView(id) {
+    if (indexing) return;
+    const room = getComputedStyle(stripHost);
+    const next = parseFloat(room.getPropertyValue('--next-row')) || 0;
+    const box = strips.get(id).strip.getBoundingClientRect();
+    const view = stripHost.getBoundingClientRect();
+    const short = box.bottom + next - view.bottom;
+    if (short > 0) stripHost.scrollTop += Math.min(short, box.top - view.top);
+  }
+
+  /**
    * The reader's own gesture: reveal a closed or peeking card, close a
    * revealed one.
    *
@@ -246,8 +270,10 @@ export function mountConsole({
    */
   function toggleReveal(id) {
     if (peeking === id) peeking = null;
-    setCard(id, cardState.get(id) === REVEALED ? CLOSED : REVEALED);
+    const opening = cardState.get(id) !== REVEALED;
+    setCard(id, opening ? REVEALED : CLOSED);
     keepReveals();
+    return opening;
   }
 
   /* ── what is remembered ──────────────────────────────────────────────────
@@ -575,9 +601,13 @@ export function mountConsole({
       // on which layout is up: on the desk the cards have their own scroller,
       // and below `--index` the console scrolls with the page.
       const before = head.getBoundingClientRect().top;
-      toggleReveal(channel.id);
+      const opening = toggleReveal(channel.id);
       const after = head.getBoundingClientRect().top;
       if (after !== before) (indexing ? window : stripHost).scrollBy(0, after - before);
+      // Anchoring first, then bringing into view: the card must not move under
+      // the finger that pressed it, and only after it has stayed put is it
+      // worth asking whether what it opened onto is actually in the room.
+      if (opening) bringIntoView(channel.id);
     });
 
     // The peek. `pointerenter` and `pointerleave` rather than `over`/`out`

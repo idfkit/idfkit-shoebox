@@ -48,7 +48,6 @@
 
         --vellum: #f1ede4; /* the trace sheet the console is drawn on */
         --desk: 580px; /* the console at its narrowest: three columns of cards */
-        --card: 176px; /* the least width a card will take before the grid drops a column */
 
         --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
         --cond: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", system-ui, sans-serif;
@@ -2478,6 +2477,14 @@
       .desk {
         position: sticky;
         top: 16px;
+        /* A height, not only a ceiling. The console is a fixed head and a fixed
+           rail either side of one scroller, and with a content-driven height
+           those three only added up to the window when the strips were long
+           enough to fill it — so on a desk of eighteen closed cards the rail
+           floated up under the grid and the panel stopped short of the board.
+           Given the height outright, the rail is the footer it is drawn as, and
+           the cards take everything between it and the head. */
+        height: calc(100vh - 32px);
         max-height: calc(100vh - 32px);
         display: none;
         flex-direction: column;
@@ -2612,10 +2619,21 @@
         border-radius: 1px;
       }
       .finder-note[hidden] { display: none; }
-      /* While a question is on the desk, a revealed card leads with what was
-         asked for rather than with what the channel is. The blurb comes back
-         the moment the question is cleared. */
-      .strips.asking .strip-blurb { display: none; }
+      /* While a question is on the desk, a card shows what was asked for and
+         nothing else: not the channel's blurb, not its meter, not its readout.
+         A reader who searched for one control and is handed a whole card has
+         been given the card back with the control somewhere in it, which is the
+         thing the search exists to save them.
+
+         The patch and solo buttons stay. They are the only two things on the
+         card that a blocked match can ask the reader to use — "Patch Skylights
+         back in and this control reaches the model again" is advice you have to
+         be able to take where you are standing.
+
+         All of it comes back the moment the question is cleared. */
+      .strips.asking .strip-blurb,
+      .strips.asking .meter,
+      .strips.asking .readout { display: none; }
       /* A control row hidden by a search. `.ctl` sets no `display` of its own,
          so the user agent's `[hidden]` rule already reaches it — this is stated
          anyway, because the day somebody gives `.ctl` a `display` the rows stop
@@ -2627,7 +2645,27 @@
          sheet, and `console.js` reads it back rather than repeating the
          breakpoint as a `matchMedia` string — a media query and its JavaScript
          twin that disagree is a bug that exists at exactly one window width. */
-      .strips { --index: 0; overflow-y: auto; flex: 1; min-height: 0; }
+      .strips {
+        --index: 0;
+        /* What an opened card has to leave showing under it. Declared here and
+           read back by `console.js`, the same arrangement `--index` uses and for
+           the same reason: a number written in a stylesheet and again in a
+           module is a disagreement waiting at exactly one window size. */
+        --next-row: 60px;
+        overflow-y: auto;
+        flex: 1;
+        min-height: 0;
+        /* Named so the card grid can ask how wide the desk actually is, and a
+           *size* container so an opened card can ask how tall it is — see
+           `--fold-max` below. That is legal here only because the desk now has
+           a height of its own: this element is `flex: 1` inside it, so its size
+           is settled from outside and size containment takes nothing away.
+           Below `--index` that stops being true — the console scrolls with the
+           page there — so the containment is dropped at the foot of this sheet
+           before it can collapse the scroller to nothing. */
+        container-type: size;
+        container-name: desk;
+      }
 
       /* Eighteen cards on a grid, which is the one layout that can carry the
          gesture above it.
@@ -2647,13 +2685,33 @@
          column and on to the head of the next, where channels numbered 01 to 18
          want to be read row-major, in the order they are spoken.
 
-         `auto-fill` with a floor rather than a fixed three, because three is a
-         minimum and not a target: three is the fewest columns that puts all
-         eighteen closed cards inside the scroller at once (research M4), and
-         `--desk` is set wide enough to guarantee them. A window with room for a
-         fourth gets a fourth, which is the same bargain the columns struck —
-         width beyond one column is spent on more columns, never banked as
-         margin.
+         **The column count is decided by the desk's own width, at breaks chosen
+         so a card is never narrower than it is at three.** This was
+         `auto-fill` with a `minmax()` floor, which is the tidier declaration
+         and gets the arithmetic backwards: a floor is the width at which
+         another column *opens*, so the moment the desk reached four times the
+         floor the cards snapped down to the floor itself. Measured, the default
+         desk gives three cards of 193px, and a fourth column arrived at 704px
+         of desk making four cards of 176 — the reader was handed a column by
+         being given more room, and paid for it in card width.
+
+         So the floor cannot be the lever. It also cannot simply be raised: at
+         580px of desk a floor above 193 drops the layout to two columns, and
+         three is the fewest that puts all eighteen closed cards in the scroller
+         at once (research M4). One number was deciding two different things.
+
+         The breaks are stated instead, and each is the width at which its
+         column count still lands a card at 210px or more: four at 840, five at
+         1,050. A card is therefore never narrower than the 193px it has at the
+         default desk, and every extra column is one the desk had the width to
+         pay for. Five is the ceiling the multicolumn set already carried — past
+         it the columns widen instead, because eighteen channels over five is
+         already the desk laid as flat as it goes.
+
+         Asked of the desk rather than of the window, because they are not the
+         same question: the desk takes what the sheet leaves, so its width is a
+         function of the window *and* of how far the drawing has been squeezed.
+         The same reason the controls inside a card ask their own container.
 
          The hairline between cards is drawn by each card, as a right and a
          bottom edge, rather than by a gap with the grid's rule colour showing
@@ -2671,10 +2729,13 @@
          opening would resize every card beside it, which moves edges under the
          pointer that is doing the opening. */
       .strip-grid {
+        --cols: 3;
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(var(--card), 1fr));
+        grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
         align-items: start;
       }
+      @container desk (min-width: 840px) { .strip-grid { --cols: 4; } }
+      @container desk (min-width: 1050px) { .strip-grid { --cols: 5; } }
 
       /* A card, which is one instrument closed to its own face. The opaque
          ground is what leaves the grid's 1px gap reading as a ruled hairline
@@ -2710,7 +2771,9 @@
         gap: 8px;
         margin-bottom: 0;
       }
-      .strip.open .strip-head { margin-bottom: 11px; }
+      /* The toggle keeps its 36px whether the card is open or shut, so an open
+         card already carries the space the patch row used to be given. */
+      .strip.open .strip-head { margin-bottom: 2px; }
       /* The heading wraps the disclosure button, so the heading carries the
          flex and the button carries the card's own face. */
       .strip-title { flex: 1 0 100%; min-width: 0; margin: 0; }
@@ -2719,29 +2782,44 @@
          reading and the marker step aside (the meter and the patch button say
          those two things at full size a few pixels below, and one red square
          over another meaning the same thing is noise, not a second reading) and
-         the term chip takes the marker's cell, so the face collapses to the one
-         line it has something to put there.
+         the term chip takes the marker's cell.
 
-         Areas rather than flow, so the two states are two templates over one
-         markup order and nothing has to be moved in the DOM to restate them. */
+         **One template for both states, and the rows packed to the top.** This
+         is the rule the index sheet's own row already carried — height first,
+         contents second, and the name sits still — and it was broken here by
+         giving the open card a template of its own. Measured on the Fabric
+         card: opening it moved the channel name 10px down the page and the
+         chevron 10.5px up, because a two-row grid collapsing to one row leaves
+         `align-items: center` to re-centre what is left inside the same 36px
+         box. Every card on the desk twitched as it opened.
+
+         So the second row stays declared whether or not anything is in it, and
+         `align-content: start` pins the first row to the top of the box in both
+         states. The name, the number, the marker's cell and the chevron are all
+         on that first row and none of them moves. */
       .strip-toggle {
         all: unset;
         box-sizing: border-box;
         display: grid;
-        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-columns: auto minmax(0, 1fr) auto auto;
         grid-template-areas:
-          "no   name mark"
-          "read read chev";
+          "no   name mark chev"
+          "read read read read";
+        /* The first row is 20px because that is what its tallest occupant
+           needs, not because of what happens to be in it. The term chip is
+           18.5px against the name's 12, so a row sized by its contents grew as
+           the chip arrived and `align-items: center` walked the name 3.3px down
+           the page and back up again on closing — measured, and the same 3.25px
+           the index sheet's own row recorded when it made this mistake. Height
+           first, contents second. */
+        grid-template-rows: 20px auto;
         align-items: center;
+        align-content: start;
         gap: 5px 8px;
         width: 100%;
         min-height: 36px;
         padding: 0;
         cursor: pointer;
-      }
-      .strip.open .strip-toggle {
-        grid-template-columns: auto minmax(0, 1fr) auto auto;
-        grid-template-areas: "no name mark chev";
       }
       .strip-no { grid-area: no; }
       .strip-name { grid-area: name; }
@@ -2858,6 +2936,21 @@
         font: 400 11.5px/1.45 var(--sans);
         color: var(--redline);
       }
+      /* Compact while the card is shut. FR-003 keeps this sentence outside the
+         fold, which is right — a channel you cannot patch in has to say so where
+         you can read it — but at full size it took its card from 52px to 129px,
+         and with `align-items: start` that leaves its two row-mates ending 77px
+         early and a hole in the grid where the eye expects a rule.
+
+         Nothing is clamped, hidden or moved behind a `title`: the whole sentence
+         still reads, at 10px over about three lines instead of 11.5 over four,
+         which is the same size the card's own reading is set in. Opened, the
+         card has the room and the note goes back to full size. */
+      .strip:not(.open) .strip-blocked {
+        margin: 4px 0 0;
+        padding: 4px 6px;
+        font: 400 10px/1.35 var(--sans);
+      }
       .strip-blocked[hidden] { display: none; }
 
       /* A named container, so a control inside a card can ask how much room it
@@ -2890,8 +2983,35 @@
          console is a single column that scrolls with the page, and there a
          bounded card would be a second scrollbar inside the first — the phone
          opens a card whole, exactly as the index sheet always did. */
+      /* An opened card may never bury the row beneath it.
+         
+         The card is what carries the bound, not the fold inside it, and that is
+         the whole trick: a card's face costs a different amount on every
+         channel — 36px of toggle, sometimes a patch row, sometimes a blocked
+         channel's sentence — so a bound on the fold has to guess at the rest
+         and was measured guessing 51px where Air actually spends 87. Capped at
+         the card and left to a flex column, the fold simply takes what is over,
+         whatever the face came to, and the row below always gets its
+         `--next-row`.
+
+         Read off the scroller in container units, so it follows the room the
+         desk actually has: the window less a head whose own height moves with
+         the register's fold, less the finder's band, less the rail. Below
+         `--index` there is no bound at all — the console scrolls with the page
+         there and a card opens whole, as the index sheet's always did.
+
+         An opened card is worked, but the grid is what the reader navigates by,
+         and a card that filled the scroller would leave them working one
+         channel with no way to see where in eighteen they were standing —
+         which is the complaint this whole feature exists to answer, brought
+         back one card at a time. */
+      .strips:not(.index) .strip.open {
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100cqh - var(--next-row));
+      }
       .strips:not(.index) .strip.open .strip-fold {
-        max-height: min(46vh, 340px);
+        min-height: 0;
         overflow-y: auto;
         overscroll-behavior: contain;
       }
@@ -4198,6 +4318,7 @@
         body.desk-open { display: block; padding-right: 12px; }
         .desk {
           position: static;
+          height: auto;
           max-height: none;
           margin-left: 0;
           border-right: 1px solid var(--rule-firm);
@@ -4205,11 +4326,19 @@
         }
         /* The desk becomes its own index sheet: see `.strips.index` above.
            This is the one place the breakpoint is declared; the console reads
-           the flag back rather than knowing the number. */
-        .strips { --index: 1; overflow-y: visible; }
+           the flag back rather than knowing the number.
+
+           The size containment goes with it. Here the console scrolls with the
+           page and this element has no height of its own, so a container that
+           refused to look at its contents would compute to nothing and take the
+           whole desk with it. */
+        .strips { --index: 1; overflow-y: visible; container-type: inline-size; }
         /* The index is one list read top to bottom; columns would cut it in
-           half and put channels 09–17 beside 00–08 instead of after them. */
-        .strip-grid { grid-template-columns: 1fr; }
+           half and put channels 09–17 beside 00–08 instead of after them. It is
+           set through the same `--cols` the breaks above use, and it wins by
+           being declared after them — one mechanism deciding the count, rather
+           than a second one overriding the first. */
+        .strip-grid { --cols: 1; }
         /* "Widen the window" is advice a phone cannot take, and down here the
            narrow layout is a presentation rather than a squeeze. */
         body.desk-open .desk-widen { display: none; }

@@ -787,11 +787,11 @@ Flex rather than a grid track pair on purpose: a grid hands free space to every
 unfinished track evenly, so the desk's growth would come half out of the
 drawing's width on exactly the mid-sized windows that have none to spare.
 
-Inside it the channels lie on a **CSS grid of cards**, `repeat(auto-fill,
-minmax(var(--card), 1fr))` with `align-items: start`, three columns at the
-desk's own width and more where the window has room. This replaced a balanced
-multicolumn set, and the reason is worth keeping because it is the kind of
-decision that looks like taste and is not.
+Inside it the channels lie on a **CSS grid of cards** with `align-items: start`
+— three columns at the desk's own width, four and five where the desk has the
+width to pay for them. This replaced a balanced multicolumn set, and the reason
+is worth keeping because it is the kind of decision that looks like taste and is
+not.
 
 Multicol was the obvious choice and it was wrong on two counts. **It cannot be
 relaid out inside a frame**: measured on eighteen strips, 116.8 ms median and
@@ -807,6 +807,29 @@ The reading order improved as a side effect. Multicol reads column-major, down
 one column and on to the head of the next; a grid reads row-major, which is how
 channels numbered 01 to 18 are read aloud.
 
+**The column count is stated, not derived from a minimum width.** This was
+`repeat(auto-fill, minmax(--card, 1fr))`, which is the tidier declaration and
+gets the arithmetic backwards: a `minmax` floor is the width at which another
+column *opens*, so the moment the desk reached four times the floor every card
+snapped down to the floor itself. Measured — the default desk gives three cards
+of 193px, and a fourth column arrived at 704px of desk making four cards of 176.
+The reader was handed a column for being given more room and paid for it in card
+width.
+
+Raising the floor cannot fix it either, because the same number was deciding two
+things: at 580px of desk any floor above 193 drops the layout to two columns, and
+three is the fewest that puts all eighteen closed cards in the scroller at once.
+So the breaks are stated instead, each at the width where its column count still
+lands a card at 210px or more — four at 840, five at 1,050 — and five is the
+ceiling the multicolumn set already carried. Measured across the range, the
+narrowest card anywhere is the 193px of the default desk, and each new column
+arrives at 210 and grows from there.
+
+They are asked of **the desk**, not the window: the desk takes what the sheet
+leaves, so its width is a function of the window *and* of how far the drawing has
+been squeezed. Two different questions that were the same one only while the desk
+was a single column.
+
 Three mechanics that cost real debugging:
 
 - **`align-items: start` is a correctness rule, not a cosmetic one.** It holds
@@ -815,12 +838,37 @@ Three mechanics that cost real debugging:
   edges under the pointer that is doing the opening — and a card whose edge
   moves past the pointer sets its neighbour opening, which shrinks the first,
   which puts the pointer back on it.
-- **An opened card is bounded and scrolls its own body.** The largest channel is
-  1,513 px of controls against a 388 px scroller. Unbounded, a pointer merely
-  passing over it pushes every later card three screens down and snaps them back
-  on the way out. Only where the desk has a scroller of its own: below the index
-  breakpoint the console scrolls with the page, and a bounded card there is a
-  second scrollbar inside the first.
+- **An opened card is bounded, and the bound is on the card rather than on the
+  fold inside it.** The largest channel is 1,513 px of controls against a 388 px
+  scroller; unbounded, a pointer merely passing over it pushes every later card
+  three screens down and snaps them back on the way out.
+
+  What the bound has to guarantee is that **opening a card never buries the row
+  beneath it** — the grid is what the reader navigates by, and a card filling the
+  scroller leaves them working one channel with no way to see where in eighteen
+  they are standing, which is the original complaint returning one card at a
+  time. Bounding the fold cannot do that, because a card's face costs a different
+  amount on every channel: 36 px of toggle, sometimes a patch row, sometimes a
+  blocked channel's sentence. Measured, a fold bound that assumed 51 px of face
+  left the next row 24 px of the 60 it was promised, because Air actually spends
+  87. Capped at the card and left to a flex column, the fold takes whatever is
+  over and the row below always gets its `--next-row`.
+
+  The room is read off the scroller in **container query units** (`100cqh`),
+  which is what lets it follow a head whose own height moves with the register's
+  fold. That is legal only because the desk is given a height rather than a
+  ceiling; the containment is dropped below the index breakpoint, where the
+  console scrolls with the page and a container refusing to look at its contents
+  would compute to nothing.
+
+  A card the reader opens is then scrolled just far enough that the row under it
+  shows — never on a peek, which must move no scroll position at all.
+- **Give the desk a height, not just a ceiling.** The console is a fixed head and
+  a fixed rail either side of one scroller, and with a content-driven height
+  those three only add up to the window when the strips are long enough to fill
+  it — so on a desk of eighteen closed cards the rail floated up under the grid
+  and the panel stopped short of the board. Given the height outright, the rail
+  is the footer it is drawn as and the cards take everything between.
 - **The hairline between cards is a border on each card, not a gap with the
   grid's rule colour showing through.** The gap is the tidier mechanism and it
   was tried first: with `align-items: start`, a short card sharing a row with a
@@ -848,6 +896,38 @@ feedback that a state changed, never an event in its own right.
   the chevron's own precedent. The state change still happens; only the
   animation drops. A guard that also removed the state change would be a
   reader's motion preference deciding what they may use.
+
+**A row's height is set by its tallest card, and nothing else in the row moves.**
+Measured on opening one card in the middle row: earlier rows `dy 0`, the two
+cards beside it `dx 0, dy 0, dw 0, dh 0`, and every later row moved down by
+exactly the growth. That is the "neighbours give way" the grid is for; the only
+alternative that leaves later rows still is an overlay, which this sheet does not
+have. A card that grew *inline* instead would resize its row-mates, and a card
+wide enough to do that is wide enough to move its own edge past the pointer that
+opened it.
+
+**A row that carries a blocked channel's sentence grows, and the sentence is not
+what gives way.** Outside the fold it took its card from 52 px to 129, and with
+`align-items: start` that leaves its row-mates ending 77 px early. The sentence
+is compacted while the card is shut — 10 px over about three lines instead of
+11.5 over four, the same size the card's own reading is set in — and nothing is
+clamped, hidden or moved behind a `title`. Buying the row back by truncating an
+explanation trades the thing that must be legible for the thing that must be
+complete.
+
+### A card's face must not move when it opens
+
+Height first, contents second. A card opening changes what is in its head — the
+term chip arrives, the reading and the marker leave — and twice now that has
+walked the channel name down the page and back up again on closing. Measured at
+10 px the first time, from giving the open card a grid template of its own, and
+3.3 px the second, from the term chip being 18.5 px against the name's 12 in a
+row sized by its contents.
+
+So: **one template across both states, the rows packed to the top, and the first
+row given a fixed height.** The name, the number, the marker's cell and the
+chevron all sit on that row and none of them moves. Verified at 0 px across all
+eighteen cards.
 
 ### The three states of a card
 
