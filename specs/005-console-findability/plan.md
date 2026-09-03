@@ -107,7 +107,7 @@ re-checked below.**
 |---|---|---|
 | I. Everything Runs in the Browser | PASS | Nothing here adds a request. The finder reads a declaration already in the bundle. |
 | II. Deterministic and Shareable | PASS | Nothing added reaches the IDF, so nothing needs to ride the link. Reveal state, the query and the edit list are how the desk is *read*, which is the same argument that already keeps `pinnedHour` and the chased standard out of the fragment. No `LINK_VERSION` bump. |
-| III. Read It Back Off the Model | PASS | FR-016 requires the vocabulary to be derived from the one control declaration, with a load-time assertion that every key is covered. The edit list is measured against `DEFAULT_PARAMETERS` on every ask rather than recorded. |
+| III. Read It Back Off the Model | PASS | FR-019 requires the vocabulary to be derived from the one control declaration, with a load-time assertion that every key is covered. The edit list is measured against `DEFAULT_PARAMETERS` on every ask rather than recorded. |
 | IV. No Silent Fallbacks | PASS | A blocked match states which of five reasons applies and what would fix it; a `Blocked` without a sentence throws. A match is never dropped for being blocked. An empty result says so in place. |
 | V. Only @idfkit/* at Runtime | PASS | No dependency added. |
 | VI. Latency Is the Interface | **PASS, and it is the reason for the design** | See Attention 1. |

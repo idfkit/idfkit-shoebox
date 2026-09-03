@@ -25,12 +25,12 @@ them.
 
 A query matches a key when any string in that key's vocabulary contains the
 query, compared case-insensitively and with punctuation and whitespace
-normalised (FR-019). Partial words match; `wall` finds `Wall U-value` and
+normalised (FR-022). Partial words match; `wall` finds `Wall U-value` and
 `West wall`.
 
 Empty or whitespace-only query returns `[]`, which `clearSearch` distinguishes
 from "no matches" — the first restores the desk, the second says so in place
-(FR-022).
+(FR-025, FR-026).
 
 **No fuzzy matching, no stemming, no synonyms.** Every one of those invents a
 vocabulary the declaration does not contain, and a match the reader cannot

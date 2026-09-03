@@ -200,7 +200,7 @@ scroll rather than growing the grid without limit.
 **Rationale.** M5: Air opened is 1,419 px against a 473 px scroller, three times
 the room. Without a bound, opening Air pushes every later card three screens down,
 and closing it snaps them back — under a *peek*, that happens as the pointer
-passes. Bounding the card is what makes FR-007's "no scroll of the grid" and
+passes. Bounding the card is what makes FR-010's "no scroll of the grid" and
 FR-011's "all reachable, no truncation" hold together.
 
 **Alternatives considered.** *Let the grid grow and scroll the scroller to the
@@ -262,7 +262,7 @@ console's rendered markup; everything else in `main.js` goes through the
 present; under a card grid a patch marker on a closed card must remain present or
 that note loses its subject. `stage()` silently no-ops when the selector finds
 nothing (`src/tour.js:172-173`), so this breaks without an error — the worst shape.
-FR-034 and workflow gate 6 make the notes part of done regardless.
+FR-037 and workflow gate 6 make the notes part of done regardless.
 
 ### D10: the design system gains a motion section
 

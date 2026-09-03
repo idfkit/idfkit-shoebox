@@ -42,7 +42,7 @@ api.showEdits(on)              // reveal exactly the edits, or restore
 `onSolo` or `onReset`, and therefore none can reach `commit`, `applyGeometry`,
 `patchChannel`, `revert` or `pump`. `pump()` is the only thing in the
 application that starts a simulation (`main.js:5658`), and it is reached only
-from those callbacks. This is what makes FR-025 and SC-008 structural rather
+from those callbacks. This is what makes FR-028 and SC-008 structural rather
 than a promise: a method that does not call a callback cannot start a run.
 
 `api.search` and `api.edits` read `params` and `bypass` — the live objects the

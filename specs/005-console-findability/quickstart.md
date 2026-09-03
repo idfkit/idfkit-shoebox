@@ -34,13 +34,13 @@ Write a throwaway script under a scratch directory that imports
    key count — 138 on `main`, 144 on the stack tip this lands on (research D11).
    Zero misses is the pass; SC-003.
 2. **Channel and subject.** Every `Match` carries a channel, and every match on a
-   `Facade` wall key or a `Boundary` face key carries a subject. FR-018.
+   `Facade` wall key or a `Boundary` face key carries a subject. FR-021.
 3. **Only matches.** For a sample of terms, the returned set equals the set
    computed independently by scanning the vocabulary. Zero non-matching, zero
    omitted; SC-004.
 4. **Blocked is explained.** Construct parameter sets that put controls into each
    of the five blocked states, and assert every blocked match carries a
-   non-empty sentence. A `Blocked` with no sentence must throw; SC-009, FR-020.
+   non-empty sentence. A `Blocked` with no sentence must throw; SC-009, FR-023.
 5. **Load-time assertions fire.** Add a key to a fake channel with no label and
    confirm the vocabulary assertion throws at load rather than at first search.
 
@@ -57,7 +57,7 @@ for a set of desks: |edits(params, bypass)|  ==  number of pairs encodeState wri
 
 `encodeState` diffs `params[key] !== DEFAULT_PARAMETERS[key]` inline
 (`src/permalink.js:171`). Assert equality after: a fresh desk (expect zero, and
-the "at its defaults" sentence rather than an empty list, FR-029), a desk with
+the "at its defaults" sentence rather than an empty list, FR-032), a desk with
 *n* controls moved, a desk with channels patched, a revert, a decoded link, and
 a restored scheme. SC-015.
 
@@ -111,7 +111,7 @@ Unplug the pointer, literally or by discipline.
 - Confirm controls inside a closed card are **not** reachable by tabbing, and
   that opening a card does not move your place in the tab order. FR-012.
 - Confirm a reveal is announced and a peek is not. FR-014.
-- Drive the search: open it, type, move among revealed controls, turn one. FR-024.
+- Drive the search: open it, type, move among revealed controls, turn one. FR-027.
 - Repeat at 390 px with a coarse pointer, where no peek exists at all. SC-010.
 
 ## 6. Driven: nothing runs

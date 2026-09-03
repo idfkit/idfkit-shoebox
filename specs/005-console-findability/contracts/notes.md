@@ -2,7 +2,7 @@
 
 **Module**: `src/tour.js` | **Consumed by**: `src/main.js`
 
-Workflow gate 6 and FR-034 make this part of done rather than a follow-up. The
+Workflow gate 6 and FR-037 make this part of done rather than a follow-up. The
 notes are the one place outside `console.js` with a structural dependency on
 what a strip is, and it fails silently.
 

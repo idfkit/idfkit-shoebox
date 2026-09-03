@@ -81,7 +81,7 @@ because the spec's search reveals controls rather than channels.
 | `study` | study \| null | the swept curve, where one stands |
 | `stale` | boolean | the curve no longer describes the desk |
 
-**`Blocked`** is the four-way answer FR-020 demands, and the four are genuinely
+**`Blocked`** is the four-way answer FR-023 demands, and the four are genuinely
 different questions already answered by four different mechanisms:
 
 | reason | read from | sentence |
@@ -104,7 +104,7 @@ throw rather than render an empty explanation.
 ## `Vocabulary`
 
 The searchable text, derived from the declaration and from nowhere else
-(FR-016). Built once at mount, never hand-maintained.
+(FR-019). Built once at mount, never hand-maintained.
 
 Per key, the strings that may match:
 
@@ -122,7 +122,7 @@ Per key, the strings that may match:
 the implementation; there is no index to build.
 
 **Validation.** Every one of `ALL_KEYS` must appear in the vocabulary with at
-least its own label (FR-017, SC-003). This is assertable at module load in the
+least its own label (FR-020, SC-003). This is assertable at module load in the
 manner the codebase already prefers — `readLandmarks`, `assertHideable` and the
 permalink's reserved-key check all throw at load rather than degrade — and it is
 what stops a new control kind silently becoming unfindable.
@@ -130,7 +130,7 @@ what stops a new control kind silently becoming unfindable.
 ## `Edit`
 
 One control sitting off its default, or one channel patched away from its
-default. Measured on demand, never recorded (FR-030).
+default. Measured on demand, never recorded (FR-033).
 
 | field | source |
 |---|---|
