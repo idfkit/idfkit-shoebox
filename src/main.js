@@ -3252,6 +3252,12 @@ desk = mountConsole({
     // The desk head's Clear counts the cards, and one just came down.
     syncStudyControls();
   },
+  // Where the console keeps the cards the reader left open. The same probe the
+  // scheme shelf uses, and a function rather than the shelf's own value because
+  // that `const` is declared a long way below this call and would be in its
+  // temporal dead zone here. A browser that refuses storage hands back null and
+  // the desk simply opens closed.
+  store: probedStorage(),
 });
 
 function openDesk(open) {
@@ -4141,7 +4147,7 @@ const SCHEME_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
  * late, so the probe happens here and the register says up front that it
  * cannot keep anything.
  */
-const shelfStore = (() => {
+function probedStorage() {
   const probe = '__shoebox_probe__';
   try {
     window.localStorage.setItem(probe, '1');
@@ -4150,7 +4156,9 @@ const shelfStore = (() => {
   } catch {
     return null;
   }
-})();
+}
+
+const shelfStore = probedStorage();
 
 const shelf = new Shelf(shelfStore);
 let kept = []; // the shelf as last read

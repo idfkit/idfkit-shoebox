@@ -295,7 +295,45 @@ It also settles the counts. Measured by importing the declaration from each tree
 | `004` head | 18 | 129 | **144** | 9, adding `pattern` |
 
 The spec's "144 keys, 129 controls" is the stack tip, which is the tree this will
-land on and therefore the right number to have written. FR-017 and SC-003 should
+land on and therefore the right number to have written.
+
+### Re-counted and re-measured on the implementation branch
+
+Taken at implementation time on `005-console-findability-impl`, which is
+`004-choose-sweep-metric` plus this feature's own commits, at the same 1500 x 913
+the measurements above were taken at. The counts D11 predicted hold exactly:
+
+| | expected | measured |
+|---|---|---|
+| channels | 18 | 18 |
+| controls | 129 | 129 |
+| keys | 144 | 144 |
+| control kinds | 9 | 9 (`bearing` `boundary` `calendar` `days` `facade` `pattern` `profile` `scale` `selector`) |
+
+The layout, re-measured on the same tree before anything changed, is worse than
+M1 and M2 found on `main` — which is what the extra six controls buy:
+
+| | M1/M2 on `main` | this tree, before |
+|---|---|---|
+| `.strip-grid` box | 435 x 11,807 px | 435 x **12,338 px** |
+| `.strips` scroller | 435 x 473 px | 435 x **422 px** |
+| Ratio | 25 screens | **29.2 screens** |
+| Strips fully visible | 1 | **1** |
+| Median strip | 586 px | 586 px |
+| Tallest three | 1,131 / 1,118 / 1,065 | **1,305** / 1,131 / 1,118 |
+| multicol relayout | 97 ms median, 145.5 p95 | **116.8 ms** median, 148.8 p95, 64.1 min |
+
+The scroller is 51 px shorter because the desk head grew a study-quantity
+chooser on this stack, so the same complaint is measured against less room. The
+conclusion D1 rests on is unchanged and strengthened: seven frames, not six.
+
+**The moderated half of the baseline is not taken here.** SC-005 (median time
+from load to first parameter changed) and SC-006 (first-attempt success at
+locating a named parameter) are measured with readers, and the page sends
+nothing anywhere, so there is no instrument on this desk that can stand in for
+one. T003 records the numbers above, which are the recoverable half; T062's
+re-measure needs a moderated session against a baseline session, and neither is
+something the implementation can take on its own. FR-017 and SC-003 should
 be read as "every key the declaration owns", and the figure re-counted at
 implementation time rather than trusted from here.
 

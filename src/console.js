@@ -80,6 +80,11 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
  */
 export function mountConsole({
   host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear, onStudyQuantity, onPin,
+  // Where the reader's open cards are kept, already probed with a real write
+  // by the caller, or null where the browser refuses storage. See
+  // `restoreReveals`; the desk degrades to "not remembered" and never to
+  // "fails to boot".
+  store = null,
 }) {
   const strips = new Map(); // channel id -> { redraw(), meter, patch, solo }
   const faces = new Map(); // parameter key -> redraw for that control
@@ -144,28 +149,141 @@ export function mountConsole({
   // the width nobody tests at.
   const indexMode = () => getComputedStyle(stripHost).getPropertyValue('--index').trim() === '1';
 
-  let indexing = null; // null until the first read, so the first apply always runs
-  let opened = null; // the one strip unfolded, while indexing
+  /* ── the three states of a card ──────────────────────────────────────────
+   *
+   * `closed`   nothing shown but the card's own face: number, name, reading,
+   *            armed marker.
+   * `peeking`  open under a fine pointer, for exactly as long as the pointer
+   *            is resting on it. Nothing was chosen, so it is never written to
+   *            storage and never announced.
+   * `revealed` open because the reader said so, by click, tap, Enter or Space.
+   *            More than one card may be revealed; at most one may peek.
+   *
+   * The peek is an accelerator over the reveal and never the only way to
+   * anything: it shows what a reveal shows and no more, it is unreachable
+   * under a coarse pointer and from the keyboard, and both of those reach
+   * `revealed` directly. That is what keeps a hover out of the critical path
+   * on a phone, where there is no hovering to do.
+   */
+  const CLOSED = 'closed';
+  const PEEKING = 'peeking';
+  const REVEALED = 'revealed';
 
-  function refold() {
-    for (const channel of CHANNELS) {
-      const here = strips.get(channel.id);
-      const shown = !indexing || opened === channel.id;
-      // `hidden` rather than a class, so a folded strip's controls leave the
-      // tab order and the accessibility tree with it. A reader tabbing through
-      // the index should meet eighteen rows, not eighteen rows and a hundred
-      // controls they cannot see.
-      here.fold.hidden = !shown;
-      here.strip.classList.toggle('open', Boolean(indexing) && shown);
-      here.toggle.disabled = !indexing;
-      if (indexing) {
-        here.toggle.setAttribute('aria-expanded', String(shown));
-        here.toggle.setAttribute('aria-controls', here.fold.id);
-      } else {
-        here.toggle.removeAttribute('aria-expanded');
-        here.toggle.removeAttribute('aria-controls');
-      }
+  const cardState = new Map(CHANNELS.map((c) => [c.id, CLOSED]));
+  let peeking = null; // the one card under the pointer, or null
+  let indexing = null; // null until the first read, so the first apply always runs
+
+  // Whether this pointer can hover at all. A coarse pointer reports enter and
+  // leave events around a tap, which would open a card on touch and leave it
+  // open -- a peek nobody asked for and cannot dismiss.
+  const hovers = window.matchMedia('(hover: hover) and (pointer: fine)');
+
+  function drawCard(id) {
+    const here = strips.get(id);
+    const state = cardState.get(id);
+    const open = state !== CLOSED;
+    // `hidden` rather than a class, so a closed card's controls leave the tab
+    // order and the accessibility tree with it. A reader tabbing the desk
+    // should meet eighteen cards, not eighteen cards and a hundred and
+    // twenty-nine controls they cannot see.
+    here.fold.hidden = !open;
+    here.strip.classList.toggle('open', open);
+    // Only a reveal is announced. A peek is a pointer resting somewhere, not a
+    // reader choosing something, and `aria-expanded` flipping under a passing
+    // mouse would narrate a decision nobody made.
+    here.toggle.setAttribute('aria-expanded', String(state === REVEALED));
+  }
+
+  const drawCards = () => { for (const id of cardState.keys()) drawCard(id); };
+
+  function setCard(id, state) {
+    if (cardState.get(id) === state) return;
+    cardState.set(id, state);
+    drawCard(id);
+  }
+
+  /** Which cards the reader has chosen, in strip order. */
+  const revealedIds = () => CHANNELS.map((c) => c.id).filter((id) => cardState.get(id) === REVEALED);
+
+  function peek(id) {
+    if (!hovers.matches) return;
+    // One at a time. The previous card closes before this one opens, so a sweep
+    // never leaves a trail of open cards behind the pointer.
+    if (peeking !== null && peeking !== id) unpeek(peeking);
+    if (cardState.get(id) !== CLOSED) return; // a revealed card is left exactly as it stands
+    peeking = id;
+    setCard(id, PEEKING);
+  }
+
+  function unpeek(id) {
+    if (peeking !== id) return;
+    peeking = null;
+    if (cardState.get(id) === PEEKING) setCard(id, CLOSED);
+  }
+
+  /**
+   * The reader's own gesture: reveal a closed or peeking card, close a
+   * revealed one.
+   *
+   * `toggle` is a real `<button>`, so Enter and Space arrive here as clicks
+   * without a keydown handler -- which is the point of it being one, and why
+   * there is no second code path for the keyboard to drift out of step with.
+   */
+  function toggleReveal(id) {
+    if (peeking === id) peeking = null;
+    setCard(id, cardState.get(id) === REVEALED ? CLOSED : REVEALED);
+    keepReveals();
+  }
+
+  /* ── what is remembered ──────────────────────────────────────────────────
+   *
+   * Which cards the reader left open, and nothing else. A peek is never
+   * written: it records where a mouse happened to be resting.
+   *
+   * This stays out of the shared link for the reason `pinnedHour` and the
+   * chased standard do -- it is how the desk is being read, not what the desk
+   * is, and a link that reproduced somebody else's open cards would be
+   * carrying their reading habits into your browser along with their building.
+   */
+  const REVEAL_STORE = 'shoebox-desk-revealed-v1';
+
+  function keptReveals() {
+    if (!store) return [];
+    try {
+      const list = JSON.parse(store.getItem(REVEAL_STORE) ?? '[]');
+      return Array.isArray(list) ? list.filter((id) => cardState.has(id)) : [];
+    } catch {
+      // A mangled entry is a fresh desk, by the same rule the general notes
+      // read their own storage with: better closed than wrong.
+      return [];
     }
+  }
+
+  function keepReveals() {
+    if (!store) return;
+    try {
+      store.setItem(REVEAL_STORE, JSON.stringify(revealedIds()));
+    } catch {
+      // Nothing to substitute. The desk degrades to "not remembered".
+    }
+  }
+
+  /**
+   * Put the kept reveals back, or close everything where the layout cannot
+   * hold them.
+   *
+   * Below `--index` the desk is one column read top to bottom and its whole
+   * argument is that eighteen channels fit on one screen; six cards restored
+   * open there is the index sheet defeating itself. So the store is read but
+   * not obeyed at that size -- and deliberately not *written*, so widening the
+   * window brings the reader's own cards back rather than having quietly
+   * forgotten them.
+   */
+  function restoreReveals() {
+    const keep = indexing ? [] : keptReveals();
+    for (const id of cardState.keys()) cardState.set(id, keep.includes(id) ? REVEALED : CLOSED);
+    peeking = null;
+    drawCards();
   }
 
   function relayout() {
@@ -173,10 +291,7 @@ export function mountConsole({
     if (on === indexing) return;
     indexing = on;
     stripHost.classList.toggle('index', on);
-    // Arriving at the index closes everything, because the list is the point of
-    // it; leaving it opens everything, which is the desk as it was.
-    opened = null;
-    refold();
+    restoreReveals();
   }
 
   relayout();
@@ -227,16 +342,26 @@ export function mountConsole({
     head.append(title);
 
     toggle.addEventListener('click', () => {
-      if (!indexing) return;
-      // The row you tapped must not move out from under your thumb while a
-      // strip somewhere above it closes. Measure where this head sits, let the
-      // folds change, and put it back where it was.
+      // The card you pressed must not move out from under your finger while a
+      // card in an earlier row closes. Measure where this head sits, let the
+      // grid change, and put it back where it was. Which thing scrolls depends
+      // on which layout is up: on the desk the cards have their own scroller,
+      // and below `--index` the console scrolls with the page.
       const before = head.getBoundingClientRect().top;
-      opened = opened === channel.id ? null : channel.id;
-      refold();
+      toggleReveal(channel.id);
       const after = head.getBoundingClientRect().top;
-      if (after !== before) window.scrollBy(0, after - before);
+      if (after !== before) (indexing ? window : stripHost).scrollBy(0, after - before);
     });
+
+    // The peek. `pointerenter` and `pointerleave` rather than `over`/`out`
+    // because they do not bubble, so crossing a slider inside an opened card
+    // is not a departure from the card. The pointer type is checked as well as
+    // the media query: a touch reports an enter around its tap, and a card
+    // opened by a finger and never closed is a peek nobody asked for.
+    strip.addEventListener('pointerenter', (event) => {
+      if (event.pointerType === 'mouse') peek(channel.id);
+    });
+    strip.addEventListener('pointerleave', () => unpeek(channel.id));
 
     let patch = null;
     let soloBtn = null;
@@ -268,6 +393,7 @@ export function mountConsole({
 
     const fold = el('div', 'strip-fold');
     fold.id = `strip-fold-${channel.id}`;
+    toggle.setAttribute('aria-controls', fold.id);
     fold.append(el('p', 'strip-blurb', channel.blurb));
 
     const body = el('div', 'strip-body');
@@ -1156,7 +1282,7 @@ export function mountConsole({
    * on the Gains strip — seventy-two stops between that strip's selector and
    * everything below it. So they sit behind a fold that starts shut, and the
    * fold is the `hidden` attribute rather than a class, for the reason
-   * `refold` gives for the strip's own: controls you cannot see have to leave
+   * `drawCard` gives for the card's own: controls you cannot see have to leave
    * the tab order and the accessibility tree with their fold. (A stylesheet
    * that gives `.pattern-hours` a `display` of its own owes it a `[hidden]`
    * twin, or an author declaration will beat the user agent's
@@ -2357,7 +2483,7 @@ export function mountConsole({
       const anchor = key ? cards.get(key)?.node : null;
       return {
         expanded,
-        opened,
+        revealed: revealedIds(),
         key,
         top: anchor?.getBoundingClientRect().top ?? null,
       };
@@ -2365,9 +2491,11 @@ export function mountConsole({
 
     restoreStudyContext(context) {
       if (!context) return;
-      if (indexing) {
-        opened = context.opened;
-        refold();
+      // Which cards stood open is interface state like the open chooser beside
+      // it, and for the same reason: the reader arrived at the weather picker
+      // from a question asked inside one of them.
+      for (const id of cardState.keys()) {
+        if (context.revealed.includes(id)) setCard(id, REVEALED);
       }
       for (const key of context.expanded) {
         const details = cards.get(key)?.node.querySelector('.study-quantity');
@@ -2388,6 +2516,26 @@ export function mountConsole({
       for (const { node } of cards.values()) node.remove();
       cards.clear();
     },
+
+    /* ── the cards, from outside ─────────────────────────────────────────
+     *
+     * Every method below is presentational, and that is a structural claim
+     * rather than a promise: none of them calls `onChange`, `onPatch`,
+     * `onSolo` or `onReset`, and `pump()` -- the only thing in this
+     * application that starts a simulation -- is reachable from nowhere else.
+     * A method that does not call a callback cannot start a run.
+     */
+
+    /** Set or clear a kept reveal. */
+    reveal(channelId, on = true) {
+      if (!cardState.has(channelId)) throw new Error(`the console has no channel "${channelId}"`);
+      if (peeking === channelId) peeking = null;
+      setCard(channelId, on ? REVEALED : CLOSED);
+      keepReveals();
+    },
+
+    /** Which cards the reader has open, in strip order. */
+    revealed: () => revealedIds(),
   };
 
   /**

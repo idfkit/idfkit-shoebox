@@ -47,8 +47,8 @@
         --warm: #b4552a; /* 32 °C, the summer design condition */
 
         --vellum: #f1ede4; /* the trace sheet the console is drawn on */
-        --desk: 436px; /* the console at its narrowest: one column of strips */
-        --card: 320px; /* the least width a strip column will take before the desk folds one away */
+        --desk: 580px; /* the console at its narrowest: three columns of cards */
+        --card: 176px; /* the least width a card will take before the grid drops a column */
 
         --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
         --cond: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", system-ui, sans-serif;
@@ -2550,61 +2550,135 @@
          twin that disagree is a bug that exists at exactly one window width. */
       .strips { --index: 0; overflow-y: auto; flex: 1; min-height: 0; }
 
-      /* The desk's width is whatever the window had left after the sheet, so
-         the strips lie on as many ruled columns as that width will carry: the
-         one column a laptop always had, up to five across a wide monitor.
-         Columns rather than a grid of rows, for two reasons. The eighteen
-         channels keep reading in signal order — down one column and on to the
-         head of the next, the way a drawing index reads — and the strips'
-         heights differ by a factor of four, which a row-aligned grid turns
-         into ragged whitespace and a balanced column set packs. Five is the
-         ceiling because eighteen strips over five columns is already the desk
-         laid as flat as it goes; past that the columns widen instead. The
-         rule between columns is the same hairline the strips rule between
-         themselves, and the 1px gap leaves the strips' own 18px side padding
-         as the gutter on each side of it.
+      /* Eighteen cards on a grid, which is the one layout that can carry the
+         gesture above it.
 
-         This lives on a wrapper inside `.strips`, not on `.strips` itself:
-         the desk fixes that element's height for scrolling, and a multicol
-         box with a fixed height lays its overflow out as new columns to the
-         side — a desk that scrolled horizontally. The wrapper keeps its
-         natural height, so the columns balance to the content and overflow
-         stays vertical. */
+         This was a multi-column box until the console became findable, and the
+         reason it stopped is a measurement rather than a preference. Relaying
+         out these eighteen strips as multicol costs 116.8 ms median on this
+         tree (research M2, re-measured) — seven frames — because balancing
+         children across columns is the whole of what multicol does and there is
+         nothing in it to make cheaper. The same content as a grid relayouts in
+         about 7 ms and opening one card inside it costs about 2 ms, which is
+         what makes a card that opens under a passing pointer affordable at all.
+
+         Multicol could not express the geometry either. A balanced column set
+         has no addressable cell, so "this card expands and its neighbours give
+         way" has nothing to attach to; and it reads column-major, down one
+         column and on to the head of the next, where channels numbered 01 to 18
+         want to be read row-major, in the order they are spoken.
+
+         `auto-fill` with a floor rather than a fixed three, because three is a
+         minimum and not a target: three is the fewest columns that puts all
+         eighteen closed cards inside the scroller at once (research M4), and
+         `--desk` is set wide enough to guarantee them. A window with room for a
+         fourth gets a fourth, which is the same bargain the columns struck —
+         width beyond one column is spent on more columns, never banked as
+         margin.
+
+         The hairline between cards is drawn by each card, as a right and a
+         bottom edge, rather than by a gap with the grid's rule colour showing
+         through it. A gap is the tidier mechanism and it was tried first: with
+         `align-items: start` a short card sharing a row with a blocked
+         channel's sentence leaves the rest of its cell empty, and the rule
+         colour showing through that is not a hairline, it is a grey panel the
+         size of a card. Borders draw the same line and stop where the card
+         does, which is the more honest drawing as well — a card that has ended
+         is ruled off, and what lies under it is desk.
+
+         `align-items: start` is not cosmetic and is the whole of FR-006: it
+         holds every card at its own height, so an opening card grows downward
+         from its own top edge and its row-mates do not move. Stretched, a card
+         opening would resize every card beside it, which moves edges under the
+         pointer that is doing the opening. */
       .strip-grid {
-        column-width: var(--card);
-        column-count: 5;
-        column-gap: 1px;
-        column-rule: 1px solid var(--rule);
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(var(--card), 1fr));
+        align-items: start;
       }
 
-      /* A strip is one instrument, so it never splits over a column break. */
-      .strip { border-bottom: 1px solid var(--rule); padding: 14px 18px 16px; break-inside: avoid; }
-      .strip:last-child { border-bottom: 0; }
+      /* A card, which is one instrument closed to its own face. The opaque
+         ground is what leaves the grid's 1px gap reading as a ruled hairline
+         rather than as a hole. */
+      /* The padding is 7 and 8 against the 36px face rather than the 14/16 a
+         strip carried, and the three pixels are not fussiness: eighteen closed
+         cards over six rows is 403px of scroller to play with, and a blocked
+         channel's sentence — which FR-003 keeps outside the fold, because a
+         channel you cannot patch in has to say so where you can read it — takes
+         its row to 131px on its own. The room comes out of the gutter rather
+         than out of the explanation. */
+      .strip {
+        padding: 7px 12px 8px;
+        min-width: 0;
+        border-right: 1px solid var(--rule);
+        border-bottom: 1px solid var(--rule);
+      }
+      .strip.open { padding-bottom: 14px; }
       /* Out of the path: still legible, still settable, plainly not in the
          model. This is what a non-photo-blue pencil would have said. */
       .strip.out .strip-body,
       .strip.out .meter { opacity: 0.38; }
       .strip.soloed { background: var(--redline-wash); }
 
+      /* The card's head. The title takes a line of its own and the patch
+         buttons wrap under it, which is the arrangement the phone's index sheet
+         already used and which a 190px card needs for the same reason: a name,
+         a reading, a marker and two buttons do not fit across one line of it. */
       .strip-head {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
         gap: 8px;
-        margin-bottom: 7px;
+        margin-bottom: 0;
       }
+      .strip.open .strip-head { margin-bottom: 11px; }
       /* The heading wraps the disclosure button, so the heading carries the
-         flex and the button carries the row. Above the breakpoint the button is
-         inert lettering and is disabled: a desk that folded on a screen wide
-         enough to hold it open would be hiding the thing it exists to show. */
-      .strip-title { flex: 1; min-width: 0; margin: 0; }
+         flex and the button carries the card's own face. */
+      .strip-title { flex: 1 0 100%; min-width: 0; margin: 0; }
+      /* Closed, the face is two lines — number and name over reading — because
+         a card three columns wide cannot letter both across one. Opened, the
+         reading and the marker step aside (the meter and the patch button say
+         those two things at full size a few pixels below, and one red square
+         over another meaning the same thing is noise, not a second reading) and
+         the term chip takes the marker's cell, so the face collapses to the one
+         line it has something to put there.
+
+         Areas rather than flow, so the two states are two templates over one
+         markup order and nothing has to be moved in the DOM to restate them. */
       .strip-toggle {
         all: unset;
         box-sizing: border-box;
-        display: flex;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-areas:
+          "no   name mark"
+          "read read chev";
         align-items: center;
-        gap: 8px;
+        gap: 5px 8px;
         width: 100%;
+        min-height: 36px;
+        padding: 0;
+        cursor: pointer;
       }
+      .strip.open .strip-toggle {
+        grid-template-columns: auto minmax(0, 1fr) auto auto;
+        grid-template-areas: "no name mark chev";
+      }
+      .strip-no { grid-area: no; }
+      .strip-name { grid-area: name; }
+      .strip-term { grid-area: mark; }
+      .strip-mark { grid-area: mark; }
+      .strip-read { grid-area: read; }
+      .strip-chev { grid-area: chev; }
+      /* The term chip is a legend for the rail below and the closed card has
+         better uses for its width; patch and solo belong to working a channel
+         rather than to reading one. Both wait until the card is open. */
+      .strip:not(.open) .strip-term,
+      .strip:not(.open) .patch,
+      .strip:not(.open) .solo { display: none; }
+      .strip.open .strip-read,
+      .strip.open .strip-mark { display: none; }
+      .strip-toggle:hover .strip-chev { border-color: var(--redline); }
       /* Held above `button:hover:not(:disabled)`, which is one element more
          specific than a bare class and would otherwise paint the whole row
          solid redline. The same guard `.site-field` and `.site-opt` carry. */
@@ -2616,15 +2690,38 @@
         letter-spacing: 0.04em;
       }
       .strip-name {
-        flex: 1;
         min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
         font: 600 12px/1 var(--cond);
         text-transform: uppercase;
         letter-spacing: 0.11em;
         color: var(--ink);
       }
-      /* The three cells the folded row adds, drawn only on the index sheet. */
-      .strip-read, .strip-mark, .strip-chev { display: none; }
+      /* What a card letters closed: its number and name, its reading, its
+         armed marker and the disclosure mark. This was gated to `.strips.index`
+         — the phone's index sheet — and is now the console's one presentation
+         at every width. The index sheet's own rule, "closed a row reads, open
+         it is worked", turned out to be the rule the whole desk wanted: a
+         reader who has to open eighteen channels to find out what any of them
+         is doing has not been shown a console, they have been handed a filing
+         cabinet. */
+      .strip-read {
+        font: 400 11px/1 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      .strip-read, .strip-mark, .strip-chev { display: block; }
+      /* The `[hidden]` twins. An author `display` declaration beats the user
+         agent's `[hidden] { display: none }` outright, which is the defect that
+         left `#studies-stop` rendered at all times — so every class here that
+         both sets `display` and is toggled by the attribute states its own. */
+      .strip-read[hidden], .strip-mark[hidden], .strip-chev[hidden] { display: none; }
       .strip-fold[hidden] { display: none; }
       .strip-term {
         font: 400 10.5px/1 var(--mono);
@@ -2685,6 +2782,46 @@
       .strip-blocked[hidden] { display: none; }
 
       .strip-body { display: flex; flex-direction: column; gap: 11px; }
+
+      /* ── an opened card ───────────────────────────────────────────
+         Bounded, and scrolling its own overflow.
+
+         Air opened is 1,419 px against a 422 px scroller — three times the room
+         it has. Left to grow, opening it pushes every card below it three
+         screens down; and because a card also opens under a *passing* pointer,
+         that would happen as the pointer crossed Air and undo itself as it
+         left. The bound is what lets "the neighbours give way" and "a peek
+         moves no scroll position" both be true.
+
+         `min()` against the viewport as well as a flat ceiling, because the
+         scroller is `100vh` minus the head and the rail: on a short window a
+         fixed 320px card is most of the desk, and on a tall one it is less than
+         the room going spare.
+
+         Only where the desk has a scroller of its own. Below `--index` the
+         console is a single column that scrolls with the page, and there a
+         bounded card would be a second scrollbar inside the first — the phone
+         opens a card whole, exactly as the index sheet always did. */
+      .strips:not(.index) .strip.open .strip-fold {
+        max-height: min(46vh, 340px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+
+      /* What arrives when a card opens: the content fades and rises a little,
+         on the house's own 0.14–0.2 s ease. The row-height change itself is not
+         a transitioned property — measured at about 2 ms, it can simply happen,
+         and nothing else in this stylesheet animates layout. There is no exit:
+         a card closes at once, so a sweep leaves nothing still finishing behind
+         the pointer. */
+      @keyframes strip-open {
+        from { opacity: 0; transform: translateY(-2px); }
+        to { opacity: 1; transform: none; }
+      }
+      .strip.open .strip-fold { animation: strip-open 0.16s ease; }
+      @media (prefers-reduced-motion: reduce) {
+        .strip.open .strip-fold { animation: none; }
+      }
 
       /* ── one control ──────────────────────────────────────────────── */
 
@@ -3659,8 +3796,8 @@
          stay on the row and only the controls go away. */
 
       .strips.index .strip { padding: 0 18px; }
-      .strips.index .strip-head { margin: 0; flex-wrap: wrap; }
-      .strips.index .strip-title { flex: 1 0 100%; }
+      .strips.index .strip-head { margin: 0; }
+      .strips.index .strip-toggle { min-height: 36px; }
       /* A fixed 36px, not padding around whatever the row happens to hold.
          The cells change as a strip opens — the term chip arrives, the reading
          and the marker leave — and the chip is 18.5px against the name's 12px,
@@ -3673,36 +3810,6 @@
          screen, and a row you have to scroll to find is worse than a row that
          is slightly tight to hit — it spans the full width of the sheet, which
          is the other half of a target. */
-      .strips.index .strip-toggle { min-height: 36px; padding: 0; cursor: pointer; }
-      .strips.index .strip-toggle:hover .strip-chev { border-color: var(--redline); }
-      .strips.index .strip-read {
-        font: 400 11px/1 var(--mono);
-        font-variant-numeric: tabular-nums;
-        color: var(--ink);
-        white-space: nowrap;
-      }
-      .strips.index .strip-read,
-      .strips.index .strip-mark,
-      .strips.index .strip-chev { display: block; }
-
-      /* The term chip is a legend for the rail below, and the closed row has
-         better uses for the width, so it waits until the strip is open. The
-         reading and the patch marker step aside when it is, because the meter
-         and the patch button say those same two things at full size — one red
-         square thirty pixels above another that means the same thing is not a
-         second reading, it is noise. */
-      .strips.index .strip:not(.open) .strip-term { display: none; }
-      .strips.index .strip.open .strip-read,
-      .strips.index .strip.open .strip-mark { display: none; }
-      /* Patch and solo belong to working a strip, so they wrap to a line of
-         their own and only on the strip that is open. */
-      .strips.index .strip:not(.open) .patch,
-      .strips.index .strip:not(.open) .solo { display: none; }
-      /* Open, the head wraps and the patch buttons take a line of their own,
-         set off by the head's own row gap rather than by padding on the row
-         above them — padding there would be height, and the row's height is
-         what has to stay put. */
-      .strips.index .strip.open .strip-head { margin-bottom: 11px; }
       .strips.index .strip-fold { padding-bottom: 16px; }
       .strips.index .strip-blocked { margin-bottom: 12px; }
 
@@ -3955,7 +4062,7 @@
         .strips { --index: 1; overflow-y: visible; }
         /* The index is one list read top to bottom; columns would cut it in
            half and put channels 09–17 beside 00–08 instead of after them. */
-        .strip-grid { column-width: auto; column-count: auto; }
+        .strip-grid { grid-template-columns: 1fr; }
         /* "Widen the window" is advice a phone cannot take, and down here the
            narrow layout is a presentation rather than a squeeze. */
         body.desk-open .desk-widen { display: none; }
