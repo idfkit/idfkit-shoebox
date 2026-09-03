@@ -315,15 +315,26 @@ numbers are what stands behind a disclosure.
   roomier and rules the day at boundaries nothing on the sheet draws; twelve
   across is the drawing's own shape and does not fit, since a box letters five
   mono characters and twelve of those want about 440px.
-- **Size it against the narrower of the strip's two narrow cases, which is not
-  the phone.** The phone gives the strip 330px of content (390 less the body's
-  12px margins and the strip's own 18px sides). The multicolumn desk gives it
-  284px, because a column is never narrower than `--card` and 320 less those
-  same sides is what a column measures the moment another one opens. Measured
-  at 284: six cells of 47px, a 43px box in each, and `0.000` is 33.00px in IBM
-  Plex Mono at 11px, so nothing clips and a fourth decimal would still stand at
-  39.60px. No new threshold is declared for any of this, and none is needed:
-  the grid is the same six columns at both widths.
+- **Ask the control's own container how much room it has, not the window.**
+  This rule used to read "size it against the narrower of the strip's two narrow
+  cases, which is not the phone", and it named 284px — the floor a multicolumn
+  column could reach. The desk is a grid of cards now and that floor is gone: a
+  card gives this control 168px, where six cells are 28px, the box inside one is
+  24px, and `0.000` is 33.00px in IBM Plex Mono at 11px. It clipped.
+
+  A viewport width was standing in for "how much room does this control have",
+  and the two were the same question only while the desk was one column wide.
+  Every control that has a width it cannot go below now asks a **container
+  query** on `.strip-body` instead — the hour grid folds to three across under
+  282px, the year's twelve cells fold to six under 240px — so the answer follows
+  the control wherever it is drawn rather than following the browser.
+
+  **Fold to a count that keeps the structure the control is drawn around.** The
+  hour grid's rows have to land on the boundaries its silhouette is ticked at,
+  00, 06, 12, 18, 24. Three across rules the day at every third hour, so all
+  four quarters are still row starts. Four across is roomier and rules it at 00,
+  04, 08, 12, 16, 20, which puts 06 and 18 in the middle of a row and breaks the
+  one property the grid exists for. Roomier is not the criterion.
 - **Rule the top of each cell and make the column gutter `padding`.** The four
   ruled bands are the structure, and the same mechanic the qualification block
   records applies here: a grid has no row box to carry a border, and a
@@ -769,23 +780,88 @@ than one column of strips:
 
 ```css
 body.desk-open .sheet { flex: 0 1 1080px; min-width: 0; }
-body.desk-open .desk { flex: 1 0 var(--desk); } /* --desk: 436px */
+body.desk-open .desk { flex: 1 0 var(--desk); } /* --desk: 580px */
 ```
 
 Flex rather than a grid track pair on purpose: a grid hands free space to every
 unfinished track evenly, so the desk's growth would come half out of the
 drawing's width on exactly the mid-sized windows that have none to spare.
 
-Inside it the strips lie on a balanced multicolumn set — `column-width:
-var(--card)` with `column-count: 5` as the ceiling — so a laptop reads the
-single column it always did and a wide monitor reads two to five ruled columns
-of cards. Columns rather than a grid of rows: the channels keep reading in
-signal order down each column the way a drawing index reads, and strips of
-unequal height pack instead of leaving the ragged whitespace row alignment
-would. `break-inside: avoid` keeps each strip whole, the `column-rule` is the
-same hairline the strips rule between themselves, and the multicol styling
-lives on a natural-height wrapper inside the scroller — a multicol box whose
-height is fixed lays its overflow out as new columns to the side.
+Inside it the channels lie on a **CSS grid of cards**, `repeat(auto-fill,
+minmax(var(--card), 1fr))` with `align-items: start`, three columns at the
+desk's own width and more where the window has room. This replaced a balanced
+multicolumn set, and the reason is worth keeping because it is the kind of
+decision that looks like taste and is not.
+
+Multicol was the obvious choice and it was wrong on two counts. **It cannot be
+relaid out inside a frame**: measured on eighteen strips, 116.8 ms median and
+148.8 ms at p95, because balancing children across columns is the whole of what
+multicol does and there is nothing in it to make cheaper. The same content as a
+grid relaid out in 1.0 ms and opening one card cost 5.3 ms. Anything that
+happens under a moving pointer — a card that opens as you pass over it — is
+impossible at the first number and comfortable at the second. **And it has no
+addressable cell**: a balanced column set decides for itself what lands where,
+so "this card expands and its neighbours give way" has nothing to attach to.
+
+The reading order improved as a side effect. Multicol reads column-major, down
+one column and on to the head of the next; a grid reads row-major, which is how
+channels numbered 01 to 18 are read aloud.
+
+Three mechanics that cost real debugging:
+
+- **`align-items: start` is a correctness rule, not a cosmetic one.** It holds
+  every card at its own height so an opening card grows downward from its own
+  top edge. Stretched, a card opening resizes every card beside it, which moves
+  edges under the pointer that is doing the opening — and a card whose edge
+  moves past the pointer sets its neighbour opening, which shrinks the first,
+  which puts the pointer back on it.
+- **An opened card is bounded and scrolls its own body.** The largest channel is
+  1,513 px of controls against a 388 px scroller. Unbounded, a pointer merely
+  passing over it pushes every later card three screens down and snaps them back
+  on the way out. Only where the desk has a scroller of its own: below the index
+  breakpoint the console scrolls with the page, and a bounded card there is a
+  second scrollbar inside the first.
+- **The hairline between cards is a border on each card, not a gap with the
+  grid's rule colour showing through.** The gap is the tidier mechanism and it
+  was tried first: with `align-items: start`, a short card sharing a row with a
+  tall one leaves the rest of its cell empty, and the rule colour behind that is
+  not a hairline, it is a grey panel the size of a card.
+
+### Motion
+
+There is a house scale, it had been unwritten for the life of this page, and a
+pattern living only in a stylesheet rule is the second source of truth this
+document exists to prevent.
+
+**0.14 to 0.2 s, `ease`, and only colour, background, border-colour, opacity or
+transform.** No layout property is ever transitioned, and there is no entrance
+or exit reveal anywhere except where a card opens. Motion on this sheet is
+feedback that a state changed, never an event in its own right.
+
+- **What animates when a card opens is the content arriving** — opacity and a
+  2 px rise — and the chevron's rotate. The row-height change is not a
+  transitioned property: it costs about 2 ms and can simply happen. Animating it
+  would need a guessed height, which the tallest channel breaks.
+- **There is no exit.** A card closes at once, so sweeping the grid leaves
+  nothing still finishing behind the pointer.
+- **Every transition is guarded by `prefers-reduced-motion: reduce`**, following
+  the chevron's own precedent. The state change still happens; only the
+  animation drops. A guard that also removed the state change would be a
+  reader's motion preference deciding what they may use.
+
+### The three states of a card
+
+Closed, a card letters its number, its name, its reading and its armed marker —
+the index sheet's rule, "closed a row reads, open it is worked", which turned
+out to be the rule the whole desk wanted. Revealed, by click, tap, Enter or
+Space, it is worked, and more than one may stand. Peeking, it is open under a
+resting fine pointer and nothing more.
+
+**A peek may accelerate something, never be the only way to it.** It shows
+exactly what a reveal shows, it is never remembered and never announced (nothing
+was chosen), and it does not exist under a coarse pointer or at the keyboard —
+both of which reach the reveal directly. That is the test for any hover on this
+page: remove hovering entirely and ask whether anything has become unreachable.
 
 The desk is `position: sticky` with its own scroll, and its master readout is
 pinned at the foot with `flex: none` so it stays visible while the strips

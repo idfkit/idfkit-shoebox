@@ -2854,7 +2854,16 @@
       }
       .strip-blocked[hidden] { display: none; }
 
-      .strip-body { display: flex; flex-direction: column; gap: 11px; }
+      /* A named container, so a control inside a card can ask how much room it
+         actually has instead of asking how wide the window is. Those were the
+         same question for as long as the desk was one column wide. */
+      .strip-body {
+        display: flex;
+        flex-direction: column;
+        gap: 11px;
+        container-type: inline-size;
+        container-name: card;
+      }
 
       /* ── an opened card ───────────────────────────────────────────
          Bounded, and scrolling its own overflow.
@@ -2898,11 +2907,19 @@
 
       /* ── one control ──────────────────────────────────────────────── */
 
+      /* A control's name, its Study offer and its reading, on one line where
+         there is room for one. There is not always: a card in the grid gives
+         the row about 168px, and `Occupancy · Study · Flat 1.000` wants 178 —
+         measured, the reading was hanging 9.6px past the card's own text edge.
+         Wrapping puts the reading on its own line rather than off the side,
+         which is the same trade the folded schedules make and for the same
+         reason: a figure that cannot be read is not a reading. */
       .ctl-head {
         display: flex;
+        flex-wrap: wrap;
         align-items: baseline;
         justify-content: space-between;
-        gap: 10px;
+        gap: 2px 10px;
         margin-bottom: 4px;
       }
       .ctl-head label, .ctl-label {
@@ -3301,6 +3318,22 @@
          overflow scrolls. */
       .segments {
         display: flex;
+        /* Wrap rather than scroll. The sideways scroll below is still the
+           fallback for a single option wider than the box, but it must not be
+           the ordinary case: a card in the grid gives a selector about 168px
+           where a strip column used to give it 284, and a five-option rule that
+           fitted before would otherwise have half its options off the right,
+           reachable only by a gesture and readable only after it. Nothing
+           changes where there is room — `flex: 1` still stretches the segments
+           across one line — so this only ever adds a second row where the
+           alternative was hiding one.
+
+           The 1px row gap with the rule colour behind it is the hairline
+           between wrapped rows; with one row there is no gap and no line, which
+           is why it is a gap rather than a border on the segments. */
+        flex-wrap: wrap;
+        row-gap: 1px;
+        background: var(--rule-soft);
         border: 1px solid var(--rule);
         border-radius: var(--r);
         overflow-x: auto;
@@ -3317,6 +3350,9 @@
         all: unset;
         flex: 1;
         min-width: max-content;
+        /* Opaque, so the container's rule colour reads as a hairline in the row
+           gap and nowhere else. */
+        background: var(--vellum);
         white-space: nowrap;
         text-align: center;
         padding: 5px 7px;
@@ -3459,13 +3495,12 @@
          Both ends of the width this is sized against, because the strip has
          two narrowest cases and they are not the same number. On the phone the
          strip's content is 330px: 390 less the body's 12px margins and the
-         strip's own 18px sides. On the multicolumn desk a column is never
-         narrower than `--card`, so the floor there is 320 less those same
-         sides, 284px — which is the one to design to, since it is reached
-         every time the desk widens far enough to open another column. Measured
-         at that floor: six cells of 47px, a 43px box inside each, and "0.000"
-         is 33.00px in IBM Plex Mono at 11px. Nothing clips, and a pattern ever
-         declared to four decimals would letter 39.60px and still stand.
+         strip's own 18px sides. That was once the narrow case and it is now the
+         roomy one: the desk is a grid of cards and a card gives this control
+         168px, where six cells are 28px and the 33px "0.000" does not fit. So
+         the width is no longer designed to a floor read off the layout at all —
+         the control asks its own container how much room it has and folds to
+         three across when it is under 282px. See the `@container` rule below.
 
          `grid` rather than `flex`, for the reason the year's twelve cells are
          a grid: every hour is exactly the same width whatever it holds. On a
@@ -3475,6 +3510,26 @@
         display: grid;
         grid-template-columns: repeat(6, 1fr);
         margin-top: 9px;
+      }
+      /* Six across needs about 282px, and the card grid does not have it: a
+         card gives this control 168px, where six cells are 28px, the box inside
+         one is 24px, and "0.000" is 33px — so the value clipped. Measured, with
+         the fold forced open, on the Gains strip.
+
+         Three across rather than four, and it is the same argument the six was
+         chosen by. The rows have to land on the boundaries the silhouette above
+         is ticked at — 00, 06, 12, 18, 24 — and three across rules the day at
+         every third hour, so all four quarters are still row starts with extra
+         lines between them. Four across rules it at 00, 04, 08, 12, 16, 20,
+         which puts 06 and 18 in the middle of a row and breaks the one property
+         the grid was arranged around.
+
+         Asked of the card rather than of the window, for the reason the year's
+         twelve cells now are: "how much room does this control have" and "how
+         wide is the browser" were the same question only while the desk was one
+         column. */
+      @container card (max-width: 282px) {
+        .pattern-hours { grid-template-columns: repeat(3, 1fr); }
       }
       /* The twin every author's `display` owes the `hidden` attribute, and the
          one this control cannot be shipped without. The fold starts shut and
@@ -3614,7 +3669,20 @@
          above the control's standing note, tight to the grid it describes. */
       .months-periods { margin-top: 5px; color: var(--ink-3); }
       /* Twelve cells across need about 240px. Below that the year folds to two
-         rows of six, which still reads as a calendar and never as a list. */
+         rows of six, which still reads as a calendar and never as a list.
+
+         Asked of the calendar's own container rather than of the window, which
+         is the question that was always meant: a viewport width was standing in
+         for "how much room does this control have", and the two came apart the
+         moment the desk became a grid of ~190px cards on a 1500px screen. The
+         media query is kept beside it because the two are not the same test —
+         the phone folds the year at 390px of viewport for the reach of a thumb,
+         where the card folds it for want of room. */
+      @container card (max-width: 240px) {
+        .months { grid-template-columns: repeat(6, 1fr); }
+        .month:nth-child(6n) { border-right: 0; }
+        .month:nth-child(-n + 6) { border-bottom: 1px solid var(--rule-soft); }
+      }
       @media (max-width: 400px) {
         .months { grid-template-columns: repeat(6, 1fr); }
         .month:nth-child(6n) { border-right: 0; }
