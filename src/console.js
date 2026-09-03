@@ -596,7 +596,16 @@ export function mountConsole({
       // whose selector reads as though nothing were chosen at all. Brought back
       // only when the value actually moved, and `nearest` so a choice already
       // on screen does not shunt the row for the sake of centring it.
-      if (chosen && drawn !== v) chosen.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+      //
+      // `undefined` is not a value that moved, it is the first draw, and the
+      // difference matters because `block: 'nearest'` scrolls *every* ancestor
+      // scroller and not only this row: `mountConsole` ends with one `sync()`
+      // over every face, so scrolling on the first draw would walk the strip
+      // column — and the page under it — down to whichever selector happened
+      // to be lettered last, before the reader had touched anything.
+      if (chosen && drawn !== undefined && drawn !== v) {
+        chosen.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+      }
       drawn = v;
       row.hidden = !control.shown(params);
       row.classList.toggle('idle', control.idle(params));
@@ -1831,26 +1840,34 @@ export function mountConsole({
 
     const W = 320;
     const H = 64;
-    const quantity = study.offers.find((offer) => offer.quantity.id === study.quantity)?.quantity;
+    // The same lookup `studyQuantityChooser` above already refused a miss on,
+    // so it cannot be absent here — asked without the optional chain that was
+    // reading as though it could be, and would then have thrown one line later
+    // with nothing to say which card was wrong.
+    const { quantity } = study.offers.find((offer) => offer.quantity.id === study.quantity);
     const multiple = quantity.series.length > 1;
     const readingOf = (point) => point.reading ?? point[quantity.id];
-    const series = quantity.series.map((line) => ({
-      sel: (point) => {
-        const value = line.select(readingOf(point));
-        return Number.isFinite(value) ? value : null;
-      },
-      pen: line.pen ? `var(${line.pen})` : 'var(--ink)',
-      format: (value, point) =>
+    const series = quantity.series.map((line) => {
+      // One lettering, asked for twice: the end label in the gutter names its
+      // line where a quantity draws more than one, and the aria description
+      // names it in the sentence around it. Written out twice they were a
+      // copy with a difference, which is how a declared `format` gets taught
+      // to one of them and not the other.
+      const format = (value, point) =>
         line.format
           ? line.format(value, readingOf(point))
-          : `${value.toFixed(quantity.digits)} ${quantity.unit}`,
-      tick: (value, point) => `${multiple ? `${line.label} ` : ''}${
-        line.format
-          ? line.format(value, readingOf(point))
-          : `${value.toFixed(quantity.digits)} ${quantity.unit}`
-      }`,
-      said: line.label.toLowerCase(),
-    }));
+          : `${value.toFixed(quantity.digits)} ${quantity.unit}`;
+      return {
+        sel: (point) => {
+          const value = line.select(readingOf(point));
+          return Number.isFinite(value) ? value : null;
+        },
+        pen: line.pen ? `var(${line.pen})` : 'var(--ink)',
+        format,
+        tick: (value, point) => (multiple ? `${line.label} ${format(value, point)}` : format(value, point)),
+        said: line.label.toLowerCase(),
+      };
+    });
     // The right gutter holds the curves' end labels: six mono characters of
     // "−18.7°" in one mode, "TEDI 142" in the other, which needs the wider cut.
     const plot = { x: 2, w: W - 90, top: 6, bottom: 42 };
