@@ -83,6 +83,9 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
  */
 export function mountConsole({
   host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear, onStudyQuantity, onPin,
+  // A search the reader actually typed that actually found something. The one
+  // callback here that reaches nothing in the model — it files a general note.
+  onFind = null,
   // Where the reader's open cards are kept, already probed with a real write
   // by the caller, or null where the browser refuses storage. See
   // `restoreReveals`; the desk degrades to "not remembered" and never to
@@ -490,7 +493,14 @@ export function mountConsole({
     return moved;
   }
 
-  field.addEventListener('input', () => runSearch(field.value));
+  field.addEventListener('input', () => {
+    const { matches } = runSearch(field.value);
+    // Filed here rather than inside `runSearch`, so that `api.search` — which
+    // anything on the page could call — cannot claim a step the reader has not
+    // taken. The same reason the drag note is filed from the input listeners
+    // and not from `commit`.
+    if (matches.length) onFind?.();
+  });
   field.addEventListener('keydown', (event) => {
     // Escape clears from inside the box, where the reader's hands already are.
     if (event.key !== 'Escape') return;

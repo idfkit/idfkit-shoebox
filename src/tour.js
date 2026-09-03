@@ -23,13 +23,17 @@
  * keeps a one-line row that still reads — the index sheet's rule, applied here.
  */
 
-// v3 because the TM59 work added a step. A reader carrying a v2 entry has six
-// squares filled against a sheet that now has seven, and the seventh would
-// stand unfilled beside six ticks as though they had skipped it — or, worse,
-// the sheet would have retired itself under v2's "all taken" rule and the note
-// about the criteria would never be shown at all. The key is the only thing
-// that separates "read the old sheet" from "read this one".
-const STORE = 'shoebox-general-notes-v3';
+// v4 because the console became a grid of cards you can search. That adds a
+// step and changes what two of the others are about: the desk note described a
+// column of eighteen strips, and the patch note pointed at a button that is now
+// behind a card. A reader carrying a v3 entry has seven squares filled against
+// a sheet that now has eight, and the eighth would stand unfilled beside seven
+// ticks as though they had skipped it — or, worse, the sheet would have retired
+// itself under v3's "all taken" rule and the note about finding would never be
+// shown at all. The key is the only thing separating "read the old sheet" from
+// "read this one", and it is bumped whenever the steps change meaning, not only
+// when they change in number.
+const STORE = 'shoebox-general-notes-v4';
 const VIEWS = ['open', 'folded', 'retired'];
 
 // A sheet counts its own notes in words, and the count is read off the
@@ -44,7 +48,7 @@ const TALLY = Object.freeze([
 ]);
 
 class Note {
-  constructor({ id, title, body, target, focus = null, desk = false }) {
+  constructor({ id, title, body, target, focus = null, desk = false, reveal = false }) {
     this.id = id;
     this.title = title;
     this.body = body;
@@ -57,6 +61,12 @@ class Note {
     // about, so a keyboard reader lands where the words point.
     this.focus = focus ?? target;
     this.desk = desk;
+    // Whether staging has to open the card the subject lives in first. The
+    // console is a grid of closed cards, so a note about a control inside one
+    // points at something that is present in the markup and drawn nowhere —
+    // and `stage()` returns silently when its selector finds nothing, which is
+    // the worst shape a failure can take: no error, no log, no circled subject.
+    this.reveal = reveal;
     Object.freeze(this);
   }
 }
@@ -96,24 +106,49 @@ export const NOTES = Object.freeze([
     id: 'desk',
     title: 'Open the model console',
     body:
-      'Eighteen channels in the order the physics happens. Every control ' +
-      'writes a real object into the IDF, and every strip reads back what ' +
-      'its path contributes. The scales are ruled with the cases anyone in ' +
-      'the trade already knows — single, double, triple; code limits; the ' +
-      'engine\'s own defaults — and each says which one you are standing in ' +
-      'as you drag it.',
+      'Eighteen cards, one per channel, in the order the physics happens — all ' +
+      'of them on one screen. Each reads its number, its name and what its ' +
+      'path is contributing without being opened; open one and you are working ' +
+      'it. Every control writes a real object into the IDF, and the scales are ' +
+      'ruled with the cases anyone in the trade already knows — single, double, ' +
+      'triple; code limits; the engine\'s own defaults — each saying which one ' +
+      'you are standing in as you drag it.',
     target: '#desk-open',
+  }),
+  new Note({
+    id: 'find',
+    title: 'Ask the desk where something is',
+    body:
+      'A hundred and twenty-nine controls, and you do not have to know which ' +
+      'card any of them is on. Type a name, a unit or a case — "triple", ' +
+      '"W/m²K", "west wall" — and the cards holding it open with everything ' +
+      'else out of the way. A control you find is turned where it stands. ' +
+      'Nothing you can find is a control you cannot reach: one that is out of ' +
+      'the path says which of five things is stopping it and what would bring ' +
+      'it back. Beside it, What have I changed? reveals everything sitting off ' +
+      'the desk\'s own defaults.',
+    target: '#desk-open',
+    focus: '#desk-find',
+    desk: true,
   }),
   new Note({
     id: 'patch',
     title: 'Patch a channel out',
     body:
-      'The patch button takes a channel\'s objects out of the document — ' +
-      'removed, not zeroed — so the drawing and the model always agree ' +
-      'about what is in the path.',
+      'Every card carries a marker saying whether its channel is in the model. ' +
+      'Open one and its patch button takes that channel\'s objects out of the ' +
+      'document — removed, not zeroed — so the drawing and the model always ' +
+      'agree about what is in the path.',
     target: '#desk-open',
-    focus: '#desk .patch',
+    // The patch button lives inside a card, and a card starts closed. Pointing
+    // at it directly would point at an element that exists and is drawn
+    // nowhere, which `stage()` handles by doing nothing at all. So the note
+    // aims at the first card's own face — always drawn, always focusable — and
+    // asks for that card to be opened, which puts the button it is about in
+    // view beside it.
+    focus: '#desk .strip .strip-toggle',
     desk: true,
+    reveal: true,
   }),
   // The board has never had a note, and until this feature there was less to
   // say about it: a target is a published number read off the run, and the
@@ -193,7 +228,7 @@ function read() {
   }
 }
 
-export function mountTour({ openDesk } = {}) {
+export function mountTour({ openDesk, revealCard } = {}) {
   const host = document.getElementById('notesheet');
   if (!host) return null;
 
@@ -232,7 +267,14 @@ export function mountTour({ openDesk } = {}) {
   /** Point the reader at the note's subject without doing the step for them. */
   function stage(n) {
     if (n.desk) openDesk?.(true);
-    const el = document.querySelector(n.focus);
+    let el = document.querySelector(n.focus);
+    // Bring the subject out from behind its fold, where it has one. Opening a
+    // card is staging the scene, not taking the step: the marker still fills
+    // only when the reader patches something.
+    if (n.reveal && el) {
+      revealCard?.(el.closest('.strip')?.dataset.channel);
+      el = document.querySelector(n.focus) ?? el;
+    }
     if (!el) return;
     const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
     el.scrollIntoView({ behavior: calm ? 'auto' : 'smooth', block: 'center' });

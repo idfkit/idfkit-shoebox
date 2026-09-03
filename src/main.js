@@ -3261,6 +3261,11 @@ desk = mountConsole({
   // What is really out of the path. Under solo that is not the patch bay, and
   // the console must not carry a second copy of the answer.
   patching,
+  // A search that actually found something, typed by the reader. Filed from the
+  // console's own field rather than from `api.search`, by the rule the drag note
+  // follows: a marker fills when its step has happened on this desk, and a
+  // programmatic search is not the reader asking.
+  onFind: () => tour?.note('find'),
 });
 
 function openDesk(open) {
@@ -3290,7 +3295,13 @@ $('desk-close').addEventListener('click', () => {
 // notes decide whether it fills a square. Mounted after the console so the
 // patch note can point at a real patch button, and handed `openDesk` so a
 // note whose subject lives on the console can stage it.
-const tour = mountTour({ openDesk });
+const tour = mountTour({
+  openDesk,
+  // The patch note's subject is a button inside a card, and cards start closed.
+  // Staging opens the card so the note has something to point at; it does not
+  // patch anything, so the marker still fills from the genuine step.
+  revealCard: (id) => { if (id) desk?.reveal(id, true); },
+});
 // The two carry-away paths are one step: either proves the scheme leaves the
 // page. The buttons keep their own handlers; the note is a second listener.
 $('share').addEventListener('click', () => tour?.note('link'));
