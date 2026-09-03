@@ -1526,6 +1526,50 @@
         font-style: normal;
         color: var(--ink-ghost);
       }
+      /* A criterion's reasoning, folded.
+         Five rows carrying three or four paragraphs each put about eight
+         kilobytes of prose under a table of five numbers and buried the
+         numbers it was there to explain. So the derivations fold and the
+         summary keeps the line the run was judged against, the days it
+         covered and what it is a reading of — the index sheet's own rule,
+         where a folded strip keeps its reading and only its controls go
+         behind the fold.
+         A disclosure and not a tooltip: this sheet has nothing that exists
+         only on hover, because a hint on hover does not exist on a phone at
+         all, and FR-019 asks that every qualification be readable at the
+         narrowest layout without hovering. A press is not a hover.
+         The marker is the register's, `+` closed and `−` open, so the two
+         folds on this page open the same way. */
+      .register #score td .why-fold { display: block; margin-top: 4px; }
+      .register #score td .why-fold > summary {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        width: fit-content;
+        padding: 1px 2px 1px 0;
+        cursor: pointer;
+        list-style: none;
+        max-width: 54ch;
+        font: 400 10.5px/1.45 var(--sans);
+        color: var(--ink-ghost);
+      }
+      .register #score td .why-fold > summary::-webkit-details-marker { display: none; }
+      .register #score td .why-fold > summary::before {
+        content: "+";
+        flex: none;
+        width: 1ch;
+        font-family: var(--mono);
+      }
+      .register #score td .why-fold[open] > summary::before { content: "−"; }
+      .register #score td .why-fold > summary:hover { color: var(--ink-2); }
+      .register #score td .why-fold > summary:focus-visible {
+        outline: 2px solid var(--rule-focus);
+        outline-offset: 2px;
+      }
+      /* The first note under an open fold sits against its own summary rather
+         than against the row above, which the shared `.why` margin was set
+         for. */
+      .register #score td .why-fold .why:first-of-type { margin-top: 2px; }
       .register #score td.delta.absent { font-size: 10.5px; color: var(--ink-ghost); }
       /* The one mark on the whole board. A criterion that has been missed is
          a divergence, and this is the markup pen doing what it is for. */
@@ -2897,17 +2941,41 @@
 
       /* Exclusive states on one segmented rule. Never a dropdown: the desk
          has to be readable without opening anything. */
+      /* A row of options that scrolls sideways once it cannot hold them all.
+         Every selector on this desk carried two to six options until the room
+         type arrived with fourteen: `flex: 1` over a 330px column gives each
+         one 23px, and "Three bed living/kitchen" is twenty-four characters, so
+         the labels on the right were unreadable and their targets unhittable.
+         The row scrolls rather than wrapping or abbreviating, because a
+         wrapped grid costs five rows of a column that is already short and an
+         abbreviated label is the sheet deciding what a space is called.
+
+         `min-width: max-content` on the segment is what makes one rule serve
+         both cases: with room to spare, flex-basis 0 still shares the row out
+         equally and the small selectors look exactly as they did; with more
+         options than fit, no segment shrinks below its own label and the
+         overflow scrolls. */
       .segments {
         display: flex;
         border: 1px solid var(--rule);
         border-radius: var(--r);
-        overflow: hidden;
+        overflow-x: auto;
+        overflow-y: hidden;
+        /* The scrollbar is the only thing saying there is more to the right,
+           and a fade at the edge is a shadow, which this sheet does not use.
+           So it is a hairline in the rule's own ink rather than the platform's
+           slab. */
+        scrollbar-width: thin;
+        scrollbar-color: var(--rule) transparent;
+        overscroll-behavior-x: contain;
       }
       .segment {
         all: unset;
         flex: 1;
+        min-width: max-content;
+        white-space: nowrap;
         text-align: center;
-        padding: 5px 3px;
+        padding: 5px 7px;
         font: 500 9px/1.3 var(--cond);
         text-transform: uppercase;
         letter-spacing: 0.07em;

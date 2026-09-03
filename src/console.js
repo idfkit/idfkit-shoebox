@@ -574,13 +574,30 @@ export function mountConsole({
     row.append(group);
     if (control.note) row.append(el('p', 'ctl-note', control.note));
 
+    // What the row was last drawn showing, so the scroll below can tell a
+    // value that moved from a redraw that did not. Every station attach, study
+    // tick and landing solve redraws every face on the desk, and a row that
+    // scrolled itself on each of those would drag the options out from under a
+    // reader who was still looking at them.
+    let drawn;
+
     faces.set(control.key, () => {
       const v = params[control.key];
+      let chosen = null;
       for (const { button, option } of buttons) {
         const here = option.value === v;
+        if (here) chosen = button;
         button.classList.toggle('here', here);
         button.setAttribute('aria-checked', String(here));
       }
+      // A row with more options than fit scrolls, so the chosen one can be off
+      // the side — which is where a permalink carrying `Three bed living/kitchen`
+      // or a preset writing a room type would otherwise leave it, on a desk
+      // whose selector reads as though nothing were chosen at all. Brought back
+      // only when the value actually moved, and `nearest` so a choice already
+      // on screen does not shunt the row for the sake of centring it.
+      if (chosen && drawn !== v) chosen.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+      drawn = v;
       row.hidden = !control.shown(params);
       row.classList.toggle('idle', control.idle(params));
     });

@@ -20,7 +20,6 @@ import {
   windowGeometry,
 } from './model.js';
 import {
-  AS_DRAWN,
   CHANNELS,
   DEFAULT_BYPASS,
   DEFAULT_PARAMETERS,
@@ -5010,6 +5009,47 @@ const readAsDrawn = (tm59) => !tm59.qualifications.some((q) => q.id === 'profile
  * map is weak so a solve's readings take their prose with them when the next
  * solve replaces them.
  */
+/**
+ * The one line a criterion row keeps in view above its own reasoning.
+ *
+ * Five rows carrying three or four paragraphs each is about eight kilobytes of
+ * prose under a table of five numbers, and it buried the numbers. So the
+ * reasoning folds and this stands over it — the desk's own rule for the index
+ * sheet, where a folded strip keeps its reading and only its controls go behind
+ * the fold: closed a row reads, open it is worked.
+ *
+ * What may not fold is decided by the requirements rather than by length. The
+ * line the run was judged against is FR-006 and it moved during the run, so a
+ * reader cannot check the verdict without it. The coverage is FR-010. That the
+ * reading is of operative temperature and not air temperature is FR-007, and it
+ * is the difference between two questions rather than a nicety. Those three are
+ * here; the derivations, the clamp counts, the hour arithmetic and the two
+ * documents' positions on a partial period are one press away.
+ *
+ * The qualifications that change how a number should be read — that criterion b
+ * presumes a bedroom, that the criteria are read over the building as drawn —
+ * do not appear here because they do not fold at all: they stay in the row's
+ * own notes, outside the disclosure, for the reason the index sheet keeps a
+ * blocked channel's note outside its fold.
+ */
+// A note that says how the reading must be *taken* rather than how it was
+// *made*. Matched on its own words rather than by position, because the notes
+// are pushed in different orders per criterion and an index would silently
+// point at the wrong sentence the next time one is added.
+const QUALIFYING_NOTE = /presumes a bedroom|building as drawn|as it is drawn/i;
+
+function tm59Precis(reading) {
+  if (!reading || reading.value === null) return null;
+  const { criterion, coverage, line } = reading;
+  const parts = [];
+  if (criterion.id === 'a' && line) {
+    parts.push(`judged against ${f1c(line.low)}–${f1c(line.high)} °C`);
+  }
+  if (coverage) parts.push(`${coverage.days} of ${SEASON.days} days`);
+  parts.push('operative temperature');
+  return parts.join(' · ');
+}
+
 const noteCache = new WeakMap();
 
 function tm59Notes(reading, asDrawn) {
@@ -5297,6 +5337,11 @@ function renderScore() {
       chaseGhost = gesture ? chaseNow() : null;
       renderScore();
       renderChase();
+      // Chasing TM59 is what decides whether a study reads criterion a, so the
+      // curves already up are now of the wrong quantity. They are re-swept the
+      // way any other change to the reading re-sweeps them rather than left to
+      // disagree with the offer that produced them.
+      refreshStudies();
     });
     bar.append(chase);
     // Whether this standard's lines are read by `tm59.js`, asked of the
@@ -5315,9 +5360,24 @@ function renderScore() {
       // reading of. One block per statement rather than one paragraph, because
       // they are separate claims a reader may want to check one at a time.
       if (criteria) {
-        for (const note of tm59Notes(tm59Reading(target), asDrawn)) {
-          label.append(elem('i', 'why', note));
+        const reading = tm59Reading(target);
+        const notes = tm59Notes(reading, asDrawn);
+        const precis = tm59Precis(reading);
+        // The two sentences that qualify the reading rather than derive it stay
+        // outside the fold, because a reader who never opens it must still not
+        // take a bedroom criterion for a statement about the room they drew.
+        const qualifying = notes.filter((n) => QUALIFYING_NOTE.test(n));
+        const deriving = notes.filter((n) => !QUALIFYING_NOTE.test(n));
+        if (precis && deriving.length) {
+          const fold = elem('details', 'why-fold');
+          const head = elem('summary', null, precis);
+          fold.append(head);
+          for (const note of deriving) fold.append(elem('i', 'why', note));
+          label.append(fold);
+        } else {
+          for (const note of deriving) label.append(elem('i', 'why', note));
         }
+        for (const note of qualifying) label.append(elem('i', 'why', note));
       }
       cell(tr, target.limit == null ? target.asks : `≤ ${target.limit}`, 'asks', 'Asks for');
       const value = targetReading(target);
@@ -6690,13 +6750,33 @@ const touchesSeason = (mask) => {
  * stays: free-running, the zone's own two extremes are the design quantities
  * and one hourly series answers both.
  */
+/** The register entry whose criterion a study reads. */
+const TM59_PRESET = 'tm59';
+
 function studyMetric(snapshot, patch, epw) {
   const state = channelState(snapshot, patch);
   if (epw && state.get('system').engaged) return 'energy';
+  // Criterion a is swept when the reader is *chasing* TM59, and not otherwise.
+  //
+  // It used to be swept whenever a room type was named, which was wrong in the
+  // way that matters: `roomType` says which gains model is in force and nothing
+  // more, so a reader who picked "Double bedroom" because they wanted a
+  // bedroom's gains silently lost the winter-low and summer-high curve on every
+  // study on the desk — and since `roomType` rides `restShapeKey`, every curve
+  // already up re-swept itself under a reading nobody had asked for. A control
+  // that quietly changes what a different part of the page measures is the
+  // failure this sheet's no-remembered-standard rule exists to prevent.
+  //
+  // The chase pin is the honest signal, and it is the only one on the desk: it
+  // is the reader saying outright which published line they are working
+  // against, it is one press to set and one to drop, and it deliberately stays
+  // off `params` and out of the permalink because it is how the desk is being
+  // read rather than what it holds. Chasing TM59 and sweeping a control against
+  // TM59's own criterion are the same intention.
   if (
+    chased === TM59_PRESET &&
     epw &&
     state.get('gains').engaged &&
-    snapshot.roomType !== AS_DRAWN &&
     touchesSeason(snapshot.months) &&
     runningMeanFor(epw).mean
   ) {
