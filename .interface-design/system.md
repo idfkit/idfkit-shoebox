@@ -870,7 +870,12 @@ scroll — whatever the column count, the rail is the desk's footer. Below
 foot, and folds to the index sheet below.
 
 **A fixed block either side of a scroller makes the window's height a budget,
-and the scroller pays all of it.** A panel built this way looks fine on the
+and the scroller pays all of it.** There are now three of them — the head, the
+finder's band and the rail — and each one added is taken whole out of the
+eighteen channels, which are the thing the desk is for. Measured on a 777px
+viewport: head 217, finder 33, rail 208, leaving the cards 287 of 745. Anything
+new that wants a fixed line on this panel has to be costed against that, in
+pixels, before it is drawn. A panel built this way looks fine on the
 screen it was designed on and is unusable two hundred pixels shorter: measured
 here, an iPad in landscape gave the eighteen channels 104px of a 736px desk to
 scroll 12,000 in, because the head and the footer are `flex: none` and the

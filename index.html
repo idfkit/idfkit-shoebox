@@ -2557,8 +2557,14 @@
         display: flex;
         flex-wrap: wrap;
         align-items: baseline;
-        gap: 8px 12px;
-        padding: 9px 18px 10px;
+        gap: 6px 12px;
+        /* Tight on purpose. The desk is a fixed head and a fixed rail either
+           side of one scroller, so the window's height is a budget and the
+           channels pay all of it — and this band is a third fixed block on that
+           same budget. Measured: at 33px it costs the eighteen cards 33px of
+           the room they need 389 of. Every pixel spent here is a pixel the
+           thing the desk is for does not get. */
+        padding: 5px 18px 6px;
         border-bottom: 1px solid var(--rule);
       }
       .finder[hidden] { display: none; }
@@ -2576,7 +2582,7 @@
         box-sizing: border-box;
         flex: 1 1 10ch;
         min-width: 0;
-        min-height: 24px;
+        min-height: 22px;
         font: 400 12px/1.4 var(--sans);
         color: var(--ink);
         border-bottom: 1px solid var(--rule-firm);

@@ -305,8 +305,8 @@ hour grid measured at a 366px card (a 390px phone).
 
 | | before | after |
 |---|---|---|
-| `.strip-grid` height, all closed | 12,338 px | **388 px** |
-| `.strips` scroller | 422 px | 388 px |
+| `.strip-grid` height, all closed | 12,338 px | **389 px** |
+| `.strips` scroller (862 px viewport) | 422 px | 389 px |
 | Cards fully visible, nothing open | 1 of 18 | **18 of 18** |
 | Any scrolling with nothing open | 29.2 screens | **none** |
 | Relayout | 116.8 ms median | **1.0 ms** median, 2.7 p95 |
@@ -319,6 +319,33 @@ Vocabulary, measured over the real declaration: 144 keys, 582 distinct strings,
 7,410 characters. The data model predicted 486 and 6,002; the difference is
 `phraseFor` and the selectors' IDF values, which are more coverage rather than
 less.
+
+### Where FR-001 holds, and where it falls a row short
+
+Stated plainly because it is a measurement rather than a claim. Eighteen closed
+cards are 389 px. What the scroller gets is the window's height minus three
+fixed blocks — the head, the finder's band and the rail — so the criterion is
+met from about **860 px of viewport** upward:
+
+| viewport | scroller | grid | all eighteen in view |
+|---|---|---|---|
+| 862 px | 389 px | 389 px | **yes**, exactly |
+| 777 px | 284 px | 389 px | no — short by 105 px, about two rows |
+
+Below that boundary the desk is a page you scroll about a third of, against the
+twenty-nine screens it replaced, and it degrades a row at a time rather than
+failing. Three things set it and each was weighed:
+
+- **The blocked channel's sentence is 131 px of the 389.** FR-003 keeps it
+  outside the fold, and shrinking it to buy the row back would be trading the
+  thing that must be legible for the thing that must be complete — the same
+  trade D2 refused when it declined to crush the closed row.
+- **A fourth column would fit five rows into 339 px and still miss at 777.** It
+  also takes the card to 145 px, and the reason for three was that a card has to
+  carry a channel name.
+- **The finder's band is the one new fixed block and it was costed.** Trimmed
+  from 44 px to 34 px, which is 34 px the eighteen channels do not get. The
+  design system now carries that arithmetic beside the rule it belongs to.
 
 ### The two that need a person
 
