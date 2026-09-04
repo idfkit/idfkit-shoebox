@@ -15,7 +15,10 @@ export interface ShoeboxStackProps extends cdk.StackProps {
   readonly zoneName: string;
   /** `owner/repo`, for the role description. */
   readonly githubRepo: string;
-  /** Only this branch may deploy. */
+  /**
+   * The branch that publishes the development channel. A release comes from a
+   * tag rather than from any branch; see `RELEASE_TAGS`.
+   */
   readonly githubBranch: string;
   /**
    * GitHub's numeric organisation and repository ids, which appear in the OIDC
@@ -60,19 +63,38 @@ const PREFIX = '/onebuilding';
 const GITHUB_OIDC_ISSUER = 'token.actions.githubusercontent.com';
 
 /**
- * Pull request previews are published into the same bucket under the pull
- * request's number, so PR 42 is served at `${domainName}/42/`. One namespace
- * rather than a second distribution, because the point of a preview is to
- * exercise the real arrangement: the same TLS, the same cache policy, and above
- * all the same `/onebuilding` origin, which is the piece that cannot be tested
- * on localhost and is exactly where a deployment breaks.
+ * The tags that publish the site itself, as the glob the trust policy matches.
  *
- * The top-level numeric directory is therefore reserved. `scripts/deploy.mjs`
- * knows this from both ends: publishing the site leaves keys matching this
- * shape alone rather than pruning them as leftovers, and publishing a preview
+ * It has to agree with the `tags:` filter in `.github/workflows/deploy.yml`: a
+ * tag the workflow runs on but the role does not trust fails at the credentials
+ * step with `Not authorized to perform sts:AssumeRoleWithWebIdentity`, which
+ * names neither file. Widening it to every tag would not widen the trust in any
+ * real sense — pushing a tag to this repository already takes the write access
+ * that pushing to `main` takes — so the narrowing is only worth what it says
+ * about intent: a release is a `v`-prefixed tag and nothing else.
+ */
+const RELEASE_TAGS = 'v*';
+
+/**
+ * Everything that is not a release is published into the same bucket, one
+ * directory in: the development channel every push to `main` publishes at
+ * `${domainName}/dev/`, and a pull request's preview at `${domainName}/42/`.
+ * The site's own address carries a tagged release and nothing else.
+ *
+ * One namespace rather than a second distribution, because the point of both is
+ * to exercise the real arrangement: the same TLS, the same cache policy, and
+ * above all the same `/onebuilding` origin, which is the piece that cannot be
+ * tested on localhost and is exactly where a deployment breaks. A release is
+ * then the same artefact that has been served under `/dev/` since it was
+ * merged, moved to the root.
+ *
+ * A top-level `dev`, and a top-level directory of digits, are therefore
+ * reserved. `scripts/deploy.mjs` knows this from both ends: publishing a
+ * release leaves keys matching this shape alone rather than pruning them as
+ * leftovers, and refuses outright to build one, while publishing a channel
  * touches nothing outside its own.
  */
-const PREVIEW = /^\/(\d+)(\/.*)?$/;
+const CHANNEL = /^\/(\d+|dev)(\/.*)?$/;
 
 /**
  * The exact `sub` claim GitHub sends, which is the whole security boundary:
@@ -95,6 +117,18 @@ const subject = (p: {
   githubOwnerId: string;
   githubRepoId: string;
 }) => `${repository(p)}:ref:refs/heads/${p.githubBranch}`;
+
+/**
+ * The subject a workflow running on a tag push is issued, which is what lets a
+ * release reach the root of the bucket. A tag ref is not a branch ref, so the
+ * subject above does not cover it and a release would otherwise be refused by
+ * STS — the whole arrangement failing at its one interesting moment.
+ */
+const releaseSubject = (p: {
+  githubRepo: string;
+  githubOwnerId: string;
+  githubRepoId: string;
+}) => `${repository(p)}:ref:refs/tags/${RELEASE_TAGS}`;
 
 /**
  * The subject a workflow running on the `pull_request` event is issued, which
@@ -164,36 +198,42 @@ function handler(event) {
     });
 
     /**
-     * What makes `/42/` and `/42` reach a preview's `index.html`.
+     * What makes `/dev/`, `/42/` and their bare forms reach a channel's own
+     * `index.html`.
      *
      * `defaultRootObject` covers exactly one path, `/`, so it does nothing for a
-     * subdirectory: S3 has no key named `42/` and answers the request with an
+     * subdirectory: S3 has no key named `dev/` and answers the request with an
      * error. This appends the index where the browser asked for a directory,
-     * and redirects the bare `/42` to `/42/` so that the preview's own base is
+     * and redirects the bare `/dev` to `/dev/` so that the channel's own base is
      * unambiguous rather than resolving one level up.
      *
-     * The pattern is interpolated from `PREVIEW` rather than written out again,
-     * because a preview served at a path the deploy script does not consider
-     * reserved would be pruned by the next publish of the site — a failure that
-     * appears hours later and nowhere near this file.
+     * The pattern is interpolated from `CHANNEL` rather than written out again,
+     * because a channel served at a path the deploy script does not consider
+     * reserved would be pruned by the next release — a failure that appears
+     * hours later and nowhere near this file.
+     *
+     * The construct id still says `Preview`, from when a pull request was the
+     * only thing this served. Renaming it would replace the function for no
+     * behavioural gain, which is a distribution update this file has no reason
+     * to ask for.
      */
-    const previewIndex = new cloudfront.Function(this, 'PreviewIndex', {
+    const channelIndex = new cloudfront.Function(this, 'PreviewIndex', {
       runtime: cloudfront.FunctionRuntime.JS_2_0,
       code: cloudfront.FunctionCode.fromInline(`
 function handler(event) {
     var request = event.request;
-    var preview = request.uri.match(${PREVIEW});
-    if (!preview) {
+    var channel = request.uri.match(${CHANNEL});
+    if (!channel) {
         return request;
     }
-    if (!preview[2]) {
+    if (!channel[2]) {
         return {
             statusCode: 301,
             statusDescription: 'Moved Permanently',
-            headers: { location: { value: '/' + preview[1] + '/' } }
+            headers: { location: { value: '/' + channel[1] + '/' } }
         };
     }
-    if (preview[2].charAt(preview[2].length - 1) === '/') {
+    if (channel[2].charAt(channel[2].length - 1) === '/') {
         request.uri = request.uri + 'index.html';
     }
     return request;
@@ -221,7 +261,7 @@ function handler(event) {
         // so what ships does not depend on this flag's heuristics.
         compress: true,
         functionAssociations: [
-          { function: previewIndex, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST },
+          { function: channelIndex, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST },
         ],
       },
       additionalBehaviors: {
@@ -257,21 +297,34 @@ function handler(event) {
     const deployRole = new iam.Role(this, 'DeployRole', {
       // The `sub` condition is the whole security boundary: without it any
       // GitHub Actions workflow in the world could assume this role. It is
-      // pinned to this repository, on its deploying branch or on a pull request
-      // raised within it — two exact strings, matched as a list, so a workflow
-      // in another repository cannot reach the bucket and neither can a fork.
-      // See `previewSubject` for why the second one is as narrow as it gets.
+      // pinned to this repository, on its development branch, on a release tag,
+      // or on a pull request raised within it — three patterns matched as a
+      // list, so a workflow in another repository cannot reach the bucket and
+      // neither can a fork. See `previewSubject` for why the last one is as
+      // narrow as it gets.
       // Only the immutable form is accepted. Allowing the documented
       // `repo:owner/repo:...` form alongside it would quietly restore exactly
       // the weakness the immutable claim removes, so if GitHub ever changes
       // what it sends this fails loudly instead of widening the trust.
+      //
+      // `StringLike` rather than `StringEquals` because the release pattern
+      // carries a wildcard and IAM will not apply two operators to one
+      // condition key. The other two patterns contain no wildcard, and
+      // `StringLike` matches such a pattern exactly, so nothing is widened by
+      // the operator itself.
       assumedBy: new iam.OpenIdConnectPrincipal(provider, {
         StringEquals: {
           [`${GITHUB_OIDC_ISSUER}:aud`]: 'sts.amazonaws.com',
-          [`${GITHUB_OIDC_ISSUER}:sub`]: [subject(props), previewSubject(props)],
+        },
+        StringLike: {
+          [`${GITHUB_OIDC_ISSUER}:sub`]: [
+            subject(props),
+            releaseSubject(props),
+            previewSubject(props),
+          ],
         },
       }),
-      description: `Publishes ${props.domainName} and its previews from ${props.githubRepo}`,
+      description: `Publishes ${props.domainName} and its channels from ${props.githubRepo}`,
       maxSessionDuration: cdk.Duration.hours(1),
     });
 

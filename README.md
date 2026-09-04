@@ -1,6 +1,8 @@
 # idfkit-shoebox
 
-Live at **[shoebox.idfkit.com](https://shoebox.idfkit.com)**.
+Live at **[shoebox.idfkit.com](https://shoebox.idfkit.com)**, which carries the
+last tagged release. The current `main` is at
+**[shoebox.idfkit.com/dev](https://shoebox.idfkit.com/dev/)**.
 
 The smallest possible showcase of EnergyPlus running in the browser via
 `@idfkit/engine` and `@idfkit/engine-assets`. One page, no button needed: it
@@ -36,9 +38,22 @@ First load downloads and compiles the ~28 MB binary; after that it is cached.
 > when I will eventually have forgotten!
 
 The site is an S3 bucket behind CloudFront at `shoebox.idfkit.com`, defined as a
-CDK app in `infra/`. Pushing to `main` publishes it: the workflow in
-`.github/workflows/deploy.yml` mints a short-lived OIDC token, trades it for the
-deploy role, and runs `npm run deploy`. There is no AWS key stored in the repo.
+CDK app in `infra/`. The workflow in `.github/workflows/deploy.yml` mints a
+short-lived OIDC token, trades it for the deploy role, and runs
+`npm run deploy`. There is no AWS key stored in the repo.
+
+**Only a `v*` tag publishes the site itself.** Everything else is published one
+directory in, into the same bucket and through the same distribution: every push
+to `main` goes to `shoebox.idfkit.com/dev/`, and every open pull request to
+`shoebox.idfkit.com/<number>/`. The address then says what the title block's
+revision cell says — a release at the root, a `+sha` build under `/dev/` — and a
+release is nothing more than the artefact that has been sitting under `/dev/`
+since it was merged, moved to the root. To cut one:
+
+```bash
+npm version patch      # or minor / major, which tags as well as bumps
+git push --follow-tags
+```
 
 Everything lives in the idfkit AWS account, which is also where the `idfkit.com`
 hosted zone lives, so the stack looks the zone up rather than being told about
@@ -50,10 +65,18 @@ AWS_PROFILE=idfkit npx cdk deploy   # once, to provision
 npm run build && npm run deploy     # to publish by hand
 ```
 
+Publishing a channel by hand takes the base and the prefix together, since Vite
+bakes the base into every asset URL at build time:
+
+```bash
+npm run build -- --base=/dev/ && SHOEBOX_PREFIX=dev npm run deploy
+```
+
 After the first `cdk deploy`, set the repository variable
 `AWS_DEPLOY_ROLE_ARN` to the stack's `DeployRoleArn` output, which is what the
-workflow assumes. The role trusts one repository on one branch, so a pull
-request from a fork cannot reach the bucket.
+workflow assumes. The role trusts one repository — its `main`, its `v*` tags,
+and pull requests raised within it — so a pull request from a fork cannot reach
+the bucket.
 
 Three things about this arrangement are load-bearing, and each cost real
 measurement to find:

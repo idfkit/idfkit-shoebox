@@ -30,100 +30,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one recreates the same questions and re-solves them locally; links minted
   before this feature continue to open with no studies, as they did before.
 
+## [0.3.0] - 2026-09-03
+
+### Added
+
+- **An AirflowNetwork air model beside the scheduled one.** The Air strip states
+  its subject two ways: a stated air change rate, or a pressure network that
+  computes the flow from wind and stack effect at every timestep out of an
+  envelope leakiness and an openable area per wall. The engine simulates one or
+  the other, so the model that is out has its objects deleted rather than
+  zeroed. The network costs about 20 ms on a design day and 3.1x on a year.
+
 - **The title block can be signed.** Type a name into the `Drawn by` cell and
-  every model this desk hands over carries it: at the head of the IDF, as a
-  comment, and in the run bundle's `MANIFEST.txt` — beside the toolkit that
-  wrote the file and the build of this sheet. An IDF outlives the tab that
-  wrote it, and "the results moved" and "the writer moved" are different
-  problems that a line at the top tells apart.
+  every model this desk hands over carries it, at the head of the IDF and in the
+  run bundle's `MANIFEST.txt`. The cell is empty until you fill it, the name is
+  kept in this browser and never in a link, and signing runs nothing.
 
-  The cell is empty until you fill it, because this sheet has no author of its
-  own: a title block names whoever drew *that* drawing, and here that is
-  whoever is at the console. The name is kept in this browser and never in a
-  link — a scheme you send carries the building, not whoever drew it. Signing
-  runs nothing and moves no reading. Names are normalised and never refused.
-  The header carries no date, so two models of the same desk stay
-  byte-identical and worth diffing; the manifest has the date.
+- **The page says who built it.** The head's stamp gains a **Toolkit** row beside
+  Engine, Runtime and Upload, so the page states what it is a demo of without
+  anyone opening the Disclosure band to find out.
 
-- **The page says who built it.** The Disclosure band has always been a
-  colophon and only ever carried the negative half — who this page is *not*,
-  and the terms the engine arrives under. It now says who it is. The head's
-  stamp gains a **Toolkit** row beside Engine, Runtime and Upload, so the page
-  states what it is a demo of without anyone opening a band to find out.
+- **The scoreboard's em dashes can be pressed.** A desk that ships free-running
+  met nine em dashes and the same grey sentence beside each one. A note above
+  the table now carries the fix as a press, escalating from "patch System in" to
+  "attach a weather file", and the kept-schemes shelf carries the same offer.
+
+- **Page views are counted.** GoatCounter, with no cookie, no identifier and
+  nothing cross-site. The URL fragment is not recorded, so a shared desk never
+  lands in the table as its own page.
+
+### Changed
+
+- **The heat balance says which way it points.** Direction was carried only by
+  the hue and the absence of a minus sign, which is a colour-only encoding of
+  the one fact the rail exists to state. The convention is now stated under the
+  rail's head and every rail figure carries `in` or `out` beside its watts; the
+  head also says the `±` is one side of the balance, not the two netted.
+
+- **Two rail readings say on the strip that they are not the variable they are
+  named after.** System air transfer is reported per building and divided back
+  down. Air energy storage enters the balance negated and is relettered **Air
+  energy release**, so the label and the sign agree. Neither transformation was
+  wrong; neither was checkable.
+
+- **A control belonging to the model that is out is no longer drawn.** Dimming
+  it said "inert right now" where the truth is "belongs to the other
+  instrument", and a dimmed slider is still draggable and still in the tab
+  order. Applied to Air's two models, Glazing's simple unit against its layered
+  one, and the rooflights' own glass; a control whose reviving control is
+  adjacent is still dimmed rather than withdrawn.
+
+- **The run log stays in view down the sheet.** A solve fired from the
+  scoreboard used to report its stages and wall clock to a margin scrolled off
+  the top. Static again below the fold, where a pinned band would read as a
+  toolbar.
+
+- **The lede leads with the capability rather than with Denver.** The first
+  climate named is the one a reader takes the tool to be about; Denver keeps its
+  place as what the sheet opens on.
+
+- **The title block says there is no simulation server**, rather than
+  `Upload: None`, which on a page that simulates a building read as an empty
+  field and so as an affordance this page does not have.
+
+- **The scoreboard and the kept-schemes shelf read as tables again.** Each
+  standard's name heads a banded section instead of being set quieter than the
+  criteria under it, and each shelf figure is headed over its own column instead
+  of over the empty delta beside it.
+
+- **Only a tag publishes the site.** `shoebox.idfkit.com` is a released issue of
+  the drawing; every other push to `main` publishes the development channel at
+  `/dev/`, and a pull request gets a preview at `/<number>/`.
 
 ### Fixed
 
 - **A station whose design conditions cannot be read is refused, instead of
-  fatalling the run.** Searching `Boston` puts WMO 994971 at the top of the
-  list, ahead of Boston-Logan, and attaching it stopped the engine dead before
-  a single hour was simulated: `Fatal: Errors occurred on processing input
-  file`. The first thing a new reader did on this page could be watch it fail.
+  fatalling the run.** Searching `Boston` put WMO 994971 at the top of the list,
+  and attaching it stopped the engine before a single hour was simulated: the
+  site publishes no annual cooling condition, so the reader fell back to the
+  first day of the right season, a January day carrying the literal text `N`
+  where onebuilding had no number. The sheet now declares an ordered list of
+  annual design days it will accept, at the severity it has always claimed, and
+  takes the first one published whose numbers parse. Over 120 sites, 108 attach
+  and every one of the 12 refused is a marine `99xxxx` station publishing no
+  annual cooling condition whatsoever.
 
-  Two faults under one error message, and both were the no-silent-fallbacks
-  rule broken. The reader asked for one design day by name and, failing to find
-  it, took the first day of the right *season* in the file. For station 994971
-  that is a **January** day, because the site publishes no annual cooling
-  condition at all, and it carries the literal text `N` where onebuilding had
-  no number to publish. EnergyPlus rejects `N` in a numeric field, which is the
-  fatal. Sizing a New England summer against 16.6 °C on 21 January would have
-  been wrong even if it had run.
+- **The plate letters the design day it actually got.** Any non-winter day was
+  lettered `1% clg db`, so 39 sites in 120 were being sized on a `.4%` dewpoint
+  day under a label claiming otherwise.
 
-  The obvious fix was the wrong one. A survey of 120 sites says the name the
-  reader used to ask for, `Ann Clg 1% Condns DB=>MWB`, is published for only 69
-  of them: simply requiring it would have refused **51 sites in 120, 39 of them
-  working perfectly**. So the sheet now declares an ordered list of annual
-  design days it will accept, at the severity it has always claimed, and takes
-  the first one published whose numbers parse. Measured over the same sample:
-  108 attach, 12 are refused, and every one of the 12 is a marine `99xxxx`
-  station publishing no annual cooling condition whatsoever. No ordinary WMO
-  site is refused.
+- **A refused station says what to do instead.** The picker reopens on the
+  nearest other stations, which is two clicks from the refusal to a solved
+  Boston-Logan.
 
-- **The plate letters the design day it actually got.** The cooling datum was
-  hard-coded to `1% clg db` for whatever day the model held, which for 39 sites
-  in every 120 was a claim about an object the document did not contain: those
-  stations were being sized on a `.4%` dewpoint-basis day and lettered as
-  though on a 1% dry-bulb one. The label is now read off the day itself, so a
-  station with no wetbulb record reads `1% clg dp` and says what it is.
+- **A link naming an unusable station says why.** `attachFromLink` lettered its
+  own summary over the specific sentence the attach had just written into the
+  same status line, so a reader arriving on such a link was told only that
+  something had failed. The link was already refused whole, back to defaults,
+  with auto-solve stopped; that is unchanged.
 
-- **A refused station now says what to do instead.** The picker reopens on the
-  nearest other stations, which is the whole fix for the reported case: all
-  five published windows of Boston 994971 carry the identical three design
-  days, and Boston-Logan is 3.5 km away and clean. Two clicks from the refusal
-  to a solved Boston-Logan year.
-
-- **A link naming an unusable station now says why.** `attachFromLink` lettered
-  its own "could not be attached, so the whole link was set aside" over the top
-  of the specific sentence the attach had just written into the same status
-  line, so a reader arriving on such a link was told only that something had
-  failed. The reason now travels out of the attach and is lettered in place of
-  the summary. The link was already refused whole, back to defaults, with
-  auto-solve stopped; that is unchanged.
-
-### Changed
-
-- **The heat balance says which way it points.** The rail lettered five signed
-  watt figures and a ± total, and the only things carrying direction were the
-  hue — warm right of zero, cold left — and the absence of a minus sign. That is
-  a colour-only encoding of the one fact the block exists to state: in
-  monochrome, under forced colours, or read aloud as a swatch, a name and a
-  number, a positive term said nothing whatever about being positive. So the
-  convention is now stated where the signs are — under the rail's head, in
-  place rather than on hover — and every rail figure carries `in` or `out`
-  beside its watts, on the rail's key, the strip meter and the folded index row
-  alike. The head also says what the `±` is, which nothing did: the size of one
-  side of the balance, not the two netted. The hue still ranks and groups the
-  terms; it no longer has to be believed on its own.
-
-- **Two rail readings are not the variable they are named after, and both now
-  say so on the strip.** System air transfer is reported by EnergyPlus for the
-  whole building and divided back down, so at a zone multiplier of 3 the ESO
-  reads three times what the strip letters. Air energy storage enters the
-  balance negated — and that meter is relettered **Air energy release**,
-  because under the variable's own name a reading of −400 W said "storage" and
-  "out" in one breath, and the only reading of that which parses, discharging,
-  is the opposite of what is happening. Negated, the label and the sign agree:
-  a negative release is the air charging. Neither transformation was wrong;
-  neither was checkable. Nothing here reaches the IDF.
+- **The revisions section no longer overflows a narrow screen.** A wide
+  unwrapped code block was winning the grid's default `min-width: auto` and
+  pushing the whole block past the viewport instead of scrolling inside its own
+  `overflow`.
 
 ## [0.2.0] - 2026-08-19
 
@@ -891,6 +900,7 @@ laid out as a drafting sheet, served at
 - Licensing and disclosure section citing the open datasets and npm packages
   behind the page.
 
-[unreleased]: https://github.com/idfkit/idfkit-shoebox/compare/v0.2.0...HEAD
+[unreleased]: https://github.com/idfkit/idfkit-shoebox/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/idfkit/idfkit-shoebox/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/idfkit/idfkit-shoebox/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/idfkit/idfkit-shoebox/releases/tag/v0.1.0
