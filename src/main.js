@@ -6702,9 +6702,14 @@ function billFromBasis(basis, pricing) {
 function landedFrom(eso, job, built) {
   const points = hourly(eso, exactly('Zone Mean Air Temperature'));
   const runs = environmentRuns(points, eso?.environments ?? []);
-  const billedRuns = runs.some((run) => run.kind === null) ? runs.filter((run) => run.kind === null) : runs;
+  // Weather-file environments where the run holds any, the design days where
+  // it does not — and the same question answers both halves, so it is asked
+  // once. Asked a second time of the filtered list it reads as a fresh fact
+  // and is not one: after the filter every environment is a run period by
+  // construction, so the answer can only ever be the first question's.
+  const annualRun = runs.some((run) => run.kind === null);
+  const billedRuns = annualRun ? runs.filter((run) => run.kind === null) : runs;
   const environments = new Set(billedRuns.map((run) => run.key));
-  const annualRun = billedRuns.some((run) => run.kind === null);
   const series = new Map();
   for (const use of END_USES) {
     const total = meterTotal(eso, use.meter, environments);
@@ -6773,6 +6778,24 @@ function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? nul
   });
 }
 
+/**
+ * What one sweep's runs must carry, and what they will be built carrying.
+ *
+ * The engaged channels of the desk decide which *meters* are producible, which
+ * is what `contentsFor` uses them for. They are deliberately **not** what
+ * `carried.channels` is set to. That field is a precondition — `syncReporting`
+ * throws for any channel named there that the sample's own `channelState` does
+ * not have engaged — and a sample is the desk with one control moved, so a
+ * channel that was engaged on the snapshot can perfectly legitimately go out
+ * under the overlay: sweep the only glazed wall's ratio down to nothing and
+ * Blinds and Daylight lose the opening their `requires` asks for. Handed the
+ * whole engaged set, every such sample throws inside `buildSample`, the
+ * scheduler turns the rejection into a gap, and the curve comes back with a
+ * hole in it at exactly the position the reader was asking about. So what
+ * travels is the quantity's own requirement, which is what the throw's own
+ * sentence claims to be checking; the rest of the desk is already in the cache
+ * key through `deskKey`, so nothing about sample identity is lost.
+ */
 function sampleContentsFor(quantity, snapshot, patch, epw) {
   const state = channelState(snapshot, patch);
   const channels = [...state].filter(([, value]) => value.engaged).map(([id]) => id);
@@ -6782,7 +6805,7 @@ function sampleContentsFor(quantity, snapshot, patch, epw) {
     meters: needed.meters,
     tables: needed.tables,
     annual: Boolean(epw),
-    channels,
+    channels: needed.channels,
     season: Boolean(epw) && touchesSeason(snapshot.months),
   });
   return { needed, carried };
@@ -6908,14 +6931,22 @@ studyScheduler = createStudyScheduler({
    * cache read each, and rebuilding would spend more than a design day's solve
    * answering a question whose answer is already in `meanCache`.
    *
-   * `enqueueStudy` mints a `tm59a` job only where the mean is already built, so
-   * an absent one here is a wiring fault rather than a state a reader can
-   * reach. The scheduler calls this synchronously, ahead of the promise,
-   * precisely so that such a fault throws in the caller's own stack instead of
-   * landing as twenty-one gaps.
+   * **The whole `{ mean, absence }` pair travels, never the line out of it**,
+   * which is the same rule `readTm59` follows on the sheet and for a sharper
+   * reason here. A file that cannot yield a running mean is a state a reader
+   * can reach — a leap year, a file split into several data periods, a record
+   * missing from the middle of April — and `runningMeanFor` answers it with a
+   * sentence rather than a throw. Handed the bare `null` that pair's `mean`
+   * half holds, `readCriterionA` throws instead of returning a `Reading`
+   * carrying the reason, and it throws from inside `readPoint`'s loop over
+   * *every* declared quantity: one unreadable weather file would take down not
+   * only criterion a's curve but every curve on the desk, all of it landing as
+   * gaps with nothing anywhere saying why. The reader accepts the pair
+   * precisely so the absence stands in its own precedence, so the pair is what
+   * it is given.
    */
   contextFor: (job) => ({
-    runningMean: job.epw ? runningMeanFor(job.epw).mean : null,
+    runningMean: runningMeanFor(job.epw),
     occupiedFloor: occupiedFloor(job.snapshot),
   }),
   paused: () => gesture,

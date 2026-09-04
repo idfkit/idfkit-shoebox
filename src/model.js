@@ -16,7 +16,7 @@ import {
   parsePattern,
 } from './controls.js';
 import { END_USES } from './bill.js';
-import { RunContents } from './study.js';
+import { RunContents } from './contents.js';
 
 /**
  * The stock `1ZoneUncontrolled.idf` example from the EnergyPlus 26.1.0 release,

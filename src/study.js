@@ -10,10 +10,17 @@
  */
 
 import { END_USES } from './bill.js';
+// The two declarations `model.js` also reads, kept in a leaf module of their own
+// so that reading them there cannot close an import cycle. Re-exported here
+// because this is where they are declared *about*: every importer that had
+// them from `study.js` still does.
+import { RunContents, VariableRequest } from './contents.js';
 import { CHANNELS, CHANNEL_BY_ID } from './controls.js';
 import { readDemand, readExtremes, readOverheat, readPeaks } from './readings.js';
 import { PRESETS } from './schemes.js';
 import { COUNT_CATEGORY, CRITERION_BY_ID, readCriterionA, readCriterionB, readCriterionC } from './tm59.js';
+
+export { RunContents, VariableRequest };
 
 export const SWEEP_SAMPLES = 21;
 
@@ -154,97 +161,8 @@ export function samplePoints(control, current, n = SWEEP_SAMPLES) {
  */
 export const TM59_STUDY_CATEGORY = COUNT_CATEGORY;
 
-/** One output variable request, including the two fields that change its meaning. */
-export class VariableRequest {
-  constructor({ name, frequency = 'Hourly', key = '*' }) {
-    if (!name || !frequency || !key) throw new Error('a study variable request needs a name, frequency and key');
-    this.name = name;
-    this.frequency = frequency;
-    this.key = key;
-    this.id = JSON.stringify([frequency, key, name]);
-    Object.freeze(this);
-  }
-}
-
 const request = (name, frequency = 'Hourly', key = '*') =>
   new VariableRequest({ name, frequency, key });
-
-/**
- * The comparable declaration of what a run carries.
- *
- * Arrays are sorted in the constructor, so equality, cache identity and model
- * serialization do not depend on the order quantities were declared or
- * unioned. The booleans and channel requirements travel with the output
- * requests because a series that was requested from a run which could not
- * produce it is not carried evidence.
- */
-export class RunContents {
-  constructor({ variables = [], meters = [], tables = false, annual = false, channels = [], season = false } = {}) {
-    const byId = new Map();
-    for (const variable of variables) {
-      if (!(variable instanceof VariableRequest)) {
-        throw new Error('RunContents variables must be VariableRequest declarations');
-      }
-      byId.set(variable.id, variable);
-    }
-    this.variables = Object.freeze([...byId.values()].sort((left, right) => left.id.localeCompare(right.id)));
-    this.meters = Object.freeze([...new Set(meters)].sort());
-    this.tables = Boolean(tables);
-    this.annual = Boolean(annual);
-    this.channels = Object.freeze([...new Set(channels)].sort());
-    this.season = Boolean(season);
-    Object.freeze(this);
-  }
-
-  static union(contents) {
-    const list = [...contents];
-    for (const item of list) {
-      if (!(item instanceof RunContents)) throw new Error('RunContents.union expected only RunContents instances');
-    }
-    return new RunContents({
-      variables: list.flatMap((item) => item.variables),
-      meters: list.flatMap((item) => item.meters),
-      tables: list.some((item) => item.tables),
-      annual: list.some((item) => item.annual),
-      channels: list.flatMap((item) => item.channels),
-      season: list.some((item) => item.season),
-    });
-  }
-
-  answers(needed) {
-    if (!(needed instanceof RunContents)) throw new Error('RunContents.answers expected RunContents');
-    const variables = new Set(this.variables.map((variable) => variable.id));
-    const meters = new Set(this.meters);
-    const channels = new Set(this.channels);
-    return (
-      needed.variables.every((variable) => variables.has(variable.id)) &&
-      needed.meters.every((meter) => meters.has(meter)) &&
-      (!needed.tables || this.tables) &&
-      (!needed.annual || this.annual) &&
-      needed.channels.every((channel) => channels.has(channel)) &&
-      (!needed.season || this.season)
-    );
-  }
-
-  get size() {
-    return this.variables.length + this.meters.length + Number(this.tables);
-  }
-
-  get empty() {
-    return this.size === 0;
-  }
-
-  serialize() {
-    return JSON.stringify({
-      variables: this.variables.map(({ name, frequency, key }) => [frequency, key, name]),
-      meters: this.meters,
-      tables: this.tables,
-      annual: this.annual,
-      channels: this.channels,
-      season: this.season,
-    });
-  }
-}
 
 /** One line a quantity draws when its reading carries one or more outcomes. */
 export class QuantitySeries {
@@ -526,6 +444,16 @@ export function openingQuantity({ annual, system, chasingTm59, gains, season, ru
   return QUANTITY_BY_ID.extremes;
 }
 
+/**
+ * Everything any declared quantity could ever ask a run for.
+ *
+ * `QUANTITIES` is frozen at module load, so this union is a constant and is
+ * taken once rather than twice per call: `offersFor` runs from `partialStudy`
+ * on every landed sample of every study, and two unions of eleven declarations
+ * per call is arithmetic that cannot have changed since the page mounted.
+ */
+const EVERY_NEED = RunContents.union(QUANTITIES.map((quantity) => quantity.needs));
+
 /** All declared quantities measured against current run capabilities. */
 export function offersFor({
   annual = false,
@@ -536,8 +464,8 @@ export function offersFor({
 } = {}) {
   const engaged = new Set(channels);
   const possible = new RunContents({
-    variables: RunContents.union(QUANTITIES.map((quantity) => quantity.needs)).variables,
-    meters: RunContents.union(QUANTITIES.map((quantity) => quantity.needs)).meters,
+    variables: EVERY_NEED.variables,
+    meters: EVERY_NEED.meters,
     tables: true,
     annual,
     season,
