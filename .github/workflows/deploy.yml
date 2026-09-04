@@ -1,21 +1,37 @@
-# Publish the sheet to shoebox.idfkit.com on every push to main.
+# Publish the sheet: a tag to shoebox.idfkit.com, anything else to its /dev/.
+#
+# The site's own address carries a release and nothing else, because a reading
+# taken off this page is only worth arguing with when you know which issue of
+# the drawing produced it — and `main` is pushed to far more often than it is
+# tagged. So every push to `main` publishes the development channel at
+# shoebox.idfkit.com/dev/, which is the same artefact on the same distribution
+# one directory in, and a `v*` tag moves that artefact to the root. Nothing else
+# about the two runs differs; see `scripts/deploy.mjs`.
 #
 # There is no stored AWS key. The job asks GitHub for a short-lived OIDC token
 # and trades it for the role the CDK stack created, which trusts exactly this
-# repository and this branch. `id-token: write` is what allows that request;
-# without it the token is never minted and the credential step fails.
+# repository, on this branch, on a `v*` tag, or on a pull request raised within
+# it. `id-token: write` is what allows that request; without it the token is
+# never minted and the credential step fails.
 name: Deploy
 
 on:
   push:
     branches: [main]
+    # Must agree with `RELEASE_TAGS` in `infra/lib/shoebox-stack.ts`, which is
+    # what the deploy role's trust policy matches a tag ref against. A tag this
+    # runs on but the role does not trust fails at the credentials step, naming
+    # neither file.
+    tags: ['v*']
   workflow_dispatch:
 
 # Two deploys racing would interleave their uploads and invalidate each other's
 # build. They queue instead, and the older one is not cancelled, because a
-# half-uploaded site is worse than a late one.
+# half-uploaded site is worse than a late one. Keyed by what is being published
+# rather than globally: a release and a push to main write to different prefixes
+# and prune only their own, so there is nothing for them to interleave.
 concurrency:
-  group: deploy-shoebox
+  group: deploy-shoebox-${{ github.ref_type == 'tag' && 'release' || 'dev' }}
   cancel-in-progress: false
 
 permissions:
@@ -38,11 +54,33 @@ jobs:
           node-version: '22'
           cache: npm
 
+      # Where this build is going, decided once and read by both halves of the
+      # job. The base has to be baked in at build time rather than chosen at
+      # upload: Vite rewrites every asset URL against it, and `src/main.js` and
+      # `src/weather.js` resolve the engine, the schema bundle and the station
+      # index against `import.meta.env.BASE_URL` for the same reason. Built at
+      # `/`, the development channel would silently load the published site's
+      # 50 MB of staged assets and report on those.
+      #
+      # A manual dispatch is a branch ref unless a tag was chosen in the ref
+      # picker, so dispatching publishes /dev/ by default — which is the right
+      # way round for a button somebody presses to see whether a fix took.
+      - name: Choose the channel
+        id: channel
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo 'prefix=' >> "$GITHUB_OUTPUT"
+            echo 'base=/' >> "$GITHUB_OUTPUT"
+          else
+            echo 'prefix=dev' >> "$GITHUB_OUTPUT"
+            echo 'base=/dev/' >> "$GITHUB_OUTPUT"
+          fi
+
       # `prebuild` stages ~50 MB of engine assets, the schema bundle and the
       # station index out of node_modules, so the install has to be complete
       # before the build can run.
       - run: npm ci
-      - run: npm run build
+      - run: npm run build -- --base=${{ steps.channel.outputs.base }}
 
       # The role ARN is a secret rather than a variable purely so the log masks
       # it: the runner echoes every `with:` input verbatim, and this repository
@@ -56,3 +94,4 @@ jobs:
       - run: npm run deploy
         env:
           SHOEBOX_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          SHOEBOX_PREFIX: ${{ steps.channel.outputs.prefix }}
