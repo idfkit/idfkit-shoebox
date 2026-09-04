@@ -79,7 +79,8 @@ controls.js  declares every control (typed classes) and groups them into Channel
 
 `src/controls.js` is the single source of truth. A control exists once, as a
 `Scale`, `Selector`, `Bearing`, `Facade` (four walls on one plan key), `Profile`
-(a 24 hour band), `Calendar` (a twelve-month year) or `Days` (a list of dates),
+(a 24 hour band), `Pattern` (24 hourly fractions), `Boundary` (six surfaces on
+one plan), `Calendar` (a twelve-month year) or `Days` (a list of dates),
 attached to a `Channel`. The console draws it, the model applies it, and the
 sheet's five dimension sliders look their specs up by key from the same place,
 so the two surfaces cannot drift.
@@ -95,12 +96,16 @@ calibration face, the plan key rules it along each wall's bar, and the sheet's
 own sliders read the same declaration. See "Landmarks" below for the rules a
 declaration has to meet, all of which throw at module load.
 
-**To add a control *kind*** — rarer, and it has two gates that fail in opposite
-directions. `console.js`'s `buildControl` throws for a kind it cannot draw, so
-the desk fails loudly at mount. `permalink.js`'s `readValue` is the quieter one:
-its numeric regex runs *before* the per-kind switch, so a branch added inside
-the switch is unreachable and every link carrying that key is refused as "not a
-number". A non-numeric kind is taught above the regex, beside `selector`.
+**To add a control *kind*** — rarer, and it has four gates that fail in
+different directions. Two of them are here: `console.js`'s `buildControl` throws
+for a kind it cannot draw, so the desk fails loudly at mount, and
+`permalink.js`'s `readValue` is the quieter one, since its numeric regex runs
+*before* the per-kind switch, so a branch added inside the switch is unreachable
+and every link carrying that key is refused as "not a number". A non-numeric
+kind is taught above the regex, beside `selector`. The other two, key ownership
+and `assertHideable`'s refusal of a `when` the console cannot draw, are worked
+through under "The `Pattern` control kind" below, which is the most recent kind
+added and met all four.
 
 A kind that owns *more than one key* — `Facade`, `Profile`, `Boundary` — has
 three more places to be taught, all in `controls.js`: `Channel.keys()`, the
@@ -1137,6 +1142,357 @@ the conformance by itself, because there was never a flag to go stale.
   `Measure.comparableWith` restates the bill's own refusal on flat data: same
   kind of run, same currency, same end uses, or no delta at all.
 
+### Overheating to CIBSE TM59 (src/tm59.js)
+
+Four published criteria, read off one run and lettered on the scoreboard beside
+Passivhaus's and LETI's fixed lines. `src/tm59.js` is DOM-free, network-free and
+engine-free by the same rule `readings.js` and `describe.js` follow, so the Node
+harness calls the real readers rather than a copy of them. The method is quoted
+and never reproduced: TM59:2026, its weather file requirement and its compliance
+checklist are purchased documents and the supplied copies are watermarked to a
+named individual, so the clause references and the sentences they carry are all
+that enters this repository. The register already keeps that rule for Passivhaus
+and LETI, and it is why `scripts/build-tm59.mjs` holds a transcription rather
+than reading a file.
+
+**The 2026 edition has one assessment period and it governs all four criteria.**
+1 May to 30 September inclusive, 153 days. That is the largest single difference
+from 2017, where the bedroom criterion was annual and the mechanical criterion
+was annual and neither is any more. `SEASON` is one frozen instance that asserts
+its own arithmetic at module load, because `153 x 13 = 1989` and `153 x 24 =
+3672` are the two occupied-hour totals CL:2026 publishes, and a period that had
+drifted from its own day count would go on producing a perfectly plausible
+share.
+
+- **a**, predominantly naturally ventilated spaces: occupied hours whose rounded
+  dT over the adaptive threshold is 1 K or more, not more than 3 % of the
+  occupied hours in the period. Living rooms, kitchens, home offices *and*
+  bedrooms.
+- **b**, bedrooms: the number of **nights** whose **mean** operative temperature
+  between 23:00 and 08:00 exceeds Tn, not more than four. Tn is 26 degrees at
+  Category I and 27 at Category II, fixed rather than adaptive.
+- **c**, predominantly mechanically ventilated spaces: 26 degrees operative for
+  not more than 3 % of the period's occupied hours. The period is what changed
+  in 2026; 2017 read this annually.
+- **d**, communal circulation: 28 degrees over 3 %. There is no
+  `readCriterionD` and there must not be one. This model has one zone and no
+  corridor, so criterion d is declared, is never read, and carries the sentence
+  saying why onto the register's unjudged list. A reader that always returned an
+  absence would be a reading pretending to be one.
+
+**Criterion b is a different quantity from its 2017 self, not a retuned one.**
+2017 counted hourly exceedances of 26 degrees between 22:00 and 07:00 against
+1 % of the *annual* hours. 2026 counts nights against a nine-hour mean, on the
+evidence (Lomas and Li, 2023: a literature review plus measurements in 591
+English homes) that disrupted sleep is a property of the night rather than of
+its worst hour. Two consequences fall out of the arithmetic and both are
+implemented rather than noted. A night is attributed to its **opening** date, so
+30 September's night runs to 08:00 on **1 October**, one day past the period the
+other three stop at; and a **partial night is not a night**, so nine hours that
+are not all in the run are counted in neither the numerator nor the denominator,
+with `Coverage.tail` reporting whether the last one was complete. A mean over
+five available hours of a nine-hour night is a different statistic wearing the
+criterion's name.
+
+**The adaptive threshold is derived from the two clamps, not taken on trust.**
+Section 2.4.1 prints no formula. It prints the endpoints (24.1 and 30.7 at
+Category I, 25.1 and 31.7 at Category II) and the condition that the line is
+straight between Trm 10 and Trm 30, which pins `Tmax = 0.33 Trm + 18.8 + K`
+uniquely at K = 2 and K = 3. `Category` asserts that arithmetic at module load
+to within 1e-9, so a mistyped offset cannot ship. TM52:2013's equations 6 and 8
+confirm it from the other direction and its Table 2 publishes the same offsets
+as the categories' own plus or minus 2 K and 3 K, so both figures are quoted
+rather than inferred. **Category III is not offered**: TM52 assigns it to
+existing buildings, TM59 names only I and II, and a third line on the board
+would be this sheet adding a category the method does not use.
+
+**The running mean is read off the weather file, and that is the governing rule
+rather than an exception to it.** A run is an IDF *and* an EPW, and the EPW is
+the half that carries the outdoor climate, so reading the file's own daily means
+is reading what was handed to the engine, exactly as reading a vertex off the
+document is. Nothing here is reasoned about or assumed. The method also settles
+where the history comes from: section 2.4.1 seeds Trm at 30 April from the daily
+means of 23 to 29 April, which is outside any summer run this desk can produce
+and inside no simulation at all on a June-to-August calendar.
+
+The alternative was measured and rejected. EnergyPlus offers one adaptive series
+in the `.rdd`, `Zone Adaptive Comfort Operative Temperature Set Point`, and the
+CEN15251 category variables appear only when a `People` object declares the
+model. Two disqualifications, and the second is decisive. It couples the comfort
+line to the Gains channel being engaged, so bypassing Gains would take the line
+away, which is a physical absurdity: the weather does not stop having a running
+mean because nobody is home. And **EnergyPlus starts its running mean at the
+beginning of the run**, not at 23 April, so on a June-to-August calendar it
+would silently produce a different line from the one TM59 mandates. A quietly
+substituted value is the one thing Principle IV forbids, and a comfort line that
+is wrong only on split calendars is a substitution with no symptom.
+
+So the recursion runs here. Seed by TM52 Equation 2.3 over 23 to 29 April at
+weights 1, 0.8, 0.6, 0.5, 0.4, 0.3, 0.2 over a divisor of **3.8, which is the
+sum of those weights**: a dropped divisor is wrong by nearly four times while
+still looking entirely plausible, so the harness asserts it. Then Equation 2.2,
+`Trm = 0.2 Tod-1 + 0.8 Trm-1`, to 30 September, **unconditionally on what was
+simulated**. The line is a property of the climate and does not know which days
+the engine touched, which is what lets a run split into month groups be judged
+against exactly the line a full year would have produced. `Tod` is always the
+*previous* day's mean and never today's, because today's is unknown until the
+day ends; an off-by-one here shifts the whole season's line by a day.
+`dailyMeans(epw)` lives in `epw.js` rather than in `tm59.js` because it is EPW
+parsing and its only honest test is a real file. At 13.2 ms it is eight times
+every criterion put together, so it is cached on the attached file's identity
+beside `offersFor` and `calendarFor`, and cleared where the studies and the
+sample cache are cleared: on a station change.
+
+**An occupied hour is one standing above the floor the applier wrote, and
+getting that wrong reads back as a published figure.** `bandSchedule` writes
+`0.1` out of hours, not zero. The signature is `{ on = 1, off = 0.1 }` and the
+off value is written for every hour outside the band, for a whole weekend day at
+`weekend: 'Unoccupied'`, and for a holiday at `holidayUse: 'Closed'`, so the
+desk's occupancy schedule is never zero anywhere in the year. Measured on the
+default desk over a Chicago TMY3 year, 1 May to 30 September:
+
+| Occupied-hour test | Hours counted |
+|---|---|
+| `scheduleValue > 0` | **3672**, which is every hour of all 153 days |
+| `scheduleValue > 0.1` | **1100**, which is 110 weekdays over a 10 hour band |
+
+3672 is not a coincidence. It is `153 x 24`, and it is also, exactly, the figure
+CL:2026 publishes for a **bedroom**, so the naive denominator produces a
+plausible number that agrees with a published one for entirely the wrong reason
+on a desk that is not a bedroom. That is the worst shape a bug can have on this
+sheet. `model.js` exports `occupiedFloor(params)`, which is `BAND_OFF` under
+`'As drawn'` and 0 under a named room type because Table E.2's own unoccupied
+hours are literally 0, and the readers take the floor as an argument rather than
+assuming one. That is why the shipped `readCriterionA(eso, trm, category,
+floor)` and `readCriterionC(eso, floor)` each carry an argument the module
+contract's signature does not: the floor is a property of the schedule that was
+written, and a reader that knew it would be a second place for it to be spelled.
+Once the prescribed setup *is* applied the count lands on both published
+figures, which is what makes them a check rather than a coincidence: a TM59
+living room pattern is 0 outside 09:00 to 22:00 and counts 13 x 153 = 1989, and
+a bedroom pattern never drops below 0.7 so every hour is occupied and it counts
+24 x 153 = 3672.
+
+The denominator is the run's own `Schedule Value` series for `Occupancy`, which
+is the one new output request this feature costs. The alternative, evaluating
+the `Schedule:Compact` in JavaScript, means reimplementing EnergyPlus's day-type
+dispatch: the schedule carries `For: Weekdays`, `For: Weekends` and, at
+`holidayUse: 'Listed'`, `For: Holidays`, and which branch an hour takes depends
+on the calendar the engine picked for the weather file. That is a second
+implementation of somebody else's dispatch and its failures would be silent. The
+series is what the engine actually saw and cannot disagree with it. The
+criterion's temperature is `Zone Operative Temperature` and never
+`Zone Mean Air Temperature`; where it is not in the ESO the reading is absent
+with that reason rather than falling back, because the two are a different
+question by several degrees on a desk with heavy solar gain and a cold slab.
+
+**dT is rounded before it is tested, half-up, and the boundary is TM59's rather
+than TM52's.** The rounding is part of the published method and not a
+presentation choice: an hour 1.4 K over and an hour 1.6 K over do not weigh the
+same, and skipping it produces plausible numbers that are not the method's.
+TM59:2026 section 2.4.1 spells it out as "for dT between 0.5 and 1.49, the value
+used is 1 K; for 1.5 to 2.49, the value used is 2 K, and so on". TM52 section
+6.1.2 writes the same rule as "between 0.5 and 1.5 ... for 1.5 to 2.5", which
+puts 1.5 in **both** bands and settles nothing at exactly the values the
+criterion is most often decided on. **TM59 closes the lower band at 1.49, so 1.5
+rounds up**, and `Math.round` is half-up for positive numbers and is therefore
+correct. A round-half-to-even helper, which is the thing somebody reaches for
+when they read "banker's rounding" and think it is the careful choice, returns 2
+for both 1.5 and 2.5 and is wrong on the first. `roundDT` exists as its own
+export so there is one place the argument is written down.
+
+**Design days are outside the period, by date and by intent.** A summer design
+day falls inside 1 May to 30 September on the calendar, the desk ships two of
+them, and they exist to be more extreme than any day of the year they precede.
+Counted in, `sizingPeriods: 'Yes'` would worsen a criterion without changing the
+building, which is a difference in what was asked of the engine rather than a
+difference in the design. The criteria are read over the weather file
+environments only, by the rule `readOverheat` and `computeBill` already follow.
+The consequence is that on a desk with no weather file attached every criterion
+is absent with its reason: two design days are not a season whatever their
+dates.
+
+**A partial summer is a reading for criterion a and for nothing else.** TM52
+criterion 1 permits it outright, "if data are not available for the whole period
+(or if occupancy is only for a part of the period) then 3 per cent of available
+hours should be used", and TM59:2026 restates neither that nor anything
+contradicting it while publishing absolute hour limits (59 for a living room,
+110 for a bedroom) written for a full 153 days. Those limits are **truncated
+rather than rounded**, 3 % of 1989 being 59.67 and 3 % of 3672 being 110.16, so
+a share test against 3 % and a count test against 59 are not the same test at
+the boundary. The desk letters the share, because that is the criterion's own
+wording, prints the coverage beside it at equal prominence, states both
+documents' positions and withholds the conclusion, which is the same shape as
+the weather decision below. Only a run reaching **no** part of the period is
+absent. Criteria b and c get no such provision from anywhere and take their
+denominators from what the run covered. `Coverage` is read off the run's own
+timestamps and never off `params`, because a study sample and a stale solve both
+make the two disagree and the document is what was simulated.
+
+`Reading`'s constructor throws when `value` and `absence` are both set or both
+null, which makes the em dash rule structural rather than remembered: a reading
+with no data behind it is an em dash, stays out of every total, and says what
+would fix it. "Run some of May to September, this is a summer number" and "patch
+Gains in, with nobody home there are no occupied hours to be a share of" are
+sentences, not blanks.
+
+**No pass or fail word attaches to the method's name, and the count is not a
+verdict.** The class is called `Verdict` in `tm59.js` and is called a count
+everywhere a reader can see it, which is the name it earns, because it carries
+no boolean and no word. It is lettered once, over **criteria a and b at Category
+II**: TM59's own Stage 1 pair (section 2.3 and Appendix B) for a dwelling of
+normal thermal expectation, and the only stage every dwelling must pass
+unconditionally. Criterion c is read and lettered as its own line but stands
+outside the count, because which of a and c governs at Stage 2 turns on how much
+of the occupied period the openings are held shut, which is a fact about a
+window model this desk does not carry and guessing it would be the sheet
+asserting under cover of citing. Category I is read and lettered beside Category
+II and is likewise outside the count. Criterion d is unread and is named as
+such. Criteria that could not be read are reported one by one rather than folded
+into either number, because a criterion the run could not answer neither passed
+nor failed and the only useful thing to say about it is which one it is and what
+would fix it. The row takes no marker, no rule, no figure face and no colour:
+each of those would make it the board's total, and a row that looks like a total
+is read as one whatever the words in it say. Counting all four combinations of
+route and category instead was considered and rejected, since four counting rows
+for an optional figure is furniture and lettering all of them still leaves a
+reader to pick.
+
+**The qualifications block is the deliverable, not a disclaimer.** At least four
+`standing` qualifications are asserted at module load, so the promise that a
+reader can state four specific reasons why this is not a TM59 assessment cannot
+silently fall below what it states. It is printed in place and never on hover,
+by the rule that put what *Chase* means above the scoreboard: `pointer: coarse`
+has no hover, so a caveat that floats does not exist on the phone where this
+sheet is most often read and least often checked against the method it names.
+The weather qualification letters what the attached file declares about itself
+against what WFR:2026 requires (the DSY1 file for the site, 2050s, RCP8.5, 50th
+percentile, CIBSE's 28-zone system, labelled
+`Zone Reference_DSY1_2050s_HIGH50_CIBSE_v1.1`) and draws **no** conclusion about
+whether they match. The gap is four separate mismatches rather than one
+sentence, each checkable by the reader against the file in hand: a typical year
+against a design summer year, present day against the 2050s, a station against a
+climate zone, an open file against a licensed one. Profiles are applied at the
+file's own local standard time, unshifted, and that is stated rather than
+corrected: TM59 section 3.7.1 says its times are British Summer Time, and every
+TMYx file tested declares `HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0`, so there is no
+rule in the file to shift by and a shift would be an invention.
+
+### The `Pattern` control kind (channel 10)
+
+TM59's gains cannot be said with the Gains channel as it stood, in four separate
+ways. The method asks for two people in this room and 450 W in this room, where
+the desk offers m2 per person and W/m2 and Massing is `UNTOUCHABLE` to a preset;
+it asks for a 24-value fraction where `Profile` offers a from/to band, and a
+band cannot hold 0.7 overnight, 1.0 at eight and 0.5 through the day; and it
+asks for three profiles where the desk had one `Occupancy` schedule shared by
+People, Lights and ElectricEquipment, with lighting on 18:00 to 23:00 rather
+than the occupied band. So `Pattern` carries 24 hourly fractions, `value` is the
+canonical text (which is what keeps every parameter a scalar, with `Days` as the
+older worked example), and three of them stand on the Gains strip.
+
+Adding a control kind is rare and it fails in four directions:
+
+1. **`console.js`'s `buildControl`** throws for a kind it cannot draw, so the
+   desk fails loudly at mount rather than rendering a strip with a hole in it.
+2. **`permalink.js`'s `readValue` is the quiet one, and a pattern is the branch
+   that would have proved it the hard way.** The numeric regex runs *before* the
+   per-kind switch, so a `pattern` case written inside the switch is unreachable
+   and every link carrying an hourly profile would be refused as "is not a
+   number for occPattern": a true sentence about the wrong thing, on a link that
+   was perfectly good. The kind is taught **above the regex, beside `selector`**,
+   and it re-serialises what it read, because `1,1,1,...` and `1.000,1.000,...`
+   are one day written two ways that key two identical solves through
+   `shapeKey`, and the identity diff in `encodeState` would go on writing a
+   pattern sitting at its own default into every link minted after.
+3. **Key ownership.** A `Pattern` owns exactly one key, so `Channel.keys()`, the
+   `INDEX` that `controlFor` reads and the `DEFAULT_PARAMETERS` loop need no
+   change, and `labelFor`, `phraseFor` and `formatValue` grow no sub-object
+   name. That is the whole reason for three single-key patterns rather than one
+   multi-key gains control: a multi-key kind is three more places to be taught
+   and three more switches to keep in step.
+4. **`assertHideable`** refuses `when` on a kind the console cannot withdraw. The
+   three patterns are therefore dimmed through `needs` rather than hidden, and
+   `when` is passed to the base class rather than quietly dropped so that the
+   assertion is what refuses it: a declaration accepted and then ignored is
+   precisely the silent breakage it exists to turn into a throw at mount.
+
+Two things the kind deliberately cannot do, and neither needed teaching. It is
+**not sweepable**: `buildPattern` registers nothing in `rows`, which is the map
+that hangs a Study card under a control, exactly as `buildDays` registers
+nothing, because a study samples between `min` and `max` along a `step` and 24
+numbers is a shape rather than a position. And it carries **no landmarks**: all
+four of `readLandmarks`'s rules are about a numeric face and its step grid, and
+nobody publishes a band for the shape of a daily profile. Both absences are the
+honest answer, the same rule as the em dash on the drawing.
+
+`Pattern` asserts its own precision at module load. A default of 0.189 declared
+on a two-decimal control would be lettered, committed and written into the IDF
+as 0.19 while the declaration went on saying 0.189, with nothing on the page
+reporting the difference. TM59's fractions are divisions of Table E.1's absolute
+watts (85/450 is 0.1889), so the hazard is live rather than hypothetical and the
+three patterns carry three decimals.
+
+`applyGains` writes byte-identically to before at `roomType: 'As drawn'`, and at
+a named room type writes three `Schedule:Compact` objects (`Occupancy`,
+`EquipmentUse`, `LightingUse`) with `People` switched to absolute `People` and
+`ElectricEquipment` to `EquipmentLevel`, taking the two new schedules back out
+of the document on the way back to `'As drawn'`. `Until: HH:00` and the value
+after it are two separate extensible fields and must never be joined into one
+comma-bearing string, and the collapsing of equal runs has to be deterministic
+or idempotence fails.
+
+### The Appendix E profile library (src/tm59.data.js)
+
+Generated, and complete for the thirteen spaces Appendix E tabulates.
+`scripts/build-tm59.mjs` writes it by hand rather than from `predev`, the way
+`scripts/build-rates.mjs` does and for the same reason: no figure the sheet
+letters is typed in at the place it is read. The primary source cannot be a file
+the script reads, because the publication may not enter this repository, so the
+transcription lives in the generator and the generator checks itself three ways:
+Table E.1's absolute watts against Table E.2's printed fractions, hour by hour;
+E.2's peak watts against its own headcounts, at 75 W sensible and 55 W latent
+per person, which is what catches the row below; and both against the reader
+supplied independent transcription of the 2017 tables, whose absence stops the
+script rather than being shrugged off, because a generator that quietly drops
+its cross-check is a generator with no cross-check.
+
+**The fractions are divided out of E.1's absolute watts and never lifted from
+E.2.** The two tables disagree by up to 2 %: 85/450 is 0.188889, which E.2
+prints as 0.19 and which multiplied back is 85.5 W. E.1 is the primary
+statement, and every division is lettered into the profile's own `why` so a
+reader can redo it. Three findings are printed rather than resolved silently,
+each becoming a `why` line on the profile it belongs to:
+
+1. The 2 % gap above, which also shows at 0.23 against 35 W, 0.17 against 50 W
+   and 0.13 against 10 W.
+2. E.1's three-bedroom living/kitchen says "3 people at 75% gains", where E.2's
+   own row for the same space gives a fraction of 1 and TM59:2017 says "3
+   people". Two independent statements against one, and the 75 % also breaks the
+   pattern that a combined living/kitchen carries the dwelling's full occupancy
+   while a separate living room carries 75 % and a separate kitchen 25 %. 100 %
+   is implemented and the discrepancy is printed.
+3. E.2 labels the two-bedroom kitchen "1 person" while giving it 150 W sensible
+   and 110 W latent, which is two people, against E.1's "2 people at 25% gains".
+   The label is wrong and the arithmetic is right.
+
+**What is deliberately absent** is the fourteenth row of Table E.1, the communal
+space. E.1 gives it "Assumed to be zero" occupancy and "Heating system gains
+only" equipment and quantifies neither, so there is no profile to write and
+inventing a pipework figure would be the sheet asserting under cover of citing.
+It is criterion d's space, and criterion d is on the unjudged list where it
+belongs.
+
+**What completes the arrangement is the desk's own vocabulary.** `TM59_SPACES`
+in `controls.js` is the `roomType` selector's option list and `PROFILE_IDS` in
+`tm59.data.js` is the library's, and the two have to be **one** vocabulary or
+the desk and the library disagree about what the reader chose. `schemes.js`
+asserts exactly that at module load, naming both lists and what to do about it,
+rather than leaving it to be caught downstream as "sets roomType to a value that
+is not one of its options", which is a true sentence about the wrong file.
+`TM59_SPACES` predates the generated library and is the shorter of the two; the
+list it is to become is `PROFILE_IDS`.
+
 ### The index sheet (no room for a column)
 
 At `780px` wide **or `600px` tall** the desk stops being a column beside the
@@ -1507,6 +1863,16 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   `.face-ghost[hidden]` and the rest — are each the same fix, and `.link[hidden]`
   is now among them. Any new class that sets `display` (or unsets it) and is
   toggled by the attribute needs its own.
+- **The occupancy schedule is never zero, so `> 0` is not "occupied".**
+  `bandSchedule` writes `0.1` out of hours, for every hour outside the band, for
+  a whole weekend day at `weekend: 'Unoccupied'` and for a holiday at
+  `holidayUse: 'Closed'`. Any reader taking a denominator off that series has to
+  test against the floor the applier actually wrote, which `model.js` answers
+  with `occupiedFloor(params)`. Measured over a Chicago TMY3 year, 1 May to
+  30 September: `> 0` counts 3672 hours, which is every hour of all 153 days,
+  where `> 0.1` counts 1100. The full argument, including why 3672 is a
+  published figure and therefore the worst possible wrong answer, is under
+  "Overheating to CIBSE TM59" above.
 
 ## Conventions
 

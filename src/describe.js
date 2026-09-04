@@ -31,7 +31,7 @@
  */
 
 import { DEFAULT_BYPASS, DEFAULT_PARAMETERS, controlFor } from './controls.js';
-import { WALLS, geometryFacts } from './model.js';
+import { WALLS, geometryFacts, holds } from './model.js';
 
 /**
  * A quantity, which the sheet letters in its mono face.
@@ -298,6 +298,24 @@ const TERRAIN = Object.freeze({
 });
 
 /**
+ * Whether the document actually holds an object of a type — asked once, for
+ * every clause here that reads a setting off the object it reached.
+ *
+ * The type is asked of `doc.types()` before `doc.all()`, because `all()` goes
+ * through the document's own `collection()` and *inserts* an empty collection
+ * for a type it has never seen, at the position of the question — which moves
+ * every later object of that type up the file for no reason a reader of the
+ * IDF could ever work out. `model.js` exports the guard; this is the one
+ * question about the *contents* built on top of it.
+ *
+ * One helper rather than one per clause, and not named `holds`: a local
+ * `holds(type)` beside the imported `holds(doc, type)` is two functions of one
+ * name and two arities in one module, where calling the wrong one is not an
+ * error but a silent `false` — `doc.types().includes(undefined)`.
+ */
+const standing = (doc, type) => holds(doc, type) && doc.all(type).size > 0;
+
+/**
  * The ideal unit as the document holds it, not as the desk asked for it.
  *
  * *Available* is not a setting the unit takes alongside two setpoints: at "Heat
@@ -315,18 +333,17 @@ const TERRAIN = Object.freeze({
  * occupied hours on a desk whose unit runs all of them.
  */
 function unit(doc, params) {
-  const holds = (type) => doc.all(type).size > 0;
   const ideal = doc.all('ZoneHVAC:IdealLoadsAirSystem').first;
   const schedule = ideal ? String(ideal.availability_schedule_name) : 'AlwaysOn';
   const hours = schedule === 'AlwaysOn' ? [] : [' in occupied hours'];
 
-  if (holds('ThermostatSetpoint:SingleHeating')) {
+  if (standing(doc, 'ThermostatSetpoint:SingleHeating')) {
     return ['an ideal unit heating to ', num('heatSet', params.heatSet), ' °C', hours];
   }
-  if (holds('ThermostatSetpoint:SingleCooling')) {
+  if (standing(doc, 'ThermostatSetpoint:SingleCooling')) {
     return ['an ideal unit cooling to ', num('coolSet', params.coolSet), ' °C', hours];
   }
-  if (holds('ThermostatSetpoint:DualSetpoint')) {
+  if (standing(doc, 'ThermostatSetpoint:DualSetpoint')) {
     return [
       'an ideal unit holding ',
       num('heatSet', params.heatSet),
@@ -339,7 +356,25 @@ function unit(doc, params) {
   throw new Error('the System channel is in the path with no thermostat setpoint object in the document');
 }
 
-/** The scheduled model in a clause: a rate stated, and a flush that gates it. */
+/**
+ * The scheduled model in a clause: a rate stated, and a flush that gates it.
+ *
+ * Reached only where the document holds one of the two objects, which is what
+ * lets the rates themselves be lettered off the snapshot: `applyScheduled`
+ * writes `params.infiltration` and `params.ventilation` into the fields
+ * verbatim and writes nothing at all where either is zero, so the object's
+ * presence is the guarantee that the number beside it reached the engine. It
+ * is the arrangement `unit` already uses for the setpoints, and the reason
+ * both are gated on an object rather than on a parameter.
+ *
+ * The old `no air exchange` reading has moved into `airflow` below, where it
+ * belongs: a desk with both rates at zero and a desk with the channel patched
+ * out hand the engine the same document, and the sentence about them must not
+ * depend on which of the two the reader arrived at it by. So neither rate
+ * standing here is no longer a case to letter at all — it is the document and
+ * the snapshot it was written from disagreeing, which is said rather than
+ * papered over.
+ */
 function schedule(params) {
   const leak = params.infiltration > 0 ? [num('infiltration', params.infiltration), ' ACH of leakage'] : [];
   const flush =
@@ -347,7 +382,10 @@ function schedule(params) {
       ? ['a night flush of ', num('ventilation', params.ventilation), ' ACH above ', num('ventMinIndoor', params.ventMinIndoor), ' °C']
       : [];
   const both = [leak, flush].filter((c) => c.length);
-  return both.length ? series(both) : ['no air exchange'];
+  if (!both.length) {
+    throw new Error('the document holds a scheduled air object that the snapshot it was written from has no rate for');
+  }
+  return series(both);
 }
 
 /**
@@ -387,6 +425,75 @@ function network(doc, params, facts) {
     if (mode && mode !== 'NoVent') parts.push(' on ', option('openRule', mode).toLowerCase());
   }
   return parts;
+}
+
+/**
+ * Which air model produced the flow, read off the objects it left behind.
+ *
+ * Three readings, and the third is the one this function was written for. The
+ * desk declares two air models and `applyAir` writes one of them, but it writes
+ * neither when the channel is out of the path — and the channel ships out, so
+ * the commonest desk on this page is a box that exchanges no air with anything
+ * at all. That was silent for as long as the clause was gated on the channel
+ * being engaged, which is bearable while the sheet letters temperatures and is
+ * not bearable now that it letters a comfort criterion over them: the adaptive
+ * route is a statement about a building whose openings answer the weather, and
+ * read over a sealed box it is a different claim wearing the same name. So the
+ * paragraph says which flow the criteria were read over, including when the
+ * answer is none.
+ *
+ * Read off the document rather than off `params` or off the patch bay, by the
+ * rule the thermostat clause already follows: a setting is described by the
+ * object it reached. Three desks reach the same objects here and therefore have
+ * to read the same — the channel patched out, the channel blocked by its own
+ * `requires`, and the channel engaged with both scheduled rates at zero all
+ * hand the engine a document with no air-exchange object in it, and the engine
+ * cannot tell them apart either.
+ *
+ * The types go through `standing` above rather than `doc.all()` directly, for
+ * the reason written there. Every type asked for here is swept by `applyAir` or
+ * `applySystem` on each apply and so is registered long before this runs, but
+ * the guarded form cannot introduce the hazard and costs nothing.
+ */
+function airflow(doc, params, facts) {
+  if (standing(doc, 'AirflowNetwork:SimulationControl')) return network(doc, params, facts);
+  if (
+    standing(doc, 'ZoneInfiltration:DesignFlowRate') ||
+    standing(doc, 'ZoneVentilation:DesignFlowRate')
+  ) {
+    return schedule(params);
+  }
+
+  // Nothing crosses the envelope. Whether that is the whole story depends on
+  // the unit: an ideal load carrying a `DesignSpecification:OutdoorAir` is
+  // supplying the room mechanically, and "no air exchange" over that desk would
+  // be flatly untrue — the one thing this paragraph exists not to be. It is
+  // also the distinction the comfort routes are drawn on, a mechanically
+  // ventilated home being judged by a different criterion from a naturally
+  // ventilated one, so the object is worth the clause rather than only worth
+  // the caveat. Read as the document holds it and not off `params.outdoorAir`,
+  // since `applySystem` writes it only where the System channel is in the path.
+  const spec = standing(doc, 'DesignSpecification:OutdoorAir')
+    ? doc.all('DesignSpecification:OutdoorAir').first
+    : null;
+  if (!spec) return ['no air exchange in the model'];
+
+  // The method decides which field carries the rate, and this sheet only ever
+  // writes one of them. Named rather than assumed: a specification written per
+  // square metre answers `outdoor_air_flow_per_person` just as readily as one
+  // written per person does, with whatever the schema leaves in a field the
+  // engine is not reading, and a clause lettering that figure would be a rate
+  // about nothing standing beside a building it was never applied to.
+  const method = String(spec.outdoor_air_method);
+  if (method !== 'Flow/Person') {
+    throw new Error(`the outdoor air specification is written per ${method}, which this sentence has no words for`);
+  }
+  // The field is m³/s and the console is lettered in litres per second per
+  // person, which is how an architect reads a ventilation rate; the digits are
+  // the control's own, so the sentence and the strip letter one figure.
+  const rate = Number(spec.outdoor_air_flow_per_person) * 1000;
+  if (!Number.isFinite(rate)) throw new Error('the outdoor air specification carries no flow per person to letter');
+  return ['nothing through the envelope beyond ', num('outdoorAir', rate), ' L/s per person of mechanical outdoor air'];
 }
 
 function moves(doc, params, facts, state) {
@@ -475,22 +582,21 @@ function moves(doc, params, facts, state) {
   // out of the path, so having them at all is the move; the numbers ride along
   // in the same clause because a mechanism named without its setting is not a
   // description of anything.
-  // Which of the two air models produced the flow, read off the document and
-  // not off `params`, by the rule the thermostat clause already follows: a
-  // setting is described by the object it reached. The network's own clause
-  // names the leakiness as the document holds it and the walls that are
-  // actually openable — a desk whose four openable walls are all solid has no
-  // opening in the model and the sentence must not claim one.
   //
-  // `FLIP.air` is unchanged at 1.4, and **switching models is not a flip**: it
-  // is a change within an engaged channel and ranks as a scalar move would. A
-  // paragraph that ranked it above a channel appearing would describe the air
-  // model of a building whose ideal unit it never mentioned.
-  if (on('air')) {
-    say('air', FLIP.air, doc.all('AirflowNetwork:SimulationControl').size
-      ? network(doc, params, facts)
-      : schedule(params));
-  }
+  // Air is the one of them that speaks in its absence as well, since a
+  // criterion read over a sealed box is a different claim from the same
+  // criterion read over a building that breathes, and the weight is the same
+  // whichever of the three readings `airflow` returns. `FLIP.air` is unchanged
+  // at 1.4, and **switching models is still not a flip**: it is a change within
+  // an engaged channel and ranks as a scalar move would, since a paragraph that
+  // ranked it above a channel appearing would describe the air model of a
+  // building whose ideal unit it never mentioned. Nor is there an honest second
+  // number for the absence: the clause answers one question, and ranking the
+  // answer "none" below the answer "a pressure network" would make the
+  // paragraph likeliest to drop the reading in exactly the case it was asked
+  // for, a criterion read over a box that breathes being the case nobody needed
+  // warning about.
+  say('air', FLIP.air, airflow(doc, params, facts));
 
   if (on('gains')) {
     say('gains', FLIP.gains, [

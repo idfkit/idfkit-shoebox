@@ -2,14 +2,17 @@ import {
   CHANNELS,
   DAYS_IN_MONTH,
   MONTHS,
+  PATTERN_HOURS,
   WEEKDAY_LABELS,
   controlFor,
   coveredDays,
   labelFor,
   parseHolidays,
+  parsePattern,
   resolveHoliday,
   runDays,
   serializeHolidays,
+  serializePattern,
 } from './controls.js';
 import { quantityField } from './field.js';
 // The rail's own units, from the module that owns reading a run. One
@@ -55,6 +58,16 @@ const el = (tag, className, text) => {
 };
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+/* ══ the pattern's own face ══════════════════════════════════════════════ */
+
+// There is nothing here any more, and that is the fix. `Pattern` carries an
+// `hourFace` in `controls.js`, beside the `patternFault` and the `format` it
+// undoes, so the console asks the declaration what an hour may hold instead of
+// saying so a second time. This block used to be a copy of the 0-to-1 range, a
+// copy of `readQuantity`'s numeric grammar, and a load-time probe whose only
+// job was to catch those two copies drifting from the original — about forty
+// lines existing because a two-line declaration had been skipped.
 
 /* ══ mounting ════════════════════════════════════════════════════════════ */
 
@@ -319,6 +332,7 @@ export function mountConsole({
     if (control.kind === 'facade') return buildFacade(control, channel);
     if (control.kind === 'boundary') return buildBoundary(control);
     if (control.kind === 'profile') return buildProfile(control);
+    if (control.kind === 'pattern') return buildPattern(control);
     if (control.kind === 'calendar') return buildCalendar(control);
     if (control.kind === 'days') return buildDays(control);
     throw new Error(`the console cannot draw a ${control.kind}`);
@@ -560,13 +574,30 @@ export function mountConsole({
     row.append(group);
     if (control.note) row.append(el('p', 'ctl-note', control.note));
 
+    // What the row was last drawn showing, so the scroll below can tell a
+    // value that moved from a redraw that did not. Every station attach, study
+    // tick and landing solve redraws every face on the desk, and a row that
+    // scrolled itself on each of those would drag the options out from under a
+    // reader who was still looking at them.
+    let drawn;
+
     faces.set(control.key, () => {
       const v = params[control.key];
+      let chosen = null;
       for (const { button, option } of buttons) {
         const here = option.value === v;
+        if (here) chosen = button;
         button.classList.toggle('here', here);
         button.setAttribute('aria-checked', String(here));
       }
+      // A row with more options than fit scrolls, so the chosen one can be off
+      // the side — which is where a permalink carrying `Three bed living/kitchen`
+      // or a preset writing a room type would otherwise leave it, on a desk
+      // whose selector reads as though nothing were chosen at all. Brought back
+      // only when the value actually moved, and `nearest` so a choice already
+      // on screen does not shunt the row for the sake of centring it.
+      if (chosen && drawn !== v) chosen.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+      drawn = v;
       row.hidden = !control.shown(params);
       row.classList.toggle('idle', control.idle(params));
     });
@@ -1106,6 +1137,189 @@ export function mountConsole({
   }
 
   /**
+   * A day as twenty-four fractions: drawn as a silhouette, worked in a fold.
+   *
+   * The strip's other shape control is the occupancy band above, and a band is
+   * a gesture — you sweep the hours the room is used and there is nothing else
+   * for the hand to say. This one holds a *level* in every hour, and there is
+   * no single gesture that means it: sweeping a silhouette with a pointer
+   * would be drawing rather than setting, and a bedroom standing above 0.7 in
+   * every hour of the day is a figure a reader arrives with off a published
+   * table, not a shape they sketch freehand. So the twenty-four numbers are
+   * typed, in the same margin-number boxes every other quantity on this desk
+   * is set with — `field.js`, and therefore the same rules: focus shows the
+   * value and blur shows the lettering, a typed value is brought onto the
+   * control's own precision before it is committed, anything that is not a
+   * number is refused whole, and a redraw never types over the reader.
+   *
+   * Twenty-four boxes is also twenty-four tab stops, and three of these stand
+   * on the Gains strip — seventy-two stops between that strip's selector and
+   * everything below it. So they sit behind a fold that starts shut, and the
+   * fold is the `hidden` attribute rather than a class, for the reason
+   * `refold` gives for the strip's own: controls you cannot see have to leave
+   * the tab order and the accessibility tree with their fold. (A stylesheet
+   * that gives `.pattern-hours` a `display` of its own owes it a `[hidden]`
+   * twin, or an author declaration will beat the user agent's
+   * `[hidden] { display: none }` and the boxes will stand open — the failure
+   * `.link[hidden]` was written for.)
+   *
+   * What stays *outside* the fold is the reading: the shape as a silhouette
+   * and the margin's one line of lettering. That is the desk's own rule — every
+   * path reads without opening anything, and only working it costs a tap.
+   *
+   * Nothing is registered in `rows`, the way nothing is for a list of days:
+   * that map is what hangs a study card under a control, and a sweep needs a
+   * face to sample along. Twenty-four numbers is a shape rather than a
+   * position, so the offer is not made at all.
+   */
+  function buildPattern(control) {
+    const row = el('div', 'ctl ctl-pattern');
+    const head = el('div', 'ctl-head');
+    head.append(el('span', 'ctl-label', control.label));
+
+    // The fold's own control, lettered with what is behind it rather than
+    // drawn as a chevron: a reader on a strip of eleven controls should be
+    // able to tell what a disclosure costs before pressing it. The count is
+    // read off the declaration, so a day that ever stopped being twenty-four
+    // hours long could not letter itself wrong here.
+    const toggle = el('button', 'link pattern-toggle', `${PATTERN_HOURS} hours`);
+    toggle.type = 'button';
+    head.append(toggle);
+
+    const value = el('span', 'ctl-value');
+    head.append(value);
+    row.append(head);
+
+    // The shape, on the band the occupancy profile is drawn on — the same
+    // twenty-four cells across the same 240 units, so the two controls of this
+    // strip that are about a day are one drawing read twice. A bar is the
+    // fraction and nothing else: an hour standing at zero draws nothing, which
+    // is the honest mark for it, and the baseline underneath is what says the
+    // difference between an empty hour and an empty control.
+    const drawing = svg('svg', { viewBox: '0 0 240 34', class: 'band', role: 'img' });
+    const bars = Array.from({ length: PATTERN_HOURS }, (_, h) => {
+      const bar = svg('rect', {
+        x: h * 10 + 0.5, width: 9, y: 20, height: 0,
+        fill: 'var(--redline)', 'fill-opacity': 0.5,
+      });
+      drawing.append(bar);
+      return bar;
+    });
+    drawing.append(svg('line', {
+      x1: 0, y1: 20, x2: 240, y2: 20, stroke: 'var(--rule-firm)', 'stroke-width': 1,
+    }));
+    for (const h of [0, 6, 12, 18, 24]) {
+      const t = svg('text', {
+        x: h * 10, y: 31, 'text-anchor': h === 0 ? 'start' : h === 24 ? 'end' : 'middle',
+        fill: 'var(--ink-ghost)', 'font-family': 'var(--mono)', 'font-size': 7.5,
+      });
+      t.textContent = String(h).padStart(2, '0');
+      drawing.append(t);
+    }
+    row.append(drawing);
+
+    // One parse per redraw rather than twenty-four. Every field's `show()`
+    // asks for its own hour, and the desk redraws every control on every
+    // synced frame of a drag anywhere on it. The memo is keyed on the
+    // canonical text itself rather than on a flag, so it cannot go stale: a
+    // text that has not changed is a day that has not changed.
+    let held = { text: null, hours: null };
+    const hourAt = (h) => {
+      const text = params[control.key];
+      if (text !== held.text) held = { text, hours: parsePattern(text) };
+      return held.hours[h];
+    };
+
+    const commit = (h, v) => {
+      const hours = [...parsePattern(params[control.key])];
+      hours[h] = v;
+      // Re-serialized whole, at the control's own precision, so what reaches
+      // `params` is the canonical spelling however the box was typed into.
+      // The other twenty-three hours came off that same canonical text and are
+      // already written to `digits`, so nothing but the edited hour can move —
+      // which is what keeps this idempotent and keeps the permalink's identity
+      // diff telling the truth about which controls were touched.
+      onChange(control.key, serializePattern(hours, control.digits), true);
+    };
+
+    const fold = el('div', 'pattern-hours');
+    fold.id = `pattern-${control.key}`;
+    fold.hidden = true;
+    fold.setAttribute('role', 'group');
+    fold.setAttribute('aria-label', `${control.label}, hour by hour`);
+    // One face for all twenty-four boxes: which hour a box holds is the
+    // business of the closure that reads and writes it, and the face carries
+    // only the lettering and its undoing, both at the control's own precision.
+    const face = control.hourFace;
+    const fields = Array.from({ length: PATTERN_HOURS }, (_, h) => {
+      const cell = el('div', 'pattern-hour');
+      const at = `${String(h).padStart(2, '0')}:00`;
+      // The hour is lettered beside every box rather than only along the
+      // drawing above: twenty-four unlabelled numbers is a list nobody can
+      // count their way into, and on a phone the drawing and the box the
+      // reader is typing in are not on the same line of the screen.
+      cell.append(el('span', 'pattern-at', at));
+      const field = quantityField({
+        control: face,
+        name: `${control.label} at ${at}`,
+        read: () => hourAt(h),
+        write: (v) => commit(h, v),
+        className: 'pattern-value',
+      });
+      cell.append(field.node);
+      fold.append(cell);
+      return field;
+    });
+
+    // The word on the toggle does not change with the state, because
+    // `aria-expanded` is the state and a label that flips says it twice — and
+    // the second saying is the one that goes stale. What changes is that the
+    // boxes are there.
+    toggle.setAttribute('aria-controls', fold.id);
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.addEventListener('click', () => {
+      const opening = fold.hidden;
+      fold.hidden = !opening;
+      toggle.setAttribute('aria-expanded', String(opening));
+    });
+    row.append(fold);
+
+    if (control.note) row.append(el('p', 'ctl-note', control.note));
+
+    const redraw = () => {
+      const text = params[control.key];
+      const hours = parsePattern(text);
+      const reading = control.format(text);
+      value.textContent = reading;
+      // The drawing states the reading, so it is labelled with the reading. A
+      // silhouette with no label is a fact this page states only in ink, which
+      // is the one thing the desk's readings are never allowed to be.
+      drawing.setAttribute('aria-label', `${control.label}, ${reading}`);
+      bars.forEach((bar, h) => {
+        const height = hours[h] * 20;
+        bar.setAttribute('y', String(20 - height));
+        bar.setAttribute('height', String(height));
+      });
+      // Each box re-letters itself, and each one is free to refuse: `show()`
+      // returns early while its own field holds focus, so a solve landing or a
+      // station attaching mid-edit redraws the other twenty-three and leaves
+      // the one being typed in alone.
+      for (const field of fields) field.show();
+      // Two questions, two treatments, as everywhere else on the desk. The
+      // patterns carry `needs` today and are dimmed under `roomType: 'As
+      // drawn'`, where the strip's own schedule writes the gains and these
+      // reach no object at all. `shown` is asked all the same, because that is
+      // the first of the two steps `HIDEABLE` in `controls.js` documents for
+      // teaching a kind to be withdrawn — the second is adding `'pattern'` to
+      // that set, which is where the declaration is allowed to carry `when`.
+      row.hidden = !control.shown(params);
+      row.classList.toggle('idle', control.idle(params));
+    };
+    faces.set(control.key, redraw);
+    return row;
+  }
+
+  /**
    * The year, as twelve months you take in and out of the run.
    *
    * Two calibration faces could only ever describe one unbroken span, so the
@@ -1564,20 +1778,39 @@ export function mountConsole({
     const W = 240;
     const H = 64;
     const energy = study.metric === 'energy';
+    const criterion = study.metric === 'tm59a';
     // Both metrics are the signed pair, which is why neither needs a third
     // pen. TEDI and CEDI are the year's heat asked into and out of the zone —
     // the rail's signed watts integrated, not a price or an emission — so
     // warm-in / cold-out encodes exactly the sign it does everywhere else on
     // the desk, exactly as the temperature extremes below do.
-    const series = energy
+    // A share is an unsigned magnitude, so it takes no hue: the same rule that
+    // leaves the bill entirely graphite. The signed pair below encodes heat
+    // into and out of the zone, and lending `--warm` to "how much of the summer
+    // was too warm" would be the pair saying something it does not mean —
+    // there is no cold half of an exceedance to answer it.
+    const series = criterion
       ? [
-          { sel: (p) => p.tedi, pen: 'var(--warm)', name: 'TEDI', said: 'heating demand TEDI' },
-          { sel: (p) => p.cedi, pen: 'var(--cold)', name: 'CEDI', said: 'cooling demand CEDI' },
+          {
+            sel: (p) => p.share,
+            pen: 'var(--ink)',
+            tick: (v) => `${v.toFixed(1)}%`,
+            // Named for the criterion rather than for the quantity, because a
+            // reader who has a TM59 curve up is reading it against the 3 %
+            // line and not against a share in the abstract.
+            said: 'TM59 criterion a exceedance',
+          },
+        ]
+      : energy
+      ? [
+          { sel: (p) => p.tedi, pen: 'var(--warm)', name: 'TEDI', tick: (v) => `TEDI ${v.toFixed(v >= 100 ? 0 : 1)}`, said: 'heating demand TEDI' },
+          { sel: (p) => p.cedi, pen: 'var(--cold)', name: 'CEDI', tick: (v) => `CEDI ${v.toFixed(v >= 100 ? 0 : 1)}`, said: 'cooling demand CEDI' },
         ]
       : [
           {
             sel: (p) => p.high,
             pen: 'var(--warm)',
+            tick: (v) => `${v.toFixed(1)}°`,
             // Three periods, because a weather file no longer implies a year:
             // the extremes of a run period with months taken out of it are the
             // run period's, and calling them annual would be the card
@@ -1591,6 +1824,7 @@ export function mountConsole({
           {
             sel: (p) => p.low,
             pen: 'var(--cold)',
+            tick: (v) => `${v.toFixed(1)}°`,
             said: !study.annual
               ? 'winter design-day low'
               : study.wholeYear
@@ -1615,7 +1849,9 @@ export function mountConsole({
     // arithmetic over whatever months are in the run, and every sample on the
     // curve shares them, so the comparison holds — but the figure is not an
     // annual one and the card must not say it is.
-    const unit = !energy
+    const unit = criterion
+      ? 'per cent of the occupied hours of 1 May to 30 September'
+      : !energy
       ? '°C'
       : study.wholeYear
         ? 'kWh per square metre a year'
@@ -1680,7 +1916,7 @@ export function mountConsole({
       if (!found.length) continue;
       const v = s.sel(found[found.length - 1]);
       labels.push({
-        text: energy ? `${s.name} ${v.toFixed(v >= 100 ? 0 : 1)}` : `${v.toFixed(1)}°`,
+        text: s.tick(v),
         pen: s.pen,
         y: clamp(y(v) + 2.5, plot.top + 5, plot.bottom),
       });
