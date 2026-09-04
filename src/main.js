@@ -3252,6 +3252,20 @@ desk = mountConsole({
     // The desk head's Clear counts the cards, and one just came down.
     syncStudyControls();
   },
+  // Where the console keeps the cards the reader left open. The same probe the
+  // scheme shelf uses, and a function rather than the shelf's own value because
+  // that `const` is declared a long way below this call and would be in its
+  // temporal dead zone here. A browser that refuses storage hands back null and
+  // the desk simply opens closed.
+  store: probedStorage(),
+  // What is really out of the path. Under solo that is not the patch bay, and
+  // the console must not carry a second copy of the answer.
+  patching,
+  // A search that actually found something, typed by the reader. Filed from the
+  // console's own field rather than from `api.search`, by the rule the drag note
+  // follows: a marker fills when its step has happened on this desk, and a
+  // programmatic search is not the reader asking.
+  onFind: () => tour?.note('find'),
 });
 
 function openDesk(open) {
@@ -3281,7 +3295,13 @@ $('desk-close').addEventListener('click', () => {
 // notes decide whether it fills a square. Mounted after the console so the
 // patch note can point at a real patch button, and handed `openDesk` so a
 // note whose subject lives on the console can stage it.
-const tour = mountTour({ openDesk });
+const tour = mountTour({
+  openDesk,
+  // The patch note's subject is a button inside a card, and cards start closed.
+  // Staging opens the card so the note has something to point at; it does not
+  // patch anything, so the marker still fills from the genuine step.
+  revealCard: (id) => { if (id) desk?.reveal(id, true); },
+});
 // The two carry-away paths are one step: either proves the scheme leaves the
 // page. The buttons keep their own handlers; the note is a second listener.
 $('share').addEventListener('click', () => tour?.note('link'));
@@ -4141,7 +4161,7 @@ const SCHEME_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
  * late, so the probe happens here and the register says up front that it
  * cannot keep anything.
  */
-const shelfStore = (() => {
+function probedStorage() {
   const probe = '__shoebox_probe__';
   try {
     window.localStorage.setItem(probe, '1');
@@ -4150,7 +4170,9 @@ const shelfStore = (() => {
   } catch {
     return null;
   }
-})();
+}
+
+const shelfStore = probedStorage();
 
 const shelf = new Shelf(shelfStore);
 let kept = []; // the shelf as last read

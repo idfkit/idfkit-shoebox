@@ -15,6 +15,9 @@ import {
   serializePattern,
 } from './controls.js';
 import { quantityField } from './field.js';
+// The searchable declaration and the edit list. DOM-free, so the same functions
+// the Node harness asserts over are the ones the desk runs.
+import { VOCABULARY, edits, find } from './finder.js';
 // The rail's own units, from the module that owns reading a run. One
 // definition: a second copy here would be the first thing to drift the day a
 // figure changed precision on one surface and not the other.
@@ -80,6 +83,20 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
  */
 export function mountConsole({
   host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear, onStudyQuantity, onPin,
+  // A search the reader actually typed that actually found something. The one
+  // callback here that reaches nothing in the model — it files a general note.
+  onFind = null,
+  // Where the reader's open cards are kept, already probed with a real write
+  // by the caller, or null where the browser refuses storage. See
+  // `restoreReveals`; the desk degrades to "not remembered" and never to
+  // "fails to boot".
+  store = null,
+  // What is actually out of the path, which under solo is not the patch bay:
+  // soloing a channel takes every other bypassable one out without touching
+  // `bypass`. Handed in as the caller's own reader rather than recomputed here,
+  // because a second copy of `patching()` is a second answer to "what is in the
+  // model", and the search would give it while the strips gave the other.
+  patching = () => bypass,
 }) {
   const strips = new Map(); // channel id -> { redraw(), meter, patch, solo }
   const faces = new Map(); // parameter key -> redraw for that control
@@ -87,6 +104,8 @@ export function mountConsole({
   // for the kinds that own one key, and a per-wall anchor for a plan key,
   // which owns four and can carry four curves at once.
   const rows = new Map();
+  // Control -> the row it is drawn on, which is what a search hides and shows.
+  const controlRows = new Map();
   const cards = new Map(); // parameter key -> { node, kind, study, syncTick }
   const studyButtons = new Map(); // parameter key -> that scale's Study button
   // parameter key -> the line under its face that letters what the model was
@@ -107,6 +126,7 @@ export function mountConsole({
   // Off until the caller says otherwise: the engine is not resident at mount.
   let sweepGate = { ok: false, reason: 'The engine is still arriving.' };
 
+  const finderHost = el('div', 'finder');
   const stripHost = el('div', 'strips');
   // The ruled column set the strips lie on, one element inside the scroller
   // rather than the scroller itself: the desk fixes `stripHost`'s height so it
@@ -118,7 +138,7 @@ export function mountConsole({
 
   for (const channel of CHANNELS) stripGrid.append(buildStrip(channel));
   stripHost.append(stripGrid);
-  host.append(stripHost, railHost);
+  host.append(finderHost, stripHost, railHost);
 
   /* ── the index sheet ─────────────────────────────────────────────────────
    *
@@ -144,39 +164,399 @@ export function mountConsole({
   // the width nobody tests at.
   const indexMode = () => getComputedStyle(stripHost).getPropertyValue('--index').trim() === '1';
 
-  let indexing = null; // null until the first read, so the first apply always runs
-  let opened = null; // the one strip unfolded, while indexing
+  /* ── the three states of a card ──────────────────────────────────────────
+   *
+   * `closed`   nothing shown but the card's own face: number, name, reading,
+   *            armed marker.
+   * `peeking`  open under a fine pointer, for exactly as long as the pointer
+   *            is resting on it. Nothing was chosen, so it is never written to
+   *            storage and never announced.
+   * `revealed` open because the reader said so, by click, tap, Enter or Space.
+   *            More than one card may be revealed; at most one may peek.
+   *
+   * The peek is an accelerator over the reveal and never the only way to
+   * anything: it shows what a reveal shows and no more, it is unreachable
+   * under a coarse pointer and from the keyboard, and both of those reach
+   * `revealed` directly. That is what keeps a hover out of the critical path
+   * on a phone, where there is no hovering to do.
+   */
+  const CLOSED = 'closed';
+  const PEEKING = 'peeking';
+  const REVEALED = 'revealed';
 
-  function refold() {
-    for (const channel of CHANNELS) {
-      const here = strips.get(channel.id);
-      const shown = !indexing || opened === channel.id;
-      // `hidden` rather than a class, so a folded strip's controls leave the
-      // tab order and the accessibility tree with it. A reader tabbing through
-      // the index should meet eighteen rows, not eighteen rows and a hundred
-      // controls they cannot see.
-      here.fold.hidden = !shown;
-      here.strip.classList.toggle('open', Boolean(indexing) && shown);
-      here.toggle.disabled = !indexing;
-      if (indexing) {
-        here.toggle.setAttribute('aria-expanded', String(shown));
-        here.toggle.setAttribute('aria-controls', here.fold.id);
-      } else {
-        here.toggle.removeAttribute('aria-expanded');
-        here.toggle.removeAttribute('aria-controls');
-      }
+  const cardState = new Map(CHANNELS.map((c) => [c.id, CLOSED]));
+  let peeking = null; // the one card under the pointer, or null
+  let indexing = null; // null until the first read, so the first apply always runs
+
+  // Whether this pointer can hover at all. A coarse pointer reports enter and
+  // leave events around a tap, which would open a card on touch and leave it
+  // open -- a peek nobody asked for and cannot dismiss.
+  const hovers = window.matchMedia('(hover: hover) and (pointer: fine)');
+
+  function drawCard(id) {
+    const here = strips.get(id);
+    const state = cardState.get(id);
+    const open = state !== CLOSED;
+    // `hidden` rather than a class, so a closed card's controls leave the tab
+    // order and the accessibility tree with it. A reader tabbing the desk
+    // should meet eighteen cards, not eighteen cards and a hundred and
+    // twenty-nine controls they cannot see.
+    here.fold.hidden = !open;
+    here.strip.classList.toggle('open', open);
+    // Only a reveal is announced. A peek is a pointer resting somewhere, not a
+    // reader choosing something, and `aria-expanded` flipping under a passing
+    // mouse would narrate a decision nobody made.
+    here.toggle.setAttribute('aria-expanded', String(state === REVEALED));
+  }
+
+  const drawCards = () => { for (const id of cardState.keys()) drawCard(id); };
+
+  function setCard(id, state) {
+    if (cardState.get(id) === state) return;
+    cardState.set(id, state);
+    drawCard(id);
+  }
+
+  /** Which cards the reader has chosen, in strip order. */
+  const revealedIds = () => CHANNELS.map((c) => c.id).filter((id) => cardState.get(id) === REVEALED);
+
+  function peek(id) {
+    if (!hovers.matches) return;
+    // One at a time. The previous card closes before this one opens, so a sweep
+    // never leaves a trail of open cards behind the pointer.
+    if (peeking !== null && peeking !== id) unpeek(peeking);
+    if (cardState.get(id) !== CLOSED) return; // a revealed card is left exactly as it stands
+    peeking = id;
+    setCard(id, PEEKING);
+  }
+
+  function unpeek(id) {
+    if (peeking !== id) return;
+    peeking = null;
+    if (cardState.get(id) === PEEKING) setCard(id, CLOSED);
+  }
+
+  /**
+   * Bring a card the reader has just opened far enough into view that the row
+   * under it still shows.
+   *
+   * The stylesheet bounds an opened card to the scroller less a row, so this
+   * is always possible; it is not automatic, because a card low in the grid
+   * opens with its foot below the scroller's. Scrolls by the least that will
+   * do, and never past putting the card's own top at the top — the card the
+   * reader pressed stays the thing they are looking at.
+   *
+   * Only ever from a reveal. A peek moves no scroll position at all: the
+   * pointer merely passing over a card is not a reason to move the page under
+   * it, and a sweep across the grid that scrolled would be unusable.
+   */
+  function bringIntoView(id) {
+    if (indexing) return;
+    const settle = () => {
+      // Still the reader's card: a press and an immediate second press would
+      // otherwise have the frame below scrolling a card that has just shut.
+      if (cardState.get(id) !== REVEALED) return;
+      const next = parseFloat(getComputedStyle(stripHost).getPropertyValue('--next-row')) || 0;
+      const box = strips.get(id).strip.getBoundingClientRect();
+      const view = stripHost.getBoundingClientRect();
+      const short = box.bottom + next - view.bottom;
+      if (short > 0) stripHost.scrollTop += Math.min(short, box.top - view.top);
+    };
+    settle();
+    // And again on the next frame. The card's height is capped in container
+    // units off the scroller, and a container query that has not resolved by
+    // the time the click handler measures would leave this scrolling against a
+    // height that is about to change. Measured, it does resolve synchronously
+    // here — but the cost of asking twice is one clamped assignment, and the
+    // cost of being wrong is the reader losing the row they were promised.
+    requestAnimationFrame(settle);
+  }
+
+  /**
+   * The reader's own gesture: reveal a closed or peeking card, close a
+   * revealed one.
+   *
+   * `toggle` is a real `<button>`, so Enter and Space arrive here as clicks
+   * without a keydown handler -- which is the point of it being one, and why
+   * there is no second code path for the keyboard to drift out of step with.
+   */
+  function toggleReveal(id) {
+    if (peeking === id) peeking = null;
+    const opening = cardState.get(id) !== REVEALED;
+    setCard(id, opening ? REVEALED : CLOSED);
+    keepReveals();
+    return opening;
+  }
+
+  /* ── what is remembered ──────────────────────────────────────────────────
+   *
+   * Which cards the reader left open, and nothing else. A peek is never
+   * written: it records where a mouse happened to be resting.
+   *
+   * This stays out of the shared link for the reason `pinnedHour` and the
+   * chased standard do -- it is how the desk is being read, not what the desk
+   * is, and a link that reproduced somebody else's open cards would be
+   * carrying their reading habits into your browser along with their building.
+   */
+  const REVEAL_STORE = 'shoebox-desk-revealed-v1';
+
+  function keptReveals() {
+    if (!store) return [];
+    try {
+      const list = JSON.parse(store.getItem(REVEAL_STORE) ?? '[]');
+      return Array.isArray(list) ? list.filter((id) => cardState.has(id)) : [];
+    } catch {
+      // A mangled entry is a fresh desk, by the same rule the general notes
+      // read their own storage with: better closed than wrong.
+      return [];
     }
   }
+
+  function keepReveals() {
+    // A search's own reveals are the search's, not the reader's. Written, they
+    // would be restored on the next visit as though the reader had opened six
+    // cards themselves, and the question that opened them would be gone.
+    if (!store || asking) return;
+    try {
+      store.setItem(REVEAL_STORE, JSON.stringify(revealedIds()));
+    } catch {
+      // Nothing to substitute. The desk degrades to "not remembered".
+    }
+  }
+
+  /**
+   * Put the kept reveals back, or close everything where the layout cannot
+   * hold them.
+   *
+   * Below `--index` the desk is one column read top to bottom and its whole
+   * argument is that eighteen channels fit on one screen; six cards restored
+   * open there is the index sheet defeating itself. So the store is read but
+   * not obeyed at that size -- and deliberately not *written*, so widening the
+   * window brings the reader's own cards back rather than having quietly
+   * forgotten them.
+   */
+  function restoreReveals() {
+    // A question outranks the layout's opinion about which cards are open: a
+    // reader who crosses the breakpoint mid-search is still asking it.
+    if (asking) return;
+    const keep = indexing ? [] : keptReveals();
+    for (const id of cardState.keys()) cardState.set(id, keep.includes(id) ? REVEALED : CLOSED);
+    peeking = null;
+    drawCards();
+  }
+
+  /* ── asking the desk a question ──────────────────────────────────────────
+   *
+   * A search reveals the controls it names, wherever they live, through the
+   * card mechanism above rather than through a second one of its own: the
+   * matching cards open, and inside them the rows the query did not name go
+   * behind the `hidden` attribute, which takes them out of the tab order as
+   * well as off the page. So there is one gesture to learn and one set of
+   * states to reason about, and a control arrived at by searching is turned
+   * exactly where it stands rather than in some results pane of its own.
+   *
+   * Nothing in here calls `onChange`, `onPatch`, `onSolo` or `onReset`, and
+   * `pump()` is reachable from nowhere else in the application. Finding is
+   * free, and that is structural rather than a promise about intent.
+   */
+
+  // Null when no question is being asked. Otherwise the reader's own reveal
+  // state, stacked, so that clearing puts the desk back the way they left it
+  // rather than the way it starts. A search that opened a card the reader had
+  // deliberately closed must not leave it open.
+  let asking = null; // { kind: 'query' | 'edits', restore: string[] }
+
+  const said = el('p', 'finder-said');
+  said.hidden = true;
+  // `status` rather than `alert`: what a search found is a result to be read
+  // when the reader gets to it, not an interruption, and a polite region gives
+  // one announcement when the typing stops instead of one per keystroke.
+  said.setAttribute('role', 'status');
+
+  const field = document.createElement('input');
+  Object.assign(field, {
+    type: 'search', id: 'desk-find', className: 'finder-field',
+    placeholder: 'Find a control', autocomplete: 'off',
+  });
+  field.setAttribute('aria-label', 'Find a control anywhere on the desk');
+  const fieldLabel = el('label', 'finder-label', 'Find');
+  fieldLabel.htmlFor = 'desk-find';
+
+  const editsBtn = el('button', 'link finder-edits', 'What have I changed?');
+  editsBtn.type = 'button';
+  editsBtn.setAttribute('aria-pressed', 'false');
+  editsBtn.title =
+    'Reveal every control sitting off its default, and every channel patched away from where it starts';
+
+  finderHost.append(fieldLabel, field, editsBtn, said);
+
+  /**
+   * The swept curves, as a search reports them.
+   *
+   * Staleness is read off the card's own class rather than recomputed: whether
+   * a curve still describes the desk is a question about `restShapeKey`, which
+   * lives in `main.js`, and the card is where that answer was already written.
+   */
+  const studyCurves = () => new Map(
+    [...cards].map(([key, card]) => [key, { study: card.study, stale: card.node.classList.contains('stale') }]),
+  );
+
+  /** Take down every note a previous question left in the cards. */
+  function clearNotes() {
+    for (const note of stripGrid.querySelectorAll('.finder-note')) note.remove();
+  }
+
+  /**
+   * Put a question onto the desk.
+   *
+   * `wanted` maps a channel id to the rows that channel has to show and the
+   * note each of them carries. A channel absent from it is closed; a channel in
+   * it is revealed with exactly those rows shown and the rest hidden.
+   */
+  function ask(kind, wanted, sentence) {
+    // Stacked once per question, not once per keystroke: the reader's own
+    // reveal state is what the *first* search displaced, and re-reading it on
+    // the second character would stack the first search's own result.
+    asking = { kind, restore: asking ? asking.restore : revealedIds() };
+    // Under a question the channel's blurb is noise: the reader asked for a
+    // control, not for a description of the channel it happens to live on, and
+    // four lines of prose above each match is what pushes the thing they were
+    // looking for off the bottom of the card.
+    stripHost.classList.add('asking');
+    clearNotes();
+    for (const channel of CHANNELS) {
+      const here = wanted.get(channel.id) ?? null;
+      setCard(channel.id, here ? REVEALED : CLOSED);
+      if (here?.channelNote) {
+        strips.get(channel.id).fold.prepend(el('p', 'finder-note', here.channelNote));
+      }
+      for (const control of channel.controls) {
+        const node = controlRows.get(control);
+        if (!node) continue;
+        const shown = here ? here.rows.has(control) : true;
+        node.hidden = Boolean(here) && !shown;
+        const note = here?.rows.get(control) ?? null;
+        if (shown && note) node.prepend(el('p', 'finder-note', note));
+      }
+    }
+    peeking = null;
+    said.textContent = sentence ?? '';
+    said.hidden = !sentence;
+  }
+
+  /** Put the desk back the way the reader left it. */
+  function unask() {
+    const restore = asking?.restore ?? [];
+    asking = null;
+    stripHost.classList.remove('asking');
+    clearNotes();
+    for (const channel of CHANNELS) {
+      for (const control of channel.controls) {
+        const node = controlRows.get(control);
+        if (node) node.hidden = false;
+      }
+      setCard(channel.id, restore.includes(channel.id) ? REVEALED : CLOSED);
+    }
+    said.textContent = '';
+    said.hidden = true;
+  }
+
+  /** How a match that cannot be turned says so, and what would bring it back. */
+  const blockedNote = (blocked) => (blocked.fix ? `${blocked.sentence} ${blocked.fix}` : blocked.sentence);
+
+  function runSearch(query) {
+    if (!String(query).trim()) {
+      // An empty query is not "no matches", it is "no question". The first puts
+      // the desk back, the second says so in place, and telling them apart is
+      // what stops a reader who has just cleared the box being told that
+      // nothing matches.
+      if (asking?.kind === 'query') unask();
+      return { matches: [], revealed: revealedIds() };
+    }
+    const matches = find(VOCABULARY, query, params, patching(), { studies: studyCurves() });
+    const wanted = new Map();
+    for (const match of matches) {
+      const at = wanted.get(match.channel.id) ?? { rows: new Map(), channelNote: null };
+      // A row is named by any of the keys drawn on it, and it carries the note
+      // of the first key that had one: a plan key is one row for four walls, so
+      // "the west wall reaches nothing" is a note about that row.
+      const note = match.blocked ? blockedNote(match.blocked) : null;
+      if (!at.rows.has(match.control) || (note && !at.rows.get(match.control))) {
+        at.rows.set(match.control, note);
+      }
+      wanted.set(match.channel.id, at);
+    }
+    const rows = [...wanted.values()].reduce((n, at) => n + at.rows.size, 0);
+    const term = query.trim();
+    ask('query', wanted, matches.length
+      ? `${rows} control${rows === 1 ? '' : 's'} on ${wanted.size} channel${wanted.size === 1 ? '' : 's'} `
+        + `match${rows === 1 ? 'es' : ''} “${term}”.`
+      // Said in place rather than by drawing nothing. The sentence also says
+      // what kind of search this is, because the honest answer to a term that
+      // finds nothing is that the desk knows the names its controls carry and
+      // nothing besides — there is no synonym it failed to think of.
+      : `Nothing on the desk is called “${term}”. The desk matches the names its own controls, `
+        + 'channels and landmarks carry, and nothing besides.');
+    return { matches, revealed: revealedIds() };
+  }
+
+  function showEditsIn(on) {
+    editsBtn.setAttribute('aria-pressed', String(Boolean(on)));
+    if (!on) {
+      if (asking?.kind === 'edits') unask();
+      return [];
+    }
+    const moved = edits(params, bypass);
+    const wanted = new Map();
+    for (const edit of moved) {
+      const at = wanted.get(edit.channel.id) ?? { rows: new Map(), channelNote: null };
+      if (edit.key === null) {
+        at.channelNote = `${edit.channel.name} is ${edit.said.toLowerCase()}, where it starts ${edit.wasSaid.toLowerCase()}.`;
+      } else {
+        // The value and the default it left, both lettered through the control
+        // that owns the key, so the words here and the words on the face below
+        // are the same words.
+        const line = `${edit.label}: ${edit.said}, from ${edit.wasSaid}.`;
+        const already = at.rows.get(edit.control);
+        at.rows.set(edit.control, already ? `${already} ${line}` : line);
+      }
+      wanted.set(edit.channel.id, at);
+    }
+    ask('edits', wanted, moved.length
+      ? `${moved.length} thing${moved.length === 1 ? '' : 's'} changed from where the desk starts.`
+      // Not an empty grid. An empty list of edits would tell the reader they
+      // have never changed anything, which is a different statement from the
+      // true one, and it is the silent fallback this codebase refuses.
+      : 'Every control is where the desk starts it, and every channel is patched as it starts.');
+    return moved;
+  }
+
+  field.addEventListener('input', () => {
+    const { matches } = runSearch(field.value);
+    // Filed here rather than inside `runSearch`, so that `api.search` — which
+    // anything on the page could call — cannot claim a step the reader has not
+    // taken. The same reason the drag note is filed from the input listeners
+    // and not from `commit`.
+    if (matches.length) onFind?.();
+  });
+  field.addEventListener('keydown', (event) => {
+    // Escape clears from inside the box, where the reader's hands already are.
+    if (event.key !== 'Escape') return;
+    field.value = '';
+    runSearch('');
+  });
+  editsBtn.addEventListener('click', () => {
+    const on = editsBtn.getAttribute('aria-pressed') !== 'true';
+    if (on) field.value = '';
+    showEditsIn(on);
+  });
 
   function relayout() {
     const on = indexMode();
     if (on === indexing) return;
     indexing = on;
     stripHost.classList.toggle('index', on);
-    // Arriving at the index closes everything, because the list is the point of
-    // it; leaving it opens everything, which is the desk as it was.
-    opened = null;
-    refold();
+    restoreReveals();
   }
 
   relayout();
@@ -227,16 +607,30 @@ export function mountConsole({
     head.append(title);
 
     toggle.addEventListener('click', () => {
-      if (!indexing) return;
-      // The row you tapped must not move out from under your thumb while a
-      // strip somewhere above it closes. Measure where this head sits, let the
-      // folds change, and put it back where it was.
+      // The card you pressed must not move out from under your finger while a
+      // card in an earlier row closes. Measure where this head sits, let the
+      // grid change, and put it back where it was. Which thing scrolls depends
+      // on which layout is up: on the desk the cards have their own scroller,
+      // and below `--index` the console scrolls with the page.
       const before = head.getBoundingClientRect().top;
-      opened = opened === channel.id ? null : channel.id;
-      refold();
+      const opening = toggleReveal(channel.id);
       const after = head.getBoundingClientRect().top;
-      if (after !== before) window.scrollBy(0, after - before);
+      if (after !== before) (indexing ? window : stripHost).scrollBy(0, after - before);
+      // Anchoring first, then bringing into view: the card must not move under
+      // the finger that pressed it, and only after it has stayed put is it
+      // worth asking whether what it opened onto is actually in the room.
+      if (opening) bringIntoView(channel.id);
     });
+
+    // The peek. `pointerenter` and `pointerleave` rather than `over`/`out`
+    // because they do not bubble, so crossing a slider inside an opened card
+    // is not a departure from the card. The pointer type is checked as well as
+    // the media query: a touch reports an enter around its tap, and a card
+    // opened by a finger and never closed is a peek nobody asked for.
+    strip.addEventListener('pointerenter', (event) => {
+      if (event.pointerType === 'mouse') peek(channel.id);
+    });
+    strip.addEventListener('pointerleave', () => unpeek(channel.id));
 
     let patch = null;
     let soloBtn = null;
@@ -268,10 +662,18 @@ export function mountConsole({
 
     const fold = el('div', 'strip-fold');
     fold.id = `strip-fold-${channel.id}`;
+    toggle.setAttribute('aria-controls', fold.id);
     fold.append(el('p', 'strip-blurb', channel.blurb));
 
     const body = el('div', 'strip-body');
-    for (const control of channel.controls) body.append(buildControl(control, channel));
+    for (const control of channel.controls) {
+      const node = buildControl(control, channel);
+      // Keyed by the control rather than by a parameter key, because a plan
+      // key's four walls and a boundary key's six surfaces are one row between
+      // them: a search naming one wall reveals the row that wall is drawn on.
+      controlRows.set(control, node);
+      body.append(node);
+    }
     fold.append(body);
 
     const readout = buildReadout(channel);
@@ -1165,7 +1567,7 @@ export function mountConsole({
    * on the Gains strip — seventy-two stops between that strip's selector and
    * everything below it. So they sit behind a fold that starts shut, and the
    * fold is the `hidden` attribute rather than a class, for the reason
-   * `refold` gives for the strip's own: controls you cannot see have to leave
+   * `drawCard` gives for the card's own: controls you cannot see have to leave
    * the tab order and the accessibility tree with their fold. (A stylesheet
    * that gives `.pattern-hours` a `display` of its own owes it a `[hidden]`
    * twin, or an author declaration will beat the user agent's
@@ -2374,7 +2776,7 @@ export function mountConsole({
       const anchor = key ? cards.get(key)?.node : null;
       return {
         expanded,
-        opened,
+        revealed: revealedIds(),
         key,
         top: anchor?.getBoundingClientRect().top ?? null,
       };
@@ -2382,9 +2784,11 @@ export function mountConsole({
 
     restoreStudyContext(context) {
       if (!context) return;
-      if (indexing) {
-        opened = context.opened;
-        refold();
+      // Which cards stood open is interface state like the open chooser beside
+      // it, and for the same reason: the reader arrived at the weather picker
+      // from a question asked inside one of them.
+      for (const id of cardState.keys()) {
+        if (context.revealed.includes(id)) setCard(id, REVEALED);
       }
       for (const key of context.expanded) {
         const details = cards.get(key)?.node.querySelector('.study-quantity');
@@ -2405,6 +2809,50 @@ export function mountConsole({
       for (const { node } of cards.values()) node.remove();
       cards.clear();
     },
+
+    /* ── the cards, from outside ─────────────────────────────────────────
+     *
+     * Every method below is presentational, and that is a structural claim
+     * rather than a promise: none of them calls `onChange`, `onPatch`,
+     * `onSolo` or `onReset`, and `pump()` -- the only thing in this
+     * application that starts a simulation -- is reachable from nowhere else.
+     * A method that does not call a callback cannot start a run.
+     */
+
+    /** Set or clear a kept reveal. */
+    reveal(channelId, on = true) {
+      if (!cardState.has(channelId)) throw new Error(`the console has no channel "${channelId}"`);
+      if (peeking === channelId) peeking = null;
+      setCard(channelId, on ? REVEALED : CLOSED);
+      keepReveals();
+      // A card opened from outside — the general notes staging the patch step —
+      // owes the reader the same sight of the row under it as one they pressed.
+      if (on) bringIntoView(channelId);
+    },
+
+    /** Which cards the reader has open, in strip order. */
+    revealed: () => revealedIds(),
+
+    /**
+     * Ask the desk for every control a word names.
+     *
+     * Reads the live `params` and `bypass` the console already holds by
+     * reference — never a copy, so a search run mid-drag answers about the desk
+     * as it stands rather than as it stood at mount.
+     */
+    search: (query) => runSearch(query),
+
+    /** Put the desk back the way the reader left it. */
+    clearSearch() {
+      field.value = '';
+      runSearch('');
+    },
+
+    /** Everything sitting off its default, measured now. */
+    edits: () => edits(params, bypass),
+
+    /** Reveal exactly those, or put the desk back. */
+    showEdits: (on = true) => showEditsIn(on),
   };
 
   /**
