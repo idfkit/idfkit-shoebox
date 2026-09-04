@@ -1,11 +1,13 @@
 /**
  * Publish `dist/` to the bucket behind shoebox.idfkit.com.
  *
- * With `SHOEBOX_PREVIEW` set to a pull request number the same build is
- * published under that number instead, at `shoebox.idfkit.com/<n>/`, and
- * `--remove` takes it down again when the pull request closes. The two modes
- * share everything below because a preview is only worth having if it is the
- * same artefact reaching the same distribution; only the key prefix differs.
+ * The site's own address carries a tagged release and nothing else. Every
+ * other build is published one directory in, under `SHOEBOX_PREFIX`: `dev` for
+ * the development channel that each push to `main` publishes, or a pull
+ * request's number for the preview at `shoebox.idfkit.com/<n>/`, which
+ * `--remove` takes down again when the pull request closes. All three share
+ * everything below, because a build published anywhere but the real
+ * distribution tests the half that never fails; only the key prefix differs.
  *
  * The interesting part of this script is not the upload, it is the compression.
  * CloudFront will compress on the fly, but only objects between 1 KB and 10 MB,
@@ -53,34 +55,38 @@ const REGION = process.env.SHOEBOX_REGION ?? process.env.AWS_REGION ?? 'us-east-
 const STACK = process.env.SHOEBOX_STACK ?? 'ShoeboxStack';
 
 /**
- * The pull request number this run publishes under, or the empty string for the
- * site itself.
+ * The two shapes a channel's top-level directory may take, as one source the
+ * three rules below are all built from: `dev` and a pull request number.
  *
- * Digits only, and refused otherwise rather than sanitised, because the shape is
- * load-bearing in two other places: the CloudFront function in
- * `infra/lib/shoebox-stack.ts` recognises a preview by it, and the prune below
- * spares a key from the published site by it. A preview published outside that
- * shape would 404 on its own index and then be deleted by the next deploy of
- * main, and neither failure would name this line.
+ * The same shape is written out once more, in the CloudFront function in
+ * `infra/lib/shoebox-stack.ts`, which is what appends `index.html` to a
+ * channel's own directory. The two have to agree: a build published outside
+ * this shape would 404 on its own index and then be deleted by the next
+ * release, and neither failure would name this line.
  */
-const PREVIEW = process.env.SHOEBOX_PREVIEW ?? '';
-if (PREVIEW && !/^\d+$/.test(PREVIEW)) {
-  throw new Error(`SHOEBOX_PREVIEW must be a pull request number, not ${JSON.stringify(PREVIEW)}.`);
+const CHANNEL = String.raw`\d+|dev`;
+
+/** A key belonging to some channel rather than to the site. */
+const inChannel = new RegExp(`^(?:${CHANNEL})/`);
+
+/**
+ * The channel this run publishes under, or the empty string for the site
+ * itself — which is only ever a tagged release; see `.github/workflows/deploy.yml`.
+ *
+ * Refused rather than sanitised, for the reason given above.
+ */
+const PREFIX = process.env.SHOEBOX_PREFIX ?? '';
+if (PREFIX && !new RegExp(`^(?:${CHANNEL})$`).test(PREFIX)) {
+  throw new Error(
+    `SHOEBOX_PREFIX must be \`dev\` or a pull request number, not ${JSON.stringify(PREFIX)}.`,
+  );
 }
 
 /** Where a `dist`-relative path lands in the bucket. */
-const at = (key) => (PREVIEW ? `${PREVIEW}/${key}` : key);
+const at = (key) => (PREFIX ? `${PREFIX}/${key}` : key);
 
 /** The keys this run owns, and the only ones it may delete. */
-const scope = PREVIEW ? `${PREVIEW}/` : undefined;
-
-/**
- * A top-level directory of digits is a preview, and the site's own deploy must
- * leave it alone. Without this the prune below — which deletes everything the
- * current build did not produce — would take every open pull request's preview
- * with it on the next push to main.
- */
-const isPreview = (key) => /^\d+\//.test(key);
+const scope = PREFIX ? `${PREFIX}/` : undefined;
 
 /**
  * What each extension is, and whether it is worth compressing.
@@ -200,8 +206,8 @@ async function drop(s3, Bucket, keys) {
 
 /**
  * One wildcard counts as a single path against the 1,000 free invalidation
- * paths a month, where listing each file would not. A preview invalidates only
- * its own subtree; the site invalidates everything, previews included, which
+ * paths a month, where listing each file would not. A channel invalidates only
+ * its own subtree; the site invalidates everything, channels included, which
  * costs them a re-fetch and nothing else.
  */
 async function invalidate(DistributionId) {
@@ -210,7 +216,7 @@ async function invalidate(DistributionId) {
     new CreateInvalidationCommand({
       DistributionId,
       InvalidationBatch: {
-        Paths: { Quantity: 1, Items: [PREVIEW ? `/${PREVIEW}/*` : '/*'] },
+        Paths: { Quantity: 1, Items: [PREFIX ? `/${PREFIX}/*` : '/*'] },
         CallerReference: `deploy-${Date.now()}`,
       },
     }),
@@ -223,7 +229,14 @@ async function invalidate(DistributionId) {
  * accident, so the absence of a prefix is an error rather than a wildcard.
  */
 async function unpublish() {
-  if (!PREVIEW) throw new Error('--remove needs SHOEBOX_PREVIEW. It will not empty the site.');
+  // A pull request number and not merely a prefix: `dev` is published by every
+  // push to main and there is no event that should take it down, so the only
+  // channel this can empty is one whose pull request has closed.
+  if (!/^\d+$/.test(PREFIX)) {
+    throw new Error(
+      '--remove needs SHOEBOX_PREFIX set to a pull request number. It takes down a preview and nothing else.',
+    );
+  }
 
   const { BucketName, DistributionId } = await outputs();
   const s3 = new S3Client({ region: REGION });
@@ -234,8 +247,8 @@ async function unpublish() {
 
   console.log(
     keys.length
-      ? `Removed the preview for pull request ${PREVIEW}: ${keys.length} files.`
-      : `No preview for pull request ${PREVIEW} to remove.`,
+      ? `Removed the preview for pull request ${PREFIX}: ${keys.length} files.`
+      : `No preview for pull request ${PREFIX} to remove.`,
   );
 }
 
@@ -246,12 +259,31 @@ async function main() {
     throw new Error(`No build at ${dist}. Run \`npm run build\` first.`);
   }
 
-  const { BucketName, DistributionId } = await outputs();
-  const s3 = new S3Client({ region: REGION });
-
+  // The build is read and judged before the account is asked anything, so a
+  // refusal below costs no credentials and names itself on a desk as readily as
+  // in CI.
   const files = [];
   for await (const file of walk(dist)) files.push(file);
   if (files.length === 0) throw new Error(`${dist} is empty.`);
+
+  // The channel namespace is reserved, and this is what makes that a rule
+  // rather than a coincidence about what `public/` happens to contain today. A
+  // `dev/` in the build output would be published straight over the development
+  // channel, and then — not having been produced by the next push to main —
+  // pruned by it, hours later and nowhere near whatever added the directory.
+  if (!PREFIX) {
+    const trespass = files
+      .map((file) => relative(dist, file).split(sep).join('/'))
+      .filter((key) => inChannel.test(key));
+    if (trespass.length) {
+      throw new Error(
+        `The build writes into the reserved channel namespace: ${trespass.slice(0, 3).join(', ')}.`,
+      );
+    }
+  }
+
+  const { BucketName, DistributionId } = await outputs();
+  const s3 = new S3Client({ region: REGION });
 
   let raw = 0;
   let sent = 0;
@@ -300,10 +332,11 @@ async function main() {
 
   // Anything in this run's scope that it did not just produce is from an older
   // build. Leaving it would keep a deleted page reachable at its old URL. The
-  // open pull requests' previews are not in scope: a preview run never sees
-  // outside its own prefix, and a site run steps over them.
+  // channels are not in scope: a channel run never sees outside its own prefix,
+  // and a release steps over the development channel and every open pull
+  // request's preview alike.
   const stale = (await inventory(s3, BucketName)).filter(
-    (key) => !keys.has(key) && (PREVIEW || !isPreview(key)),
+    (key) => !keys.has(key) && (PREFIX || !inChannel.test(key)),
   );
   await drop(s3, BucketName, stale);
 
@@ -316,7 +349,7 @@ async function main() {
   // knowing which bucket you just published to is rather the point.
   const mib = (n) => (n / 1048576).toFixed(1);
   const target = process.env.CI ? '' : ` to ${BucketName}`;
-  const where = PREVIEW ? ` under /${PREVIEW}/` : '';
+  const where = PREFIX ? ` under /${PREFIX}/` : '';
   console.log(
     `Published ${files.length} files${where}${target}: ` +
       `${mib(raw)} MiB on disk, ${mib(sent)} MiB stored and served.`,

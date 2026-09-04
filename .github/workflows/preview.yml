@@ -6,6 +6,10 @@
 # page — the `/onebuilding` weather origin and the pre-compressed engine — exist
 # only at the edge and cannot be exercised on localhost at all. A preview served
 # from anywhere else would test the half that never fails.
+#
+# It is the same arrangement `main` itself is published under — a channel one
+# directory in, at a reserved top-level name — and the release at the root is
+# that same artefact moved there by a tag. See `.github/workflows/deploy.yml`.
 name: Preview
 
 on:
@@ -70,7 +74,7 @@ jobs:
       - run: npm run deploy
         env:
           SHOEBOX_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-          SHOEBOX_PREVIEW: ${{ github.event.number }}
+          SHOEBOX_PREFIX: ${{ github.event.number }}
 
       # The comment comes from the idfkit app rather than github-actions[bot] so
       # that the link is posted by the same identity the organisation's other
@@ -94,13 +98,24 @@ jobs:
             // is not a commit anyone reviewing this can find. The head is.
             const sha = context.payload.pull_request.head.sha.slice(0, 7);
             const url = `https://shoebox.idfkit.com/${context.issue.number}/`;
+            // Joined with spaces, not newlines. GitHub comments are GFM with
+            // hard line breaks on, so a single newline renders as a `<br>` —
+            // source wrapping becomes the reader's wrapping, at a column that
+            // is never theirs. The notification email is the same body again,
+            // and on a phone every one of those breaks lands mid-sentence and
+            // then wraps a second time. Paragraphs are joined with newlines;
+            // only the lines *within* one are joined here.
+            const built = [
+              `Built from ${sha}. It is the whole page, engine and schema bundle and`,
+              'weather proxy, served from the same distribution as the site. It is',
+              'removed when this pull request closes; once merged, `main` is at',
+              'https://shoebox.idfkit.com/dev/ until the next release.',
+            ].join(' ');
             const body = [
               '<!-- shoebox-preview-comment -->',
               `**Preview** of this pull request: ${url}`,
               '',
-              `Built from ${sha}. It is the whole page, engine and schema bundle and`,
-              'weather proxy, served from the same distribution as the site. It is',
-              'removed when this pull request closes.',
+              built,
             ].join('\n');
             // Resolved against the workspace: `require` inside github-script
             // otherwise looks in the action's own directory, not the checkout.
@@ -138,7 +153,7 @@ jobs:
       - run: npm run undeploy
         env:
           SHOEBOX_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-          SHOEBOX_PREVIEW: ${{ github.event.number }}
+          SHOEBOX_PREFIX: ${{ github.event.number }}
 
       - name: Mint app token
         id: app-token
@@ -155,12 +170,17 @@ jobs:
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
+            // One paragraph, spaces not newlines. See the publish job above.
+            const gone = [
+              'It was published while the pull request was open. `main` is at',
+              'https://shoebox.idfkit.com/dev/, and the last release is at',
+              'https://shoebox.idfkit.com/.',
+            ].join(' ');
             const body = [
               '<!-- shoebox-preview-comment -->',
               `**Preview** for this pull request has been removed.`,
               '',
-              'It was published while the pull request was open; the current page is',
-              'at https://shoebox.idfkit.com/.',
+              gone,
             ].join('\n');
             const comment = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/preview-comment.cjs`);
             await comment({ github, context, body, edit: true });
