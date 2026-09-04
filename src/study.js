@@ -6,11 +6,21 @@
  * it started, and the only thing that survives is the curve. This module holds
  * the part of that with no DOM and no engine in it, so the same Node script
  * that checks `applyModel` for idempotence can check the sampling too — and,
- * since the metrics moved here, what each sample is read *for* as well.
+ * since the quantities moved here, what each sample is read *for* as well.
  */
 
-import { readDemand, readExtremes } from './readings.js';
-import { COUNT_CATEGORY, readCriterionA } from './tm59.js';
+import { END_USES } from './bill.js';
+// The two declarations `model.js` also reads, kept in a leaf module of their own
+// so that reading them there cannot close an import cycle. Re-exported here
+// because this is where they are declared *about*: every importer that had
+// them from `study.js` still does.
+import { RunContents, VariableRequest } from './contents.js';
+import { CHANNELS, CHANNEL_BY_ID } from './controls.js';
+import { readDemand, readExtremes, readOverheat, readPeaks } from './readings.js';
+import { PRESETS } from './schemes.js';
+import { COUNT_CATEGORY, CRITERION_BY_ID, readCriterionA, readCriterionB, readCriterionC } from './tm59.js';
+
+export { RunContents, VariableRequest };
 
 export const SWEEP_SAMPLES = 21;
 
@@ -151,137 +161,428 @@ export function samplePoints(control, current, n = SWEEP_SAMPLES) {
  */
 export const TM59_STUDY_CATEGORY = COUNT_CATEGORY;
 
-/**
- * What one sample of one study is read for.
- *
- * A declaration rather than a switch, for the reason `controls.js` is one: the
- * metric id travels on the job, into the cache key and into the study card,
- * and it decides two separate things that used to be stated in two places —
- * which reporting profile the sample's document is written with, and which
- * reader the finished run is handed to. Those two were one string only by luck,
- * while every metric's profile happened to share its name, and they part
- * company at the first criterion: `'tm59a'` is read off the `'tm59'` profile,
- * which is named for the method because criteria b and c would be read off the
- * same three series. Left as `{ reporting: job.metric }`, the first criterion
- * metric asks `syncReporting` for a profile called `tm59a`, which throws inside
- * `buildSample` — inside the sample's own promise, where the scheduler lands a
- * rejection as a gap — so the whole sweep comes back empty and nothing says why.
- *
- * `read` takes the parsed ESO first, the way every reader in `readings.js`
- * does, and a bag of what the sample carries second: `built` is what
- * `buildSample` returned, and `context` is the per-study fact the scheduler
- * resolved once for the whole sweep.
- */
-export class Metric {
-  constructor({ id, reporting, read }) {
+const request = (name, frequency = 'Hourly', key = '*') =>
+  new VariableRequest({ name, frequency, key });
+
+/** One line a quantity draws when its reading carries one or more outcomes. */
+export class QuantitySeries {
+  constructor({ id, label, pen = null, select = (reading) => reading, format = null }) {
+    if (!id || !label) throw new Error('a quantity series needs an id and label');
+    if (pen !== null && pen !== '--warm' && pen !== '--cold') {
+      throw new Error(`the quantity series "${id}" declares unknown pen "${pen}"`);
+    }
+    if (typeof select !== 'function') throw new Error(`the quantity series "${id}" declares no selector`);
+    if (format !== null && typeof format !== 'function') {
+      throw new Error(`the quantity series "${id}" formatter is not a function or null`);
+    }
     this.id = id;
-    this.reporting = reporting;
-    this.read = read;
+    this.label = label;
+    this.pen = pen;
+    this.select = select;
+    this.format = format;
     Object.freeze(this);
   }
 }
 
-export const METRICS = Object.freeze([
-  new Metric({
-    id: 'extremes',
-    reporting: 'extremes',
-    // Free-running, the zone's two extremes are the design quantities, and one
-    // hourly series answers both.
-    read: (eso) => readExtremes(eso),
+/** One aggregate outcome, or a declared pair of outcomes, a study may draw. */
+export class Quantity {
+  constructor({
+    id,
+    label,
+    unit,
+    digits,
+    needs,
+    context = null,
+    read,
+    pen = null,
+    series = null,
+    meterScope = null,
+    wholeYear = false,
+    priced = null,
+  }) {
+    if (!id || !label || !unit) throw new Error(`the study quantity "${id || '(unnamed)'}" lacks its identity or lettering`);
+    if (!Number.isInteger(digits) || digits < 0) {
+      throw new Error(`the study quantity "${id}" declares ${digits} digits; digits must be a non-negative integer`);
+    }
+    if (!(needs instanceof RunContents) || needs.empty) {
+      throw new Error(`the study quantity "${id}" declares no run contents, so no run can answer it`);
+    }
+    if (context !== null && typeof context !== 'function') {
+      throw new Error(`the study quantity "${id}" context is not a function or null`);
+    }
+    if (typeof read !== 'function') {
+      throw new Error(`the study quantity "${id}" declares no reader, so a finished sample has nothing to be`);
+    }
+    if (pen !== null && pen !== '--warm' && pen !== '--cold') {
+      throw new Error(`the study quantity "${id}" declares unknown pen "${pen}"`);
+    }
+    if (meterScope !== null && meterScope !== 'building' && meterScope !== 'all') {
+      throw new Error(`the study quantity "${id}" declares unknown meter scope "${meterScope}"`);
+    }
+    if (priced !== null && priced !== 'cost' && priced !== 'carbon') {
+      throw new Error(`the study quantity "${id}" declares unknown priced field "${priced}"`);
+    }
+    const lines = series ?? [new QuantitySeries({ id, label, pen })];
+    if (!Array.isArray(lines) || !lines.length || lines.some((line) => !(line instanceof QuantitySeries))) {
+      throw new Error(`the study quantity "${id}" needs at least one declared series`);
+    }
+    if (new Set(lines.map((line) => line.id)).size !== lines.length) {
+      throw new Error(`the study quantity "${id}" declares the same series twice`);
+    }
+    this.id = id;
+    this.label = label;
+    this.unit = unit;
+    this.digits = digits;
+    this.needs = needs;
+    this.context = context;
+    this.read = read;
+    this.pen = pen;
+    this.series = Object.freeze([...lines]);
+    this.meterScope = meterScope;
+    this.wholeYear = Boolean(wholeYear);
+    this.priced = priced;
+    Object.freeze(this);
+  }
+}
+
+/** One quantity measured against the desk as it stands, never stored. */
+export class Offer {
+  constructor({ quantity, available, reason = null, fix = null, unit = quantity.unit }) {
+    if (!(quantity instanceof Quantity)) throw new Error('an offer must carry a declared Quantity');
+    if (Boolean(available) === Boolean(reason || fix)) {
+      throw new Error(`the offer for "${quantity.id}" must carry either availability or a reason and fix`);
+    }
+    if (!available && (!reason || !fix)) {
+      throw new Error(`the unavailable offer for "${quantity.id}" needs both a reason and a fix`);
+    }
+    this.quantity = quantity;
+    this.available = Boolean(available);
+    this.reason = reason;
+    this.fix = fix;
+    this.unit = unit;
+    Object.freeze(this);
+  }
+}
+
+export class PricingStatus {
+  constructor({ available, reason = null, fix = null }) {
+    if (Boolean(available) === Boolean(reason || fix)) {
+      throw new Error('a pricing status must carry either availability or a reason and fix');
+    }
+    if (!available && (!reason || !fix)) throw new Error('an unavailable pricing status needs a reason and fix');
+    this.available = Boolean(available);
+    this.reason = reason;
+    this.fix = fix;
+    Object.freeze(this);
+  }
+}
+
+export class PricingAvailability {
+  constructor({ currency, cost, carbon }) {
+    if (!currency || !(cost instanceof PricingStatus) || !(carbon instanceof PricingStatus)) {
+      throw new Error('pricing availability needs a currency and cost/carbon statuses');
+    }
+    this.currency = currency;
+    this.cost = cost;
+    this.carbon = carbon;
+    Object.freeze(this);
+  }
+}
+
+const ZONE_AIR = request('Zone Mean Air Temperature');
+const OPERATIVE = request('Zone Operative Temperature');
+const OCCUPANCY = request('Schedule Value', 'Hourly', 'Occupancy');
+const SYSTEM_TRANSFER = request('Zone Air Heat Balance System Air Transfer Rate');
+const meterFor = (id) => {
+  const use = END_USES.find((candidate) => candidate.id === id);
+  if (!use) throw new Error(`no end use is declared as "${id}"`);
+  return use.meter;
+};
+
+const EXTREMES = new RunContents({ variables: [ZONE_AIR] });
+const ANNUAL_EXTREMES = new RunContents({ variables: [ZONE_AIR], annual: true });
+const DEMAND = new RunContents({
+  variables: [ZONE_AIR],
+  meters: [meterFor('heating'), meterFor('cooling')],
+  annual: true,
+  channels: ['system'],
+});
+const BILL = new RunContents({ variables: [ZONE_AIR], annual: true });
+const PEAKS = new RunContents({ variables: [ZONE_AIR, SYSTEM_TRANSFER], channels: ['system'] });
+const TM59_AB = new RunContents({
+  variables: [ZONE_AIR, OPERATIVE, OCCUPANCY],
+  annual: true,
+  channels: ['gains'],
+  season: true,
+});
+const TM59_B = new RunContents({ variables: [ZONE_AIR, OPERATIVE], annual: true, season: true });
+
+const finite = (value) => (Number.isFinite(value) ? value : null);
+const fieldFrom = (reader, field) => (landed, options) =>
+  finite(reader(landed.eso, options?.built?.floorArea)?.[field]);
+const criterionValue = (reading) => finite(reading?.value);
+const completeBillTotal = (bill, field) => {
+  if (!bill?.lines.length || bill.lines.some((line) => !Number.isFinite(line[field]))) return null;
+  return finite(bill.total(field));
+};
+
+/** Resolve a declaration's variable and meter needs against the channels this desk can produce. */
+export function contentsFor(quantity, channels = []) {
+  if (!(quantity instanceof Quantity)) throw new Error('contentsFor expected a declared Quantity');
+  const engaged = new Set(channels);
+  const scopedMeters = quantity.meterScope
+    ? END_USES.filter((use) => quantity.meterScope === 'all' || use.group === 'building')
+        .filter((use) => !use.needs || engaged.has(use.needs))
+        .map((use) => use.meter)
+    : [];
+  return new RunContents({
+    variables: quantity.needs.variables,
+    meters: [...quantity.needs.meters, ...scopedMeters],
+    tables: quantity.needs.tables,
+    annual: quantity.needs.annual,
+    channels: quantity.needs.channels,
+    season: quantity.needs.season,
+  });
+}
+
+export const QUANTITIES = Object.freeze([
+  new Quantity({
+    id: 'extremes', label: 'High + low zone temperature', unit: '°C', digits: 1, needs: EXTREMES,
+    read: (landed) => {
+      const reading = readExtremes(landed.eso);
+      return reading ? Object.freeze(reading) : null;
+    },
+    series: [
+      new QuantitySeries({ id: 'high', label: 'High', pen: '--warm', select: (reading) => reading?.high }),
+      new QuantitySeries({ id: 'low', label: 'Low', pen: '--cold', select: (reading) => reading?.low }),
+    ],
   }),
-  new Metric({
-    id: 'energy',
-    reporting: 'energy',
-    // Each sample's intensity divides by that sample's own floor, which the
-    // swept key may itself be moving — hence off `built` rather than off the
-    // desk. `buildSample` is what measures it, at the moment the overlay is in
-    // the document and before it is restored.
-    read: (eso, { built }) => readDemand(eso, built.floorArea),
+  new Quantity({
+    id: 'demand', label: 'Heating + cooling demand', unit: 'kWh/m²·yr', digits: 1, needs: DEMAND,
+    wholeYear: true,
+    read: (landed, options) => {
+      const reading = readDemand(landed.eso, options?.built?.floorArea);
+      return reading ? Object.freeze(reading) : null;
+    },
+    series: [
+      new QuantitySeries({ id: 'tedi', label: 'TEDI', pen: '--warm', select: (reading) => reading?.tedi }),
+      new QuantitySeries({ id: 'cedi', label: 'CEDI', pen: '--cold', select: (reading) => reading?.cedi }),
+    ],
   }),
-  new Metric({
-    id: 'tm59a',
-    // Three series against the sheet's fifteen: the zone mean air temperature
-    // `zoneRuns` splits environments on, `Zone Operative Temperature`, and the
-    // occupancy schedule value that is the criterion's denominator.
-    reporting: 'tm59',
-    read: (eso, { context }) => readTm59A(eso, context),
+  new Quantity({
+    id: 'eui', label: 'Energy use intensity', unit: 'kWh/m²·yr', digits: 1, needs: BILL,
+    meterScope: 'building',
+    wholeYear: true,
+    read: (landed) => finite(landed.bill?.wholeYear ? landed.bill.intensity('metered') : null),
+  }),
+  new Quantity({
+    id: 'cost', label: 'Cost', unit: 'local currency', digits: 1, needs: BILL,
+    meterScope: 'all',
+    priced: 'cost',
+    read: (landed) => {
+      const value = completeBillTotal(landed.bill, 'cost');
+      return value === null ? null : Object.freeze({ value, currency: landed.bill.currency });
+    },
+    series: [
+      new QuantitySeries({
+        id: 'cost',
+        label: 'Cost',
+        select: (reading) => reading?.value,
+        format: (value, reading) => reading.currency.format(value, Math.abs(value) < 100 ? 2 : 0),
+      }),
+    ],
+  }),
+  new Quantity({
+    id: 'carbon', label: 'Carbon', unit: 'kgCO₂e', digits: 1, needs: BILL,
+    meterScope: 'all',
+    priced: 'carbon',
+    read: (landed) => completeBillTotal(landed.bill, 'carbon'),
+  }),
+  new Quantity({
+    id: 'overheat', label: 'Hours above 25 °C', unit: '% of the year', digits: 1, needs: ANNUAL_EXTREMES,
+    wholeYear: true,
+    read: (landed) => finite(readOverheat(landed.eso, 25)),
+  }),
+  new Quantity({
+    id: 'peakHeat', label: 'Peak heating load', unit: 'W/m²', digits: 1, needs: PEAKS, pen: '--warm',
+    read: fieldFrom(readPeaks, 'peakHeat'),
+  }),
+  new Quantity({
+    id: 'peakCool', label: 'Peak cooling load', unit: 'W/m²', digits: 1, needs: PEAKS, pen: '--cold',
+    read: fieldFrom(readPeaks, 'peakCool'),
+  }),
+  new Quantity({
+    id: 'tm59a', label: `${CRITERION_BY_ID.a.label} · ${TM59_STUDY_CATEGORY.label}`,
+    unit: CRITERION_BY_ID.a.unit, digits: 1, needs: TM59_AB,
+    context: (desk) => ({ trm: desk.runningMean, floor: desk.occupiedFloor }),
+    read: (landed, { context }) => criterionValue(readCriterionA(landed.eso, context.trm, TM59_STUDY_CATEGORY, context.floor)),
+  }),
+  new Quantity({
+    id: 'tm59b', label: `${CRITERION_BY_ID.b.label} · ${TM59_STUDY_CATEGORY.label}`,
+    unit: CRITERION_BY_ID.b.unit, digits: 0, needs: TM59_B,
+    read: (landed) => criterionValue(readCriterionB(landed.eso, TM59_STUDY_CATEGORY)),
+  }),
+  new Quantity({
+    id: 'tm59c', label: CRITERION_BY_ID.c.label, unit: CRITERION_BY_ID.c.unit, digits: 1, needs: TM59_AB,
+    context: (desk) => ({ floor: desk.occupiedFloor }),
+    read: (landed, { context }) => criterionValue(readCriterionC(landed.eso, context.floor)),
   }),
 ]);
 
-export const METRIC_BY_ID = Object.freeze(Object.fromEntries(METRICS.map((m) => [m.id, m])));
+export const QUANTITY_BY_ID = Object.freeze(Object.fromEntries(QUANTITIES.map((quantity) => [quantity.id, quantity])));
+
+export const OPENING_QUANTITY_BASIS = Object.freeze({
+  demand: 'A weather year and System are both in the path, so the opening question is thermal demand.',
+  tm59a: 'The desk is chasing TM59 and its seasonal occupied run can answer criterion a.',
+  extremes: 'Without an annual system or a TM59 chase, the opening question is the zone temperature range.',
+});
+
+/** The legacy inference retained once as an opening guess, never as live state. */
+export function openingQuantity({ annual, system, chasingTm59, gains, season, runningMean }) {
+  if (annual && system) return QUANTITY_BY_ID.demand;
+  if (chasingTm59 && annual && gains && season && runningMean) return QUANTITY_BY_ID.tm59a;
+  return QUANTITY_BY_ID.extremes;
+}
 
 /**
- * Three declaration checks, every one of them for an error that would otherwise
- * cost a whole sweep and report nothing.
+ * Everything any declared quantity could ever ask a run for.
  *
- * A duplicated id would have the later declaration silently win in
- * `METRIC_BY_ID`, so a study asked for one reading would be handed another's;
- * a missing reader leaves every sample of that metric landing as `undefined`,
- * which the scheduler spreads into the curve as a point with nothing on it and
- * reports as a sweep that drew nothing; and a profile name that has drifted
- * from what `syncReporting` knows throws inside `buildSample`, which
- * runs inside the sample's own promise, where the scheduler lands a rejection
- * as a gap — twenty-one gaps, a card reporting "no readings", and nothing
- * anywhere saying the profile was misspelled. The profile names themselves
- * cannot be asserted against `model.js` from here without pulling the whole
- * model into a module the scheduler's harness imports, so what is checked is
- * that each metric declares one at all.
+ * `QUANTITIES` is frozen at module load, so this union is a constant and is
+ * taken once rather than twice per call: `offersFor` runs from `partialStudy`
+ * on every landed sample of every study, and two unions of eleven declarations
+ * per call is arithmetic that cannot have changed since the page mounted.
  */
-{
-  const seen = new Set();
-  for (const metric of METRICS) {
-    if (seen.has(metric.id)) throw new Error(`two study metrics are declared as "${metric.id}"`);
-    seen.add(metric.id);
-    if (!metric.reporting) {
-      throw new Error(`the study metric "${metric.id}" declares no reporting profile to write its samples with`);
+const EVERY_NEED = RunContents.union(QUANTITIES.map((quantity) => quantity.needs));
+
+/** All declared quantities measured against current run capabilities. */
+export function offersFor({
+  annual = false,
+  wholeYear = false,
+  season = false,
+  channels = [],
+  pricing = null,
+} = {}) {
+  const engaged = new Set(channels);
+  const possible = new RunContents({
+    variables: EVERY_NEED.variables,
+    meters: EVERY_NEED.meters,
+    tables: true,
+    annual,
+    season,
+    channels: engaged,
+  });
+  return QUANTITIES.map((quantity) => {
+    const missingChannel = quantity.needs.channels.find((channel) => !engaged.has(channel));
+    if (missingChannel) {
+      const label = CHANNEL_BY_ID[missingChannel]?.name ?? missingChannel;
+      return new Offer({
+        quantity,
+        available: false,
+        reason: `Patch ${label} in; ${quantity.label.toLowerCase()} needs that channel's output.`,
+        fix: `Patch ${label} in.`,
+      });
     }
-    if (typeof metric.read !== 'function') {
-      throw new Error(`the study metric "${metric.id}" declares no reader, so a finished sample has nothing to be`);
+    if (quantity.needs.annual && !annual) {
+      return new Offer({
+        quantity,
+        available: false,
+        reason: `Attach a weather file; ${quantity.label.toLowerCase()} is a year's quantity.`,
+        fix: 'Attach a weather file.',
+      });
+    }
+    if (quantity.wholeYear && !wholeYear) {
+      return new Offer({
+        quantity,
+        available: false,
+        reason: `${quantity.label} needs all twelve months, and this run covers only part of the year.`,
+        fix: 'Put all twelve months back on the Run strip.',
+      });
+    }
+    if (quantity.needs.season && !season) {
+      return new Offer({
+        quantity,
+        available: false,
+        reason: `Run some of May to September; ${quantity.label.toLowerCase()} is a summer quantity.`,
+        fix: 'Include at least one month from May to September.',
+      });
+    }
+    const resolved = contentsFor(quantity, channels);
+    if (quantity.meterScope && !resolved.meters.length) {
+      const paths = quantity.meterScope === 'building' ? 'System or Gains' : 'System, Gains, or Grounds';
+      return new Offer({
+        quantity,
+        available: false,
+        reason: `${quantity.label} has no producible meter on this desk.`,
+        fix: `Patch ${paths} in.`,
+      });
+    }
+    if (quantity.priced) {
+      const status = pricing?.[quantity.priced];
+      if (!(status instanceof PricingStatus)) {
+        throw new Error(`offersFor: the priced quantity "${quantity.id}" has no pricing status`);
+      }
+      if (!status.available) {
+        return new Offer({ quantity, available: false, reason: status.reason, fix: status.fix });
+      }
+    }
+    return new Offer({
+      quantity,
+      available: possible.answers(quantity.needs),
+      unit: quantity.priced === 'cost' ? pricing.currency : quantity.unit,
+    });
+  });
+}
+
+/** Refuse a roster containing a quantity no supplied reachable desk can offer. */
+export function assertQuantityReachability(quantities, reachableOffers) {
+  for (const quantity of quantities) {
+    const offer = reachableOffers.find((candidate) => candidate.quantity === quantity);
+    if (!offer?.available) {
+      const reason = offer ? `${offer.reason} ${offer.fix}` : 'no reachable desk evaluated it';
+      throw new Error(`the study quantity "${quantity.id}" is unreachable: ${reason}`);
     }
   }
 }
 
-/**
- * Criterion a over one sample's run, as the one number a curve can be drawn
- * from: the share of occupied hours standing at least 1 K above the adaptive
- * line, in per cent, against the criterion's own limit of 3 %.
- *
- * **Null where the run cannot answer, never zero** (FR-025). `readCriterionA`
- * hands back a `Reading` that carries either a value or the reason it has none
- * — a sample solved over design days reached no part of 1 May to 30 September,
- * a sample with Gains patched out has no occupied hours to be a share of — and
- * a share of zero is a measurement: it says the building spent no occupied
- * hour over the line, which is the best possible reading rather than a missing
- * one. So the absence is dropped here and the sample is left out of the curve
- * altogether. The scheduler already keeps the sample's position in `job.curve`
- * with no reading attached, and the card's `segments` breaks the line at a
- * point whose selector returns null, so the gap draws as a gap.
- *
- * The absence sentence itself is deliberately not carried through. A point
- * carrying a reason and no share would satisfy the scheduler's own test for
- * "did this curve draw anything", and a sweep of twenty-one refusals would
- * finish as a study rather than as the failure it is.
- *
- * @param {object} eso      the parsed ESO the sample's run returned
- * @param {object} context  `{ trm, floor }`, resolved once for the whole sweep
- * @returns {{ share: number }|null}
- */
-export function readTm59A(eso, context) {
-  if (!context) {
-    throw new Error(
-      'readTm59A: no study context. Criterion a is read against a running mean built from the weather ' +
-        'file and divided by the occupied hours the gains schedule wrote, and neither is recoverable ' +
-        'from the ESO — see `contextFor` in `scheduler.js`',
-    );
+{
+  const seen = new Set();
+  for (const quantity of QUANTITIES) {
+    if (seen.has(quantity.id)) throw new Error(`two study quantities are declared as "${quantity.id}"`);
+    seen.add(quantity.id);
+    for (const channel of quantity.needs.channels) {
+      if (!CHANNEL_BY_ID[channel]) {
+        throw new Error(`the study quantity "${quantity.id}" needs unknown channel "${channel}"`);
+      }
+    }
   }
-  const { trm, floor } = context;
-  if (!Number.isFinite(floor)) {
-    throw new Error(
-      `readTm59A: the study context carries ${floor} as the occupancy schedule's unoccupied value. It is ` +
-        '`occupiedFloor(params)` in `model.js` and it is the criterion\'s denominator: the wrong one ' +
-        'counts 3,672 occupied hours where the answer is 1,100',
-    );
+
+  const targetIds = new Set(PRESETS.flatMap((preset) => preset.targets.map((target) => target.metric)));
+  const declaredIds = new Set(
+    QUANTITIES.flatMap((quantity) => [quantity.id, ...quantity.series.map((series) => series.id)]),
+  );
+  const nonTargets = new Set(['extremes', 'demand', 'high', 'low', 'cost', 'carbon']);
+  for (const id of targetIds) {
+    if (!declaredIds.has(id)) throw new Error(`the target metric "${id}" has no study quantity declaration`);
   }
-  const reading = readCriterionA(eso, trm, TM59_STUDY_CATEGORY, floor);
-  return reading.value === null ? null : { share: reading.value };
+  for (const quantity of QUANTITIES) {
+    if (!targetIds.has(quantity.id) && !nonTargets.has(quantity.id)) {
+      throw new Error(`the study quantity "${quantity.id}" is neither a target metric nor a declared non-target outcome`);
+    }
+  }
+
+  const forward = RunContents.union(QUANTITIES.map((quantity) => quantity.needs)).serialize();
+  const reverse = RunContents.union([...QUANTITIES].reverse().map((quantity) => quantity.needs)).serialize();
+  if (forward !== reverse) throw new Error('RunContents union order changes its canonical serialization');
+
+  const available = new PricingStatus({ available: true });
+  assertQuantityReachability(
+    QUANTITIES,
+    offersFor({
+      annual: true,
+      wholeYear: true,
+      season: true,
+      channels: CHANNELS.map((channel) => channel.id),
+      pricing: new PricingAvailability({ currency: 'USD', cost: available, carbon: available }),
+    }),
+  );
 }
