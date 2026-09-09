@@ -189,9 +189,19 @@ what was true when they were written.
   obtains today: reading an IDF, writing an IDF, the model document type, the
   schema bundle and its HTTP source, the station index, and the weather file
   download.
-- **FR-003**: For any desk position, the IDF written after the upgrade MUST be
-  byte-identical to the IDF written before it, with the single exception of the
-  header line naming the toolkit.
+- **FR-003**: For any desk position, the IDF written after the upgrade MUST carry
+  identical content to the IDF written before it. Content identity is defined as
+  equality once the run of whitespace before each field comment is collapsed to
+  one space, which admits the two differences the upgrade makes on purpose: the
+  header line naming the toolkit, and the corrected comment column. Any other
+  difference is a failure. *(Amended after Phase 0 measurement; the original
+  wording asked for byte identity, which the corrected comment column makes
+  unreachable. See research.md, Decision 2.)*
+- **FR-003a**: Where an object changes position in the file because the new
+  libraries no longer register a type on a read, the run MUST be shown to be
+  unaffected: same exit code, same warning and severe counts, and identical
+  result series. *(Added after Phase 0 measurement. See research.md,
+  Decision 3.)*
 - **FR-004**: For any desk position, the simulation results after the upgrade
   MUST be identical to those before it: the same energy totals, the same
   temperature series, the same warning and error counts.
@@ -208,7 +218,11 @@ what was true when they were written.
   the range declared in the manifest.
 - **FR-009**: Where the installed version cannot be read, the sheet MUST letter
   an em dash rather than substitute any default.
-- **FR-010**: The bytes a reader downloads on a cold visit MUST NOT increase.
+- **FR-010**: The increase in what a reader downloads on a cold visit MUST be
+  measured and MUST stay within 200 KB, and no file the page never fetches may
+  contribute to it. *(Amended after Phase 0 measurement; the original wording
+  forbade any increase, and the type store the page must read to load a schema
+  at all grows by about 140 KB. See research.md, Decision 4.)*
 - **FR-011**: The weather station picker MUST still find stations and fetch
   weather files, both through the development server and through the deployed
   distribution.
@@ -239,8 +253,8 @@ what was true when they were written.
 ### Measurable Outcomes
 
 - **SC-001**: Across a spread of desk positions exercising every channel, 100% of
-  written models are byte-identical before and after the upgrade, once the single
-  toolkit header line is set aside.
+  written models carry identical content before and after the upgrade, by the
+  definition in FR-003.
 - **SC-002**: Across those same positions, 100% of simulation runs return
   identical energy totals, temperature series and warning counts.
 - **SC-003**: 100% of permalinks minted before the upgrade are accepted and
@@ -251,8 +265,8 @@ what was true when they were written.
   annual run, study, run bundle download) with no error, on the published build.
 - **SC-006**: A design day still solves within the page's stated live budget of
   roughly 50 ms once the engine is warm, and an annual run within roughly 0.7 s.
-- **SC-007**: The bytes transferred on a cold visit are the same or fewer than
-  before the upgrade.
+- **SC-007**: The measured increase in bytes transferred on a cold visit is
+  within 200 KB, and is accounted for file by file.
 - **SC-008**: A search of the repository for the superseded document name returns
   no result outside the changelog and previously completed specifications.
 - **SC-009**: Every IDF the page hands out names `0.3.0-rc.3` as its toolkit.
