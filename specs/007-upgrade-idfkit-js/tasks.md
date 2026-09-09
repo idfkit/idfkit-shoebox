@@ -45,11 +45,11 @@ housekeeping: the baseline cannot be reconstructed after the pins move without
 reinstalling the old libraries, and every gate in this feature is a comparison
 against it.
 
-- [ ] T001 Confirm the working tree is clean with `git status`, so any later difference is attributable to the upgrade rather than to work in progress
-- [ ] T002 Install the currently declared pins with `npm install` and confirm `npm ls @idfkit/core @idfkit/schemas @idfkit/weather` reports 0.1.0 for all three
-- [ ] T003 Capture the baseline spread with `SHOEBOX_ROOT="$PWD" OUT_DIR=/tmp/shoebox-base node specs/007-upgrade-idfkit-js/verify/build-positions.mjs`, confirming eight positions, none reporting `NOT IDEMPOTENT` or `THREW`, and every position reporting 69 types
-- [ ] T004 Record the pre-upgrade cold-visit sizes: `npm run build`, then `ls -l public/schemas/types.json.gz public/schemas/manifest-26-1-0.json.gz` and `du -sk public/schemas`
-- [ ] T005 Mint a permalink from the running page on the current release and save it, since FR-006 is the one requirement no harness can answer and it needs a link that predates the upgrade
+- [X] T001 Confirm the working tree is clean with `git status`, so any later difference is attributable to the upgrade rather than to work in progress
+- [X] T002 Install the currently declared pins with `npm install` and confirm `npm ls @idfkit/core @idfkit/schemas @idfkit/weather` reports 0.1.0 for all three
+- [X] T003 Capture the baseline spread with `SHOEBOX_ROOT="$PWD" OUT_DIR=/tmp/shoebox-base node specs/007-upgrade-idfkit-js/verify/build-positions.mjs`, confirming eight positions, none reporting `NOT IDEMPOTENT` or `THREW`, and every position reporting 69 types
+- [X] T004 Record the pre-upgrade cold-visit sizes: `npm run build`, then `ls -l public/schemas/types.json.gz public/schemas/manifest-26-1-0.json.gz` and `du -sk public/schemas`
+- [X] T005 Mint a permalink from the running page on the current release and save it, since FR-006 is the one requirement no harness can answer and it needs a link that predates the upgrade
 
 **Checkpoint**: `/tmp/shoebox-base` holds eight IDFs and eight type listings, and a pre-upgrade link is saved. Nothing has changed yet.
 
@@ -62,12 +62,12 @@ nothing can be verified until the page builds on the new libraries.
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T006 Move the three pins in `package.json` to the exact string `0.3.0-rc.3` for `@idfkit/core`, `@idfkit/schemas` and `@idfkit/weather`, with no caret or tilde, leaving `@idfkit/engine` and `@idfkit/engine-assets` untouched
-- [ ] T007 Run `npm install` to regenerate `package-lock.json` against the new pins
-- [ ] T008 Verify exactly one copy of each package resolves with `npm ls @idfkit/core @idfkit/schemas @idfkit/weather`, confirming no nested duplicate of `@idfkit/schemas` beneath `@idfkit/core`, which is the failure that reports nothing at either end
-- [ ] T009 Run `npm run build` and confirm it stops with `"IDFDocument" is not exported by ... imported by "src/model.js"`, which is the loud half of the crossing announcing itself
-- [ ] T010 Rename the import and the construction in `src/model.js`: `IDFDocument` becomes `IdfDocument` on line 1 and at the `new IDFDocument(schema)` in `buildModel`
-- [ ] T011 Run `npm run build` again and confirm it completes with no unresolved import and no missing subpath
+- [X] T006 Move the three pins in `package.json` to the exact string `0.3.0-rc.3` for `@idfkit/core`, `@idfkit/schemas` and `@idfkit/weather`, with no caret or tilde, leaving `@idfkit/engine` and `@idfkit/engine-assets` untouched
+- [X] T007 Run `npm install` to regenerate `package-lock.json` against the new pins
+- [X] T008 Verify exactly one copy of each package resolves with `npm ls @idfkit/core @idfkit/schemas @idfkit/weather`, confirming no nested duplicate of `@idfkit/schemas` beneath `@idfkit/core`, which is the failure that reports nothing at either end
+- [X] T009 Run `npm run build` and confirm it stops with `"IDFDocument" is not exported by ... imported by "src/model.js"`, which is the loud half of the crossing announcing itself
+- [X] T010 Rename the import and the construction in `src/model.js`: `IDFDocument` becomes `IdfDocument` on line 1 and at the `new IDFDocument(schema)` in `buildModel`
+- [X] T011 Run `npm run build` again and confirm it completes with no unresolved import and no missing subpath
 
 **Checkpoint**: The page builds on `0.3.0-rc.3`. Every user story can now proceed.
 
@@ -81,13 +81,13 @@ and the gate the feature turns on.
 **Independent Test**: Entirely answered by the harness and a real EnergyPlus run.
 No browser, no interface work, nothing from any other story.
 
-- [ ] T012 [US1] Write the new spread with `SHOEBOX_ROOT="$PWD" OUT_DIR=/tmp/shoebox-new node specs/007-upgrade-idfkit-js/verify/build-positions.mjs`, confirming no position reports `NOT IDEMPOTENT` or `THREW` and that type counts have fallen from a uniform 69 to between 28 and 45
-- [ ] T013 [US1] Compare the two spreads with `node specs/007-upgrade-idfkit-js/verify/compare.mjs /tmp/shoebox-base /tmp/shoebox-new` and confirm every position reports `content same`. Any `CONTENT DIFFERS` is a failure and must be understood before anything else proceeds
-- [ ] T014 [US1] Confirm the order differences are confined to `07-everything-in`, and that the seven other positions report `order same`. A reordering at a position Phase 0 did not predict needs its own explanation before it is accepted
-- [ ] T015 [US1] Run the reordered position both ways through EnergyPlus 26.1.0 into `/tmp/run-base` and `/tmp/run-new`, and confirm both exit 0
-- [ ] T016 [US1] Assert the runs agree: `cmp` silent on both `eplusout.eso` and `eplusout.mtr`, and the same warning and severe counts in the last line of each `eplusout.err`. This is FR-003a, and it is what makes a reordering harmless rather than merely unlikely
-- [ ] T017 [P] [US1] Run every IDF in `/tmp/shoebox-new` through schema validation and the integrity check, per the constitution's third quality gate
-- [ ] T018 [P] [US1] Grep each new run's `eplusout.err` for "requested but not generated" and confirm no output variable the page asks for has gone missing between library versions
+- [X] T012 [US1] Write the new spread with `SHOEBOX_ROOT="$PWD" OUT_DIR=/tmp/shoebox-new node specs/007-upgrade-idfkit-js/verify/build-positions.mjs`, confirming no position reports `NOT IDEMPOTENT` or `THREW` and that type counts have fallen from a uniform 69 to between 28 and 45
+- [X] T013 [US1] Compare the two spreads with `node specs/007-upgrade-idfkit-js/verify/compare.mjs /tmp/shoebox-base /tmp/shoebox-new` and confirm every position reports `content same`. Any `CONTENT DIFFERS` is a failure and must be understood before anything else proceeds
+- [X] T014 [US1] Confirm the order differences are confined to `07-everything-in`, and that the seven other positions report `order same`. A reordering at a position Phase 0 did not predict needs its own explanation before it is accepted
+- [X] T015 [US1] Run the reordered position both ways through EnergyPlus 26.1.0 into `/tmp/run-base` and `/tmp/run-new`, and confirm both exit 0
+- [X] T016 [US1] Assert the runs agree: `cmp` silent on both `eplusout.eso` and `eplusout.mtr`, and the same warning and severe counts in the last line of each `eplusout.err`. This is FR-003a, and it is what makes a reordering harmless rather than merely unlikely
+- [X] T017 [P] [US1] Run every IDF in `/tmp/shoebox-new` through schema validation and the integrity check, per the constitution's third quality gate
+- [X] T018 [P] [US1] Grep each new run's `eplusout.err` for "requested but not generated" and confirm no output variable the page asks for has gone missing between library versions
 
 **Checkpoint**: The model demonstrably did not move. If this phase fails, the feature stops here rather than proceeding to make the page work.
 

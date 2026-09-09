@@ -1,4 +1,4 @@
-import { IDFDocument, parseIdf } from '@idfkit/core';
+import { IdfDocument, parseIdf } from '@idfkit/core';
 import {
   ADIABATIC,
   ADAPTIVE_RULES,
@@ -641,7 +641,7 @@ const VARIABLES_MONTHLY = [
 
 /** Build the model. `schema` comes from a `SchemaBundle` load. */
 export function buildModel(schema, parameters = DEFAULT_PARAMETERS, bypass = DEFAULT_BYPASS) {
-  const doc = new IDFDocument(schema);
+  const doc = new IdfDocument(schema);
 
   doc.add('Version', null, { version_identifier: '26.1' });
   doc.add('Timestep', null, { number_of_timesteps_per_hour: 4 });
