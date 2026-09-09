@@ -44,9 +44,12 @@ import {
   controlFor,
   isMonthMask,
   parseHolidays,
+  parsePattern,
   refuses,
   serializeHolidays,
+  serializePattern,
 } from './controls.js';
+import { QUANTITY_BY_ID } from './study.js';
 
 export const LINK_VERSION = 'v1';
 
@@ -91,12 +94,55 @@ const MIGRATIONS = Object.freeze({});
  * quietly collide with one — `controlFor` would route the collision to a
  * parameter and the link would mean two things at once.
  */
-const RESERVED = Object.freeze(['in', 'out', 'stn', 'win', 'at']);
+const RESERVED = Object.freeze(['in', 'out', 'stn', 'win', 'at', 'sty']);
 for (const key of RESERVED) {
   if (ALL_KEYS.includes(key)) {
     throw new Error(`the reserved link key "${key}" collides with a control parameter`);
   }
 }
+
+/**
+ * And that every key the encoder writes is a key the decoder can read back.
+ *
+ * The collision above is the loud half of key ownership. This is the quiet
+ * half, and it is quiet in the way `readValue`'s ordering is: a control kind
+ * the reader has not been taught is not a syntax error and not a missing
+ * branch — the numeric gate catches it and every link carrying that key is
+ * refused as "not a number", which is a true sentence about the wrong thing.
+ * Nothing on the desk exercises that path until somebody shares a link with
+ * the key in it, by which time the format has been in the wild for a release.
+ *
+ * So the whole default desk is round-tripped here, at module load, exactly as
+ * `encodeState` would write it and `decodeState` would read it back. It is the
+ * cheapest true statement available: `String(value)` is what the encoder puts
+ * in the fragment, identity is what the decoder owes (`params[key]` is a
+ * scalar and the delta encoding compares it with `!==`), and a kind that has
+ * not been taught fails here rather than in somebody's address bar. Six keys
+ * joined with the room types and their hourly patterns, and the pattern kind
+ * is precisely the one that would have slipped through.
+ *
+ * It does not assert the *values* a link may carry — that is what `refuses`
+ * and the codec harness are for. It asserts that the vocabulary the two halves
+ * of this module use is one vocabulary.
+ */
+const assertReadable = () => {
+  for (const key of ALL_KEYS) {
+    const value = DEFAULT_PARAMETERS[key];
+    let back;
+    try {
+      back = readValue(key, String(value));
+    } catch (failure) {
+      throw new Error(`a link cannot carry ${key} at its own default: ${failure.message}`);
+    }
+    if (back !== value) {
+      throw new Error(
+        `a link carrying ${key}=${String(value)} decodes as ${String(back)}, which is not what it said`,
+      );
+    }
+  }
+};
+
+assertReadable();
 
 /**
  * Which environment a pinned hour belongs to, as the link spells it.
@@ -163,7 +209,7 @@ export { PIN_KINDS, encodePin, decodePin };
  * samples that disagree by up to 9 % on degree days, so a link that named only
  * the site would reproduce a different year than the one argued over.
  */
-export function encodeState({ params, bypass, station = null, pin = null }) {
+export function encodeState({ params, bypass, station = null, pin = null, quantity = null, studies = [] }) {
   const pairs = new URLSearchParams();
   for (const key of ALL_KEYS) {
     // `String` rather than a display format: the display rounds, and a link
@@ -184,6 +230,23 @@ export function encodeState({ params, bypass, station = null, pin = null }) {
   // hour — a link that landed on the receiver's own worst hour would be the
   // two-permalinks-disagreeing problem the pin exists to end.
   if (pin) pairs.append('at', encodePin(pin));
+  const studyKeys = [...studies];
+  if (studyKeys.length && !quantity) throw new Error('open studies cannot be encoded without a desk quantity');
+  if (quantity) {
+    if (!QUANTITY_BY_ID[quantity]) throw new Error(`no study quantity is called "${quantity}"`);
+    const seen = new Set();
+    for (const key of studyKeys) {
+      if (seen.has(key)) throw new Error(`the study of "${key}" is open twice`);
+      seen.add(key);
+      const { control } = controlFor(key);
+      if (![control.min, control.max, control.step].every(Number.isFinite)) {
+        throw new Error(`the control "${key}" has no numeric face to study`);
+      }
+    }
+    const order = new Map(ALL_KEYS.map((key, index) => [key, index]));
+    studyKeys.sort((left, right) => order.get(left) - order.get(right));
+    pairs.append('sty', `${quantity}${studyKeys.length ? `.${studyKeys.join(',')}` : ''}`);
+  }
   const body = pairs.toString();
   return body ? `${LINK_VERSION}&${body}` : '';
 }
@@ -221,6 +284,26 @@ function readValue(key, raw) {
       throw new Error(`"${raw}" is not a year of twelve months with at least one in the run`);
     }
     return raw;
+  }
+  if (control.kind === 'pattern') {
+    // Above the numeric gate below for the third time, and this is the branch
+    // that would have proved the rule the hard way: a day is twenty-four
+    // comma-separated fractions, so a `pattern` case written into the switch
+    // *after* that regex is unreachable code, and every link carrying an
+    // hourly profile would be refused with "is not a number for occPattern" —
+    // a true sentence about the wrong thing, on a link that was perfectly
+    // good. Read `refuses` first so the refusal names the key and the field
+    // that is wrong, the way the numeric branch's does; the rules themselves
+    // live once, in `patternFault`, where the console's own boxes ask them.
+    const reason = refuses(control, raw);
+    if (reason) throw new Error(`${key} ${reason}`);
+    // Re-serialized for the reason the holiday list is: a link may only ever
+    // put the canonical spelling on `params`. `1,1,1,…` and `1.000,1.000,…`
+    // are one day written two ways, and both would pass the check above —
+    // but they are different strings, so they key two identical solves through
+    // `shapeKey`, and the identity diff in `encodeState` would go on writing a
+    // pattern that is sitting at its own default into every link minted after.
+    return serializePattern(parsePattern(raw), control.digits);
   }
   if (control.kind === 'days') {
     // Above the numeric gate below, not inside the switch after it: a holiday
@@ -323,6 +406,33 @@ export function decodeState(raw) {
     throw new Error('an hour pinned in the run period ("at") with no station ("stn") to supply one');
   }
 
+  let study = null;
+  const encodedStudy = pairs.get('sty');
+  if (encodedStudy !== null) {
+    const match = /^([A-Za-z][A-Za-z0-9]*)(?:\.([A-Za-z][A-Za-z0-9]*(?:,[A-Za-z][A-Za-z0-9]*)*))?$/.exec(
+      encodedStudy,
+    );
+    if (!match) throw new Error(`"${encodedStudy}" is not a study value like cost.width,wallR`);
+    const [, quantity, rawControls = ''] = match;
+    if (!QUANTITY_BY_ID[quantity]) throw new Error(`no study quantity is called "${quantity}"`);
+    const controls = rawControls ? rawControls.split(',') : [];
+    const seen = new Set();
+    for (const key of controls) {
+      if (seen.has(key)) throw new Error(`the study control "${key}" is given twice`);
+      seen.add(key);
+      let control;
+      try {
+        ({ control } = controlFor(key));
+      } catch {
+        throw new Error(`no study control is called "${key}"`);
+      }
+      if (![control.min, control.max, control.step].every(Number.isFinite)) {
+        throw new Error(`the control "${key}" has no numeric face to study`);
+      }
+    }
+    study = { quantity, controls };
+  }
+
   // `in` and `out` are lists and repeat by design; every other key — the
   // station pair included — is one claim, and a repeated one is two claims
   // about one thing. Either could be meant, so neither is taken. The check
@@ -346,5 +456,5 @@ export function decodeState(raw) {
     );
   }
 
-  return { params, bypass, station, pin };
+  return study ? { params, bypass, station, pin, quantity: study.quantity, studies: study.controls } : { params, bypass, station, pin };
 }

@@ -2,14 +2,17 @@ import {
   CHANNELS,
   DAYS_IN_MONTH,
   MONTHS,
+  PATTERN_HOURS,
   WEEKDAY_LABELS,
   controlFor,
   coveredDays,
   labelFor,
   parseHolidays,
+  parsePattern,
   resolveHoliday,
   runDays,
   serializeHolidays,
+  serializePattern,
 } from './controls.js';
 import { quantityField } from './field.js';
 // The rail's own units, from the module that owns reading a run. One
@@ -56,6 +59,16 @@ const el = (tag, className, text) => {
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
+/* ══ the pattern's own face ══════════════════════════════════════════════ */
+
+// There is nothing here any more, and that is the fix. `Pattern` carries an
+// `hourFace` in `controls.js`, beside the `patternFault` and the `format` it
+// undoes, so the console asks the declaration what an hour may hold instead of
+// saying so a second time. This block used to be a copy of the 0-to-1 range, a
+// copy of `readQuantity`'s numeric grammar, and a load-time probe whose only
+// job was to catch those two copies drifting from the original — about forty
+// lines existing because a two-line declaration had been skipped.
+
 /* ══ mounting ════════════════════════════════════════════════════════════ */
 
 /**
@@ -66,7 +79,7 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
  * scales cannot drift apart. Every gesture goes back out through `onChange`.
  */
 export function mountConsole({
-  host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear, onPin,
+  host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear, onStudyQuantity, onPin,
 }) {
   const strips = new Map(); // channel id -> { redraw(), meter, patch, solo }
   const faces = new Map(); // parameter key -> redraw for that control
@@ -319,6 +332,7 @@ export function mountConsole({
     if (control.kind === 'facade') return buildFacade(control, channel);
     if (control.kind === 'boundary') return buildBoundary(control);
     if (control.kind === 'profile') return buildProfile(control);
+    if (control.kind === 'pattern') return buildPattern(control);
     if (control.kind === 'calendar') return buildCalendar(control);
     if (control.kind === 'days') return buildDays(control);
     throw new Error(`the console cannot draw a ${control.kind}`);
@@ -560,13 +574,39 @@ export function mountConsole({
     row.append(group);
     if (control.note) row.append(el('p', 'ctl-note', control.note));
 
+    // What the row was last drawn showing, so the scroll below can tell a
+    // value that moved from a redraw that did not. Every station attach, study
+    // tick and landing solve redraws every face on the desk, and a row that
+    // scrolled itself on each of those would drag the options out from under a
+    // reader who was still looking at them.
+    let drawn;
+
     faces.set(control.key, () => {
       const v = params[control.key];
+      let chosen = null;
       for (const { button, option } of buttons) {
         const here = option.value === v;
+        if (here) chosen = button;
         button.classList.toggle('here', here);
         button.setAttribute('aria-checked', String(here));
       }
+      // A row with more options than fit scrolls, so the chosen one can be off
+      // the side — which is where a permalink carrying `Three bed living/kitchen`
+      // or a preset writing a room type would otherwise leave it, on a desk
+      // whose selector reads as though nothing were chosen at all. Brought back
+      // only when the value actually moved, and `nearest` so a choice already
+      // on screen does not shunt the row for the sake of centring it.
+      //
+      // `undefined` is not a value that moved, it is the first draw, and the
+      // difference matters because `block: 'nearest'` scrolls *every* ancestor
+      // scroller and not only this row: `mountConsole` ends with one `sync()`
+      // over every face, so scrolling on the first draw would walk the strip
+      // column — and the page under it — down to whichever selector happened
+      // to be lettered last, before the reader had touched anything.
+      if (chosen && drawn !== undefined && drawn !== v) {
+        chosen.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+      }
+      drawn = v;
       row.hidden = !control.shown(params);
       row.classList.toggle('idle', control.idle(params));
     });
@@ -1106,6 +1146,189 @@ export function mountConsole({
   }
 
   /**
+   * A day as twenty-four fractions: drawn as a silhouette, worked in a fold.
+   *
+   * The strip's other shape control is the occupancy band above, and a band is
+   * a gesture — you sweep the hours the room is used and there is nothing else
+   * for the hand to say. This one holds a *level* in every hour, and there is
+   * no single gesture that means it: sweeping a silhouette with a pointer
+   * would be drawing rather than setting, and a bedroom standing above 0.7 in
+   * every hour of the day is a figure a reader arrives with off a published
+   * table, not a shape they sketch freehand. So the twenty-four numbers are
+   * typed, in the same margin-number boxes every other quantity on this desk
+   * is set with — `field.js`, and therefore the same rules: focus shows the
+   * value and blur shows the lettering, a typed value is brought onto the
+   * control's own precision before it is committed, anything that is not a
+   * number is refused whole, and a redraw never types over the reader.
+   *
+   * Twenty-four boxes is also twenty-four tab stops, and three of these stand
+   * on the Gains strip — seventy-two stops between that strip's selector and
+   * everything below it. So they sit behind a fold that starts shut, and the
+   * fold is the `hidden` attribute rather than a class, for the reason
+   * `refold` gives for the strip's own: controls you cannot see have to leave
+   * the tab order and the accessibility tree with their fold. (A stylesheet
+   * that gives `.pattern-hours` a `display` of its own owes it a `[hidden]`
+   * twin, or an author declaration will beat the user agent's
+   * `[hidden] { display: none }` and the boxes will stand open — the failure
+   * `.link[hidden]` was written for.)
+   *
+   * What stays *outside* the fold is the reading: the shape as a silhouette
+   * and the margin's one line of lettering. That is the desk's own rule — every
+   * path reads without opening anything, and only working it costs a tap.
+   *
+   * Nothing is registered in `rows`, the way nothing is for a list of days:
+   * that map is what hangs a study card under a control, and a sweep needs a
+   * face to sample along. Twenty-four numbers is a shape rather than a
+   * position, so the offer is not made at all.
+   */
+  function buildPattern(control) {
+    const row = el('div', 'ctl ctl-pattern');
+    const head = el('div', 'ctl-head');
+    head.append(el('span', 'ctl-label', control.label));
+
+    // The fold's own control, lettered with what is behind it rather than
+    // drawn as a chevron: a reader on a strip of eleven controls should be
+    // able to tell what a disclosure costs before pressing it. The count is
+    // read off the declaration, so a day that ever stopped being twenty-four
+    // hours long could not letter itself wrong here.
+    const toggle = el('button', 'link pattern-toggle', `${PATTERN_HOURS} hours`);
+    toggle.type = 'button';
+    head.append(toggle);
+
+    const value = el('span', 'ctl-value');
+    head.append(value);
+    row.append(head);
+
+    // The shape, on the band the occupancy profile is drawn on — the same
+    // twenty-four cells across the same 240 units, so the two controls of this
+    // strip that are about a day are one drawing read twice. A bar is the
+    // fraction and nothing else: an hour standing at zero draws nothing, which
+    // is the honest mark for it, and the baseline underneath is what says the
+    // difference between an empty hour and an empty control.
+    const drawing = svg('svg', { viewBox: '0 0 240 34', class: 'band', role: 'img' });
+    const bars = Array.from({ length: PATTERN_HOURS }, (_, h) => {
+      const bar = svg('rect', {
+        x: h * 10 + 0.5, width: 9, y: 20, height: 0,
+        fill: 'var(--redline)', 'fill-opacity': 0.5,
+      });
+      drawing.append(bar);
+      return bar;
+    });
+    drawing.append(svg('line', {
+      x1: 0, y1: 20, x2: 240, y2: 20, stroke: 'var(--rule-firm)', 'stroke-width': 1,
+    }));
+    for (const h of [0, 6, 12, 18, 24]) {
+      const t = svg('text', {
+        x: h * 10, y: 31, 'text-anchor': h === 0 ? 'start' : h === 24 ? 'end' : 'middle',
+        fill: 'var(--ink-ghost)', 'font-family': 'var(--mono)', 'font-size': 7.5,
+      });
+      t.textContent = String(h).padStart(2, '0');
+      drawing.append(t);
+    }
+    row.append(drawing);
+
+    // One parse per redraw rather than twenty-four. Every field's `show()`
+    // asks for its own hour, and the desk redraws every control on every
+    // synced frame of a drag anywhere on it. The memo is keyed on the
+    // canonical text itself rather than on a flag, so it cannot go stale: a
+    // text that has not changed is a day that has not changed.
+    let held = { text: null, hours: null };
+    const hourAt = (h) => {
+      const text = params[control.key];
+      if (text !== held.text) held = { text, hours: parsePattern(text) };
+      return held.hours[h];
+    };
+
+    const commit = (h, v) => {
+      const hours = [...parsePattern(params[control.key])];
+      hours[h] = v;
+      // Re-serialized whole, at the control's own precision, so what reaches
+      // `params` is the canonical spelling however the box was typed into.
+      // The other twenty-three hours came off that same canonical text and are
+      // already written to `digits`, so nothing but the edited hour can move —
+      // which is what keeps this idempotent and keeps the permalink's identity
+      // diff telling the truth about which controls were touched.
+      onChange(control.key, serializePattern(hours, control.digits), true);
+    };
+
+    const fold = el('div', 'pattern-hours');
+    fold.id = `pattern-${control.key}`;
+    fold.hidden = true;
+    fold.setAttribute('role', 'group');
+    fold.setAttribute('aria-label', `${control.label}, hour by hour`);
+    // One face for all twenty-four boxes: which hour a box holds is the
+    // business of the closure that reads and writes it, and the face carries
+    // only the lettering and its undoing, both at the control's own precision.
+    const face = control.hourFace;
+    const fields = Array.from({ length: PATTERN_HOURS }, (_, h) => {
+      const cell = el('div', 'pattern-hour');
+      const at = `${String(h).padStart(2, '0')}:00`;
+      // The hour is lettered beside every box rather than only along the
+      // drawing above: twenty-four unlabelled numbers is a list nobody can
+      // count their way into, and on a phone the drawing and the box the
+      // reader is typing in are not on the same line of the screen.
+      cell.append(el('span', 'pattern-at', at));
+      const field = quantityField({
+        control: face,
+        name: `${control.label} at ${at}`,
+        read: () => hourAt(h),
+        write: (v) => commit(h, v),
+        className: 'pattern-value',
+      });
+      cell.append(field.node);
+      fold.append(cell);
+      return field;
+    });
+
+    // The word on the toggle does not change with the state, because
+    // `aria-expanded` is the state and a label that flips says it twice — and
+    // the second saying is the one that goes stale. What changes is that the
+    // boxes are there.
+    toggle.setAttribute('aria-controls', fold.id);
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.addEventListener('click', () => {
+      const opening = fold.hidden;
+      fold.hidden = !opening;
+      toggle.setAttribute('aria-expanded', String(opening));
+    });
+    row.append(fold);
+
+    if (control.note) row.append(el('p', 'ctl-note', control.note));
+
+    const redraw = () => {
+      const text = params[control.key];
+      const hours = parsePattern(text);
+      const reading = control.format(text);
+      value.textContent = reading;
+      // The drawing states the reading, so it is labelled with the reading. A
+      // silhouette with no label is a fact this page states only in ink, which
+      // is the one thing the desk's readings are never allowed to be.
+      drawing.setAttribute('aria-label', `${control.label}, ${reading}`);
+      bars.forEach((bar, h) => {
+        const height = hours[h] * 20;
+        bar.setAttribute('y', String(20 - height));
+        bar.setAttribute('height', String(height));
+      });
+      // Each box re-letters itself, and each one is free to refuse: `show()`
+      // returns early while its own field holds focus, so a solve landing or a
+      // station attaching mid-edit redraws the other twenty-three and leaves
+      // the one being typed in alone.
+      for (const field of fields) field.show();
+      // Two questions, two treatments, as everywhere else on the desk. The
+      // patterns carry `needs` today and are dimmed under `roomType: 'As
+      // drawn'`, where the strip's own schedule writes the gains and these
+      // reach no object at all. `shown` is asked all the same, because that is
+      // the first of the two steps `HIDEABLE` in `controls.js` documents for
+      // teaching a kind to be withdrawn — the second is adding `'pattern'` to
+      // that set, which is where the declaration is allowed to carry `when`.
+      row.hidden = !control.shown(params);
+      row.classList.toggle('idle', control.idle(params));
+    };
+    faces.set(control.key, redraw);
+    return row;
+  }
+
+  /**
    * The year, as twelve months you take in and out of the run.
    *
    * Two calibration faces could only ever describe one unbroken span, so the
@@ -1523,20 +1746,58 @@ export function mountConsole({
     return side ? [el('span', 'study-side', labelFor(key))] : [];
   }
 
+  function studyQuantityChooser(key, study) {
+    const selectedOffer = study.offers.find((offer) => offer.quantity.id === study.quantity);
+    const selected = selectedOffer?.quantity;
+    if (!selectedOffer) throw new Error(`the study card has no declared offer for quantity "${study.quantity}"`);
+    const details = el('details', 'study-quantity');
+    const summary = el('summary', 'study-quantity-summary');
+    summary.append(
+      el('span', 'study-quantity-label', selected.label),
+      el('span', 'study-quantity-unit', selectedOffer.unit),
+    );
+    details.append(summary);
+
+    const choices = el('fieldset', 'study-quantity-choices');
+    choices.append(el('legend', 'sr-only', 'What every study plots'));
+    for (const offer of study.offers) {
+      const row = el('label', `study-quantity-offer${offer.available ? '' : ' unavailable'}`);
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = `study-quantity-${key}`;
+      input.value = offer.quantity.id;
+      input.checked = offer.quantity.id === study.quantity;
+      input.disabled = !offer.available;
+      input.addEventListener('change', () => {
+        if (input.checked) onStudyQuantity?.(offer.quantity.id);
+      });
+      const words = el('span', 'study-quantity-words');
+      const line = el('span', 'study-quantity-line');
+      line.append(
+        el('span', 'study-quantity-name', offer.quantity.label),
+        el('span', 'study-quantity-unit', offer.unit),
+      );
+      if (input.checked) line.append(el('span', 'study-quantity-selected', 'Selected'));
+      words.append(line);
+      if (!offer.available) {
+        words.append(el('span', 'study-quantity-reason', `${offer.reason} ${offer.fix}`));
+      }
+      row.append(input, words);
+      choices.append(row);
+    }
+    details.append(choices);
+    return details;
+  }
+
   /**
    * The curve a sweep drew, under the control it swept.
    *
    * The x axis is `control.fraction` — the same 0..1 the face tick above it
    * uses — so the curve and the calibration face are one axis, stacked. What
-   * the y axis reads is the study's `metric`: zone temperature extremes on a
-   * free-running desk (the design days' own, or the year's), or the demand
-   * intensities once ideal loads are in the path with a year to bill — where
-   * the extremes would only letter the setpoints, the demand the system pays
-   * to hold them is the curve worth drawing. A sample that failed is a gap in
-   * the line, never a point invented across it. The redline stands where the
-   * control stands now, and moving the control just walks it along the curve;
-   * on a conditioned design-day desk the temperature lines still run flat at
-   * the setpoints, which is not a failure of the study but its finding.
+  * the y axis reads is the desk's declared quantity, shared by every open
+  * study. A sample that failed is a gap in the line, never a point invented
+  * across it. The redline stands where the control stands now, and moving the
+  * control just walks it along the curve.
    */
   function studyCard(key, study) {
     const { control } = controlFor(key);
@@ -1560,74 +1821,89 @@ export function mountConsole({
       head.append(clear);
     }
     card.append(head);
+    card.append(studyQuantityChooser(key, study));
 
-    const W = 240;
+    if (study.openingBasis) {
+      card.append(el('p', 'study-opening-basis', `Opened here: ${study.openingBasis}`));
+    }
+
+    if (study.waiting) {
+      card.append(
+        el(
+          'p',
+          'study-quantity-waiting',
+          study.waiting.reason ??
+            `Waiting for ${study.waiting.quantity}: ${study.waiting.missing} sample${study.waiting.missing === 1 ? '' : 's'} still need a run.`,
+        ),
+      );
+    }
+
+    const W = 320;
     const H = 64;
-    const energy = study.metric === 'energy';
-    // Both metrics are the signed pair, which is why neither needs a third
-    // pen. TEDI and CEDI are the year's heat asked into and out of the zone —
-    // the rail's signed watts integrated, not a price or an emission — so
-    // warm-in / cold-out encodes exactly the sign it does everywhere else on
-    // the desk, exactly as the temperature extremes below do.
-    const series = energy
-      ? [
-          { sel: (p) => p.tedi, pen: 'var(--warm)', name: 'TEDI', said: 'heating demand TEDI' },
-          { sel: (p) => p.cedi, pen: 'var(--cold)', name: 'CEDI', said: 'cooling demand CEDI' },
-        ]
-      : [
-          {
-            sel: (p) => p.high,
-            pen: 'var(--warm)',
-            // Three periods, because a weather file no longer implies a year:
-            // the extremes of a run period with months taken out of it are the
-            // run period's, and calling them annual would be the card
-            // reporting a figure the run never held.
-            said: !study.annual
-              ? 'summer design-day peak'
-              : study.wholeYear
-                ? 'annual peak'
-                : 'run-period peak',
-          },
-          {
-            sel: (p) => p.low,
-            pen: 'var(--cold)',
-            said: !study.annual
-              ? 'winter design-day low'
-              : study.wholeYear
-                ? 'annual low'
-                : 'run-period low',
-          },
-        ];
+    // The same lookup `studyQuantityChooser` above already refused a miss on,
+    // so it cannot be absent here — asked without the optional chain that was
+    // reading as though it could be, and would then have thrown one line later
+    // with nothing to say which card was wrong.
+    const { quantity } = study.offers.find((offer) => offer.quantity.id === study.quantity);
+    const multiple = quantity.series.length > 1;
+    const readingOf = (point) => point.reading ?? point[quantity.id];
+    const series = quantity.series.map((line) => {
+      // One lettering, asked for twice: the end label in the gutter names its
+      // line where a quantity draws more than one, and the aria description
+      // names it in the sentence around it. Written out twice they were a
+      // copy with a difference, which is how a declared `format` gets taught
+      // to one of them and not the other.
+      const format = (value, point) =>
+        line.format
+          ? line.format(value, readingOf(point))
+          : `${value.toFixed(quantity.digits)} ${quantity.unit}`;
+      return {
+        sel: (point) => {
+          const value = line.select(readingOf(point));
+          return Number.isFinite(value) ? value : null;
+        },
+        pen: line.pen ? `var(${line.pen})` : 'var(--ink)',
+        format,
+        tick: (value, point) => (multiple ? `${line.label} ${format(value, point)}` : format(value, point)),
+        said: line.label.toLowerCase(),
+      };
+    });
     // The right gutter holds the curves' end labels: six mono characters of
     // "−18.7°" in one mode, "TEDI 142" in the other, which needs the wider cut.
-    const plot = { x: 2, w: energy ? 190 : 200, top: 6, bottom: 42 };
+    const plot = { x: 2, w: W - 90, top: 6, bottom: 42 };
 
     const vals = series.flatMap((s) => study.curve.map(s.sel).filter((v) => v != null));
+    if (!vals.length) {
+      card.append(el('p', 'study-empty', `No ${quantity.label.toLowerCase()} readings are in hand.`));
+      return { node: card, kind: 'card', study, syncTick: () => {} };
+    }
     const lo = Math.min(...vals);
     const hi = Math.max(...vals);
-    const span = hi - lo || 1;
-    const [dMin, dMax] = [lo - span * 0.08, hi + span * 0.08];
+    // Do not turn floating-point noise into a full-height sawtooth. If every
+    // value letters identically at this quantity's own precision, the domain
+    // keeps two display increments around their midpoint and the line reads as
+    // the constant the card says it is. A real spread still gets the usual 8 %
+    // breathing room.
+    const observed = hi - lo;
+    const domainSpan = Math.max(observed * 1.16, 2 * 10 ** -quantity.digits);
+    const middle = (lo + hi) / 2;
+    const [dMin, dMax] = [middle - domainSpan / 2, middle + domainSpan / 2];
     const y = (v) => plot.bottom - ((v - dMin) / (dMax - dMin)) * (plot.bottom - plot.top);
     const x = (v) => plot.x + clamp(control.fraction(v), 0, 1) * plot.w;
 
-    const range = (arr) => `${Math.min(...arr).toFixed(1)} to ${Math.max(...arr).toFixed(1)}`;
-    // "A year" only when the run was one. The intensities are the same
-    // arithmetic over whatever months are in the run, and every sample on the
-    // curve shares them, so the comparison holds — but the figure is not an
-    // annual one and the card must not say it is.
-    const unit = !energy
-      ? '°C'
-      : study.wholeYear
-        ? 'kWh per square metre a year'
-        : 'kWh per square metre over the run period';
     const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' });
     root.setAttribute(
       'aria-label',
       `Study of ${labelFor(key)} from ${control.format(control.min)} to ${control.format(control.max)}: ` +
         series
           .map((s) => {
-            const found = study.curve.map(s.sel).filter((v) => v != null);
-            return found.length ? `${s.said} ${range(found)} ${unit}` : `no ${s.said} readings`;
+            const found = study.curve.filter((point) => s.sel(point) != null);
+            if (!found.length) return `no ${s.said} readings`;
+            const ordered = [...found].sort((left, right) => s.sel(left) - s.sel(right));
+            return `${s.said} ${s.format(s.sel(ordered[0]), ordered[0])} to ${s.format(
+              s.sel(ordered.at(-1)),
+              ordered.at(-1),
+            )}`;
           })
           .join('; ') +
         '.',
@@ -1678,9 +1954,10 @@ export function mountConsole({
     for (const s of series) {
       const found = study.curve.filter((p) => s.sel(p) != null);
       if (!found.length) continue;
-      const v = s.sel(found[found.length - 1]);
+      const point = found[found.length - 1];
+      const v = s.sel(point);
       labels.push({
-        text: energy ? `${s.name} ${v.toFixed(v >= 100 ? 0 : 1)}` : `${v.toFixed(1)}°`,
+        text: s.tick(v, point),
         pen: s.pen,
         y: clamp(y(v) + 2.5, plot.top + 5, plot.bottom),
       });
@@ -1708,8 +1985,6 @@ export function mountConsole({
     };
     foot(control.format(control.min), plot.x, 'start');
     foot(control.format(control.max), plot.x + plot.w, 'end');
-    // The intensities need their unit stated; degrees carry their own sign.
-    if (energy) foot(study.wholeYear ? 'kWh/m²·a' : 'kWh/m² per run', plot.x + plot.w / 2, 'middle');
 
     const tick = svg('line', {
       y1: plot.top - 2, y2: plot.bottom + 2, stroke: 'var(--redline)', 'stroke-width': 1,
@@ -1991,6 +2266,10 @@ export function mountConsole({
         have.node.classList.toggle('stale', stale);
         return;
       }
+      const details = have?.node.querySelector('.study-quantity');
+      const wasOpen = Boolean(details?.open);
+      const heldFocus = Boolean(have?.node.contains(document.activeElement));
+      const before = heldFocus ? have.node.getBoundingClientRect().top : null;
       have?.node.remove();
       cards.delete(key);
       if (!study) return;
@@ -2002,6 +2281,18 @@ export function mountConsole({
       made.node.classList.toggle('stale', stale);
       row.after(made.node);
       cards.set(key, made);
+      const nextDetails = made.node.querySelector('.study-quantity');
+      if (wasOpen && nextDetails) nextDetails.open = true;
+      if (heldFocus) {
+        made.node.querySelector('.study-quantity-summary')?.focus({ preventScroll: true });
+      }
+      if (before !== null) {
+        const moved = made.node.getBoundingClientRect().top - before;
+        if (moved) {
+          if (indexing) window.scrollBy(0, moved);
+          else stripHost.scrollTop += moved;
+        }
+      }
     },
 
     /** The sweep in flight: its button reads Stop, its card counts the runs. */
@@ -2066,7 +2357,50 @@ export function mountConsole({
      */
     studyCount: () => cards.size,
 
-    /** The studies go with the climate they were swept under. */
+    /**
+     * The study context a whole-console refresh would otherwise take away.
+     *
+     * A weather attach rebuilds every study card because none of the outgoing
+     * climate's samples may survive. The open chooser is still the question
+     * that led the reader to the weather picker, so keep its disclosure, strip
+     * and viewport anchor as interface state rather than making the reader find
+     * the same control again after doing what its refusal asked.
+     */
+    captureStudyContext() {
+      const expanded = [...cards]
+        .filter(([, card]) => card.node.querySelector('.study-quantity')?.open)
+        .map(([key]) => key);
+      const key = expanded[0] ?? null;
+      const anchor = key ? cards.get(key)?.node : null;
+      return {
+        expanded,
+        opened,
+        key,
+        top: anchor?.getBoundingClientRect().top ?? null,
+      };
+    },
+
+    restoreStudyContext(context) {
+      if (!context) return;
+      if (indexing) {
+        opened = context.opened;
+        refold();
+      }
+      for (const key of context.expanded) {
+        const details = cards.get(key)?.node.querySelector('.study-quantity');
+        if (details) details.open = true;
+      }
+      const card = context.key ? cards.get(context.key)?.node : null;
+      if (!card || context.top === null) return;
+      const summary = card.querySelector('.study-quantity-summary');
+      summary?.focus({ preventScroll: true });
+      const moved = card.getBoundingClientRect().top - context.top;
+      if (!moved) return;
+      if (indexing) window.scrollBy(0, moved);
+      else stripHost.scrollTop += moved;
+    },
+
+    /** Remove every study card when the reader clears the studies themselves. */
     clearStudies() {
       for (const { node } of cards.values()) node.remove();
       cards.clear();

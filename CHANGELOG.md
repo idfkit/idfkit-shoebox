@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Studies can plot the quantity you choose.** Every open parameter study now
+  shares one quantity selected from its card. Temperature draws its high and
+  low together, thermal demand draws TEDI and CEDI together, and nine further
+  choices cover energy use, cost, carbon, overheating, peak loads and the TM59
+  criteria. Each curve states what it measures, uses the quantity's own unit
+  and precision, and updates every open study together so curves on the same
+  desk remain comparable.
+
+  All eleven choices stay visible. A quantity the current desk cannot produce
+  is disabled in place with the specific reason and the action that makes it
+  available, rather than disappearing or becoming a zero. Following an
+  instruction to attach weather keeps the same study, open chooser, focus and
+  position while the new climate is solved. Compatible results are reused,
+  tariff and plant changes reprice cached meter totals without another engine
+  run, and each sample still requests only the outputs its selected quantity
+  needs.
+
+  Shared links now carry both the chosen quantity and every open study. Opening
+  one recreates the same questions and re-solves them locally; links minted
+  before this feature continue to open with no studies, as they did before.
+
 ## [0.3.0] - 2026-09-03
 
 ### Added

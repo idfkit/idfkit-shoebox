@@ -10,6 +10,7 @@ import {
   geometryFacts,
   leakageBuildUp,
   modelFacts,
+  occupiedFloor,
   setAnnual,
   setDesignConditions,
   shadeGeometry,
@@ -32,7 +33,21 @@ import { mountConsole } from './console.js';
 import { describeDesk } from './describe.js';
 import { quantityField, textField } from './field.js';
 import { mountTour } from './tour.js';
-import { COARSE_SAMPLES, SWEEP_SAMPLES, samplePoints, sampleOrder } from './study.js';
+import {
+  COARSE_SAMPLES,
+  OPENING_QUANTITY_BASIS,
+  PricingAvailability,
+  PricingStatus,
+  QUANTITIES,
+  QUANTITY_BY_ID,
+  RunContents,
+  SWEEP_SAMPLES,
+  contentsFor,
+  offersFor as studyOffersFor,
+  openingQuantity,
+  samplePoints,
+  sampleOrder,
+} from './study.js';
 import { createEnginePool, poolLimit } from './pool.js';
 import { createStudyScheduler, makeStudyJob } from './scheduler.js';
 import { runBundle } from './bundle.js';
@@ -52,7 +67,7 @@ import {
   siteRegion,
   weatherFor,
 } from './weather.js';
-import { holidayList, parseEpwCalendar, parseEpwStartDay } from './epw.js';
+import { dailyMeans, holidayList, parseEpwCalendar, parseEpwStartDay } from './epw.js';
 import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
 import { mountChangelog } from './changelog.js';
 import CHANGELOG_SOURCE from '../CHANGELOG.md?raw';
@@ -83,13 +98,28 @@ import {
   Measure,
   PRESETS,
   PRESET_BY_ID,
-  Scheme,
   SHELF_LIMIT,
+  Scheme,
   Shelf,
   applyPreset,
   chaseVerdict,
   conformance,
 } from './schemes.js';
+import {
+  ABSENCE,
+  CATEGORIES,
+  COUNT_CATEGORY,
+  CRITERION_BY_ID,
+  PARTIAL_PERIOD,
+  SEASON,
+  WeatherFile,
+  clearedCount,
+  qualificationsFor,
+  readCriterionA,
+  readCriterionB,
+  readCriterionC,
+  runningMean,
+} from './tm59.js';
 
 const ENERGYPLUS_VERSION = '26.1.0';
 
@@ -1412,6 +1442,7 @@ function billFrom(run) {
 function reprice() {
   if (!lastRun) return;
   bill = billFrom(lastRun);
+  repriceStudies();
   renderBill();
   desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt, readouts());
   desk?.setDerived(derivedLines());
@@ -1962,7 +1993,14 @@ function clearReadings() {
   lastRun = null;
   // And so do the readings the register's targets are judged on: a criterion
   // still showing "under by 3.2" over a cleared plate would be quoting a run
-  // that is no longer on the sheet.
+  // that is no longer on the sheet. The overheating block goes with them, and
+  // it is the reason this line is worth a second sentence: it carries a count,
+  // a coverage and a page of qualifications as well as five readings, and
+  // `renderScore` draws all of them only where `lastOutcome.tm59` stands. A
+  // fatal therefore takes the count and the qualifications down with the
+  // figures they qualify, rather than leaving a paragraph explaining the
+  // arithmetic of a board of em dashes — while a run merely *in flight*
+  // touches none of it, because nothing here runs at the top of a solve.
   lastOutcome = null;
   // The instant goes with them: it is an index into a run that is no longer
   // on the sheet. The pin itself survives — it is a calendar stamp and a
@@ -2022,6 +2060,8 @@ let lastMean = null; // zone mean of the last run, for the axonometric tint
 let modelState = null; // which channels the model says are in the path
 let studyScheduler = null; // built with the engine pool once the engine section runs
 const studies = new Map(); // parameter key -> the study drawn under that control
+let studyQuantity = null; // initialized once, shared by every open study
+const openStudies = new Set(); // includes queued cards before their curves land
 // A Stop is a decision about this desk, not about this instant: the key stays
 // out of automatic refresh until the rest of the desk moves again, at which
 // point the stopped curve is stale history like any other.
@@ -2225,6 +2265,20 @@ function commit(key, value, done = false) {
     params[key] = value;
     syncSlider[key]?.();
     desk?.sync(key);
+    // What this control's value settles besides itself, asked of the
+    // declaration rather than by name. `roomType` is the first control here
+    // that writes others — naming a published room brings that room's figures
+    // with it — and the question is put generically so the second one costs a
+    // field in `controls.js` rather than another arm in the desk's one funnel.
+    //
+    // Written straight onto `params` rather than through a nested `commit`: a
+    // second commit would open a gesture inside this one and take the ghost
+    // with it, and the `applyGeometry` below covers every key at once anyway.
+    const implied = controlFor(key).control.implies?.(value);
+    if (implied) {
+      Object.assign(params, implied);
+      desk?.sync();
+    }
     applyGeometry();
     if (priced) reprice();
     else if (continuous()) pump();
@@ -3189,9 +3243,12 @@ desk = mountConsole({
   },
   onReset: () => revert(),
   onStudy: (key) => studyRun(key),
+  onStudyQuantity: (id) => chooseStudyQuantity(id),
   onStudyClear(key) {
     studies.delete(key);
+    openStudies.delete(key);
     desk.setStudy(key, null);
+    updatePermalink();
     // The desk head's Clear counts the cards, and one just came down.
     syncStudyControls();
   },
@@ -3338,6 +3395,7 @@ autoBox.addEventListener('change', () => {
   syncAuto();
   if (autoOn()) {
     pump();
+    resumeWaitingStudies();
     // Switching auto back on catches the studies up the way it catches the
     // sheet up: whatever went stale while solving by hand re-queues now.
     refreshStudies();
@@ -3642,6 +3700,7 @@ $('site-near').addEventListener('click', async () => {
  */
 async function choose(row, pick, sizing = 'No') {
   const picked = pick.station;
+  const studyContext = desk?.captureStudyContext();
   inflight?.abort();
   inflight = new AbortController();
   const { signal } = inflight;
@@ -3722,6 +3781,13 @@ async function choose(row, pick, sizing = 'No') {
   // decisions about desks swept under the departed weather.
   studyScheduler?.clearAll();
   studyStops.clear();
+  // The comfort line goes with them, and for the same reason: it is 365 daily
+  // means of one city's year, and Bavaria's May is not Denver's. Cleared here
+  // rather than left to fall out of the identity check in `runningMeanFor`,
+  // because the file about to be attached is a new string either way and
+  // holding the old one alive until the next solve keeps a megabyte of the
+  // departed climate in the cache for no reading at all.
+  meanCache = null;
 
   // The whole climate arrives together: the year on the EPW, the design days
   // and the location on the DDY. Denver's come out, this station's go in.
@@ -3770,12 +3836,13 @@ async function choose(row, pick, sizing = 'No') {
   // `syncDownload`, back when the bundle rode on `lastRun` and clearing that
   // left the button lettered live over nothing; `lastBundle` cannot be in that
   // state, because lettered means loaded.
-  // The studies go the way the pin does, and for the same reason: they were
-  // swept under the old climate, and a curve of Denver design days under a
-  // Singapore titleblock would be a lie told in graphite. New sweeps read the
-  // new climate — a score of annual runs now, counted out on the strip.
-  studies.clear();
-  desk?.clearStudies();
+  // The old curves go; the studies do not. The chooser that sent a reader to
+  // fetch weather is still their question, so every card becomes an explicit
+  // wait under the incoming climate rather than disappearing with the outgoing
+  // samples. The scheduler and cache were cleared above, so this redraw can
+  // only show missing points and cannot accidentally carry Denver under this
+  // station's title block.
+  redrawStudiesForQuantity({ queue: false });
   syncStudyControls();
 
   // With a real year attached the sizing days stop earning their place. They
@@ -3794,6 +3861,11 @@ async function choose(row, pick, sizing = 'No') {
   // with the document. It also means auto-solve picks the change up, so the
   // year starts solving on the release rather than waiting to be asked.
   commit('sizingPeriods', sizing, true);
+  // `commit` queues stale studies when it changes the run setting. If that
+  // setting was already in place, queue them here; `has` prevents this pass
+  // from superseding work the commit already started.
+  redrawStudiesForQuantity({ queue: true });
+  desk?.restoreStudyContext(studyContext);
   // When the setting already stood where the link or the last station left
   // it, that commit moved nothing and its pump found nothing to solve — yet
   // the climate above genuinely changed, and the station is deliberately not
@@ -3846,7 +3918,14 @@ let linkAttachPending = false;
  * pre-solo patch state while the bundle's manifest carried the solo map.
  */
 const schemeHash = (p = params) =>
-  encodeState({ params: p, bypass: patching(), station: stationToken(), pin: pinnedHour });
+  encodeState({
+    params: p,
+    bypass: patching(),
+    station: stationToken(),
+    pin: pinnedHour,
+    quantity: studyQuantity,
+    studies: openStudies,
+  });
 
 /** The absolute form, for the clipboard and the run bundle's manifest. */
 const schemeUrl = (p = params) => {
@@ -3912,6 +3991,39 @@ function refuseLink(message) {
   statusEl.className = 'status bad';
   statusEl.textContent = message;
   refusalNote = message;
+}
+
+let linkedStudiesRestored = false;
+function restoreLinkedStudies(state) {
+  if (linkedStudiesRestored || !state?.quantity) return;
+  linkedStudiesRestored = true;
+  studyQuantity = quantityOf(state.quantity).id;
+  for (const key of state.studies ?? []) {
+    const job = jobForStudy(key);
+    const quantity = quantityOf(studyQuantity);
+    const offers = studyOffers(job.snapshot, job.patch, job.epw);
+    const selected = offers.find((offer) => offer.quantity.id === quantity.id);
+    const waiting = {
+      label: shapeLabel(job.snapshot),
+      restShape: job.restShape,
+      annual: job.annual,
+      wholeYear: job.annual && isWholeYear(job.snapshot.months),
+      quantity: quantity.id,
+      offers,
+      waiting: {
+        quantity: quantity.label,
+        missing: job.total,
+        reason: selected.available ? null : `${selected.reason} ${selected.fix}`,
+      },
+      curve: [],
+      coarse: false,
+    };
+    openStudies.add(key);
+    studies.set(key, waiting);
+    desk.setStudy(key, waiting, { stale: false });
+    if (selected.available && autoOn()) studyScheduler.enqueue(job);
+  }
+  syncStudyControls();
 }
 
 /**
@@ -3989,6 +4101,7 @@ async function attachFromLink(linked) {
     linkAttachPending = false;
     syncSweepGate();
   }
+  restoreLinkedStudies(linked);
   // The attach held the address still; now that the station is real, one
   // rewrite brings the bar back to lettering the desk.
   updatePermalink();
@@ -4086,6 +4199,181 @@ function nextSchemeName() {
   return `Scheme ${kept.length + 1}`;
 }
 
+
+/* ── the overheating criteria ─────────────────────────────────────────── */
+
+/**
+ * What the attached EPW's own LOCATION record says about itself.
+ *
+ * **This belongs in `src/epw.js`**, beside `parseEpwCalendar`,
+ * `parseEpwStartDay` and `dailyMeans`, and it is here only because that module
+ * does not carry it yet. It is EPW parsing and its only honest test is a real
+ * file, which is the whole argument for keeping every header reader in one
+ * place; moving it costs one import and nothing else, because nothing outside
+ * this pair of functions knows the record's shape.
+ *
+ * The record is the first line of every EPW and the fields are positional:
+ * `LOCATION,City,State,Country,Source,WMO,Lat,Lon,TimeZone,Elevation`.
+ * `WeatherFile` wants six of the ten and refuses a partial object outright, so
+ * every one of them is passed and an absent field is passed as `null` — "the
+ * file says nothing here" and "nobody read it" must not be the same state, and
+ * an empty field between two commas is the first of those. A file carrying no
+ * LOCATION record at all is the same statement made six times over, which is
+ * exactly what `WeatherFile.declares` letters as "a file whose LOCATION record
+ * declares nothing about itself"; there is nothing to throw about and nothing
+ * to substitute.
+ *
+ * Nothing here judges the file. WFR:2026 names a specific one and this page
+ * cannot read a file's provenance, so the two descriptions are printed side by
+ * side and the reader draws the conclusion (FR-015).
+ */
+function readLocation(epw) {
+  // Only the head of the file is searched. The record is the first line of a
+  // conforming EPW, and scanning 8,760 data rows for a header that is not
+  // there would be the one expensive way to answer "no".
+  const line = epw.split(/\r?\n/, 16).find((row) => /^LOCATION\s*,/i.test(row));
+  const fields = line ? line.split(',').map((field) => field.trim()) : [];
+  // onebuilding writes a bare hyphen where a station has no record to publish,
+  // the same convention the DDY uses for a design condition it cannot fill.
+  const at = (i) => (fields[i] && fields[i] !== '-' ? fields[i] : null);
+  return new WeatherFile({
+    city: at(1),
+    region: at(2),
+    country: at(3),
+    source: at(4),
+    wmo: at(5),
+    timeZone: at(8),
+  });
+}
+
+/**
+ * The same thing, or null on a desk that has attached no file at all.
+ *
+ * Deliberately **not** cached, unlike the running mean below, and the
+ * difference is measured rather than assumed: `readLocation` is 0.003 ms on
+ * Chicago TMY3 against `dailyMeans`'s 3.13 ms, because the split is bounded at
+ * sixteen lines and never reaches the 8,760 data records. A cache that saves
+ * three microseconds twice a solve is a second piece of state to clear on a
+ * station change and nothing else.
+ */
+const declaredWeather = (epw) => (epw ? readLocation(epw) : null);
+
+/**
+ * The comfort line's climate half, cached on the attached file's identity.
+ *
+ * `dailyMeans` parses the file's 8,760 data records down to 365 numbers —
+ * measured here at 3.13 ms for Chicago TMY3 under Node, which agrees with the
+ * 3.2 ms `epw.js` records for itself, and budgeted at 13.2 ms in the browser.
+ * That is more than every criterion of a solve put together (2.44 ms, measured
+ * on the same run) and a fifth of a 16.7 ms frame. Those 365 numbers cannot
+ * have changed unless the
+ * station did, so this is cached exactly as `offersFor` and `calendarFor` are
+ * cached on the ESO's identity, and cleared in `choose` where the studies and
+ * the sample cache are cleared, for the same reason they are: what was true of
+ * Denver's year is not true of Bavaria's.
+ *
+ * A file that cannot produce a running mean is **refused with its reason**
+ * rather than seeded from a guess. A leap year, a file split into several data
+ * periods, a record missing from the middle of April: `dailyMeans` and
+ * `runningMean` each throw naming the day or the record they could not read,
+ * and that sentence rides into criterion a's margin cell, which is the one
+ * place on the page a reader can act on it. Criteria b and c need no running
+ * mean at all — their thresholds are fixed — and go on reading.
+ *
+ * `source` is the LOCATION record's own fourth field, `TMYx.2009-2023` and the
+ * like, carried into the `RunningMean` so the sheet can letter what the line
+ * was built from in the file's own words rather than in ours.
+ */
+let meanCache = null;
+function runningMeanFor(epw) {
+  if (!epw) return { epw: null, mean: null, absence: ABSENCE.weather };
+  if (meanCache?.epw !== epw) {
+    try {
+      meanCache = {
+        epw,
+        mean: runningMean(dailyMeans(epw), declaredWeather(epw)?.source ?? null),
+        absence: null,
+      };
+    } catch (error) {
+      meanCache = {
+        epw,
+        mean: null,
+        absence: `the adaptive line cannot be built from this weather file — ${error.message}`,
+      };
+    }
+  }
+  return meanCache;
+}
+
+/**
+ * Every TM59 criterion this run can answer, read once at the solve.
+ *
+ * Five readings: criterion a and criterion b at both categories, and criterion
+ * c, which carries none because 26 °C is the line for both. No category is
+ * selected and none can be — which of the two applies is a fact about who will
+ * live in the building — so both are read on every run and each row says what
+ * it presumes.
+ *
+ * Everything here is taken off the run and off the snapshot the run was
+ * written from, never off live state: `snapshot` is the same object
+ * `describeDesk` is handed in the same breath as the IDF, and `epw` is the
+ * file `capture` held before the await. A slider turned or a station picked
+ * during a 0.7 s annual run would otherwise have these readings describing one
+ * building over another building's numbers, which is the failure the capture
+ * exists to prevent.
+ *
+ * Measured at 2.44 ms over a whole Chicago TMY3 year under Node, median of two
+ * hundred and stable to 0.03 ms across processes, with the running mean already
+ * in hand: the five readings, the count and the qualifications together. That is a seventh of a 16.7 ms frame, and
+ * it is paid once per solve rather than once per gesture — the register
+ * re-letters on every gesture, and walking 8,760 points again to answer a
+ * question that cannot have changed is exactly what `lastOutcome` exists to
+ * stop.
+ */
+function readTm59(eso, snapshot, patched, epw) {
+  // The value the occupancy schedule takes when nobody is there, which is a
+  // property of the schedule `applyGains` wrote rather than a constant: 0.1
+  // for the desk's own weekday band, 0 for a TM59 pattern. Read off the
+  // snapshot through `model.js`'s own answer, because testing `> 0` instead
+  // counts every hour of all 153 days — 3,672 of them, which is also the
+  // figure CL:2026 publishes for a bedroom, so the wrong denominator agrees
+  // with a published number for entirely the wrong reason.
+  const floor = occupiedFloor(snapshot);
+  const trm = runningMeanFor(epw);
+  const readings = [];
+  for (const category of CATEGORIES) {
+    // The whole `{ mean, absence }` pair, not the line out of it. A missing
+    // comfort line stands in the reader's own precedence — after the two series
+    // it needs and before the season — so a desk with Gains patched out is told
+    // to patch Gains in rather than sent to fetch a year it would then read
+    // nothing over. Deciding that here is what would make it the second copy of
+    // an ordering that lives in one place, and re-scanning the ESO twice per
+    // category to do it.
+    readings.push(readCriterionA(eso, trm, category, floor));
+    readings.push(readCriterionB(eso, category));
+  }
+  readings.push(readCriterionC(eso, floor));
+
+  return {
+    readings,
+    // A count of two, never a verdict, and it throws rather than quietly
+    // counting over one criterion if a reading in scope is missing.
+    count: clearedCount(readings),
+    // Taken off a reading rather than by walking the series a sixth time. Any
+    // reading that has one has the same one — coverage is a property of the
+    // run, not of the criterion — and a run that could not answer anything has
+    // none to give, which is the null the rows letter around.
+    coverage: readings.find((r) => r.coverage)?.coverage ?? null,
+    // The line the count's own category was judged against. Each criterion a
+    // row letters its own — Category I's runs 1 K below Category II's, and one
+    // block-level figure cannot be both — so this is here for what reads the
+    // block as a whole rather than a row of it.
+    line: readings.find((r) => r.criterion === CRITERION_BY_ID.a && r.category === COUNT_CATEGORY)
+      ?.line ?? null,
+    qualifications: qualificationsFor(eso, snapshot, patched, declaredWeather(epw)),
+  };
+}
+
 /**
  * Everything the last run measured that a criterion might ask about.
  *
@@ -4103,8 +4391,15 @@ function nextSchemeName() {
  * over a whole year, by the same rule that gates the bill's own intensity: a
  * benchmark is twelve months long, and eleven of them compared against it is
  * not a near miss but a different quantity.
+ *
+ * The TM59 block is the one reading here with a shape rather than a number,
+ * because its criteria are shares, night counts, absences with their own fixes
+ * and a coverage that has to be lettered beside every one of them. It is taken
+ * here for the reason everything else in this function is: the register
+ * re-letters on every gesture, and re-reading 8,760 points to do it would make
+ * a drag stutter for a figure that cannot have changed.
  */
-function readOutcome(eso) {
+function readOutcome(eso, snapshot, patched, epw) {
   const overheat = new Map();
   for (const above of OVERHEAT_THRESHOLDS) overheat.set(above, readOverheat(eso, above));
   // Gross floor, not the plate: a criterion is per square metre of building,
@@ -4119,16 +4414,57 @@ function readOutcome(eso) {
     ...(readPeaks(eso, floorArea) ?? {}),
     ...(readExtremes(eso) ?? {}),
     overheat,
+    tm59: readTm59(eso, snapshot, patched, epw),
   };
+}
+
+/**
+ * Which criterion of `tm59.js` each of the three TM59 metrics resolves to.
+ *
+ * Declared as a table rather than sliced out of the metric's name, because
+ * `metric.slice(4)` is a string operation that happens to work and would go on
+ * happening to work right up to the day a metric is called something else.
+ */
+const TM59_CRITERION = Object.freeze({ tm59a: 'a', tm59b: 'b', tm59c: 'c' });
+
+/**
+ * Whether a preset's lines are TM59's criteria, asked of the declaration.
+ *
+ * Matched on the metrics its targets carry rather than on its name or its id,
+ * for the reason the console reads `--index` back off the stylesheet: a fact
+ * spelled in two places is a bug that exists at exactly one of them.
+ */
+const carriesTm59 = (preset) => preset.targets.some((target) => target.metric in TM59_CRITERION);
+
+/**
+ * The reading behind one TM59 target, matched on criterion *and* category.
+ *
+ * The category is half the key and has to be. Criterion a is lettered twice on
+ * this board, once against each of TM59's two adaptive lines, and the two
+ * targets carry the same metric — matched on the metric alone, a·I and a·II
+ * would both resolve to whichever reading came first in the list and the board
+ * would print one number under two labels 1 K apart. Criterion c carries no
+ * category and its target carries `null`, so the same comparison holds it.
+ */
+function tm59Reading(target) {
+  const id = TM59_CRITERION[target.metric];
+  if (!id || !lastOutcome?.tm59) return null;
+  return (
+    lastOutcome.tm59.readings.find(
+      (reading) => reading.criterion.id === id && reading.category === target.category,
+    ) ?? null
+  );
 }
 
 /** The reading one target asks for, or null when the run does not carry it. */
 function targetReading(target) {
   if (!lastOutcome) return null;
   const value =
-    target.metric === 'overheat'
-      ? (lastOutcome.overheat?.get(target.above) ?? null)
-      : (lastOutcome[target.metric] ?? null);
+    target.metric in TM59_CRITERION
+      ? (tm59Reading(target)?.value ?? null)
+      : target.metric === 'overheat'
+        ? (lastOutcome.overheat?.get(target.above) ?? null)
+        : (lastOutcome[target.metric] ?? null);
   return Number.isFinite(value) ? value : null;
 }
 
@@ -4145,9 +4481,66 @@ function runBlock(needs) {
   // The order matters: a peak load asks only for a run, so telling somebody to
   // attach a weather file before telling them to patch System in would send
   // them off to fetch a year they do not need for this line.
-  if (!modelState?.get('system')?.engaged) return 'system';
+  //
+  // A summer criterion is the one line on this board that a free-running zone
+  // answers perfectly — TM59 is a question about a dwelling with the windows
+  // shut and nobody's boiler in it — so `'season'` is let past the System
+  // check rather than being told to patch in a unit it has no use for. That is
+  // an extension of the order and not a reordering of it: every other target
+  // still meets System first, and a `'season'` line that is blank for some
+  // other reason still falls through to `tm59Block` below, which reads the
+  // reason off the reading itself.
+  if (needs !== 'season' && !modelState?.get('system')?.engaged) return 'system';
   if (needs === 'year' && !lastRun.annual) return 'year';
   return null;
+}
+
+/**
+ * Which of the three TM59 blockages one criterion is standing under, and the
+ * sentence that says so.
+ *
+ * The sentence is the `Reading`'s own, never a second wording of it: a reader
+ * who could not be told why a line is blank is the failure `ABSENCE` was
+ * written to prevent, and two modules writing that sentence would drift on the
+ * first edit. The key is what this table adds — the board's note groups blank
+ * lines by it, and a key derived from a different question than the sentence
+ * would have the note offering a press for one blockage while the margin cell
+ * beside it named another.
+ *
+ * The precedence between them is settled in `tm59.js`, inside the readers,
+ * and is deliberately not restated here. `readCriterionA` asks for its
+ * occupancy series *before* it asks whether the run reached the season, which
+ * is the ordering this board needs for exactly the reason it already orders
+ * System before the weather file: telling somebody to run some of May to
+ * September before telling them to patch Gains in would send them off to fetch
+ * a summer they would then read nothing over. A `Reading` carries one absence,
+ * so mapping that sentence to its key is the whole of the work — a second
+ * ordering here could only ever disagree with the first.
+ */
+const TM59_BLOCK = new Map([
+  [ABSENCE.season, 'season'],
+  // A run holding every day of the period and not one complete night in the
+  // last of them is short of the *period*, not of a series or of an occupant,
+  // so it stands under the same key as the season and letters its own fix.
+  [ABSENCE.night, 'season'],
+  [ABSENCE.occupancy, 'occupancy'],
+  [ABSENCE.schedule, 'occupancy'],
+  [ABSENCE.operative, 'operative'],
+  // Not a TM59 key at all: two design days are the board's existing `'year'`
+  // blockage under a summer criterion's own wording, and grouping it anywhere
+  // else would take these lines out of the count behind the picker offer that
+  // is the one press that fixes them.
+  [ABSENCE.weather, 'year'],
+]);
+
+function tm59Block(target) {
+  const reading = tm59Reading(target);
+  // No reading object at all means the solve never asked for this criterion,
+  // which is a different state from a criterion that could not answer — and
+  // one this page has no sentence for, because it is a bug rather than a desk
+  // position.
+  if (!reading?.absence) return { key: 'other', says: 'not carried by this run' };
+  return { key: TM59_BLOCK.get(reading.absence) ?? 'other', says: reading.absence };
 }
 
 function targetBlock(target) {
@@ -4165,6 +4558,10 @@ function targetBlock(target) {
   if (key === 'year') {
     return { key, says: 'attach a weather file — this is a year’s number' };
   }
+  // Ahead of the catch-all and behind the two above it, so a summer criterion
+  // that is blank for a reason of its own says which one rather than reading
+  // as though the series were missing.
+  if (target.needs === 'season') return tm59Block(target);
   // The energy use intensity is read off the bill, and the bill draws a per-m²
   // figure only over twelve months, because every published benchmark is a
   // year long. A run with months left out of the calendar is a real run with a
@@ -4529,14 +4926,35 @@ function syncStandards() {
   // the same rule, and the fact worth carrying at that size is the one the
   // chips inside would have given — whether this desk is built to anything.
   const built = [];
+  // Kept apart from `built`, and the distinction is FR-017's. Every other
+  // preset here is a specification a building can be built to, so "built to
+  // Passivhaus Classic" is a claim about the desk and is true or false of it.
+  // TM59 is a compliance *procedure*: what its specification sets is the
+  // prescribed occupancy and gains of Appendix E, and whether those hold says
+  // nothing whatever about whether the dwelling passes — that is assessed room
+  // by room against the worst room, over a mandated weather file, in a staged
+  // sequence this page cannot execute. "Built to TM59" is therefore a sentence
+  // this sheet is not entitled to letter, and a folded one-line register has
+  // no room to draw the distinction inside it. So the setup is reported as a
+  // setup, in its own clause of the same line.
+  const setups = [];
   for (const { preset, chip, verdict, clauses } of standardCards.values()) {
     const c = conformance(params, bypass, preset);
-    if (c.built) built.push(preset.name);
+    const method = carriesTm59(preset);
+    if (c.built) (method ? setups : built).push(preset.name);
     if (c.built === null) {
       chip.textContent = 'targets only';
       chip.className = 'preset-state';
       verdict.textContent = 'Sets nothing. Everything it has to say is on the scoreboard.';
       verdict.className = 'preset-verdict';
+    } else if (c.built && method) {
+      chip.textContent = 'setup applied';
+      chip.className = 'preset-state met';
+      verdict.textContent =
+        `The desk holds this method’s prescribed setup — all ${c.clauses.length} clauses hold. ` +
+        'What that setup produces is read on the scoreboard, criterion by criterion, and the block ' +
+        'under those rows says what the readings do not answer.';
+      verdict.className = 'preset-verdict met';
     } else if (c.built) {
       chip.textContent = 'built to it';
       chip.className = 'preset-state met';
@@ -4575,14 +4993,372 @@ function syncStandards() {
 
   const state = $('presets-state');
   const total = standardCards.size;
-  state.textContent = built.length
-    ? built.length === 1
-      ? `built to ${built[0]}`
-      : `built to ${built.length} of ${total}`
-    : `${total} standards`;
-  state.classList.toggle('met', built.length > 0);
+  const parts = [];
+  if (built.length) {
+    parts.push(built.length === 1 ? `built to ${built[0]}` : `built to ${built.length} of ${total}`);
+  }
+  // Named rather than counted, because there is one of them and a count of one
+  // says less than its name does — and because "1 setup applied" would invite
+  // exactly the reading the clause exists to avoid.
+  for (const name of setups) parts.push(`${name} setup applied`);
+  state.textContent = parts.length ? parts.join(' · ') : `${total} standards`;
+  state.classList.toggle('met', built.length > 0 || setups.length > 0);
 
   renderScore();
+}
+
+/**
+ * A reading at the board's own precision, or whole where the quantity is a
+ * count of things.
+ *
+ * Every other line on this scoreboard is an intensity or a share and reads to
+ * one decimal. Criterion b is a count of nights, and `3.0 nights` is a share
+ * wearing a count's unit: it invites the reader to wonder what four fifths of
+ * a night would be, on a criterion whose whole 2026 revision was the move from
+ * counting hours to counting nights. The margin takes the same treatment, or a
+ * row reading `3` would be `over by 1.0` beside itself.
+ *
+ * The precision is the target's own, not a question about which metric this
+ * is. Asked of the declaration, a line that counts whole things letters whole
+ * things wherever it is drawn — and there are six call sites. `toFixed` rather
+ * than a branch between two spellings, so `digits` means what it says: a
+ * two-decimal line declared later letters two decimals, where a `digits === 0`
+ * test would have sent it to the one-decimal arm and printed a figure short of
+ * its declaration with nothing anywhere saying so. `Target` refuses a `digits`
+ * `toFixed` cannot take, which is what keeps this total.
+ */
+const scoreFigure = (target, value) => value.toFixed(target.digits);
+
+/**
+ * Whether the criteria were read over the desk as it was drawn.
+ *
+ * Read off the qualifications the solve assembled rather than off live
+ * `params`, which is the difference between describing the run and describing
+ * the desk the reader has moved to since. `qualificationsFor` appends the
+ * `profiles` entry exactly where the prescribed occupancy and gains reached
+ * the document, so its absence is the same fact from the other side and there
+ * is one place that fact is decided.
+ */
+const readAsDrawn = (tm59) => !tm59.qualifications.some((q) => q.id === 'profiles');
+
+/**
+ * What one TM59 row has to say about the run it was read from.
+ *
+ * The declaration half of a criterion is already on the row: `Target.note`
+ * carries what the criterion applies to, what it presumes and where its
+ * threshold comes from, in the method's own words. What none of that can carry
+ * is the run — and three of this feature's requirements are about exactly
+ * that.
+ *
+ * The comfort line moved (FR-006). Criterion a's threshold is recomputed for
+ * every day of the period off the outdoor running mean, so there is no single
+ * number to letter in the "asks for" column and a reader handed a verdict
+ * against a limit they cannot see has been handed an assertion. The row states
+ * the range it travelled and its mean over the days covered, and says where a
+ * clamp held it still — which matters more on this desk than it would in a UK
+ * compliance run, since a station in a cold May spends part of the period flat
+ * and an exceedance share responding to nothing would otherwise have no
+ * explanation on the page.
+ *
+ * The period is not the year (FR-010). All four criteria are read over 1 May
+ * to 30 September, and 2 % over eleven days of August is not the same reading
+ * as 2 % over the whole summer. The coverage is lettered at equal prominence
+ * with the share, never inferred from the run strip.
+ *
+ * And what the reading is *of* (FR-007, FR-016): operative temperature, never
+ * air temperature, and the building as drawn wherever the method's prescribed
+ * occupancy has not been applied.
+ *
+ * Nothing here is lettered for a row with no value. An absent reading carries
+ * its own sentence in the margin cell, and a paragraph explaining the
+ * arithmetic of a figure that is an em dash is furniture.
+ *
+ * The words themselves are `tm59NotesFor` below; this is the memo in front of
+ * it, which is where the rest of this note is about.
+ *
+ * `renderScore` clears and rebuilds the whole board, and `syncStandards` calls
+ * it from `applyGeometry` — so on a desk with a station attached it runs on
+ * every pointermove of every drag, while `lastOutcome` stands unchanged until
+ * the release solve lands. Rebuilt each time, the five rows concatenate about
+ * twenty-two fresh strings and eight kilobytes of text for a set of sentences
+ * that cannot have moved: the whole TM59 read is 2.44 ms once per solve, and
+ * this was paying a fraction of it again sixty times a second to arrive at the
+ * same words.
+ *
+ * Keyed on the `Reading` object itself, which is frozen and is replaced
+ * wholesale at each solve, so identity is exactly the question "is this still
+ * the same reading". The same cache-on-identity `offersFor` and `calendarFor`
+ * keep against the ESO. Five entries at a time, one per criterion row, and the
+ * map is weak so a solve's readings take their prose with them when the next
+ * solve replaces them.
+ */
+/**
+ * The one line a criterion row keeps in view above its own reasoning.
+ *
+ * Five rows carrying three or four paragraphs each is about eight kilobytes of
+ * prose under a table of five numbers, and it buried the numbers. So the
+ * reasoning folds and this stands over it — the desk's own rule for the index
+ * sheet, where a folded strip keeps its reading and only its controls go behind
+ * the fold: closed a row reads, open it is worked.
+ *
+ * What may not fold is decided by the requirements rather than by length. The
+ * line the run was judged against is FR-006 and it moved during the run, so a
+ * reader cannot check the verdict without it. The coverage is FR-010. That the
+ * reading is of operative temperature and not air temperature is FR-007, and it
+ * is the difference between two questions rather than a nicety. Those three are
+ * here; the derivations, the clamp counts, the hour arithmetic and the two
+ * documents' positions on a partial period are one press away.
+ *
+ * The qualifications that change how a number should be read — that criterion b
+ * presumes a bedroom, that the criteria are read over the building as drawn —
+ * do not appear here because they do not fold at all: they stay in the row's
+ * own notes, outside the disclosure, for the reason the index sheet keeps a
+ * blocked channel's note outside its fold.
+ */
+// A note that says how the reading must be *taken* rather than how it was
+// *made*. Matched on its own words rather than by position, because the notes
+// are pushed in different orders per criterion and an index would silently
+// point at the wrong sentence the next time one is added.
+const QUALIFYING_NOTE = /presumes a bedroom|building as drawn|as it is drawn/i;
+
+function tm59Precis(reading) {
+  if (!reading || reading.value === null) return null;
+  const { criterion, coverage, line } = reading;
+  const parts = [];
+  if (criterion.id === 'a' && line) {
+    parts.push(`judged against ${f1c(line.low)}–${f1c(line.high)} °C`);
+  }
+  if (coverage) parts.push(`${coverage.days} of ${SEASON.days} days`);
+  parts.push('operative temperature');
+  return parts.join(' · ');
+}
+
+const noteCache = new WeakMap();
+
+function tm59Notes(reading, asDrawn) {
+  if (reading) {
+    const held = noteCache.get(reading);
+    // `asDrawn` is part of the key: it is read off the run rather than off live
+    // params, so it moves only when a solve does, but a cache that ignored it
+    // would letter "the building as drawn" over a desk that had since been
+    // given the method's own profiles.
+    if (held && held.asDrawn === asDrawn) return held.notes;
+  }
+  const notes = tm59NotesFor(reading, asDrawn);
+  if (reading) noteCache.set(reading, { asDrawn, notes });
+  return notes;
+}
+
+function tm59NotesFor(reading, asDrawn) {
+  if (!reading || reading.value === null) return [];
+  const { criterion, category, coverage, line } = reading;
+  const notes = [];
+
+  if (criterion.id === 'a') {
+    let moved =
+      `Read from the zone’s hourly operative temperature against ${category.label}’s adaptive line, ` +
+      `which is recomputed every day off the outdoor running mean. Over the ${line.days} days this ` +
+      `run covered it ran from ${f1c(line.low)} °C to ${f1c(line.high)} °C, mean ${f1c(line.mean)} °C.`;
+    // Named as the published clamp rather than as "the minimum", because that
+    // is what it is: TM59:2026 §2.4.1 stops the line at both ends, and a
+    // reader watching a share stop responding to the weather is owed the
+    // reason rather than left to find it.
+    if (line.clampedLow) {
+      moved +=
+        ` It stood at its published floor of ${f1c(category.low)} °C on ${line.clampedLow} of them,` +
+        ' where the running mean was below 10 °C and the line stops moving.';
+    }
+    if (line.clampedHigh) {
+      moved +=
+        ` It stood at its published ceiling of ${f1c(category.high)} °C on ${line.clampedHigh} of` +
+        ' them, where the running mean was above 30 °C and the line stops moving.';
+    }
+    notes.push(moved);
+    notes.push(
+      `${reading.counted} of the ${reading.over} occupied hours the run held inside the period stood ` +
+        'a rounded 1 K or more above it.',
+    );
+  }
+
+  if (criterion.id === 'b') {
+    notes.push(
+      'Read from the zone’s hourly operative temperature, as the mean over the nine hours of sleep ' +
+        `from 23:00, against a fixed Tn of ${category.nightLimit} °C for ${category.label}. ` +
+        `${reading.counted} of the ${reading.over} complete nights the run held exceeded it.`,
+    );
+    notes.push(
+      'The method reads this criterion over bedrooms alone, and nothing on this desk declares what ' +
+        'its one room is, so the reading presumes a bedroom.',
+    );
+    // Only where the run holds the whole period and still not that night.
+    // Below 153 days the coverage sentence has already said the period was not
+    // covered, and naming one missing night inside a missing September would
+    // be the smaller fact standing in front of the larger one.
+    if (coverage.whole && !coverage.tail) {
+      notes.push(
+        'The period’s last night runs from 23:00 on 30 September to 08:00 on 1 October and this run ' +
+          'stops at midnight, so that night is counted in neither term.',
+      );
+    }
+  }
+
+  if (criterion.id === 'c') {
+    notes.push(
+      `Read from the zone’s hourly operative temperature against a fixed ${criterion.threshold} °C, ` +
+        'the same line for both categories and with no rounding — the rounding rule is criterion a’s ' +
+        `provision for ∆T against a moving line. ${reading.counted} of the ${reading.over} occupied ` +
+        'hours the run held inside the period stood above it.',
+    );
+  }
+
+  notes.push(
+    coverage.whole
+      ? `Read over the whole assessment period: ${coverage.of} days from 1 May to 30 September ` +
+        `(${coverage.months}).`
+      : `Read over ${coverage.days} of the ${coverage.of} days of 1 May to 30 September ` +
+        `(${coverage.months}), which is what this run covered.`,
+  );
+
+  // Both documents' positions, stated and not resolved (FR-011). Criterion a
+  // only, because the provision is TM52 criterion 1's own and TM59 borrows
+  // criterion 1 and nothing else from TM52 — extending it to criteria the
+  // older document never wrote would be this sheet legislating.
+  if (!coverage.whole && criterion.id === 'a') {
+    notes.push(
+      `${PARTIAL_PERIOD.permits} ${PARTIAL_PERIOD.written} The share above is taken over the hours ` +
+        'this run held, with its coverage beside it; which of the two positions governs is not this ' +
+        'sheet’s to settle.',
+    );
+  }
+
+  if (asDrawn) {
+    notes.push(
+      'The occupied hours are the desk’s own occupancy schedule rather than the method’s prescribed ' +
+        'profile, so this is read over the building as drawn.',
+    );
+  }
+
+  return notes;
+}
+
+/**
+ * A full-width row of prose inside the board, under the rows it is about.
+ *
+ * The same arrangement `tr.score-head` already uses for a standard's name: a
+ * spanning cell, because the board is five published documents end to end and
+ * a block after the table would sit under whichever one happens to be last,
+ * which is not the one the sentence is about.
+ */
+function scoreProse(body) {
+  const tr = body.insertRow();
+  tr.className = 'score-prose';
+  const td = tr.insertCell();
+  td.colSpan = 5;
+  return td;
+}
+
+/**
+ * How many of the criteria in scope cleared. One row, and never a verdict.
+ *
+ * FR-017 forbids any pass or fail word attaching to TM59's name, and FR-017a
+ * permits exactly this: a plain count naming both numbers, with the criteria
+ * the run could not answer reported as unread rather than folded into either
+ * of them. So the row says how many were read and how many of *those* cleared,
+ * names its scope in full, and says what is standing outside it — because "2
+ * cleared" over a method that states four criteria is a true sentence a reader
+ * would finish reading as a compliance result.
+ *
+ * It carries no marker, no rule, no figure face and no colour. Every one of
+ * those would make it the board's total, and a row that looks like a total is
+ * read as one whatever the words in it say.
+ */
+function tm59CountRow(body, count) {
+  const host = scoreProse(body);
+  const p = elem('p', 'score-count');
+  const n = (value) => elem('b', null, String(value));
+
+  if (count.read === 0) {
+    p.append(`None of the criteria in scope — ${count.scope} — could be read from this run.`);
+  } else {
+    // "2 cleared", not "2 cleared their limits" and not "2 of 2". The bare
+    // verb is the only form that stays a sentence at every reading: a
+    // possessive has to agree with a number that may be nought, and anything
+    // of the shape "n of m" is the proportion FR-017a forbids wearing a
+    // count's clothes. Each row already letters the limit it was read against.
+    p.append(
+      'Of the ',
+      n(count.read),
+      count.read === 1 ? ' criterion read over ' : ' criteria read over ',
+      count.scope,
+      ', ',
+      n(count.cleared),
+      ' cleared.',
+    );
+  }
+
+  // Named one by one rather than counted. A criterion the run could not answer
+  // is not one that failed and is not one that passed, and the only useful
+  // thing to say about it is which one it is and what would fix it.
+  for (const reading of count.unread) {
+    const label = reading.category
+      ? `${reading.criterion.label} · ${reading.category.label}`
+      : reading.criterion.label;
+    p.append(` ${label} could not be read: ${reading.absence}.`);
+  }
+
+  p.append(
+    ' Criterion c is read separately and stands outside this count, because which of it and ' +
+      'criterion a governs turns on how much of the occupied period the openings are held shut, ' +
+      'which is a fact about a window model this desk does not carry. Criterion d is not read at ' +
+      'all: this model holds no communal circulation for it to be read over, and the register’s ' +
+      'list of what this sheet cannot judge says so in full.',
+  );
+  p.append(
+    ' This is a count of lines, not a result against the method. TM59 is assessed room by room and ' +
+      'the dwelling is governed by its worst room; this model is one zone, so there is no worst ' +
+      'room to find.',
+  );
+
+  host.append(p);
+}
+
+/**
+ * Why these figures are not a TM59 assessment, printed under them.
+ *
+ * The deliverable rather than a disclaimer, and it is in place and never on
+ * hover: `pointer: coarse` has no hover at all, so a caveat that floats does
+ * not exist on the phone where this sheet is most often read and least often
+ * checked against the method it names.
+ *
+ * One entry per `Qualification`, `says` over `because`, so that a reader can
+ * count the reasons rather than skim a paragraph — SC-005 asks that four
+ * specific ones be statable from what is printed, and `tm59.js` asserts at
+ * load that at least four standing ones are declared. Two tracks on a wide
+ * sheet and one below 620 px, where the `because` stands under the `says` and
+ * letters the head the adjacency was giving it. That head is set here, where
+ * the cell is built, so the word beside a paragraph and the relation the
+ * layout was drawing are one string.
+ */
+function tm59QualificationRow(body, qualifications) {
+  const host = scoreProse(body);
+  host.append(
+    elem(
+      'p',
+      'score-count',
+      'What these readings do not answer. TM59 is a compliance procedure with a modelling strategy, ' +
+        'a prescribed occupancy, a mandated weather file and a staged sequence behind it; what is ' +
+        'lettered above is the arithmetic of some of its criteria, which is a smaller thing. Each ' +
+        'line below is one specific gap, with what it is measured or read from beside it.',
+    ),
+  );
+  const list = elem('dl', 'qualifications');
+  for (const q of qualifications) {
+    list.append(elem('dt', null, q.says));
+    const because = elem('dd', null, q.because);
+    because.dataset.head = 'Because';
+    list.append(because);
+  }
+  host.append(list);
 }
 
 /**
@@ -4644,18 +5420,58 @@ function renderScore() {
       chaseGhost = gesture ? chaseNow() : null;
       renderScore();
       renderChase();
+      // Chasing TM59 is what decides whether a study reads criterion a, so the
+      // curves already up are now of the wrong quantity. They are re-swept the
+      // way any other change to the reading re-sweeps them rather than left to
+      // disagree with the offer that produced them.
+      refreshStudies();
     });
     bar.append(chase);
+    // Whether this standard's lines are read by `tm59.js`, asked of the
+    // declaration rather than of the preset's id: the block of prose below the
+    // rows belongs to whichever standard carries those metrics, and a name
+    // matched here is a second place for it to be spelled.
+    const criteria = carriesTm59(preset) ? (lastOutcome?.tm59 ?? null) : null;
+    const asDrawn = criteria ? readAsDrawn(criteria) : false;
     for (const target of preset.targets) {
       const tr = body.insertRow();
       const label = tr.insertCell();
       label.append(target.label);
       if (target.note) label.append(elem('i', 'why', target.note));
+      // What the run added to what the declaration already said: the line the
+      // reading was judged against, the days it covered, and what it is a
+      // reading of. One block per statement rather than one paragraph, because
+      // they are separate claims a reader may want to check one at a time.
+      if (criteria) {
+        const reading = tm59Reading(target);
+        const notes = tm59Notes(reading, asDrawn);
+        const precis = tm59Precis(reading);
+        // The two sentences that qualify the reading rather than derive it stay
+        // outside the fold, because a reader who never opens it must still not
+        // take a bedroom criterion for a statement about the room they drew.
+        const qualifying = notes.filter((n) => QUALIFYING_NOTE.test(n));
+        const deriving = notes.filter((n) => !QUALIFYING_NOTE.test(n));
+        if (precis && deriving.length) {
+          const fold = elem('details', 'why-fold');
+          const head = elem('summary', null, precis);
+          fold.append(head);
+          for (const note of deriving) fold.append(elem('i', 'why', note));
+          label.append(fold);
+        } else {
+          for (const note of deriving) label.append(elem('i', 'why', note));
+        }
+        for (const note of qualifying) label.append(elem('i', 'why', note));
+      }
       cell(tr, target.limit == null ? target.asks : `≤ ${target.limit}`, 'asks', 'Asks for');
       const value = targetReading(target);
       // The unit rides on the folded label, because the unit column itself is
       // dropped at that width: `46.6` on a line of its own says nothing.
-      const read = cell(tr, value == null ? '—' : f1c(value), null, `Reads, ${target.unit}`);
+      const read = cell(
+        tr,
+        value == null ? '—' : scoreFigure(target, value),
+        null,
+        `Reads, ${target.unit}`,
+      );
       if (value == null) read.className = 'void';
       const margin = tr.insertCell();
       margin.className = 'delta';
@@ -4667,17 +5483,31 @@ function renderScore() {
         const over = value - target.limit;
         // One small redline mark on the divergence, and nothing at all on the
         // rows that clear — the accent marks "look here", it does not grade.
-        margin.textContent = over > 0 ? `over by ${f1c(over)}` : `under by ${f1c(-over)}`;
+        margin.textContent =
+          over > 0
+            ? `over by ${scoreFigure(target, over)}`
+            : `under by ${scoreFigure(target, -over)}`;
         if (over > 0) margin.classList.add('over');
       }
       const unit = tr.insertCell();
       unit.className = 'unit';
       unit.textContent = target.unit;
     }
+    // Under the rows they are about, and only where there is a run behind
+    // them. `clearReadings` puts `lastOutcome` back to null on every exit where
+    // the readings stop being true, so a fatal takes the count and the
+    // qualifications down with the figures they qualify rather than leaving
+    // them standing over a board of em dashes.
+    if (criteria) {
+      tm59CountRow(body, criteria.count);
+      tm59QualificationRow(body, criteria.qualifications);
+    }
   }
   table.append(body);
-  // The register folds to a block per row below 620px exactly as the two
-  // schedules do, so it needs the same repair: `display: block` on a `tr`
+  // The register folds to a block per row at 780px — the desk's own
+  // threshold, not the 620 the two schedules fold at, since five columns
+  // with four of them figures run out of width sooner than a schedule
+  // does. It needs the schedules' repair either way: `display: block` on a `tr`
   // drops the implicit row and cell roles, and a scoreboard read aloud without
   // them is a list of loose numbers with no criterion attached to any of them.
   keepTableSemantics(table);
@@ -4890,7 +5720,11 @@ function renderChase() {
   // tracked-capitals bug in another costume — a unit is not prose and does not
   // take the sentence's case. So the sentence is built around the label rather
   // than the label bent to fit the sentence.
-  const against = `reads ${f1c(now.value)} against ${now.target.limit}`;
+  // `scoreFigure` rather than `f1c`, so a night count reads as one here too.
+  // The board and this line are two drawings of one reading, and a criterion
+  // lettered `3` in the table and `3.0` beside the drawing would be the sheet
+  // disagreeing with itself about what kind of quantity it had measured.
+  const against = `reads ${scoreFigure(now.target, now.value)} against ${now.target.limit}`;
   const tally =
     now.read === 1
       ? now.clears
@@ -4902,7 +5736,7 @@ function renderChase() {
     host.append(
       mark(now.target.label),
       ` ${against}, over by `,
-      mark(f1c(now.over), true),
+      mark(scoreFigure(now.target, now.over), true),
       ` ${now.target.unit}.`,
       tally,
     );
@@ -4911,7 +5745,7 @@ function renderChase() {
       'every readable line clears. The closest, ',
       mark(now.target.label),
       `, ${against} — under by `,
-      mark(f1c(-now.over)),
+      mark(scoreFigure(now.target, -now.over)),
       ` ${now.target.unit}.`,
     );
   }
@@ -4922,10 +5756,38 @@ function renderChase() {
     host.append(elem('i', 'chase-part', ` ${now.stated - now.read} of its lines cannot be read on this run.`));
   }
 
+  // And the one standard on the register whose name a verdict may not attach
+  // to at all (FR-017). Every other preset here is a specification: "every
+  // readable line clears" is a true and complete statement about Passivhaus's
+  // published criteria. TM59 is a compliance procedure assessed room by room
+  // against the worst room, and the same sentence beside its name reads as the
+  // dwelling having passed it — which is exactly the reading the whole
+  // qualifications block downstairs exists to prevent, and which would be
+  // undone by one line of type up beside the drawing. So the chase line says
+  // what it is a count of, unconditionally rather than only where a line is
+  // missing: the reader who is watching this while dragging a slider is
+  // precisely the reader who never scrolls down to the board.
+  if (carriesTm59(preset)) {
+    host.append(
+      elem(
+        'i',
+        'chase-part',
+        ' A count of lines, not a result against the method: criterion d is not read here at all, ' +
+          'and the block under the scoreboard says what else these readings do not answer.',
+      ),
+    );
+  }
+
   // The ghost: where this stood when the hand went down. Compared at display
-  // precision, so a change too small to move the printed figure says nothing.
-  if (chaseGhost && f1c(chaseGhost.over) !== f1c(now.over)) {
-    const was = chaseGhost.over > 0 ? `over by ${f1c(chaseGhost.over)}` : `under by ${f1c(-chaseGhost.over)}`;
+  // precision, so a change too small to move the printed figure says nothing —
+  // and at each side's *own* display precision, since the two may be different
+  // lines of different standards and a night count does not print like a share.
+  if (
+    chaseGhost &&
+    scoreFigure(chaseGhost.target, chaseGhost.over) !== scoreFigure(now.target, now.over)
+  ) {
+    const figure = (margin) => scoreFigure(chaseGhost.target, margin);
+    const was = chaseGhost.over > 0 ? `over by ${figure(chaseGhost.over)}` : `under by ${figure(-chaseGhost.over)}`;
     const same = chaseGhost.target.id === now.target.id;
     host.append(
       elem('i', 'chase-ghost', same ? ` was ${was}` : ` was ${chaseGhost.target.label.toLowerCase()}, ${was}`),
@@ -5182,6 +6044,7 @@ if (location.hash.length > 1) {
     linked = decodeState(location.hash.slice(1));
     Object.assign(params, linked.params);
     Object.assign(bypass, linked.bypass);
+    studyQuantity = linked.quantity ?? null;
     // The pinned hour is taken here rather than after the first solve, because
     // it has to be in force *for* that solve: honoured afterwards, the desk
     // would letter its own worst hour first and jump to the link's, which is
@@ -5237,6 +6100,12 @@ async function solve() {
   // would leave the pump chasing a target it had already hit.
   const shape = shapeKey(params);
   const snapshot = { ...params };
+  // The patch state this shape is being solved under, captured in the same
+  // breath and for the same reason. `patching()` rather than `bypass`, because
+  // that is what reaches the IDF: under solo the desk sends five channels out
+  // that the patch bay has in, and a qualification about the run has to
+  // describe the run.
+  const patched = { ...patching() };
   // The rest of the run's identity, captured in the same breath as the shape.
   // `idf` below is held for the same reason, but these were once read live
   // after the await — and a station picked or a channel patched during a
@@ -5533,7 +6402,7 @@ async function solve() {
   // off the ESO whenever a card is re-lettered. The register re-letters on
   // every gesture, and walking 8,760 points to answer a question that cannot
   // have changed would put a stutter in every drag.
-  lastOutcome = readOutcome(eso);
+  lastOutcome = readOutcome(eso, snapshot, patched, capture.epw);
   syncPin();
   renderBill();
   renderRegister();
@@ -5636,6 +6505,19 @@ async function solve() {
   // Only a run that produced readable results fills the first square — the
   // early returns above are exactly the runs the note must not claim.
   tour?.note('solve');
+
+  // And the criteria square fills only where the board actually lettered them.
+  // The test is the count's own pair rather than any one reading, because the
+  // two halves of that pair are blocked by different things: criterion b needs
+  // nothing but operative temperature over some of May to September, so a
+  // station attached over the stock desk would answer it alone and fill the
+  // square for a reader who never patched Gains in and never saw a share of
+  // occupied hours. `unread` is empty exactly when both came back with a
+  // number, which is the state the note's own sentence describes. A run whose
+  // criteria all stood under a blockage has not taken the step, however many
+  // em dashes it drew — the notes read the model, and an em dash is the model
+  // saying it could not answer.
+  if (lastOutcome?.tm59?.count.unread.length === 0) tour?.note('tm59');
 }
 
 /* ══ the scheduler ═══════════════════════════════════════════════════════ */
@@ -5704,7 +6586,7 @@ runBtn.addEventListener('click', () => {
 /*
  * A drag is authorship; a study is a question. The desk as it stands is
  * solved at each sample of one key — the run the sheet would solve, design
- * days or the attached year — and only the metric numbers are kept from each
+ * days or the attached year — and only quantity readings are kept from each
  * run. Live `params` are never touched: every sample is an overlay handed to
  * `applyModel`, so the sliders, the axonometric, the plate and the address
  * bar hold still while the pool tries a score of buildings the reader never
@@ -5737,6 +6619,192 @@ const studyPool = createEnginePool({
 });
 
 /**
+ * The declaration one sweep is read under, refused by name where there is none.
+ *
+ * `study.js` owns the quantity's lettering, contents and reader together. The
+ * lookup here is the one refusal gate between persisted ids and declarations.
+ *
+ * The throw is the point. Both uses below sit inside the sample's own promise,
+ * where the scheduler turns a rejection into a gap, so an id matching no
+ * declaration would come back as twenty-one missing points under a card
+ * reporting no readings and nothing anywhere would say the id was wrong. That
+ * is why `enqueueStudy` asks this at the mint too, out in its own stack.
+ */
+function quantityOf(id) {
+  const quantity = QUANTITY_BY_ID[id];
+  if (!quantity) {
+    throw new Error(`no study quantity is declared as "${id}"; the declarations are QUANTITIES in study.js`);
+  }
+  return quantity;
+}
+
+class MeterBasis {
+  constructor({ series, floorArea, hours, engaged, annual, months }) {
+    this.series = Object.freeze(Object.fromEntries(series));
+    this.floorArea = floorArea;
+    this.hours = hours;
+    this.engaged = Object.freeze([...engaged]);
+    this.annual = annual;
+    this.months = months;
+    Object.freeze(this);
+  }
+}
+
+class LandedRun {
+  constructor({ eso, meters, environments, hours, months, annual, bill: landedBill }) {
+    this.eso = eso;
+    this.meters = meters;
+    this.environments = Object.freeze([...environments]);
+    this.hours = hours;
+    this.months = months;
+    this.annual = annual;
+    this.bill = landedBill;
+    Object.freeze(this);
+  }
+}
+
+function billFromBasis(basis, pricing) {
+  if (!basis || !Object.keys(basis.series).length) return null;
+  return computeBill({
+    series: new Map(Object.entries(basis.series)),
+    params: pricing,
+    card: assume(resolveRates(station), pricing),
+    floorArea: basis.floorArea,
+    hours: basis.hours,
+    engaged: new Set(basis.engaged),
+    annual: basis.annual,
+    months: basis.months,
+  });
+}
+
+function landedFrom(eso, job, built) {
+  const points = hourly(eso, exactly('Zone Mean Air Temperature'));
+  const runs = environmentRuns(points, eso?.environments ?? []);
+  // Weather-file environments where the run holds any, the design days where
+  // it does not — and the same question answers both halves, so it is asked
+  // once. Asked a second time of the filtered list it reads as a fresh fact
+  // and is not one: after the filter every environment is a run period by
+  // construction, so the answer can only ever be the first question's.
+  const annualRun = runs.some((run) => run.kind === null);
+  const billedRuns = annualRun ? runs.filter((run) => run.kind === null) : runs;
+  const environments = new Set(billedRuns.map((run) => run.key));
+  const series = new Map();
+  for (const use of END_USES) {
+    const total = meterTotal(eso, use.meter, environments);
+    if (total != null) series.set(use.meter, total);
+  }
+  const sampleParams = { ...job.snapshot, [job.key]: built.value };
+  const engaged = new Set(
+    [...channelState(sampleParams, job.patch)].filter(([, state]) => state.engaged).map(([id]) => id),
+  );
+  const basis = new MeterBasis({
+    series,
+    floorArea: built.floorArea,
+    hours: billedRuns.reduce((total, run) => total + (run.end - run.start + 1), 0),
+    engaged,
+    annual: annualRun,
+    months: annualRun ? billedRuns.reduce((total, run) => total + run.months, 0) : null,
+  });
+  return {
+    basis,
+    landed: new LandedRun({
+      eso,
+      meters: series,
+      environments,
+      hours: basis.hours,
+      months: basis.months,
+      annual: basis.annual,
+      bill: billFromBasis(basis, sampleParams),
+    }),
+  };
+}
+
+function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? null) {
+  const state = channelState(snapshot, patch);
+  const channels = [...state].filter(([, value]) => value.engaged).map(([id]) => id);
+  const engaged = new Set(channels);
+  const card = assume(resolveRates(station), snapshot);
+  const uses = END_USES.filter((use) => !use.needs || engaged.has(use.needs));
+  const pricingStatus = (field) => {
+    const missing = [];
+    for (const use of uses) {
+      const gas = use.fuelFor(snapshot).id === 'gas';
+      const rate = field === 'cost' ? (gas ? card.gas : card.electricity) : (gas ? card.gasFactor : card.grid);
+      if (!isRate(rate)) missing.push(rate);
+    }
+    if (!missing.length) return new PricingStatus({ available: true });
+    return new PricingStatus({
+      available: false,
+      reason: [...new Set(missing.map((rate) => rate.reason))].join(' '),
+      fix:
+        field === 'cost'
+          ? 'Set the Tariff source to Assumed and enter the missing rate.'
+          : 'Set the carbon-factor source to Assumed and enter the missing factor.',
+    });
+  };
+  const pricing = new PricingAvailability({
+    currency: card.currency.code,
+    cost: pricingStatus('cost'),
+    carbon: pricingStatus('carbon'),
+  });
+  return studyOffersFor({
+    annual: Boolean(epw),
+    wholeYear: Boolean(epw) && isWholeYear(snapshot.months),
+    season: Boolean(epw) && touchesSeason(snapshot.months),
+    channels,
+    pricing,
+  });
+}
+
+/**
+ * What one sweep's runs must carry, and what they will be built carrying.
+ *
+ * The engaged channels of the desk decide which *meters* are producible, which
+ * is what `contentsFor` uses them for. They are deliberately **not** what
+ * `carried.channels` is set to. That field is a precondition — `syncReporting`
+ * throws for any channel named there that the sample's own `channelState` does
+ * not have engaged — and a sample is the desk with one control moved, so a
+ * channel that was engaged on the snapshot can perfectly legitimately go out
+ * under the overlay: sweep the only glazed wall's ratio down to nothing and
+ * Blinds and Daylight lose the opening their `requires` asks for. Handed the
+ * whole engaged set, every such sample throws inside `buildSample`, the
+ * scheduler turns the rejection into a gap, and the curve comes back with a
+ * hole in it at exactly the position the reader was asking about. So what
+ * travels is the quantity's own requirement, which is what the throw's own
+ * sentence claims to be checking; the rest of the desk is already in the cache
+ * key through `deskKey`, so nothing about sample identity is lost.
+ */
+function sampleContentsFor(quantity, snapshot, patch, epw) {
+  const state = channelState(snapshot, patch);
+  const channels = [...state].filter(([, value]) => value.engaged).map(([id]) => id);
+  const needed = contentsFor(quantity, channels);
+  const carried = new RunContents({
+    variables: needed.variables,
+    meters: needed.meters,
+    tables: needed.tables,
+    annual: Boolean(epw),
+    channels: needed.channels,
+    season: Boolean(epw) && touchesSeason(snapshot.months),
+  });
+  return { needed, carried };
+}
+
+function repriceStudies() {
+  if (!studyScheduler) return;
+  studyScheduler.reprice((readings, basis) => {
+    const priced = billFromBasis(basis, params);
+    const landed = { bill: priced };
+    return Object.freeze({
+      ...readings,
+      eui: QUANTITY_BY_ID.eui.read(landed),
+      cost: QUANTITY_BY_ID.cost.read(landed),
+      carbon: QUANTITY_BY_ID.carbon.read(landed),
+    });
+  });
+  if (studyQuantity) redrawStudiesForQuantity({ queue: false });
+}
+
+/**
  * Overlay one sample onto the shared document, write it, and put the live
  * desk back — synchronously, which is the entire point. The pump's `solve`
  * reads this same document; the only reason they can share it is that
@@ -5748,11 +6816,15 @@ function buildSample(job, value) {
     // ways: forgetting the restore half would leave the pump solving design
     // days as a year, or a fatal run of no environments at all.
     setAnnual(model, job.annual);
-    applyModel(model, { ...job.snapshot, [job.key]: value }, job.patch, { reporting: job.metric });
+    // Structured contents off the declaration, never a profile name inferred
+    // from the selected id.
+    applyModel(model, { ...job.snapshot, [job.key]: value }, job.patch, {
+      reporting: job.carried,
+    });
     // Each sample's intensity divides by that sample's own floor, which the
     // swept key may itself be moving — the same live read the bill takes.
-    const floorArea = job.metric === 'energy' ? geometryFacts(model).grossFloor : null;
-    return { idf: writeIdf(model), epw: job.epw, floorArea };
+    const floorArea = geometryFacts(model).grossFloor;
+    return { idf: writeIdf(model), epw: job.epw, floorArea, carried: job.carried, value };
   } finally {
     applyModel(model, params, patching());
     setAnnual(model, annual());
@@ -5761,11 +6833,16 @@ function buildSample(job, value) {
 
 studyScheduler = createStudyScheduler({
   // The cache key is the sample's whole desk — the overlay's shape key —
-  // plus the metric and the run kind, so a lean design-day sample can never
-  // answer for an annual one or for the sheet's own solve. The station is
+  // plus the run kind and canonical carried contents, so a lean design-day
+  // sample can never answer for an annual one. The station is
   // deliberately absent, which is why a station change clears the cache.
-  keyOf: (job, value) =>
-    JSON.stringify([deskKey({ ...job.snapshot, [job.key]: value }, job.patch), job.metric, job.annual]),
+  keyOf: (job, value, carried) => {
+    const bucket = JSON.stringify([
+      deskKey({ ...job.snapshot, [job.key]: value }, job.patch),
+      job.annual ? 'year' : 'design-day',
+    ]);
+    return { bucket, exact: JSON.stringify([bucket, carried.serialize()]) };
+  },
   buildSample,
   runSample: async ({ idf, epw }) => {
     const result = await studyPool.run({ idf, epw });
@@ -5774,12 +6851,82 @@ studyScheduler = createStudyScheduler({
     $('runs').textContent = String(runCount);
     return result;
   },
-  readPoint: (job, result, built) =>
-    result.eso
-      ? job.metric === 'energy'
-        ? readDemand(result.eso, built.floorArea)
-        : readExtremes(result.eso)
-      : null,
+  // The reader off the declaration too, and for the same reason the profile
+  // above is: which numbers a sample is kept for is a fact about the metric,
+  // and a ternary here is a second place to teach every time one is declared —
+  // the failure being a metric whose samples all land as `undefined`, which the
+  // scheduler spreads into the curve as points with nothing on them.
+  //
+  // `built` is what `buildSample` returned and `context` is what `contextFor`
+  // resolved once for the whole sweep; each reader takes the pair and helps
+  // itself to the half it needs.
+  readPoint: (job, result, built) => {
+    if (!result.eso) return null;
+    const { landed, basis } = landedFrom(result.eso, job, built);
+    const readings = {};
+    const deskContext = {
+      runningMean: job.context?.runningMean ?? null,
+      occupiedFloor: job.context?.occupiedFloor,
+    };
+    for (const quantity of QUANTITIES) {
+      const needed = contentsFor(quantity, basis.engaged);
+      if (!built.carried.answers(needed)) continue;
+      const context = quantity.context ? quantity.context(deskContext) : null;
+      readings[quantity.id] = quantity.read(landed, { built, context });
+    }
+    return Object.freeze({
+      carried: built.carried,
+      readings: Object.freeze(readings),
+      meterBasis: basis,
+    });
+  },
+  /**
+   * The facts a sample's reader needs that the sweep itself does not change.
+   *
+   * Criterion a is the only metric that needs any, and it needs two: the
+   * adaptive line's climate half, and the value the occupancy schedule takes
+   * when nobody is home. Neither can be recovered from a sample's own ESO. The
+   * running mean is seeded from the seven days to 29 April, which are outside
+   * every summer run this desk can produce and inside no simulation at all for
+   * a June-to-August calendar; and the floor is a property of the schedule
+   * `applyGains` wrote rather than of the series it reported — 0.1 for the
+   * desk's own weekday band, 0 for a TM59 pattern — which is the trap this
+   * whole feature is threaded around, since testing `> 0` instead counts every
+   * hour of all 153 days, 3,672 of them, and 3,672 is also exactly the figure
+   * CL:2026 publishes for a bedroom.
+   *
+   * It is built here rather than declared on the `Metric` because both halves
+   * are things only this module holds: the running mean is a cache on the
+   * attached file's identity and the floor comes from the applier, while
+   * `study.js` is DOM-free and knows nothing about either. The declaration owns
+   * the reader that consumes this, which is where the shape is documented.
+   *
+   * **The mean is read out of the cache, never rebuilt.** `dailyMeans` walks
+   * the file's 8,760 records — 3.13 ms measured under Node on Chicago TMY3,
+   * budgeted at 13.2 ms in the browser — and the sheet's own solve has already
+   * paid for it against this exact file. The scheduler asks this once per
+   * study for its own reasons; asking it twenty-one times would still be one
+   * cache read each, and rebuilding would spend more than a design day's solve
+   * answering a question whose answer is already in `meanCache`.
+   *
+   * **The whole `{ mean, absence }` pair travels, never the line out of it**,
+   * which is the same rule `readTm59` follows on the sheet and for a sharper
+   * reason here. A file that cannot yield a running mean is a state a reader
+   * can reach — a leap year, a file split into several data periods, a record
+   * missing from the middle of April — and `runningMeanFor` answers it with a
+   * sentence rather than a throw. Handed the bare `null` that pair's `mean`
+   * half holds, `readCriterionA` throws instead of returning a `Reading`
+   * carrying the reason, and it throws from inside `readPoint`'s loop over
+   * *every* declared quantity: one unreadable weather file would take down not
+   * only criterion a's curve but every curve on the desk, all of it landing as
+   * gaps with nothing anywhere saying why. The reader accepts the pair
+   * precisely so the absence stands in its own precedence, so the pair is what
+   * it is given.
+   */
+  contextFor: (job) => ({
+    runningMean: runningMeanFor(job.epw),
+    occupiedFloor: occupiedFloor(job.snapshot),
+  }),
   paused: () => gesture,
   capacity: () => studyCapacity,
   onUpdate: onStudyUpdate,
@@ -5795,15 +6942,109 @@ function studyRun(key) {
   if (studyScheduler.has(key)) {
     studyStops.set(key, restShapeKey(key));
     studyScheduler.cancel(key, 'stopped');
+    if (!studies.has(key)) openStudies.delete(key);
+    updatePermalink();
     return;
   }
   studyStops.delete(key);
+  let openingBasis = null;
+  if (!studyQuantity) {
+    const opening = openingQuantityForDesk(params, patching(), epwText ?? null);
+    studyQuantity = opening.id;
+    openingBasis = OPENING_QUANTITY_BASIS[opening.id];
+    updatePermalink();
+  }
+  openStudies.add(key);
+  updatePermalink();
   // Ahead of any refresh backlog: the reader asked for this one by name.
-  enqueueStudy(key, { origin: 'manual', front: true });
+  enqueueStudy(key, { origin: 'manual', front: true, openingBasis });
 }
 
-/** Queue one study of the desk as it stands right now. */
-function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES } = {}) {
+/**
+ * Whether a run's own calendar reaches any part of the assessment period.
+ *
+ * Read off `SEASON` rather than written out as May to September, for the reason
+ * every date in this feature is: the period is declared once in `tm59.js` with
+ * the clause it comes from, and a second copy of 5 and 9 out here is the drift
+ * that declaration exists to prevent. A month mask is twelve characters,
+ * January first.
+ */
+const touchesSeason = (mask) => {
+  for (let m = SEASON.from.month; m <= SEASON.to.month; m += 1) {
+    if (mask[m - 1] === '1') return true;
+  }
+  return false;
+};
+
+/**
+ * What one sweep's runs are read for, decided off the desk they will describe.
+ *
+ * There is no metric menu on this page and there must not be one: a study is
+ * offered under the control it sweeps and started with one press, and asking
+ * the reader which of three readings they meant before drawing anything would
+ * put a dialogue in the middle of a gesture. So the reading is read off the
+ * desk, the way everything else here is.
+ *
+ * **Demand where there is plant and a year**, unchanged, and it stays first.
+ * With ideal loads in the path the extremes flatten at the setpoints and the
+ * demand the system pays to hold them there is the reading. Criterion a is
+ * scoped by TM59:2026 §2.4.1 to spaces "predominantly naturally ventilated
+ * during occupied hours"; the criterion for a mechanically cooled one is c,
+ * which nothing here sweeps. A criterion-a curve over a cooled desk would be
+ * sweeping a control against a line the plant is already holding, and the
+ * sheet's own reading of that run says so — `qualificationsFor` appends "partly
+ * the system's answer and not the fabric's" to every one of them.
+ *
+ * **Criterion a where the desk has asked the question.** Four things make it
+ * answerable, and every one of them is a way for all twenty-one samples to come
+ * back null rather than a way for the curve to be wrong:
+ *
+ *   - a weather file, because two design days are not a season whatever their
+ *     dates — and a summer design day falls *inside* 1 May to 30 September by
+ *     date, which is why `weatherRuns` drops it rather than trusting the dates;
+ *   - some of 1 May to 30 September inside the run's own calendar, because the
+ *     Run strip can take those months out and a run that reached no part of the
+ *     period has nothing to be a share of;
+ *   - Gains engaged, because `addOccupancyValue` writes no series where
+ *     `applyGains` wrote no schedule, and the denominator is the occupancy the
+ *     engine actually saw rather than a schedule read back in JavaScript;
+ *   - a running mean the attached file can produce, since the comfort line is
+ *     the other half of the reading and a file that cannot yield one is refused
+ *     rather than seeded from a guess.
+ *
+ * Answerable is not the same as wanted, which is the fifth condition and the
+ * only one that is a choice. Every free-running annual desk with Gains patched
+ * in can answer criterion a, and taking that as the trigger would swap the
+ * winter low off every insulation sweep on this page for a summer share nobody
+ * on that desk asked for. `roomType` off *As drawn* is the one control here
+ * that says this building is being assessed to TM59 — naming a space swaps the
+ * desk's weekday band for the method's three profiles and its densities for
+ * counts — so it is what turns the sweep from the zone's two extremes to the
+ * one share those extremes are judged by. It is a `Selector` and carries no
+ * face, so it can never be the swept key and can never move inside a study, and
+ * it rides `restShapeKey`, so naming a space re-sweeps every curve on the desk
+ * under the new reading rather than leaving one drawn under the old.
+ *
+ * **The extremes otherwise**, which is where a desk that has said none of that
+ * stays: free-running, the zone's own two extremes are the design quantities
+ * and one hourly series answers both.
+ */
+/** The register entry whose criterion a study reads. */
+const TM59_PRESET = 'tm59';
+
+function openingQuantityForDesk(snapshot, patch, epw) {
+  const state = channelState(snapshot, patch);
+  return openingQuantity({
+    annual: Boolean(epw),
+    system: state.get('system').engaged,
+    chasingTm59: chased === TM59_PRESET,
+    gains: state.get('gains').engaged,
+    season: touchesSeason(snapshot.months),
+    runningMean: Boolean(epw && runningMeanFor(epw).mean),
+  });
+}
+
+function jobForStudy(key, { origin = 'refresh', n = SWEEP_SAMPLES, openingBasis = null } = {}) {
   const { control } = controlFor(key);
   // The desk this study describes, read in one breath — the same capture
   // rule the solve follows, for the same reason: params keep moving between
@@ -5811,28 +7052,104 @@ function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES } = {}) {
   const snapshot = { ...params };
   const patch = patching();
   const epw = epwText ?? null;
-  // What each run is read for. Free-running, the zone's two extremes are the
-  // design quantities. With ideal loads in the path and a year to bill, the
-  // extremes flatten at the setpoints and the demand the system pays to hold
-  // them there is the reading — TEDI and CEDI.
-  const metric = epw && channelState(snapshot, patch).get('system').engaged ? 'energy' : 'extremes';
+  if (!studyQuantity) throw new Error(`the study of ${key} was queued before the desk quantity was initialized`);
+  const quantity = quantityOf(studyQuantity);
+  const { needed, carried } = sampleContentsFor(quantity, snapshot, patch, epw);
   const points = samplePoints(control, snapshot[key], n);
-  studyScheduler.enqueue(
-    makeStudyJob({
-      key,
-      snapshot,
-      patch,
-      epw,
-      annual: Boolean(epw),
-      metric,
-      restShape: restShapeKey(key, snapshot, patch),
-      points,
-      order: sampleOrder(points, snapshot[key]),
-      origin,
-      asked: n,
-    }),
-    { front },
-  );
+  return makeStudyJob({
+    key,
+    snapshot,
+    patch,
+    epw,
+    annual: Boolean(epw),
+    quantity: quantity.id,
+    needed,
+    carried,
+    restShape: restShapeKey(key, snapshot, patch),
+    points,
+    order: sampleOrder(points, snapshot[key]),
+    origin,
+    asked: n,
+    openingBasis: openingBasis ?? studies.get(key)?.openingBasis ?? null,
+  });
+}
+
+/** Queue one study of the desk as it stands right now. */
+function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES, openingBasis = null } = {}) {
+  const job = jobForStudy(key, { origin, n, openingBasis });
+  const quantity = quantityOf(job.quantity);
+  const offers = studyOffers(job.snapshot, job.patch, job.epw);
+  const selected = offers.find((offer) => offer.quantity.id === quantity.id);
+  if (!selected.available) {
+    const prior = studies.get(key);
+    const waiting = {
+      ...(prior ?? {}),
+      label: shapeLabel(job.snapshot),
+      restShape: job.restShape,
+      annual: job.annual,
+      wholeYear: job.annual && isWholeYear(job.snapshot.months),
+      quantity: quantity.id,
+      offers,
+      waiting: { quantity: quantity.label, missing: job.total, reason: `${selected.reason} ${selected.fix}` },
+      curve: [],
+      coarse: n === COARSE_SAMPLES,
+    };
+    openStudies.add(key);
+    studies.set(key, waiting);
+    desk.setStudy(key, waiting, { stale: false });
+    syncStudyControls();
+    return;
+  }
+  studyScheduler.enqueue(job, { front });
+}
+
+function redrawStudiesForQuantity({ queue = true } = {}) {
+  if (!studyScheduler || !studyQuantity) return;
+  const quantity = quantityOf(studyQuantity);
+  const offers = studyOffers();
+  for (const [key, prior] of studies) {
+    const job = jobForStudy(key, { n: prior.coarse ? COARSE_SAMPLES : SWEEP_SAMPLES });
+    const cached = studyScheduler.curveFor(job);
+    const selected = offers.find((offer) => offer.quantity.id === quantity.id);
+    const unavailable = !selected.available;
+    const study = {
+      ...prior,
+      quantity: quantity.id,
+      offers,
+      curve: unavailable ? [] : cached.curve,
+      waiting: unavailable
+        ? { quantity: quantity.label, missing: job.total, reason: `${selected.reason} ${selected.fix}` }
+        : cached.missing
+          ? { quantity: quantity.label, missing: cached.missing, reason: null }
+          : null,
+      restShape: job.restShape,
+    };
+    studies.set(key, study);
+    desk.setStudy(key, study, { stale: false });
+    if (!unavailable && cached.missing && queue && autoOn() && !studyScheduler.has(key)) {
+      studyScheduler.enqueue(job);
+    }
+  }
+  syncStudyControls();
+  updatePermalink();
+}
+
+function chooseStudyQuantity(id) {
+  const quantity = quantityOf(id);
+  if (studyQuantity === quantity.id) return;
+  studyQuantity = quantity.id;
+  redrawStudiesForQuantity({ queue: true });
+}
+
+/** Queue the current-shape studies that waited while auto-solve was off. */
+function resumeWaitingStudies() {
+  if (!studyScheduler || !autoOn() || linkAttachPending) return;
+  for (const [key, study] of [...studies].reverse()) {
+    if (!study.waiting || studyScheduler.has(key)) continue;
+    const rest = restShapeKey(key);
+    if (studyStops.get(key) === rest) continue;
+    enqueueStudy(key, { origin: 'refresh', n: COARSE_SAMPLES });
+  }
 }
 
 /**
@@ -5892,10 +7209,13 @@ const partialStudy = (job) => ({
   // one, which is what the card's own words turn on: the extremes of a run
   // period that stops in May are not "the annual peak".
   wholeYear: job.annual && isWholeYear(job.snapshot.months),
-  metric: job.metric,
+  quantity: job.quantity,
+  offers: studyOffers(job.snapshot, job.patch, job.epw),
+  waiting: null,
+  openingBasis: job.openingBasis,
   // Samples still in flight are simply absent, so the silhouette spans them
   // and sharpens as they land; a sample that failed stays in the curve with
-  // no metrics and draws as a gap, never a substituted value.
+  // no quantity reading and draws as a gap, never a substituted value.
   curve: job.curve.filter(Boolean),
   progress: { done: job.done, total: job.total },
 });
@@ -6000,8 +7320,10 @@ function syncStudyControls() {
 function clearAllStudies() {
   studyScheduler?.cancelWhere(() => true, 'cleared');
   studies.clear();
+  openStudies.clear();
   studyStops.clear();
   desk?.clearStudies();
+  updatePermalink();
   // Through `syncStudyStatus` rather than by writing the line here: it is the
   // one place that knows a run in flight or a refusal already owns the status
   // line, and it syncs both buttons on the way past.
@@ -6037,13 +7359,17 @@ function onStudyUpdate(job, event) {
       restShape: job.restShape,
       annual: job.annual,
       wholeYear: job.annual && isWholeYear(job.snapshot.months),
-      metric: job.metric,
+      quantity: job.quantity,
+      offers: studyOffers(job.snapshot, job.patch, job.epw),
+      waiting: null,
+      openingBasis: job.openingBasis,
       curve: job.curve,
       // A coarse first pass is a real study, drawn honestly at eleven points;
       // the flag is what tells the idle densify it is worth finishing.
       coarse: job.asked === COARSE_SAMPLES,
     };
     studies.set(key, study);
+    openStudies.add(key);
     desk.setStudyProgress(key, null);
     // Stale already, when the desk moved while the curve was landing — drawn
     // dimmed rather than fresh, so the card never claims a desk it missed.
@@ -6056,6 +7382,8 @@ function onStudyUpdate(job, event) {
   } else if (event === 'failed') {
     desk.setStudyProgress(key, null);
     restoreStudyCard(key);
+    if (!studies.has(key)) openStudies.delete(key);
+    updatePermalink();
     // The one branch that writes the status line itself and so never reaches
     // `syncStudyStatus`. A failed sweep can take the last card off the desk,
     // and Clear must go with it.
@@ -6071,6 +7399,8 @@ function onStudyUpdate(job, event) {
     // The study the key already had — still stored, still true — gets its
     // card back rather than reappearing on the next unrelated gesture.
     restoreStudyCard(key);
+    if (job.cancelled === 'stopped' && !studies.has(key)) openStudies.delete(key);
+    updatePermalink();
     // A global Set-aside suppresses each key the way a per-study Stop does,
     // or the next idle densify would quietly restart the work just shed.
     if (job.cancelled === 'shed') studyStops.set(key, restShapeKey(key));
@@ -6105,5 +7435,8 @@ if (linkError) {
   statusEl.textContent =
     'This scheme skips the sizing days but attaches no weather, so there is nothing to solve. Set Design days to Run on the Run strip, or pick a station.';
 } else if (autoOn()) {
+  restoreLinkedStudies(linked);
   pump();
+} else {
+  restoreLinkedStudies(linked);
 }

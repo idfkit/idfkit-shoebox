@@ -30,6 +30,18 @@
  * DOM-free and storage-free by construction (the shelf is handed its storage),
  * so the whole module can be exercised from Node the way `model.js` and
  * `permalink.js` are.
+ *
+ * It imports `tm59.js` and `tm59.data.js`, which is the one place a preset
+ * reaches outside `controls.js` for its figures, and the reason is Principle
+ * III rather than convenience. TM59's criteria, its two categories and its
+ * thirteen prescribed room profiles are already declared once — with the clause
+ * each was quoted from and the division each fraction came out of — and a
+ * register that restated any of that would be the second source of truth this
+ * page exists not to hold. So the preset below *composes* its citations out of
+ * those declarations and writes almost no published sentence of its own; where
+ * it does, it is saying something about this desk rather than about the
+ * document. Both modules are themselves DOM-free and network-free, so nothing
+ * about the harness's reach changes.
  */
 
 import {
@@ -39,9 +51,20 @@ import {
   DEFAULT_PARAMETERS,
   controlFor,
   formatValue,
+  gainsForRoom,
   labelFor,
   refuses,
+  serializePattern,
 } from './controls.js';
+import {
+  CATEGORY_BY_ID,
+  COUNT_SCOPE,
+  CRITERION_BY_ID,
+  Category,
+  QUALIFICATIONS,
+  SEASON,
+} from './tm59.js';
+import { PROFILE_IDS, profileFor } from './tm59.data.js';
 
 /* ══ what a preset is allowed to touch ═══════════════════════════════════ */
 
@@ -101,6 +124,18 @@ export class Spec {
 }
 
 /**
+ * What a run has to carry for a target's question to mean anything.
+ *
+ * Three values and not a free string, because every one of them is read by
+ * `targetBlock` on the sheet and a fourth arriving unannounced would fall
+ * through its precedence into the catch-all — a line saying "not carried by
+ * this run" over a run that carries it perfectly well. Declared here, refused
+ * in the constructor, so a typo is a throw at mount rather than a wrong
+ * sentence in the margin.
+ */
+const TARGET_NEEDS = Object.freeze(['run', 'season', 'year']);
+
+/**
  * A number the standard asks of the finished building, as opposed to a
  * control it asks you to set.
  *
@@ -117,12 +152,32 @@ export class Spec {
  * Absence is not zero and it is not a pass either.
  */
 export class Target {
-  constructor({ id, label, metric, needs = 'year', limit = null, above = null, unit, asks, note = null }) {
+  constructor({
+    id, label, metric, needs = 'year', limit = null, above = null, unit, asks,
+    note = null, category = null, digits = 1,
+  }) {
     this.id = id;
     this.label = label;
+    // How many decimals the board letters this line to. On the declaration
+    // rather than in `renderScore`, because the alternative is a display rule
+    // keyed off a metric id at every call site that letters a figure — and the
+    // one line here that is not a continuous quantity proves why that fails
+    // quietly: criterion b counts whole nights, and a `scoreFigure` arm that
+    // forgot it would print `4.0 nights` with nothing anywhere saying so.
+    //
+    // Refused in the constructor, exactly as `needs` and `category` are, and
+    // for the sharper version of the same reason. `scoreFigure` letters this
+    // through `toFixed`, which takes 0 to 100 and throws outside it — so a
+    // declaration of `-1` or `'0'` would not be a wrong number in the margin
+    // but a `RangeError` or a `1` where a `0` was meant, thrown or lettered
+    // from inside a board that redraws on every gesture. There is nothing on
+    // the sheet that could say what happened, which is what makes this a
+    // throw at mount naming the target.
+    this.digits = digits;
     // Which reading answers it: 'tedi', 'cedi', 'eui' off the meters,
-    // 'overheat' off the hourly zone temperature, or 'peakHeat' / 'peakCool'
-    // off the system's hourly transfer rate.
+    // 'overheat' off the hourly zone temperature, 'peakHeat' / 'peakCool'
+    // off the system's hourly transfer rate, or 'tm59a' / 'tm59b' / 'tm59c'
+    // off the criteria `tm59.js` reads over the assessment period.
     this.metric = metric;
     // What the run has to carry for the question to mean anything. An energy
     // intensity and an exceedance frequency are both `'year'`: there is no
@@ -130,16 +185,56 @@ export class Target {
     // load is `'run'`, and the distinction is the whole point — sizing days
     // are the conditions plant is designed against, so a load reads honestly
     // on a desk that has never been near a weather file.
+    //
+    // `'season'` is TM59's, and it is genuinely neither of those. Not
+    // `'year'`, because the 2026 edition moved all four criteria onto 1 May to
+    // 30 September and none of them wants twelve months any more — a
+    // June-to-August calendar answers criterion a, over its own stated
+    // coverage, and `'year'` would refuse it. Not `'run'` either, because two
+    // design days in January are not a summer whatever else they are. What it
+    // asks is that the run reach some part of the assessment period.
     this.needs = needs;
     this.limit = limit;
     this.above = above; // the threshold, for an exceedance-frequency target
     this.unit = unit;
     this.asks = asks; // the criterion in the standard's own words
     this.note = note;
+    // Which of TM59's two categories this line is read at, or null for every
+    // other target on this page and for TM59's own criterion c, which is 26 °C
+    // for both. It carries the whole `Category` rather than its letter so the
+    // row can letter what the category presumes without a second lookup, and
+    // because a bare 'I' is one careless comparison away from a truthy string
+    // standing in for a category nobody declared.
+    this.category = category;
+    if (!TARGET_NEEDS.includes(needs)) {
+      throw new Error(
+        `the target "${id}" needs a run that "${needs}", which is not one of ${TARGET_NEEDS.join(', ')}`,
+      );
+    }
+    if (category !== null && !(category instanceof Category)) {
+      throw new Error(`the target "${id}" carries a category that is not one of TM59's declared pair`);
+    }
+    if (!Number.isInteger(digits) || digits < 0 || digits > 20) {
+      throw new Error(
+        `the target "${id}" is lettered to ${digits} decimals, which is not a count of decimal places`,
+      );
+    }
     Object.freeze(this);
   }
 
-  /** Whether a reading clears the line, or null when there is no line. */
+  /**
+   * Whether a reading clears the line, or null when there is no line.
+   *
+   * **Unchanged by TM59**, and that was checked rather than assumed. Criterion
+   * b is a count of nights where every other line on this board is an
+   * intensity or a share, so it was the candidate for needing a comparator of
+   * its own; it does not, because §2.4.2 says "not more than four nights",
+   * which is the same less-than-or-equal test as "≤ 15 kWh/(m²a)". Criteria a
+   * and c are shares against 3 %, likewise. Had any of them been a strict
+   * inequality this would have had to grow a per-target comparator, and the
+   * difference would have shown only at exactly the value the criterion is
+   * most often decided on.
+   */
   meets(value) {
     if (this.limit == null || !Number.isFinite(value)) return null;
     return value <= this.limit;
@@ -225,10 +320,11 @@ export class Preset {
 /* ══ the shipped list ════════════════════════════════════════════════════ */
 
 /*
- * Two published standards, one outcome standard, and two of this sheet's own
+ * Three published standards, one outcome standard, and two of this sheet's own
  * partis. The order is the order an argument goes in: the thing everybody
- * names first, its retrofit sibling, the target-only guide, then the two
- * buildings to measure them against.
+ * names first, its retrofit sibling, the target-only guide, the method that
+ * asks about the summer rather than the winter, then the two buildings to
+ * measure them against.
  *
  * Conversions used more than once, written out here so they are read the same
  * way everywhere they appear:
@@ -253,6 +349,148 @@ const filmsWall = 0.13 + 0.04;
 const filmsRoof = 0.1 + 0.04;
 const fromU = (u, films) => Math.round((1 / u - films) * 1000) / 1000;
 const fromN50 = (n50) => Math.round((n50 / 20) * 1000) / 1000;
+
+/* ── CIBSE TM59, and the pieces its specification is built out of ─────── */
+
+/**
+ * The space the prescribed setup puts the desk into.
+ *
+ * Appendix E prescribes an occupancy, an equipment profile and a lighting
+ * profile *per room*, and a one-zone shoebox can be put into exactly one of the
+ * thirteen. The double bedroom is the one where both of the Stage 1 criteria
+ * are asked of the room the method asks them of: criterion a covers bedrooms
+ * along with living rooms, kitchens and home offices, and criterion b covers
+ * bedrooms and nothing else, so it is the only room type under which the pair
+ * the sheet's count is taken over is read over a space TM59 applies both to.
+ * Its occupied hours are also one of the two totals CL:2026 publishes, which is
+ * what lets the denominator be checked against a published figure rather than
+ * trusted.
+ *
+ * It is a *setting*, not a declaration about the reader's building, and that is
+ * the whole point of a preset being an overlay: a reader assessing a living
+ * room moves the room type and the register's chip drops by itself, because
+ * conformance is a measurement of the desk and there is no remembered standard
+ * anywhere on this page.
+ */
+const TM59_ROOM = 'Double bedroom';
+const TM59_PROFILE = profileFor(TM59_ROOM);
+
+/**
+ * The figures that room implies, read off the control rather than restated.
+ *
+ * Every `value:` in the TM59 clauses below is one of these. Computed a second
+ * time here — `profile.sensible + profile.latent` for the activity level, a
+ * `serializePattern` for each of the three days — the register and the selector
+ * would be two expressions of one fact, and this file's own rule is that a
+ * register restating what it cites is the second source of truth the page
+ * exists not to hold. Composed instead, applying the standard and naming its
+ * room cannot come apart, and the assertion that used to police them agreeing
+ * is down to the one thing composition does not settle: whether the preset has
+ * a clause for every key the room writes.
+ */
+const TM59_GAINS = gainsForRoom(TM59_ROOM);
+
+/**
+ * One line of a profile's published citation, found by what it opens with.
+ *
+ * `RoomProfile.why` is documented as the sentences its figures came out of, one
+ * per line, and each spec below wants a different one of them. Selected by its
+ * opening words rather than by position, because the order of lines in a
+ * generated file is not a promise: `scripts/build-tm59.mjs` is rerun whenever
+ * the transcription is corrected, and a spec quietly lettering the lighting
+ * sentence under the equipment peak is exactly the kind of wrong that reads
+ * perfectly. It throws where there is not exactly one such line, so a reworded
+ * generator stops the page at mount instead of shipping a mismatched citation.
+ */
+const cite = (profile, opening) => {
+  const lines = profile.why.split('\n').filter((line) => line.startsWith(opening));
+  if (lines.length !== 1) {
+    throw new Error(
+      `the TM59 profile for "${profile.id}" carries ${lines.length} citation lines opening ` +
+      `"${opening}", and each prescribed value letters exactly one of them`,
+    );
+  }
+  return lines[0];
+};
+
+/**
+ * A published 24-hour band as the canonical text its control carries.
+ *
+ * The precision is read off the `Pattern` declaration rather than written here,
+ * for the reason `Ruled.parse` lives beside the `format` it undoes: the control
+ * decides how many decimals its text holds, and a literal 3 in this file is how
+ * a later widening of that precision becomes a preset quietly writing a coarser
+ * profile than the desk is able to hold. Where a published fraction is finer
+ * than the text — 85/450 is 0.188889 and three decimals is 0.189 — the spec's
+ * own `why` letters the division that produced it, so the rounding is visible
+ * rather than absorbed. The double bedroom's own fractions are 0.5, 0.7, 0.125
+ * and 1, all exact at three places.
+ */
+const patternText = (key, hours) => serializePattern(hours, controlFor(key).control.digits);
+
+/**
+ * The equipment pattern's first hour, twice over: as the profile divides it and
+ * as the control writes it down.
+ *
+ * A base gain is the one figure of Table E.1 that reaches the model through a
+ * *fraction* rather than through a field of its own — 10 W under an 80 W peak
+ * is 0.125 — so the spec's `why` has to letter it, and it has to letter the
+ * number actually written rather than the number divided. On the double bedroom
+ * the two are the same; on the home office they are 0.126667 and 0.127, and a
+ * `why` quoting the first while the desk holds the second is a conversion the
+ * reader cannot redo, which is the one thing this column exists to prevent.
+ */
+const EQUIP_BASE = TM59_PROFILE.equipment[0];
+const EQUIP_BASE_TEXT = patternText('equipPattern', TM59_PROFILE.equipment).split(',')[0];
+
+/**
+ * The occupancy profile's shape and its denominator, both read off the profile.
+ *
+ * The `why` below has to describe the pattern it is writing, and describing it
+ * in prose — "0.7 through the night, 1 at each end of the day" — would be a
+ * sentence true of one of the thirteen spaces and silently false of the other
+ * twelve the moment `TM59_ROOM` moved. So the levels are counted off the
+ * declaration and the occupied hours are derived from it rather than asserted
+ * about it.
+ *
+ * And the derivation is checked, because it is the one arithmetic on this
+ * preset that CIBSE publishes an answer to. An hour is occupied where the
+ * schedule stands above the value it takes when nobody is there, which for a
+ * pattern is a literal zero, so the profile's own occupied-hour total has to be
+ * the hours above zero times the days of the period. CL:2026 §2 publishes 3672
+ * for a bedroom and 1989 for a living room, kitchen or study; 24 × 153 and
+ * 13 × 153 are exactly those, and a profile whose two halves disagree would
+ * hand every criterion a denominator nothing on the page could check.
+ */
+const OCC_LEVELS = Object.freeze([...new Set(TM59_PROFILE.occupied)].sort((a, b) => a - b));
+const OCC_STANDING = TM59_PROFILE.occupied.filter((hour) => hour > 0).length;
+
+if (OCC_STANDING * SEASON.days !== TM59_PROFILE.occupiedHours) {
+  throw new Error(
+    `the TM59 profile for "${TM59_ROOM}" stands above zero for ${OCC_STANDING} hours of the day, ` +
+    `which over the ${SEASON.days} days of the assessment period is ${OCC_STANDING * SEASON.days} ` +
+    `summer occupied hours, and the profile declares ${TM59_PROFILE.occupiedHours}`,
+  );
+}
+
+/**
+ * A qualification `tm59.js` already declares, by its id.
+ *
+ * Two surfaces state what this desk cannot judge and they are read in different
+ * places: the scoreboard's block, under the readings, and the register's own
+ * fold, beside the setup being applied. Writing the sentence twice would be two
+ * copies to keep true, so the register composes its entries out of the same
+ * declarations the block draws from and only writes the entries `tm59.js` has
+ * no reason to hold. Throws on an id that has gone, rather than dropping an
+ * entry from a list whose whole value is its length.
+ */
+const qualification = (id) => {
+  const found = QUALIFICATIONS.find((q) => q.id === id);
+  if (!found) {
+    throw new Error(`tm59.js declares no qualification called "${id}", and the register cites it`);
+  }
+  return found;
+};
 
 const PH_WINDOW = new Spec({
   key: 'uFactor',
@@ -546,6 +784,293 @@ export const PRESETS = Object.freeze([
   }),
 
   new Preset({
+    id: 'tm59',
+    name: 'TM59, overheating in dwellings',
+    kind: 'standard',
+    issuer: 'Chartered Institution of Building Services Engineers',
+    source: 'TM59 (2026)',
+    blurb:
+      'The only standard in this list that asks about the summer. It sets no wall and no ' +
+      'window — TM59 has no opinion whatever about a construction — and instead prescribes who ' +
+      'is in the room, what they have switched on and when, because a criterion about ' +
+      'overheating is meaningless over gains somebody made up. Weekends are worked like ' +
+      'weekdays and infiltration goes to zero, both because the method says so.',
+    specs: [
+      new Spec({
+        key: 'roomType',
+        value: TM59_ROOM,
+        why:
+          'TM59:2026 Appendix E prescribes a setup per room, and this desk is one zone, so it can ' +
+          'hold exactly one of the thirteen. The double bedroom is the space both Stage 1 criteria ' +
+          'are asked of — criterion a covers bedrooms among the habitable rooms, criterion b covers ' +
+          'bedrooms alone — so it is the one room type under which the pair the count is taken over ' +
+          'is read over a space the method applies both of them to. Move it and the register\'s chip ' +
+          'drops by itself; the preset is an overlay and this is a setting, not a claim about your ' +
+          `building.\n${cite(TM59_PROFILE, `${TM59_PROFILE.occupiedHours} summer occupied hours`)}`,
+      }),
+      new Spec({
+        key: 'peopleCount',
+        value: TM59_GAINS.peopleCount,
+        why:
+          `${cite(TM59_PROFILE, 'Occupancy,')}\nThe peak headcount, which the occupancy pattern below ` +
+          'is a fraction of. A count and not a density, and that is load bearing rather than a ' +
+          'preference: a density would need the floor area, Massing is a channel no preset may write, ' +
+          'and a figure derived from the plate would silently change meaning the moment the reader ' +
+          'moved a wall. Two people stay two people.',
+      }),
+      new Spec({
+        key: 'activity',
+        value: TM59_GAINS.activity,
+        why:
+          `Table E.2 gives the person as ${TM59_PROFILE.sensible} W sensible and ` +
+          `${TM59_PROFILE.latent} W latent at the peak. This desk states one figure, total heat, so ` +
+          `the two are added: ${TM59_PROFILE.sensible} + ${TM59_PROFILE.latent} = ` +
+          `${TM59_PROFILE.sensible + TM59_PROFILE.latent} W per person. The split itself cannot be ` +
+          'prescribed here and is not being: the People object\'s sensible heat fraction is left at ' +
+          'Autocalculate, ' +
+          'so EnergyPlus divides the total back into sensible and latent by its own correlation ' +
+          'against the zone air temperature, which will not land on 75 and 55 at every hour.',
+      }),
+      new Spec({
+        key: 'occPattern',
+        value: TM59_GAINS.occPattern,
+        why:
+          `${cite(TM59_PROFILE, 'Occupancy,')}\nWritten as twenty-four fractions of that peak ` +
+          'headcount, hour by hour, because a from/to band cannot say what this profile says. It ' +
+          `stands at ${OCC_LEVELS.length} different levels in one day — ${OCC_LEVELS.join(', ')} — ` +
+          'and a band can only state when the room is used, never at what fraction. It is also the ' +
+          `denominator every criterion is read against: ${OCC_STANDING} of the day's twenty-four ` +
+          `hours stand above zero, which over the ${SEASON.days} days of 1 May to 30 September is ` +
+          `the ${TM59_PROFILE.occupiedHours} summer occupied hours CL:2026 publishes for a space of ` +
+          'this kind.',
+      }),
+      new Spec({
+        key: 'equipPeak',
+        value: TM59_GAINS.equipPeak,
+        why:
+          `${cite(TM59_PROFILE, 'Equipment,')}\nThe peak in watts, absolute, for the same reason the ` +
+          'headcount is: W/m² would be a reading of the Massing channel a preset is forbidden to ' +
+          'write. The base gain is not a second control — it rides the pattern below as a fraction of ' +
+          'this figure.',
+      }),
+      new Spec({
+        key: 'equipPattern',
+        value: TM59_GAINS.equipPattern,
+        why:
+          `${cite(TM59_PROFILE, 'Equipment,')}\n${cite(TM59_PROFILE, 'Table E.2')}\nSo the base gain ` +
+          'rides this pattern rather than a control of its own, which is where a standing load has ' +
+          `to live on a face that carries only fractions: ${EQUIP_BASE} of the peak, written at the ` +
+          `${controlFor('equipPattern').control.digits} decimals this control holds as ` +
+          `${EQUIP_BASE_TEXT}.`,
+      }),
+      new Spec({
+        key: 'lighting',
+        value: TM59_GAINS.lighting,
+        why:
+          `${cite(TM59_PROFILE, 'Lighting,')}\nThe one prescribed figure on this list that needs no ` +
+          'conversion at all: TM59 states the lighting per square metre of usable floor area and the ' +
+          'Gains strip\'s own control is W/m². Its hours are not on this control — they are the ' +
+          'pattern below.',
+      }),
+      new Spec({
+        key: 'lightPattern',
+        value: TM59_GAINS.lightPattern,
+        why:
+          `${cite(TM59_PROFILE, 'Lighting,')}\nOn its own band, and this is the fourth and hardest of ` +
+          'the ways TM59\'s gains do not fit the desk as it was: the lights run 18:00 to 23:00 ' +
+          'whatever the room is doing, so one schedule shared by the people, the lights and the ' +
+          'equipment cannot carry the method however it is drawn. Hence three patterns rather than ' +
+          'one occupied band.',
+      }),
+      new Spec({
+        key: 'weekend',
+        value: 'Occupied',
+        why:
+          'TM59:2026 §3.7.1: "The same profiles should be applied throughout the year for both ' +
+          'weekends and weekdays." That is a setting of this selector rather than a fact about the ' +
+          'schedule writer, so it is written as one and the reader is free to disagree with it. ' +
+          'Holidays are left where they are: at "As weekend" no For: Holidays row is written and the ' +
+          'catch-all covers them with the same profile, which is what §3.7.1 asks for.',
+      }),
+      new Spec({
+        key: 'infiltration',
+        value: 0,
+        why:
+          'CL:2026 §2 sets infiltration to zero for new-build homes, and it is a modelling assumption ' +
+          'the desk should not fight: TM59 is a design-stage method and the leakage of a building ' +
+          'nobody has built yet is not a measurement. At the Sealed stop this desk writes no ' +
+          'infiltration object at all rather than one carrying a rate of nothing. Purpose-provided ' +
+          'ventilation is a different question and this preset leaves it, and the choice of air ' +
+          'model, exactly where the reader put them.',
+      }),
+    ],
+    // Gains and Air, and nothing else. TM59 prescribes what is in the room and
+    // how it leaks and has no view whatever on the wall, the window or the
+    // plant, which is what makes it applicable to a building already on the
+    // sheet without taking the design away.
+    engages: ['gains', 'air'],
+    // `above` is left null on all five, unlike the fixed-line overheating
+    // targets above. It carries one scalar threshold and none of these has one:
+    // criterion a's line moves every day with the outdoor running mean, and
+    // criterion b's Tn is 26 °C or 27 °C depending on which category the row is
+    // read at. The threshold rides the `Criterion` and `Category` declarations
+    // instead, which is where the sheet letters it from.
+    targets: [
+      new Target({
+        id: 'tm59-a-I',
+        label: `${CRITERION_BY_ID.a.label} · ${CATEGORY_BY_ID.I.label}`,
+        metric: 'tm59a',
+        needs: 'season',
+        category: CATEGORY_BY_ID.I,
+        limit: CRITERION_BY_ID.a.limit,
+        unit: CRITERION_BY_ID.a.unit,
+        asks: CRITERION_BY_ID.a.asks,
+        note:
+          `Applies to: ${CRITERION_BY_ID.a.applies} ` +
+          `${CATEGORY_BY_ID.I.label} presumes: ${CATEGORY_BY_ID.I.presumes} ` +
+          `The limit is not a fixed temperature: ${CRITERION_BY_ID.a.thresholdFrom} ` +
+          `Read and lettered beside Category II and standing outside the sheet's own count, whose ` +
+          `scope is ${COUNT_SCOPE}.`,
+      }),
+      new Target({
+        id: 'tm59-a-II',
+        label: `${CRITERION_BY_ID.a.label} · ${CATEGORY_BY_ID.II.label}`,
+        metric: 'tm59a',
+        needs: 'season',
+        category: CATEGORY_BY_ID.II,
+        limit: CRITERION_BY_ID.a.limit,
+        unit: CRITERION_BY_ID.a.unit,
+        asks: CRITERION_BY_ID.a.asks,
+        note:
+          `Applies to: ${CRITERION_BY_ID.a.applies} ` +
+          `${CATEGORY_BY_ID.II.label} presumes: ${CATEGORY_BY_ID.II.presumes} ` +
+          `The limit is not a fixed temperature: ${CRITERION_BY_ID.a.thresholdFrom} ` +
+          `One of the two lines the sheet's count is taken over: ${COUNT_SCOPE}.`,
+      }),
+      new Target({
+        id: 'tm59-b-I',
+        label: `${CRITERION_BY_ID.b.label} · ${CATEGORY_BY_ID.I.label}`,
+        metric: 'tm59b', digits: 0,
+        needs: 'season',
+        category: CATEGORY_BY_ID.I,
+        limit: CRITERION_BY_ID.b.limit,
+        unit: CRITERION_BY_ID.b.unit,
+        asks: CRITERION_BY_ID.b.asks,
+        note:
+          `Applies to: ${CRITERION_BY_ID.b.applies} ` +
+          `${CATEGORY_BY_ID.I.label} presumes: ${CATEGORY_BY_ID.I.presumes} ` +
+          `${CRITERION_BY_ID.b.thresholdFrom} ` +
+          `Read and lettered beside Category II and standing outside the sheet's own count, whose ` +
+          `scope is ${COUNT_SCOPE}.`,
+      }),
+      new Target({
+        id: 'tm59-b-II',
+        label: `${CRITERION_BY_ID.b.label} · ${CATEGORY_BY_ID.II.label}`,
+        metric: 'tm59b', digits: 0,
+        needs: 'season',
+        category: CATEGORY_BY_ID.II,
+        limit: CRITERION_BY_ID.b.limit,
+        unit: CRITERION_BY_ID.b.unit,
+        asks: CRITERION_BY_ID.b.asks,
+        note:
+          `Applies to: ${CRITERION_BY_ID.b.applies} ` +
+          `${CATEGORY_BY_ID.II.label} presumes: ${CATEGORY_BY_ID.II.presumes} ` +
+          `${CRITERION_BY_ID.b.thresholdFrom} ` +
+          `The other of the two lines the sheet's count is taken over: ${COUNT_SCOPE}. It is a count ` +
+          'of nights rather than a share of hours, and it clears at four or fewer.',
+      }),
+      new Target({
+        id: 'tm59-c',
+        label: CRITERION_BY_ID.c.label,
+        metric: 'tm59c',
+        needs: 'season',
+        limit: CRITERION_BY_ID.c.limit,
+        unit: CRITERION_BY_ID.c.unit,
+        asks: CRITERION_BY_ID.c.asks,
+        note:
+          `Applies to: ${CRITERION_BY_ID.c.applies} ${CRITERION_BY_ID.c.thresholdFrom} It carries no ` +
+          'category, because 26 °C is the line for both. It is read on every run alongside criterion ' +
+          'a and neither is chosen for the reader: which of the two governs turns on how much of the ' +
+          'occupied period the openings are held shut, which is a fact about a window model this ' +
+          'desk does not carry. It stands outside the count, which is the naturally ventilated ' +
+          'Stage 1 pair.',
+      }),
+    ],
+    unjudged: [
+      new Unjudged({
+        criterion: `${CRITERION_BY_ID.d.label}, communal areas (${CRITERION_BY_ID.d.clause})`,
+        why: `${CRITERION_BY_ID.d.asks} ${CRITERION_BY_ID.d.unreadable}`,
+      }),
+      new Unjudged({
+        criterion: 'The communal space\'s prescribed gains (Appendix E, Table E.1)',
+        why:
+          'Table E.1 gives the communal space an occupancy "Assumed to be zero" and equipment of ' +
+          '"Heating system gains only", and quantifies neither, which is why it is the one row of ' +
+          'the table this page carries no profile for. What that gain actually is in a real block — ' +
+          'the losses of whatever heating distribution runs through the corridor — is a ' +
+          'fact about a plant this model does not hold at all: there is no communal system here, no ' +
+          'pipework, and no corridor for either to run through.',
+      }),
+      new Unjudged({
+        criterion: 'Which category this dwelling is (TM59:2026 §2.4.1)',
+        why:
+          `${CATEGORY_BY_ID.I.presumes} Whether a dwelling is one of those is a fact about who will ` +
+          'live in it, and nothing on this desk records an occupant beyond a headcount. So no ' +
+          'category is selected, both are read on every run, and each row says what it presumes. The ' +
+          `count the sheet letters is taken over ${COUNT_SCOPE}, and Category I stands beside it ` +
+          'rather than in it — a reading, not a verdict about applicability.',
+      }),
+      new Unjudged({
+        criterion: 'The mandated weather file (WFR:2026 §3)',
+        why: qualification('weather-file').because,
+      }),
+      new Unjudged({
+        criterion: 'The room-by-room assessment (TM59:2026 §2.3)',
+        why: qualification('one-zone').because,
+      }),
+      new Unjudged({
+        criterion: 'The staged assessment (TM59:2026 §2.3, Appendix B)',
+        why:
+          'Stage 1 is the assessment every dwelling must pass, with no site-specific constraints ' +
+          'modelled, and it is read against criteria a and b for the rooms inside the dwelling and ' +
+          'criterion d for the communal areas. Criteria b and c are the Stage 2 or Stage 3 pair, ' +
+          'used where opening constraints keep the ventilation devices shut for 50 % or more of the ' +
+          'occupied hours. This desk can establish that it is at Stage 1 and can establish nothing ' +
+          'about the other two, so what is lettered above is one stage of a sequence, and passing it ' +
+          'is not the sequence.',
+      }),
+      new Unjudged({
+        criterion: 'Whether these windows could actually be opened',
+        why:
+          'What puts a dwelling past Stage 1 is a site constraint holding its openings shut, and ' +
+          'whether one exists is a fact about a site: what the noise outside the window is, whether ' +
+          'the opening can be left secure, whether it is safe to leave open at all. This desk ' +
+          'records none of them. An opening here is a window-to-wall ratio and an openable fraction ' +
+          'and it opens whenever the rule on the Air strip says so, so the desk cannot tell whether ' +
+          'the naturally ventilated criterion or the mechanically ventilated one is the one that ' +
+          'governs. Both are read; neither is chosen for the reader.',
+      }),
+      new Unjudged({
+        criterion: 'Elevated air speed and any ceiling-fan allowance',
+        why:
+          'TM59:2026 §2.4.2 is explicit that no ceiling-fan uplift is permitted against criterion b. ' +
+          'What the method allows against the others is not something this sheet could act on ' +
+          'either way: there is no fan on this desk, no air-speed control and no elevated-air-speed ' +
+          'adjustment anywhere in the readings, so every threshold above is read at still air. A ' +
+          'design that would rely on moving air to be comfortable is read here as though it did not.',
+      }),
+    ],
+    caveat:
+      'Applying this puts the desk into the prescribed setup for one space. It does not make the ' +
+      'run a TM59 assessment and nothing on the scoreboard may be read as one: the method is ' +
+      'assessed room by room against the worst room, on a mandated weather file, through a staged ' +
+      'sequence, and this is one zone on whatever file you attached at Stage 1 only. It also sets ' +
+      'no fabric, no glazing and no plant, which is not an oversight — TM59 states no criterion ' +
+      'about any of them, and the whole question the method asks is what the building you already ' +
+      'drew does in the summer.',
+  }),
+
+  new Preset({
     id: 'heavyweight',
     name: 'The shaded heavyweight',
     kind: 'parti',
@@ -620,12 +1145,109 @@ export const PRESET_BY_ID = Object.freeze(Object.fromEntries(PRESETS.map((p) => 
 
 /* ══ the assertions ══════════════════════════════════════════════════════ */
 
+/**
+ * That every room the selector offers writes values the desk will accept, and
+ * that the register has a clause for each of them.
+ *
+ * Two gaps, and neither was covered before. A `Spec` is run through
+ * `refuses(control, value)` further down, so a preset cannot write a figure
+ * outside a control's own face; a room's figures reach `params` through
+ * `Control.implies` and were checked by nothing at all. All thirteen pass
+ * today — `peopleCount` runs to 10 and the largest room asks for 3, `activity`
+ * runs 70 to 400 and every room is 130 — but they pass by arithmetic rather
+ * than by construction, and a corrected transcription in `tm59.data.js` could
+ * put one outside its face with the only symptom a silently clamped desk.
+ *
+ * The second half is what survives of the guard that used to sit above
+ * `PRESET_BY_ID`. Composition settles the *values* — the clauses are built from
+ * `gainsForRoom` now, so they cannot differ from it — and leaves exactly one
+ * thing unsettled: a key the room writes that the preset says nothing about,
+ * which would make applying the standard and naming its room two different
+ * desks.
+ */
+{
+  for (const room of PROFILE_IDS) {
+    for (const [key, value] of Object.entries(gainsForRoom(room))) {
+      const { control } = controlFor(key);
+      const fault = refuses(control, value);
+      if (fault) {
+        throw new Error(
+          `the room "${room}" writes ${key} = ${JSON.stringify(value)}, which ${control.label} ${fault}`,
+        );
+      }
+    }
+  }
+  for (const key of Object.keys(TM59_GAINS)) {
+    if (PRESET_BY_ID.tm59.specs.some((spec) => spec.key === key)) continue;
+    throw new Error(
+      `naming the room "${TM59_ROOM}" writes ${key}, and the TM59 preset has no clause for it: ` +
+      'applying the standard and choosing its room would build two different desks',
+    );
+  }
+}
+
 /*
  * Run at module load, so a preset that cannot be applied cannot ship. This is
  * the same move `permalink.js` makes with its reserved keys: the alternative is
  * a value that fails validation in front of a reader who did nothing wrong,
  * some minutes after the page loaded, with no way to tell whose mistake it was.
  */
+/*
+ * The one assertion in this file about a channel a preset may *not* write.
+ *
+ * TM59's gains are absolute — two people and 80 W in this room, not a density
+ * and a W/m² — and `peopleCount` and `equipPeak` exist on the Gains strip for
+ * exactly that reason. They have to stay absolute. A preset that turned a
+ * published 450 W into a W/m² would be reading the Massing channel it is
+ * forbidden to write, and the figure would then change meaning the moment the
+ * reader moved a wall, silently and in the wrong direction: the density stays
+ * where it was put and the watts in the room do not. That protection is the
+ * `UNTOUCHABLE` list and
+ * nothing else, so the list is asserted rather than documented and hoped for —
+ * relax it and the area-derived version of these specs becomes writable, with
+ * no symptom until somebody writes it.
+ */
+for (const id of ['massing', 'site', 'context', 'solver', 'run']) {
+  if (!UNTOUCHABLE.includes(id)) {
+    throw new Error(
+      `the ${CHANNEL_BY_ID[id].name} channel has been taken off UNTOUCHABLE, and a preset that can ` +
+      'write it can hand the reader a different building rather than a specification for theirs',
+    );
+  }
+}
+for (const channel of CHANNELS.filter((c) => c.prices)) {
+  if (!UNTOUCHABLE.includes(channel.id)) {
+    throw new Error(
+      `the priced ${channel.name} channel has been taken off UNTOUCHABLE, and a preset that turns a ` +
+      'tariff would move the bill without moving the building',
+    );
+  }
+}
+
+/*
+ * The desk's room-type vocabulary and the profile library's have to be one
+ * vocabulary.
+ *
+ * `controlFor` and `refuses` below would catch this anyway, as "sets roomType
+ * to a value that is not one of its options", which is a true sentence about
+ * the wrong file: the fault is not in the preset, it is that two declarations
+ * of the same list of spaces have drifted apart, and only one of them carries
+ * the published profiles. Named here so the throw says which two and what to do
+ * about it.
+ */
+{
+  const { control } = controlFor('roomType');
+  if (!control.options.some((o) => o.value === TM59_ROOM)) {
+    throw new Error(
+      `the Room type selector does not offer "${TM59_ROOM}". TM59:2026 Appendix E tabulates ` +
+      `${PROFILE_IDS.length} spaces and src/tm59.data.js carries a profile for each of them, but the ` +
+      `selector offers ${control.options.map((o) => `"${o.value}"`).join(', ')}. One spelling of a ` +
+      'space or the desk and the library disagree about what the reader chose: TM59_SPACES in ' +
+      'controls.js is to be PROFILE_IDS from tm59.data.js.',
+    );
+  }
+}
+
 for (const preset of PRESETS) {
   const seen = new Set();
   for (const spec of preset.specs) {
