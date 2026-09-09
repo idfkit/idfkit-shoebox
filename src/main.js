@@ -4834,10 +4834,10 @@ const standardCards = new Map();
  * desk to scroll 12,000 in, while the register above them held 323. Folded,
  * the head is 135px and the channels get 429.
  *
- * It acts only when the flag *changes*, so a reader who opened the register on
- * a short desk keeps it open through every resize that does not cross the
- * threshold — the fold is the layout's opening position, not a policy about
- * what the reader is allowed to look at.
+ * It acts only when the flag changes *into* the constrained state. Growing the
+ * window back past the threshold must not open a register the reader had closed
+ * or the short layout folded for them: extra room is not an instruction to
+ * reveal content. A reader may still open it explicitly at either height.
  */
 let registerFolded = null;
 
@@ -4847,7 +4847,7 @@ function relayoutRegister() {
   const fold = getComputedStyle(host).getPropertyValue('--fold').trim() === '1';
   if (fold === registerFolded) return;
   registerFolded = fold;
-  host.open = !fold;
+  if (fold) host.open = false;
 }
 
 function buildStandards() {

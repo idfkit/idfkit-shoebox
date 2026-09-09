@@ -2557,9 +2557,8 @@
          find before you can find anything.
 
          Ruled top and bottom rather than boxed, like every other band on this
-         sheet. The field takes the room and the two words either side of it are
-         a label and a link, not buttons: pressing them changes what is drawn
-         and nothing about the model. */
+         sheet. The field takes the room and the link beside it changes what is
+         drawn and nothing about the model. */
       .finder {
         display: flex;
         flex-wrap: wrap;
@@ -2575,12 +2574,6 @@
         border-bottom: 1px solid var(--rule);
       }
       .finder[hidden] { display: none; }
-      .finder-label {
-        font: 400 10px/1 var(--mono);
-        text-transform: uppercase;
-        letter-spacing: 0.09em;
-        color: var(--ink-ghost);
-      }
       /* The box taken off, exactly as the margin numbers wear it: a rule under
          the line you type on and nothing else, so the field is lettering that
          can be edited rather than a widget dropped onto the drawing. */
@@ -2647,11 +2640,7 @@
          twin that disagree is a bug that exists at exactly one window width. */
       .strips {
         --index: 0;
-        /* What an opened card has to leave showing under it. Declared here and
-           read back by `console.js`, the same arrangement `--index` uses and for
-           the same reason: a number written in a stylesheet and again in a
-           module is a disagreement waiting at exactly one window size. */
-        --next-row: 60px;
+        --mini-edge: 5cqh;
         overflow-y: auto;
         flex: 1;
         min-height: 0;
@@ -2695,18 +2684,15 @@
          of desk making four cards of 176 — the reader was handed a column by
          being given more room, and paid for it in card width.
 
-         So the floor cannot be the lever. It also cannot simply be raised: at
-         580px of desk a floor above 193 drops the layout to two columns, and
-         three is the fewest that puts all eighteen closed cards in the scroller
-         at once (research M4). One number was deciding two different things.
-
-         The breaks are stated instead, and each is the width at which its
-         column count still lands a card at 210px or more: four at 840, five at
-         1,050. A card is therefore never narrower than the 193px it has at the
-         default desk, and every extra column is one the desk had the width to
-         pay for. Five is the ceiling the multicolumn set already carried — past
-         it the columns widen instead, because eighteen channels over five is
-         already the desk laid as flat as it goes.
+         So the floor cannot be the lever. The breaks are stated instead, and
+         each is the width at which its column count still lands a card at
+         280px or more: three at 840, four at 1,120, five at 1,400. Below 840px
+         the grid uses two columns. That costs three more rows, but cards from
+         290 to 420px are readable where the former 193 to 244px cards were not.
+         Every extra column is one the desk had the width to pay for. Five is
+         the ceiling the multicolumn set already carried — past it the columns
+         widen instead, because eighteen channels over five is already the desk
+         laid as flat as it goes.
 
          Asked of the desk rather than of the window, because they are not the
          same question: the desk takes what the sheet leaves, so its width is a
@@ -2747,7 +2733,7 @@
          card's own top-left corner is a fixed point, so the pointer that opened
          it is still over it afterwards. */
       .strip-grid {
-        --cols: 3;
+        --cols: 2;
         display: grid;
         grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
       }
@@ -2777,8 +2763,9 @@
         min-height: 100%;
         align-content: stretch;
       }
-      @container desk (min-width: 840px) { .strip-grid { --cols: 4; } }
-      @container desk (min-width: 1050px) { .strip-grid { --cols: 5; } }
+      @container desk (min-width: 840px) { .strip-grid { --cols: 3; } }
+      @container desk (min-width: 1120px) { .strip-grid { --cols: 4; } }
+      @container desk (min-width: 1400px) { .strip-grid { --cols: 5; } }
 
       /* A card, which is one instrument closed to its own face. The opaque
          ground is what leaves the grid's 1px gap reading as a ruled hairline
@@ -2792,7 +2779,6 @@
          than out of the explanation. */
       .strip {
         padding: 7px 12px 8px;
-        min-width: 0;
         border-right: 1px solid var(--rule);
         border-bottom: 1px solid var(--rule);
       }
@@ -3007,53 +2993,191 @@
         container-name: card;
       }
 
-      /* ── an opened card ───────────────────────────────────────────
-         Bounded, and scrolling its own overflow.
+      /* ── the spotlight ────────────────────────────────────────────
+         On a desk, opening a card changes the grid into a map rather than
+         making one row taller. The active channel takes the central 90% of the
+         strips viewport; every other channel keeps a fixed slot around its
+         perimeter in declaration order. A channel at the foot therefore gets
+         exactly the same room as one at the head, and none can extend behind
+         the balance rail below this viewport.
 
-         Air opened is 1,419 px against a 422 px scroller — three times the room
-         it has. Left to grow, opening it pushes every card below it three
-         screens down; and because a card also opens under a *passing* pointer,
-         that would happen as the pointer crossed Air and undo itself as it
-         left. The bound is what lets "the neighbours give way" and "a peek
-         moves no scroll position" both be true.
+         The miniature positions are percentages written once by
+         `placeMiniature`. Their only legible payload is the channel number.
+         They remain real disclosure buttons, so hovering or choosing one
+         changes the spotlight without a second navigation mechanism.
 
-         `min()` against the viewport as well as a flat ceiling, because the
-         scroller is `100vh` minus the head and the rail: on a short window a
-         fixed 320px card is most of the desk, and on a tall one it is less than
-         the room going spare.
+         Below `--index` none of this applies. The phone's one-column index
+         still opens a card inline and lets the page carry its full height. */
+      .strips:not(.index).spotlight { overflow: hidden; }
+      .strips:not(.index).spotlight .strip-grid {
+        position: relative;
+        display: block;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+      }
+      .strips:not(.index).spotlight .strip {
+        position: absolute;
+        left: var(--mini-left);
+        top: var(--mini-top);
+        width: var(--mini-width);
+        height: var(--mini-height);
+        min-width: 0;
+        padding: 0;
+        overflow: hidden;
+        background: var(--vellum);
+        z-index: 1;
+      }
+      .strips:not(.index).spotlight .strip:not(.spotlight-card)[data-mini-side='top'] {
+        height: var(--mini-edge);
+      }
+      .strips:not(.index).spotlight .strip:not(.spotlight-card)[data-mini-side='right'] {
+        left: auto;
+        right: 0;
+        width: var(--mini-edge);
+      }
+      .strips:not(.index).spotlight .strip:not(.spotlight-card)[data-mini-side='bottom'] {
+        top: auto;
+        bottom: 0;
+        height: var(--mini-edge);
+      }
+      .strips:not(.index).spotlight .strip:not(.spotlight-card)[data-mini-side='left'] {
+        left: 0;
+        width: var(--mini-edge);
+      }
+      .strips:not(.index).spotlight .strip:not(.spotlight-card) .strip-head,
+      .strips:not(.index).spotlight .strip:not(.spotlight-card) .strip-title,
+      .strips:not(.index).spotlight .strip:not(.spotlight-card) .strip-toggle {
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        margin: 0;
+      }
+      .strips:not(.index).spotlight .strip:not(.spotlight-card) .strip-toggle {
+        display: grid;
+        place-items: center;
+        padding: 0;
+      }
+      .strips:not(.index).spotlight .strip:not(.spotlight-card) .strip-name,
+      .strips:not(.index).spotlight .strip:not(.spotlight-card) .strip-term,
+      .strips:not(.index).spotlight .strip:not(.spotlight-card) .strip-read,
+      .strips:not(.index).spotlight .strip:not(.spotlight-card) .strip-mark,
+      .strips:not(.index).spotlight .strip:not(.spotlight-card) .strip-chev,
+      .strips:not(.index).spotlight .strip:not(.spotlight-card) .strip-blocked,
+      .strips:not(.index).spotlight .strip:not(.spotlight-card) .strip-fold,
+      .strips:not(.index).spotlight .strip:not(.spotlight-card) .patch,
+      .strips:not(.index).spotlight .strip:not(.spotlight-card) .solo {
+        display: none;
+      }
+      .strips:not(.index).spotlight .strip:not(.spotlight-card) .strip-no {
+        display: block;
+        grid-area: auto;
+        font-size: 8px;
+        color: var(--ink-3);
+      }
+      /* A miniature keeps the resting grid's own ruling — a hairline down its
+         right and along its bottom — except where the spotlight's own border
+         already draws that edge. Only two bands are such a case, and the other
+         two declarations that stood here removed nothing at all: a `.strip`
+         carries a right and a bottom border and never a left or a top one, so
+         `border-left: 0` on the right band and `border-top: 0` on the bottom
+         band were dead the day they were written.
 
-         Only where the desk has a scroller of its own. Below `--index` the
-         console is a single column that scrolls with the page, and there a
-         bounded card would be a second scrollbar inside the first — the phone
-         opens a card whole, exactly as the index sheet always did. */
-      /* An opened card may never bury the row beneath it.
-         
-         The card is what carries the bound, not the fold inside it, and that is
-         the whole trick: a card's face costs a different amount on every
-         channel — 36px of toggle, sometimes a patch row, sometimes a blocked
-         channel's sentence — so a bound on the fold has to guess at the rest
-         and was measured guessing 51px where Air actually spends 87. Capped at
-         the card and left to a flex column, the fold simply takes what is over,
-         whatever the face came to, and the row below always gets its
-         `--next-row`.
+         Every cell of the left band faces the card, so its `border-right`
+         would sit one pixel outboard of the card's left border and read as a
+         doubled rule. The top band is not so simple: 01 to 03 face the card,
+         but 00 and 04 run out over the corner squares, which lie outside it.
+         Dropping the whole `border-bottom` is what left the ring's two upper
+         corners open — the top band and the side band merging into one
+         unruled L — while the lower two stayed closed, because down there the
+         side band's own `border-bottom` happens to land exactly on the join.
 
-         Read off the scroller in container units, so it follows the room the
-         desk actually has: the window less a head whose own height moves with
-         the register's fold, less the finder's band, less the rail. Below
-         `--index` there is no bound at all — the console scrolls with the page
-         there and a card opens whole, as the index sheet's always did.
-
-         An opened card is worked, but the grid is what the reader navigates by,
-         and a card that filled the scroller would leave them working one
-         channel with no way to see where in eighteen they were standing —
-         which is the complaint this whole feature exists to answer, brought
-         back one card at a time. */
-      .strips:not(.index) .strip.open {
+         It is still dropped, because restoring it would rule the whole of the
+         spotlight's top edge twice: with `box-sizing: border-box` the cell's
+         bottom border falls at mini-edge less one and the card's top border at
+         mini-edge, adjacent rather than coincident. The one missing segment is
+         drawn below instead. */
+      .strips:not(.index).spotlight .strip:not(.spotlight-card)[data-mini-side='top'] {
+        border-bottom: 0;
+      }
+      .strips:not(.index).spotlight .strip:not(.spotlight-card)[data-mini-side='left'] {
+        border-right: 0;
+      }
+      /* That segment: the top edge of whichever side cell sits directly under
+         the top band, which is the only stretch of the ring's inner boundary
+         the card's border does not reach. It lands at the card's own
+         `border-top` — both are the first pixel inside their box at the same y
+         — so the two read as one line across the corner. `placeMiniature`
+         marks the cell, because there is no selector for "first of an
+         attribute" and the left band's topmost cell is its *last* in document
+         order. */
+      .strips:not(.index).spotlight .strip:not(.spotlight-card)[data-mini-corner='top'] {
+        border-top: 1px solid var(--rule);
+      }
+      .strips:not(.index).spotlight .strip.revealed:not(.spotlight-card),
+      .strips:not(.spotlight):not(.index) .strip.revealed {
+        background: var(--redline-wash);
+      }
+      .strips:not(.index).spotlight .strip.spotlight-card {
+        inset: var(--mini-edge);
+        width: calc(100% - 2 * var(--mini-edge));
+        height: calc(100% - 2 * var(--mini-edge));
         display: flex;
         flex-direction: column;
-        max-height: calc(100cqh - var(--next-row));
+        padding: 10px 14px 14px;
+        overflow: visible;
+        background: var(--vellum);
+        border: 1px solid var(--rule-firm);
+        z-index: 2;
       }
-      .strips:not(.index) .strip.open .strip-fold {
+      /* The active channel keeps its perimeter cell as a tab joined to the
+         spotlight. Its open inner edge overlaps the card by one pixel, hiding
+         that segment of the spotlight border so the two outlines read as one
+         continuous shape rather than as a card beside a loose marker. */
+      .strips:not(.index).spotlight .strip.spotlight-card::before {
+        content: attr(data-mini-label);
+        position: absolute;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        background: var(--vellum);
+        border: 1px solid var(--rule-firm);
+        font: 400 8px/1 var(--mono);
+        color: var(--ink-3);
+        z-index: 3;
+        pointer-events: none;
+      }
+      .strips:not(.index).spotlight .strip.spotlight-card[data-mini-side='top']::before {
+        left: var(--union-offset);
+        bottom: calc(100% - 1px);
+        width: var(--union-span);
+        height: calc(var(--mini-edge) + 1px);
+        border-bottom: 0;
+      }
+      .strips:not(.index).spotlight .strip.spotlight-card[data-mini-side='right']::before {
+        left: calc(100% - 1px);
+        top: var(--union-offset);
+        width: calc(var(--mini-edge) + 1px);
+        height: var(--union-span);
+        border-left: 0;
+      }
+      .strips:not(.index).spotlight .strip.spotlight-card[data-mini-side='bottom']::before {
+        left: var(--union-offset);
+        top: calc(100% - 1px);
+        width: var(--union-span);
+        height: calc(var(--mini-edge) + 1px);
+        border-top: 0;
+      }
+      .strips:not(.index).spotlight .strip.spotlight-card[data-mini-side='left']::before {
+        right: calc(100% - 1px);
+        top: var(--union-offset);
+        width: calc(var(--mini-edge) + 1px);
+        height: var(--union-span);
+        border-right: 0;
+      }
+      .strips:not(.index).spotlight .strip.spotlight-card .strip-fold {
+        flex: 1;
         min-height: 0;
         overflow-y: auto;
         overscroll-behavior: contain;
@@ -3213,6 +3337,11 @@
         text-overflow: ellipsis;
       }
       .study-head .link { font-size: 9px; flex: none; }
+      /* Fills its column and stops there. The ceiling is an inline
+         `max-width` set by `buildStudyCard` off the same `W` the viewBox is
+         built from, because a drawing whose lettering is in user units is
+         magnified along with its box: 100% is how it shrinks into a narrow
+         card, not licence to be blown up to fit a wide one. */
       .study-card svg {
         display: block;
         width: 100%;

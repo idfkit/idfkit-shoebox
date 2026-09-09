@@ -31,21 +31,26 @@ changes **no control, no default, no model object and no reading**.
 ### The card grid and the reveal
 
 The console's resting state becomes a **grid of eighteen cards**, one per channel, each
-carrying what a channel row already carries — its number, its name, what it is for, its
-reading and whether it is in the path — and hiding only its controls. A card is **revealed**
-to work it: it expands in place and its controls appear.
+carrying what a channel row already carries: its number, its name, what it is for, its
+reading and whether it is in the path, while hiding only its controls. On a desktop, a card
+is **spotlighted** to work it: it occupies the central 90% of the card viewport while the
+other seventeen channels become stable miniature rectangles around its perimeter. The
+spotlight is positioned against the viewport rather than the card's grid row, so a channel
+at the foot has exactly the same room as one at the head and the balance rail can never
+cover its controls.
 
 A card has two open states and they answer two different questions:
 
-- A **peek** is what a fine pointer gets for passing over a card. It opens as the pointer
-  arrives, shows what the channel holds, and closes again as the pointer leaves. Nothing is
-  chosen and nothing is kept. Browsing the grid with the pointer is therefore a way of
-  reading the desk rather than a series of decisions about it, and the animation carrying
-  a card open and shut is the thing that makes that legible — a peek that snapped would
-  read as eighteen cards flickering rather than as one card being looked into.
+- A **peek** is what a fine pointer gets for passing over a card. It opens the spotlight as
+  the pointer arrives, shows what the channel holds, and closes again when the pointer
+  leaves the card viewport. Nothing is chosen and nothing is kept. The other channels keep
+  fixed perimeter slots in declaration order, so moving among them changes the spotlight
+  without reshuffling the map.
 - A **reveal** is what a click, a tap or a keypress gets, on any pointer and on none. It is
-  chosen, it is kept, it survives the pointer leaving and a reload, and it is the only open
-  state a touch device or a keyboard has.
+  chosen, it pins that channel in the same spotlight, it survives the pointer leaving and a
+  reload, and it is the only open state a touch device or a keyboard has. More than one
+  channel may remain marked as revealed, but only the active one occupies the spotlight;
+  selecting another marked miniature changes which one is active.
 
 The reveal is then one mechanism serving two journeys, which is the point of it:
 
@@ -91,27 +96,29 @@ still.
    revealing it, and a channel that cannot be patched in says so on the card rather than
    one gesture further in.
 3. **Given** a card is revealed, **When** the reader reveals a second, **Then** the first
-   stays revealed, so two related channels can be worked together.
+  stays marked in its fixed perimeter slot and the second takes the spotlight.
 4. **Given** a reader working the keyboard only, **When** they move through the grid and
    reveal a card, **Then** every step is reachable without a pointer, the card's revealed
    state is announced, and no control inside a closed card is reachable by tabbing.
-5. **Given** a fine pointer, **When** it passes over a card, **Then** the card peeks open
-   under the pointer and closes again as the pointer leaves, having changed nothing.
-6. **Given** a card peeks open, **When** it expands, **Then** the card stays under the
-   pointer rather than moving out from beneath it, so a pointer at rest does not set off a
-   second card.
+5. **Given** a fine pointer, **When** it passes over a card, **Then** the card occupies a
+  90% by 90% spotlight inside the card viewport and the other channels occupy fixed
+  miniature slots around it, having changed nothing.
+6. **Given** a card peeks open, **When** the spotlight appears, **Then** its pointer hit
+  area remains active across the card viewport and the perimeter miniatures remain stable,
+  so a pointer at rest cannot oscillate between cards.
 7. **Given** a pointer sweeping across the grid, **When** it passes over several cards,
    **Then** each opens and closes in turn without the grid scrolling and without any card
    left open behind it.
 8. **Given** a card the reader has revealed, **When** a pointer peeks at a neighbour,
-   **Then** the revealed card stays revealed and its controls stay where they were.
+   **Then** the neighbour temporarily takes the spotlight and leaving the card viewport
+   restores the pinned channel.
 9. **Given** a card is peeking, **When** the reader clicks, taps or presses it, **Then**
    the peek becomes a reveal and is kept when the pointer leaves.
-10. **Given** a card is revealed, **When** the layout reflows to make room, **Then** the
-    card the reader acted on stays where they can see it and the grid does not scroll out
-    from under them.
+10. **Given** a card is revealed, **When** the spotlight appears, **Then** the grid scroll
+  position is preserved and restored when the spotlight closes.
 11. **Given** a channel with many controls is opened, **When** its controls exceed the room
-    available, **Then** they remain reachable without the grid becoming unreadable.
+  available, **Then** the spotlight body scrolls and every control remains reachable
+  above the balance rail.
 12. **Given** a reader has revealed cards, **When** they return to the page later in the
     same browser, **Then** the console opens as they left it, with no card peeking.
 13. **Given** the reader has expressed a preference for reduced motion, **When** a card
@@ -267,23 +274,25 @@ left, and that each can be turned or put back where it stands.
   pointer, a fine pointer and a keyboard alike. The reveal MUST be a chosen state: it
   survives the pointer leaving, and it is the only open state available where there is no
   hovering to be done.
-- **FR-005**: On a fine pointer, a card MUST peek open as the pointer arrives over it and
-  close again as the pointer leaves. A peek MUST change nothing: it leaves no card open
-  behind it, moves no scroll position, and disturbs no card the reader has revealed.
-- **FR-006**: A peeking card MUST remain under the pointer as it expands, so that a pointer
-  held still cannot set a second card peeking.
+- **FR-005**: On a fine pointer, a card MUST peek into a spotlight occupying 90% of the
+  card viewport in each dimension. The other channels MUST occupy stable miniature slots
+  around its perimeter. A peek MUST change no model or remembered interface state.
+- **FR-006**: A peeking card MUST retain the pointer across the spotlight transition, and
+  moving among perimeter miniatures MUST switch the spotlight without reshuffling them.
 - **FR-007**: A peek MUST become a reveal when the reader clicks, taps or presses the card
   they are peeking at.
 - **FR-008**: Opening and closing MUST be animated, and the animation MUST be quick enough
   that a pointer sweeping the grid at reading speed leaves no animation still finishing
   behind it. Where the reader has asked for reduced motion the peek and the reveal MUST
   still happen, without animation.
-- **FR-009**: More than one card MUST be able to stand revealed at once, and revealing one
-  MUST NOT close another.
-- **FR-010**: Revealing or closing a card MUST NOT move the card the reader acted on out of
-  their view, and neither a reveal nor a peek may scroll the grid under them.
+- **FR-009**: More than one card MAY remain marked revealed, but exactly one card MUST own
+  the spotlight. Revealing or selecting a marked miniature MUST make it active without
+  forgetting the others.
+- **FR-010**: Entering a spotlight MUST preserve the resting grid's scroll position and
+  restore it when the spotlight closes. A peek MUST NOT scroll the grid under the reader.
 - **FR-011**: A card whose controls exceed the room available, peeking or revealed, MUST
-  keep them all reachable without sideways scrolling and without truncation.
+  keep them all reachable through one vertical spotlight scroll, without sideways
+  scrolling or truncation and without extending behind the balance rail.
 - **FR-012**: Controls inside a card that is neither peeking nor revealed MUST be out of the
   tab order, and a peek MUST NOT move the reader's place in it.
 - **FR-013**: The grid MUST take a shape suited to each of the three sizes the sheet is read

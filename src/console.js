@@ -62,6 +62,48 @@ const el = (tag, className, text) => {
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
+function placeMiniature(node, index, total, label) {
+  const base = Math.floor(total / 4);
+  const counts = [base, base, base, base];
+  for (const side of [0, 2, 1, 3].slice(0, total % 4)) counts[side] += 1;
+
+  let side = 0;
+  let offset = index;
+  while (offset >= counts[side]) {
+    offset -= counts[side];
+    side += 1;
+  }
+
+  const count = counts[side];
+  const along = 100 / count;
+  const vertical = 90 / count;
+  const boxes = [
+    { left: offset * along, top: 0, width: along, height: 5 },
+    { left: 95, top: 5 + offset * vertical, width: 5, height: vertical },
+    { left: (count - offset - 1) * along, top: 95, width: along, height: 5 },
+    { left: 0, top: 5 + (count - offset - 1) * vertical, width: 5, height: vertical },
+  ];
+  const box = boxes[side];
+  node.style.setProperty('--mini-left', `${box.left}%`);
+  node.style.setProperty('--mini-top', `${box.top}%`);
+  node.style.setProperty('--mini-width', `${box.width}%`);
+  node.style.setProperty('--mini-height', `${box.height}%`);
+  node.dataset.miniSide = ['top', 'right', 'bottom', 'left'][side];
+  node.dataset.miniLabel = label;
+  // The ring's inner boundary is the spotlight card's own border everywhere
+  // except the two upper corner squares, which lie outside it: the top band
+  // runs the full width while the side bands are inset, so the top band's
+  // first and last cells overhang the card and nothing rules the join beneath
+  // them. The cell that closes each is the topmost of a side band -- the right
+  // band's first and the left band's last -- and the stylesheet hangs that one
+  // segment on it as a `border-top`. The lower corners need no such mark: down
+  // there the side band's own bottom border already lands on the join, which
+  // is the accident that made the break look like it was only at the top.
+  if ((side === 1 && offset === 0) || (side === 3 && offset === count - 1)) {
+    node.dataset.miniCorner = 'top';
+  }
+}
+
 /* ══ the pattern's own face ══════════════════════════════════════════════ */
 
 // There is nothing here any more, and that is the fix. `Pattern` carries an
@@ -136,7 +178,11 @@ export function mountConsole({
   const stripGrid = el('div', 'strip-grid');
   const railHost = el('div', 'rail');
 
-  for (const channel of CHANNELS) stripGrid.append(buildStrip(channel));
+  for (const [index, channel] of CHANNELS.entries()) {
+    const strip = buildStrip(channel);
+    placeMiniature(strip, index, CHANNELS.length, channel.index);
+    stripGrid.append(strip);
+  }
   stripHost.append(stripGrid);
   host.append(finderHost, stripHost, railHost);
 
@@ -186,90 +232,202 @@ export function mountConsole({
 
   const cardState = new Map(CHANNELS.map((c) => [c.id, CLOSED]));
   let peeking = null; // the one card under the pointer, or null
+  let activeReveal = null; // the revealed card that owns the desktop spotlight
   let indexing = null; // null until the first read, so the first apply always runs
+  let restingScroll = 0;
+  let spotlightActive = false;
+  // How long a fine pointer has to stay on a card before it opens. The desk
+  // rearranges itself around whatever is open, so a card that opened the
+  // instant the pointer touched it moved the whole map under a reader who was
+  // only crossing it -- and the perimeter is seventeen small targets, so
+  // reaching the one in the middle means crossing three or four of them. A
+  // perimeter cell is 28px on its short side, which is 19ms to cross at a
+  // brisk 1,500px/s and 140ms at a slow 200, so 150 clears an ordinary pass
+  // and is still under what a reader who has stopped will notice waiting.
+  const PEEK_DELAY = 150;
+  let peekTimer = null;
+  let peekWanted = null; // the card the pointer is resting on, not yet open
+  let shown = null; // what the spotlight last drew, to notice it changing
+  let lastX = null;
+  let lastY = null;
 
   // Whether this pointer can hover at all. A coarse pointer reports enter and
   // leave events around a tap, which would open a card on touch and leave it
   // open -- a peek nobody asked for and cannot dismiss.
   const hovers = window.matchMedia('(hover: hover) and (pointer: fine)');
+  const reducesMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  function animateSpotlightFrom(id, from) {
+    if (indexing || reducesMotion.matches || !from) return;
+    const card = strips.get(id)?.strip;
+    if (!card?.classList.contains('spotlight-card')) return;
+    const to = card.getBoundingClientRect();
+    if (!from.width || !from.height || !to.width || !to.height) return;
+    card.getAnimations().forEach((animation) => animation.cancel());
+    card.animate([
+      {
+        transformOrigin: 'top left',
+        transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})`,
+        opacity: 0.65,
+      },
+      { transformOrigin: 'top left', transform: 'none', opacity: 1 },
+    ], { duration: 160, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' });
+  }
 
   function drawCard(id) {
     const here = strips.get(id);
     const state = cardState.get(id);
-    const open = state !== CLOSED;
-    // `hidden` rather than a class, so a closed card's controls leave the tab
-    // order and the accessibility tree with it. A reader tabbing the desk
-    // should meet eighteen cards, not eighteen cards and a hundred and
-    // twenty-nine controls they cannot see.
-    here.fold.hidden = !open;
-    here.strip.classList.toggle('open', open);
-    // Only a reveal is announced. A peek is a pointer resting somewhere, not a
-    // reader choosing something, and `aria-expanded` flipping under a passing
-    // mouse would narrate a decision nobody made.
-    here.toggle.setAttribute('aria-expanded', String(state === REVEALED));
+    here.strip.classList.toggle('revealed', state === REVEALED);
   }
 
-  const drawCards = () => { for (const id of cardState.keys()) drawCard(id); };
+  function syncSpotlight() {
+    // A card that has stopped being revealed takes the spotlight down with
+    // it; the spotlight is never handed on to another marked channel. Promoted
+    // instead, closing the open card looked to the reader like a different one
+    // opening by itself -- and since a marked-but-inactive channel is only a
+    // background wash, there was no sign the others were revealed at all. With
+    // three cards marked it took three closes to reach the grid, which reads
+    // as the desk refusing to shut.
+    if (activeReveal !== null && cardState.get(activeReveal) !== REVEALED) activeReveal = null;
+    const active = indexing ? null : peeking ?? activeReveal;
+    if (active !== shown) {
+      shown = active;
+      // The desk has just rearranged under a pointer that need not have moved.
+      // Whatever now lies under it is not a card the reader went to.
+      disarmPeek();
+    }
+    if (active !== null && !spotlightActive) {
+      restingScroll = stripHost.scrollTop;
+      stripHost.scrollTop = 0;
+    }
+    if (active === null && spotlightActive) {
+      requestAnimationFrame(() => { stripHost.scrollTop = restingScroll; });
+    }
+    spotlightActive = active !== null;
+    stripHost.classList.toggle('spotlight', spotlightActive);
+    for (const [id, here] of strips) {
+      const focused = id === active;
+      const open = indexing ? cardState.get(id) !== CLOSED : focused;
+      here.strip.classList.toggle('spotlight-card', focused);
+      here.strip.classList.toggle('open', open);
+      // `hidden` rather than a class, so controls outside the active spotlight
+      // leave both the tab order and the accessibility tree. A remembered
+      // reveal is a mark on the perimeter, not seventeen hidden tab stops.
+      here.fold.hidden = !open;
+      const expanded = indexing
+        ? cardState.get(id) === REVEALED
+        : focused && cardState.get(id) === REVEALED;
+      here.toggle.setAttribute('aria-expanded', String(expanded));
+    }
+    if (active !== null) {
+      const card = strips.get(active).strip;
+      const host = stripHost.getBoundingClientRect();
+      const side = card.dataset.miniSide;
+      const horizontal = side === 'top' || side === 'bottom';
+      const start = parseFloat(card.style.getPropertyValue(horizontal ? '--mini-left' : '--mini-top'));
+      const span = parseFloat(card.style.getPropertyValue(horizontal ? '--mini-width' : '--mini-height'));
+      const edge = host.height * 0.05;
+      const extent = horizontal ? host.width : host.height;
+      // The slot is measured off the strips host, but the tab is laid against
+      // the card's *padding* box: an absolutely positioned child takes its
+      // containing block from there and not from the border box. The card's
+      // own border is the whole of the difference, so it comes off the offset,
+      // and it is read back as `clientTop` / `clientLeft` rather than typed as
+      // a 1 -- a rule that changed weight would otherwise leave every tab out
+      // of register with no symptom but the join.
+      //
+      // Left in, each tab sat one pixel along its own band. It hides wherever
+      // a tab is surrounded by its band, and shows as a jog wherever the tab
+      // meets an edge the card also draws: 17's tab begins exactly at the
+      // card's top, so its top border stepped a pixel off the card's, and its
+      // foot overhung the cell below by the same pixel.
+      const border = horizontal ? card.clientLeft : card.clientTop;
+      card.style.setProperty('--union-offset', `${(extent * start) / 100 - edge - border}px`);
+      card.style.setProperty('--union-span', `${(extent * span) / 100}px`);
+    }
+  }
+
+  const drawCards = () => {
+    for (const id of cardState.keys()) drawCard(id);
+    syncSpotlight();
+  };
 
   function setCard(id, state) {
     if (cardState.get(id) === state) return;
     cardState.set(id, state);
     drawCard(id);
+    syncSpotlight();
   }
 
   /** Which cards the reader has chosen, in strip order. */
   const revealedIds = () => CHANNELS.map((c) => c.id).filter((id) => cardState.get(id) === REVEALED);
 
+  /**
+   * Whether a pointer event is the pointer actually moving.
+   *
+   * A layout change under a still pointer makes the browser re-run its hit
+   * test, and the events that come back carry the coordinates the pointer
+   * already had. Opening the spotlight also sets `scrollTop`, and a scroll is
+   * one of the things that fires a move of its own. Neither is the reader
+   * going anywhere, so both are filtered here rather than guessed at.
+   */
+  function moved(event) {
+    if (event.clientX === lastX && event.clientY === lastY) return false;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    return true;
+  }
+
+  /**
+   * Ask for a card, once the pointer has stayed on it for `PEEK_DELAY`.
+   *
+   * This replaced two guards that were reaching for the same thing and getting
+   * it wrong from opposite ends: one suppressed the frame after an open, which
+   * leaned on `requestAnimationFrame` and so did nothing at all in a tab that
+   * was not rendering; the other refused to move the spotlight between
+   * perimeter cells until the pointer had crossed the middle card, which made
+   * the neighbour of an open channel unreachable without a detour. A card that
+   * is merely passed over never opens now, and one the pointer settles on
+   * always does, wherever it sits.
+   */
+  function armPeek(id) {
+    if (!hovers.matches) return;
+    if (id === peekWanted || id === (peeking ?? activeReveal)) return;
+    disarmPeek();
+    peekWanted = id;
+    peekTimer = setTimeout(() => {
+      peekTimer = null;
+      peekWanted = null;
+      peek(id);
+    }, PEEK_DELAY);
+  }
+
+  /** Forget a card the pointer was resting on. `null` forgets whichever. */
+  function disarmPeek(id = null) {
+    if (id !== null && peekWanted !== id) return;
+    clearTimeout(peekTimer);
+    peekTimer = null;
+    peekWanted = null;
+  }
+
   function peek(id) {
     if (!hovers.matches) return;
+    const from = strips.get(id)?.strip.getBoundingClientRect();
     // One at a time. The previous card closes before this one opens, so a sweep
     // never leaves a trail of open cards behind the pointer.
     if (peeking !== null && peeking !== id) unpeek(peeking);
-    if (cardState.get(id) !== CLOSED) return; // a revealed card is left exactly as it stands
+    if (id === activeReveal) return;
     peeking = id;
-    setCard(id, PEEKING);
+    if (cardState.get(id) === CLOSED) setCard(id, PEEKING);
+    else syncSpotlight();
+    animateSpotlightFrom(id, from);
   }
 
   function unpeek(id) {
     if (peeking !== id) return;
     peeking = null;
     if (cardState.get(id) === PEEKING) setCard(id, CLOSED);
-  }
-
-  /**
-   * Bring a card the reader has just opened far enough into view that the row
-   * under it still shows.
-   *
-   * The stylesheet bounds an opened card to the scroller less a row, so this
-   * is always possible; it is not automatic, because a card low in the grid
-   * opens with its foot below the scroller's. Scrolls by the least that will
-   * do, and never past putting the card's own top at the top — the card the
-   * reader pressed stays the thing they are looking at.
-   *
-   * Only ever from a reveal. A peek moves no scroll position at all: the
-   * pointer merely passing over a card is not a reason to move the page under
-   * it, and a sweep across the grid that scrolled would be unusable.
-   */
-  function bringIntoView(id) {
-    if (indexing) return;
-    const settle = () => {
-      // Still the reader's card: a press and an immediate second press would
-      // otherwise have the frame below scrolling a card that has just shut.
-      if (cardState.get(id) !== REVEALED) return;
-      const next = parseFloat(getComputedStyle(stripHost).getPropertyValue('--next-row')) || 0;
-      const box = strips.get(id).strip.getBoundingClientRect();
-      const view = stripHost.getBoundingClientRect();
-      const short = box.bottom + next - view.bottom;
-      if (short > 0) stripHost.scrollTop += Math.min(short, box.top - view.top);
-    };
-    settle();
-    // And again on the next frame. The card's height is capped in container
-    // units off the scroller, and a container query that has not resolved by
-    // the time the click handler measures would leave this scrolling against a
-    // height that is about to change. Measured, it does resolve synchronously
-    // here — but the cost of asking twice is one clamped assignment, and the
-    // cost of being wrong is the reader losing the row they were promised.
-    requestAnimationFrame(settle);
+    else syncSpotlight();
   }
 
   /**
@@ -282,8 +440,16 @@ export function mountConsole({
    */
   function toggleReveal(id) {
     if (peeking === id) peeking = null;
+    if (cardState.get(id) === REVEALED && activeReveal !== id) {
+      activeReveal = id;
+      syncSpotlight();
+      return true;
+    }
     const opening = cardState.get(id) !== REVEALED;
+    if (opening) activeReveal = id;
     setCard(id, opening ? REVEALED : CLOSED);
+    if (!opening && activeReveal === id) activeReveal = null;
+    syncSpotlight();
     keepReveals();
     return opening;
   }
@@ -341,6 +507,10 @@ export function mountConsole({
     if (asking) return;
     const keep = indexing ? [] : keptReveals();
     for (const id of cardState.keys()) cardState.set(id, keep.includes(id) ? REVEALED : CLOSED);
+    // The marks come back; the spotlight does not. Restoring it as well meant
+    // a reader who had ever opened a card met that card's controls on every
+    // later visit and never saw the grid the desk is navigated by.
+    activeReveal = null;
     peeking = null;
     drawCards();
   }
@@ -379,8 +549,6 @@ export function mountConsole({
     placeholder: 'Find a control', autocomplete: 'off',
   });
   field.setAttribute('aria-label', 'Find a control anywhere on the desk');
-  const fieldLabel = el('label', 'finder-label', 'Find');
-  fieldLabel.htmlFor = 'desk-find';
 
   const editsBtn = el('button', 'link finder-edits', 'What have I changed?');
   editsBtn.type = 'button';
@@ -388,7 +556,7 @@ export function mountConsole({
   editsBtn.title =
     'Reveal every control sitting off its default, and every channel patched away from where it starts';
 
-  finderHost.append(fieldLabel, field, editsBtn, said);
+  finderHost.append(field, editsBtn, said);
 
   /**
    * The swept curves, as a search reports them.
@@ -417,13 +585,25 @@ export function mountConsole({
     // Stacked once per question, not once per keystroke: the reader's own
     // reveal state is what the *first* search displaced, and re-reading it on
     // the second character would stack the first search's own result.
-    asking = { kind, restore: asking ? asking.restore : revealedIds() };
+    asking = {
+      kind,
+      restore: asking ? asking.restore : revealedIds(),
+      // Which card was open, not merely which were marked. Coming back out of
+      // a search used to put the spotlight on the first revealed channel in
+      // strip order, which is rarely the one the reader left it on.
+      wasActive: asking ? asking.wasActive : activeReveal,
+    };
     // Under a question the channel's blurb is noise: the reader asked for a
     // control, not for a description of the channel it happens to live on, and
     // four lines of prose above each match is what pushes the thing they were
     // looking for off the bottom of the card.
     stripHost.classList.add('asking');
     clearNotes();
+    // Named before the loop, handed the spotlight after it. `setCard` syncs on
+    // every call, and a spotlight pointed at a card the loop has not reached
+    // yet is a spotlight on a card that is not revealed -- which is exactly the
+    // state the no-promotion guard exists to take down.
+    const first = CHANNELS.find((channel) => wanted.has(channel.id))?.id ?? null;
     for (const channel of CHANNELS) {
       const here = wanted.get(channel.id) ?? null;
       setCard(channel.id, here ? REVEALED : CLOSED);
@@ -440,6 +620,8 @@ export function mountConsole({
       }
     }
     peeking = null;
+    activeReveal = first;
+    syncSpotlight();
     said.textContent = sentence ?? '';
     said.hidden = !sentence;
   }
@@ -447,6 +629,7 @@ export function mountConsole({
   /** Put the desk back the way the reader left it. */
   function unask() {
     const restore = asking?.restore ?? [];
+    const wasActive = asking?.wasActive ?? null;
     asking = null;
     stripHost.classList.remove('asking');
     clearNotes();
@@ -457,6 +640,10 @@ export function mountConsole({
       }
       setCard(channel.id, restore.includes(channel.id) ? REVEALED : CLOSED);
     }
+    // After the loop, for the reason `ask` names: the card is only entitled to
+    // the spotlight once it is revealed again.
+    activeReveal = restore.includes(wasActive) ? wasActive : null;
+    syncSpotlight();
     said.textContent = '';
     said.hidden = true;
   }
@@ -541,7 +728,10 @@ export function mountConsole({
   });
   field.addEventListener('keydown', (event) => {
     // Escape clears from inside the box, where the reader's hands already are.
-    if (event.key !== 'Escape') return;
+    // An empty box has nothing to clear, so the key is left to travel on and
+    // close the spotlight instead of being swallowed here.
+    if (event.key !== 'Escape' || !field.value) return;
+    event.stopPropagation();
     field.value = '';
     runSearch('');
   });
@@ -553,7 +743,10 @@ export function mountConsole({
 
   function relayout() {
     const on = indexMode();
-    if (on === indexing) return;
+    if (on === indexing) {
+      if (spotlightActive) syncSpotlight();
+      return;
+    }
     indexing = on;
     stripHost.classList.toggle('index', on);
     restoreReveals();
@@ -612,14 +805,16 @@ export function mountConsole({
       // grid change, and put it back where it was. Which thing scrolls depends
       // on which layout is up: on the desk the cards have their own scroller,
       // and below `--index` the console scrolls with the page.
-      const before = head.getBoundingClientRect().top;
-      const opening = toggleReveal(channel.id);
-      const after = head.getBoundingClientRect().top;
-      if (after !== before) (indexing ? window : stripHost).scrollBy(0, after - before);
-      // Anchoring first, then bringing into view: the card must not move under
-      // the finger that pressed it, and only after it has stayed put is it
-      // worth asking whether what it opened onto is actually in the room.
-      if (opening) bringIntoView(channel.id);
+      const before = indexing ? head.getBoundingClientRect().top : null;
+      const collapsed = !indexing && !strip.classList.contains('spotlight-card')
+        ? strip.getBoundingClientRect()
+        : null;
+      toggleReveal(channel.id);
+      animateSpotlightFrom(channel.id, collapsed);
+      if (before !== null) {
+        const after = head.getBoundingClientRect().top;
+        if (after !== before) window.scrollBy(0, after - before);
+      }
     });
 
     // The peek. `pointerenter` and `pointerleave` rather than `over`/`out`
@@ -627,10 +822,27 @@ export function mountConsole({
     // is not a departure from the card. The pointer type is checked as well as
     // the media query: a touch reports an enter around its tap, and a card
     // opened by a finger and never closed is a peek nobody asked for.
-    strip.addEventListener('pointerenter', (event) => {
-      if (event.pointerType === 'mouse') peek(channel.id);
+    // Armed from `pointermove` rather than from `pointerenter`, because an
+    // enter is also what a layout change fires under a pointer that has not
+    // gone anywhere -- and opening the spotlight rearranges every card, so
+    // those enters are the common case rather than the odd one. A move is the
+    // reader; `moved` throws out the ones the browser synthesises at the same
+    // coordinates. It bubbles, which is wanted here: crossing a slider inside
+    // the open card is a move over that card, and `armPeek` drops it as one
+    // already showing.
+    strip.addEventListener('pointermove', (event) => {
+      if (event.pointerType === 'mouse' && moved(event)) armPeek(channel.id);
     });
-    strip.addEventListener('pointerleave', () => unpeek(channel.id));
+    // `pointerleave` rather than `out` because it does not bubble, so leaving a
+    // slider inside an opened card is not a departure from the card. The
+    // pointer type is checked as well as the media query: a touch reports an
+    // enter around its tap, and a card opened by a finger and never closed is
+    // a peek nobody asked for.
+    strip.addEventListener('pointerleave', (event) => {
+      disarmPeek(channel.id);
+      if (event.relatedTarget && stripHost.contains(event.relatedTarget)) return;
+      unpeek(channel.id);
+    });
 
     let patch = null;
     let soloBtn = null;
@@ -689,6 +901,30 @@ export function mountConsole({
     });
     return strip;
   }
+
+  stripHost.addEventListener('pointerleave', () => {
+    disarmPeek();
+    if (peeking !== null) unpeek(peeking);
+  });
+  // On the console rather than on the strips: a reader who has just pressed a
+  // card has focus on its toggle, but one who has since touched the finder,
+  // the rail or a preset has not, and Escape bound to the scroller alone did
+  // nothing for them. It still cannot answer from outside the desk entirely --
+  // there the way back is the open card's own head, which is where the
+  // chevron is pointing.
+  host.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || indexing || !spotlightActive) return;
+    const focused = peeking ?? activeReveal;
+    if (peeking !== null) {
+      const id = peeking;
+      peeking = null;
+      if (cardState.get(id) === PEEKING) cardState.set(id, CLOSED);
+    }
+    activeReveal = null;
+    drawCards();
+    strips.get(focused)?.toggle.focus({ preventScroll: true });
+    event.preventDefault();
+  });
 
   /**
    * Bind a drag to an element, without leaning on pointer capture for
@@ -2294,6 +2530,14 @@ export function mountConsole({
     const x = (v) => plot.x + clamp(control.fraction(v), 0, 1) * plot.w;
 
     const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' });
+    // A drawing lettered in its own units may be scaled down but never up, and
+    // this one is drawn to be read at 1:1. A card in the grid hands it 340px
+    // against its 320 — 1.06x, near enough — but a spotlight card hands it
+    // 1,009 and magnified every glyph and hairline in it 3.15x, which is the
+    // chart arriving three times the size of the strip it sits in. The ceiling
+    // is published from here rather than typed into the stylesheet, so it
+    // cannot drift from the `W` the drawing is actually built at.
+    root.style.maxWidth = `${W}px`;
     root.setAttribute(
       'aria-label',
       `Study of ${labelFor(key)} from ${control.format(control.min)} to ${control.format(control.max)}: ` +
@@ -2777,6 +3021,7 @@ export function mountConsole({
       return {
         expanded,
         revealed: revealedIds(),
+        activeReveal,
         key,
         top: anchor?.getBoundingClientRect().top ?? null,
       };
@@ -2790,6 +3035,8 @@ export function mountConsole({
       for (const id of cardState.keys()) {
         if (context.revealed.includes(id)) setCard(id, REVEALED);
       }
+      activeReveal = context.activeReveal ?? null;
+      syncSpotlight();
       for (const key of context.expanded) {
         const details = cards.get(key)?.node.querySelector('.study-quantity');
         if (details) details.open = true;
@@ -2823,11 +3070,11 @@ export function mountConsole({
     reveal(channelId, on = true) {
       if (!cardState.has(channelId)) throw new Error(`the console has no channel "${channelId}"`);
       if (peeking === channelId) peeking = null;
+      if (on) activeReveal = channelId;
       setCard(channelId, on ? REVEALED : CLOSED);
+      if (!on && activeReveal === channelId) activeReveal = null;
+      syncSpotlight();
       keepReveals();
-      // A card opened from outside — the general notes staging the patch step —
-      // owes the reader the same sight of the row under it as one they pressed.
-      if (on) bringIntoView(channelId);
     },
 
     /** Which cards the reader has open, in strip order. */

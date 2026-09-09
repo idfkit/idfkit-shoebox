@@ -38,8 +38,8 @@ The one piece of new session state, held per channel.
 
 ```
 closed    →  nothing shown but the card's own face
-peeking   →  open under a fine pointer, for as long as the pointer is on it
-revealed  →  open because the reader chose it
+peeking   →  active in the desktop spotlight under a fine pointer
+revealed  →  marked as chosen; the active reveal owns the spotlight
 ```
 
 Transitions, and this table is the whole of FR-004 through FR-007:
@@ -63,6 +63,12 @@ Transitions, and this table is the whole of FR-004 through FR-007:
   keyboard. Both reach `revealed` directly.
 - Only `revealed` is remembered, and only where the layout can hold it (FR-015).
 - More than one card may be `revealed`; at most one may be `peeking` (SC-012).
+- On the desktop, `activeReveal` identifies the one revealed card occupying the
+  spotlight. Other revealed cards remain marked in their fixed perimeter slots.
+- The spotlight stores the resting grid's `scrollTop` while active and restores
+  it on exit. It never reaches the model or the permalink.
+- Below the index breakpoint the same states use the existing inline disclosure;
+  the spotlight and perimeter miniatures do not exist there.
 
 ## `Match`
 
