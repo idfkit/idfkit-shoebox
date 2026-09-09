@@ -95,7 +95,7 @@ larger than the change and that is the correct ratio for this feature.
 | III. Read It Back Off the Model | Untouched. No reading changes source. The rename is a spelling of the type the whole principle is written about, so the principle's own text is corrected in the same change. | Pass |
 | IV. No Silent Fallbacks | Reinforced. The upgrade removes a read that mutated the document, which is the library's own version of this rule. The toolkit stamp keeps its em dash where the version cannot be read. | Pass |
 | V. Only @idfkit/* at Runtime | Nothing is added. Three `@idfkit/*` packages move version. | Pass |
-| VI. Latency Is the Interface | Re-measured rather than assumed, because the type store grew. Nothing reaches `params` and no output request is added. | Pass, subject to measurement |
+| VI. Latency Is the Interface | Re-measured rather than assumed, because the type store grew. Nothing reaches `params` and no output request is added. Measured on the finished work: a design day lands at a median of 50 ms over twenty consecutive solves (min 50, max 70) once the engine is warm, and an annual run at 0.61–0.66 s — both the budgets this document set. The first measurement read 220 ms and was discarded: it was taken against a dev server still re-optimising after the lockfile change, which is a fact about the measurement rather than about the libraries. | Pass, measured |
 | VII. Mobile-First and Responsive | No interface change, so nothing to check beyond confirming the desk still draws. | Pass |
 
 Quality gates 1 through 5 of the development workflow all apply and are the

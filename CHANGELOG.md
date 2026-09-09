@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The idfkit libraries move to 0.3.0-rc.3.** `@idfkit/core`, `@idfkit/schemas`
+  and `@idfkit/weather` are pinned to the exact version that wrote the file, and
+  every IDF this page hands out now stamps `@idfkit/core 0.3.0-rc.3` in its
+  header and in the run bundle's manifest. The building does not move: eight
+  desk positions were written on each toolkit and hold the same objects, field
+  for field. Links minted before the upgrade open unchanged.
+
+  Two differences are deliberate. Every `!-` comment sits one column further
+  left, an upstream fix that takes the default desk from 22,403 bytes to 22,022.
+  And reading a type the document does not hold no longer registers it, so with
+  every channel engaged eleven types sit at different positions in the file —
+  the same objects in a different order, running to byte-identical results under
+  EnergyPlus 26.1.0.
+
 ### Added
 
 - **Studies can plot the quantity you choose.** Every open parameter study now

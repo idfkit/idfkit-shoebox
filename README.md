@@ -228,7 +228,7 @@ text, so the four walls come from a plan loop and the whole thing stays a real
 object graph:
 
 ```js
-const doc = new IDFDocument(schema);
+const doc = new IdfDocument(schema);
 doc.add('Zone', 'ZONE ONE', { ceiling_height: 'Autocalculate' });
 const wall = doc.add('BuildingSurface:Detailed', 'Zn001:Wall001', { /* ... */ });
 wall.extensible.push({ vertex_x_coordinate: 0, vertex_y_coordinate: 0, vertex_z_coordinate: 4.572 });

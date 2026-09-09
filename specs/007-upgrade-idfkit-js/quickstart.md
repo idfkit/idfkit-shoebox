@@ -69,13 +69,23 @@ prose and the runnable README example:
 
 ```bash
 grep -rn "IDFDocument" --include="*.js" --include="*.md" . \
-  | grep -v node_modules | grep -v "^./specs/" | grep -v CHANGELOG.md
+  | grep -v node_modules | grep -v "specs/" | grep -v CHANGELOG.md \
+  | grep -v "constitution.md"
 ```
 
-Expected: no output. Everything under `specs/` and the changelog keep the old
-spelling, because they record what was true when they were written. This
-feature's own specification and contract deliberately name both spellings, which
-is why the whole directory is excluded rather than the earlier features alone.
+Expected: no output. Three places keep the old spelling on purpose, because
+each records what was true when it was written rather than asserting what is
+true now: everything under `specs/`, the changelog, and the Sync Impact Report
+at the head of `.specify/memory/constitution.md`, which names the superseded
+type in stating what the amendment corrected. Principle III's own text — the
+part of that file which does assert — is checked by reading it. This feature's
+specification and contract deliberately name both spellings, which is why the
+whole `specs/` directory is excluded rather than the earlier features alone.
+
+The path filters are written without a `./` prefix deliberately: GNU and BSD
+`grep -r .` disagree about whether they emit one, and a `^./specs/` pattern
+silently matches nothing on the half that does not — which reads as a clean
+gate while excluding nothing at all.
 
 ## Gate 3: the model did not move
 

@@ -8,7 +8,7 @@
  *
  * Two rules hold it up, and they are the same two the rest of the sheet keeps:
  *
- * - **Everything measurable is read off the `IDFDocument`.** Areas, ratios,
+ * - **Everything measurable is read off the `IdfDocument`.** Areas, ratios,
  *   overhangs and the way each wall faces come through `geometryFacts`, not off
  *   `params`, so a wall that took a clamp on its way into the model is
  *   described as it was built rather than as it was asked for. Only the

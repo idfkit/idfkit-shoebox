@@ -60,7 +60,7 @@ A one-page client-side EnergyPlus demo, laid out as a drafting sheet with a
 "model console" panel. The governing rule, which the whole codebase is arranged
 around:
 
-> **Everything drawn is read back off the `IDFDocument`.** Never letter the page
+> **Everything drawn is read back off the `IdfDocument`.** Never letter the page
 > from a variable when the model holds the answer. The axonometric projects
 > `BuildingSurface:Detailed` vertices, the plate's datum lines come from
 > `SizingPeriod:DesignDay`, the title block reads `Site:Location`, and the
@@ -589,28 +589,50 @@ simulated` into a file nobody opens while the title block counts the warning.
   the IDF is byte-identical between a desk walked to a position and one built at
   it.
 
-### Reading an absent type registers it (src/model.js)
+### Reading an absent type used to register it (src/model.js)
 
-`doc.all(type)` and `doc.get(type, name)` both go through the document's own
-`collection()`, which **inserts an empty collection for a type it has never
-seen** — and `types()` is insertion order, which is the order the IDF is written
-in. So merely asking whether a type is present moves every later object of that
-type to the position of the question.
+This was the sharpest invariant in this file and it is now history, which is
+why the section is kept rather than deleted: every IDF this page published
+before `@idfkit/core` 0.3.0-rc.3 was ordered by the old behaviour, so the
+files in older run bundles are not line-for-line comparable with the files it
+writes today.
 
-Measured: `applyAir` gained a `drop(doc, 'Schedule:Compact', 'AFN Setpoint')`
-to take the network's setpoint schedule out, and because Air is applied at 09
-and Gains writes the occupancy schedule at 10, that one question moved all three
-`Schedule:Compact` objects seventy lines up the file. Nothing about the model
-changed and the engine could not tell the difference, which is exactly why it is
-worth a guard: a reordering with no symptom is one nobody would find.
+Under `0.1.0`, `doc.all(type)` and `doc.get(type, name)` both went through the
+document's own `collection()`, which **inserted an empty collection for a type
+it had never seen** — and `types()` is insertion order, which is the order the
+IDF is written in. So merely asking whether a type was present moved every
+later object of that type to the position of the question. Measured at the
+time: `applyAir` gained a `drop(doc, 'Schedule:Compact', 'AFN Setpoint')`, and
+because Air is applied at 09 and Gains writes the occupancy schedule at 10,
+that one question moved all three `Schedule:Compact` objects seventy lines up
+the file. `holds(doc, type)` was the guard, asked at the call sites making a
+*new* question about a type the document might not yet hold.
 
-`holds(doc, type)` is that guard, and it is used at that one call site rather
-than folded into `clear` and `drop` themselves. Every existing sweep in the file
-already registers whatever it clears, and the current object order of every IDF
-this page publishes is the accumulated result of that — guarding the helpers
-rewrites all of it, which is not a change to make inside a feature about air
-flow. Any *new* question about a type the document may not yet hold needs the
-guard.
+**0.3.0-rc.3 no longer registers on read**, and the upgrade's own harness is
+how that is known rather than the release notes. On a document holding two
+types, `all()` and `get()` against an absent type both leave it holding two,
+and a document asked about `Schedule:Compact` before adding one serialises
+byte-identically to a document never asked. Across the eight desk positions in
+`specs/007-upgrade-idfkit-js/verify/build-positions.mjs`, the type count fell
+from a uniform **69** — every type any applier had ever swept, which is the
+saturation the old read path produced — to between **28 and 45**, which is the
+count of types actually present.
+
+**The object order changed as a result, and it was taken to the engine rather
+than argued about on paper.** Seven of the eight positions are unmoved. The
+eighth, every channel engaged, reorders **eleven types inside a thirteen-object
+window** of a 106-object file: `Schedule:Compact` hoists above `People`,
+`Lights` and `ElectricEquipment`, the two `Daylighting:*` objects swap, and
+`ThermostatSetpoint:DualSetpoint` and `ZoneControl:Thermostat` rise above the
+three `ZoneHVAC:*` objects. Both files run to exit 0 under EnergyPlus 26.1.0
+with byte-identical `.eso`, `.mtr`, `.rdd` and `.mdd` and the same 1 warning,
+0 severes. Every object is present on both sides, field for field. The engine
+cannot tell, which is what makes a reordering with no symptom acceptable here
+rather than merely undetected.
+
+`holds` stays, at all three call sites. It still answers exactly what its name
+claims, it now costs a `types()` scan and nothing else, and a question about a
+type that may be absent is worth writing as a question either way.
 
 ### Channels that price rather than simulate
 

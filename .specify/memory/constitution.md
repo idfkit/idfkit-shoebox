@@ -25,6 +25,27 @@ Sections added:
 Sections removed: none.
 
 Follow-up TODOs: none. No placeholder tokens remain.
+
+Amendment 2026-09-09
+--------------------
+Version change: 1.0.0 -> 1.0.1
+Bump rationale: PATCH. Principle III named the document type `IDFDocument`, and
+`@idfkit/core` 0.3.0-rc.3 spells it `IdfDocument`. This is a correction of fact
+in the wording of a principle, not a change to what the principle requires: the
+rule that every figure is read back off the document handed to the engine is
+untouched, and no gate, review item or constraint moves. Under this document's
+own versioning policy a redefinition or removal would be MAJOR and a new
+principle or materially expanded guidance MINOR; a clarification or wording fix
+is PATCH.
+
+Principles changed: III. Read It Back Off the Model (type spelling only).
+Principles added or removed: none.
+Sections added or removed: none.
+Templates and guidance requiring updates: none. The same rename lands in
+`src/model.js`, `src/controls.js`, `src/describe.js`, `README.md` and
+`CLAUDE.md` in the commit that carries the upgrade.
+
+Follow-up TODOs: none.
 -->
 
 # idfkit-shoebox Constitution
@@ -79,7 +100,7 @@ what lets one modeller send another a building rather than a screenshot.
 
 ### III. Read It Back Off the Model
 
-Everything drawn on the sheet MUST be read back off the `IDFDocument` that was
+Everything drawn on the sheet MUST be read back off the `IdfDocument` that was
 handed to the engine. Never letter the page from a variable when the model holds
 the answer.
 
@@ -294,4 +315,4 @@ real debugging. `.interface-design/system.md`, authored and revised through
 `/interface-design:init`, holds the design system. Where either conflicts with a
 principle here, the principle governs and the document is corrected.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-01 | **Last Amended**: 2026-09-01
+**Version**: 1.0.1 | **Ratified**: 2026-09-01 | **Last Amended**: 2026-09-09

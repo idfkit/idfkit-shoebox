@@ -101,14 +101,14 @@ No browser, no interface work, nothing from any other story.
 mode is loud and already caught in Phase 2; what this phase covers is the paths a
 bundler cannot check, above all the weather calls.
 
-- [ ] T019 [US2] Start the page with `npm run dev`, confirm it loads, and confirm the axonometric and the plate letter from the first solve
-- [ ] T020 [US2] Drag a sheet slider, confirm the plate re-letters continuously, and measure that a design day still lands in roughly 50 ms once the engine is warm. If it does not, the 140 KB growth in the schema type store is the first suspect
-- [ ] T021 [US2] Open the console, patch a channel in and out, and confirm the strip states and the drawing follow each other
-- [ ] T022 [US2] Attach a weather station, which is the only path exercising `loadStationIndex` and `fetchWeatherFiles` and the only one crossing the `/onebuilding` proxy
-- [ ] T023 [US2] Run a year, confirm it lands in roughly 0.7 s, and confirm the bill, the results schedule and the scoreboard all letter
-- [ ] T024 [US2] Open a study on any swept control and let it densify, confirming the pool still solves samples off the live sheet
-- [ ] T025 [US2] Copy the link, open it in a fresh tab, and confirm the desk comes back
-- [ ] T026 [US2] Open the pre-upgrade link saved in T005 and confirm it is accepted whole and resolves to the same desk. This is FR-006 and no harness covers it
+- [X] T019 [US2] Start the page with `npm run dev`, confirm it loads, and confirm the axonometric and the plate letter from the first solve
+- [X] T020 [US2] Drag a sheet slider, confirm the plate re-letters continuously, and measure that a design day still lands in roughly 50 ms once the engine is warm. If it does not, the 140 KB growth in the schema type store is the first suspect
+- [X] T021 [US2] Open the console, patch a channel in and out, and confirm the strip states and the drawing follow each other
+- [X] T022 [US2] Attach a weather station, which is the only path exercising `loadStationIndex` and `fetchWeatherFiles` and the only one crossing the `/onebuilding` proxy
+- [X] T023 [US2] Run a year, confirm it lands in roughly 0.7 s, and confirm the bill, the results schedule and the scoreboard all letter
+- [X] T024 [US2] Open a study on any swept control and let it densify, confirming the pool still solves samples off the live sheet
+- [X] T025 [US2] Copy the link, open it in a fresh tab, and confirm the desk comes back
+- [X] T026 [US2] Open the pre-upgrade link saved in T005 and confirm it is accepted whole and resolves to the same desk. This is FR-006 and no harness covers it
 
 **Checkpoint**: Both P1 stories hold. The feature is now shippable to the development channel.
 
@@ -122,9 +122,9 @@ was actually bundled.
 **Independent Test**: Read the header of a downloaded IDF and the Toolkit row of
 a run bundle manifest.
 
-- [ ] T027 [US3] Download a run bundle from the running page and confirm the IDF header line reads `@idfkit/core 0.3.0-rc.3`, not a range and not the previous version
-- [ ] T028 [US3] Confirm the same version appears in the bundle manifest's Toolkit row, which `src/bundle.js` letters from `src/version.js`
-- [ ] T029 [US3] Confirm the em dash path still holds by checking that `scripts/toolkit.mjs` returns `null` where the installed version cannot be read and that nothing substitutes a default
+- [X] T027 [US3] Download a run bundle from the running page and confirm the IDF header line reads `@idfkit/core 0.3.0-rc.3`, not a range and not the previous version
+- [X] T028 [US3] Confirm the same version appears in the bundle manifest's Toolkit row, which `src/bundle.js` letters from `src/version.js`
+- [X] T029 [US3] Confirm the em dash path still holds by checking that `scripts/toolkit.mjs` returns `null` where the installed version cannot be read and that nothing substitutes a default
 
 **Checkpoint**: The one reader-visible change in the feature is correct and honest.
 
@@ -138,13 +138,13 @@ one passage the upgrade actually falsifies is corrected rather than left standin
 **Independent Test**: Search the repository for the superseded name and find it
 only where history is recorded.
 
-- [ ] T030 [P] [US4] Rename the type in the two prose comments under `src/`: the module note in `src/controls.js` and the governing rule in `src/describe.js`
-- [ ] T031 [P] [US4] Rename the type in the runnable example in `README.md`, which constructs it by name and would no longer run as written
-- [ ] T032 [P] [US4] Rename the type in the governing rule at the head of `CLAUDE.md`
-- [ ] T033 [US4] Rewrite the `holds()` doc comment in `src/model.js` and the comment at its call site in `applyAir`. The prose describes a read that mutated the document, which the new libraries no longer do, so it must now say what is true: the hazard is gone, the guard is kept because it still answers what it claims and now costs nothing, and the object order it used to protect has changed as a result
-- [ ] T034 [US4] Rewrite the "Reading an absent type registers it" section of `CLAUDE.md`. It is the one passage in this repository the upgrade makes false, and it must record what replaced it, including that the reordering was measured and shown inert to the engine
-- [ ] T035 [US4] Update Principle III in `.specify/memory/constitution.md` to name the type correctly, bump the version line to 1.0.1 with today's amended date, and add the Sync Impact Report entry. This is a PATCH under the document's own policy: a correction that changes no rule
-- [ ] T036 [US4] Confirm nothing was missed with `grep -rn "IDFDocument" --include="*.js" --include="*.md" . | grep -v node_modules | grep -v "^./specs/" | grep -v CHANGELOG.md`, expecting no output
+- [X] T030 [P] [US4] Rename the type in the two prose comments under `src/`: the module note in `src/controls.js` and the governing rule in `src/describe.js`
+- [X] T031 [P] [US4] Rename the type in the runnable example in `README.md`, which constructs it by name and would no longer run as written
+- [X] T032 [P] [US4] Rename the type in the governing rule at the head of `CLAUDE.md`
+- [X] T033 [US4] Rewrite the `holds()` doc comment in `src/model.js` and the comment at its call site in `applyAir`. The prose describes a read that mutated the document, which the new libraries no longer do, so it must now say what is true: the hazard is gone, the guard is kept because it still answers what it claims and now costs nothing, and the object order it used to protect has changed as a result
+- [X] T034 [US4] Rewrite the "Reading an absent type registers it" section of `CLAUDE.md`. It is the one passage in this repository the upgrade makes false, and it must record what replaced it, including that the reordering was measured and shown inert to the engine
+- [X] T035 [US4] Update Principle III in `.specify/memory/constitution.md` to name the type correctly, bump the version line to 1.0.1 with today's amended date, and add the Sync Impact Report entry. This is a PATCH under the document's own policy: a correction that changes no rule
+- [X] T036 [US4] Confirm nothing was missed with `grep -rn "IDFDocument" --include="*.js" --include="*.md" . | grep -v node_modules | grep -v "^./specs/" | grep -v CHANGELOG.md`, expecting no output
 
 **Checkpoint**: The record and the library agree.
 
@@ -152,11 +152,11 @@ only where history is recorded.
 
 ## Phase 7: Polish and Cross-Cutting Concerns
 
-- [ ] T037 Measure the cold visit after the upgrade with `npm run build`, then `ls -l public/schemas/types.json.gz public/schemas/docs.json.gz` and `du -sk public/schemas`, confirming the fetched growth is about 140 KB and within the 200 KB budget in FR-010, and that the 175 KB prose pool is staged but never fetched
-- [ ] T038 Confirm the general notes are correctly left alone: `src/tour.js` unchanged and its storage key not bumped, because no feature was added, no control renamed and no step's subject moved. Confirm this deliberately rather than by omission, since quality gate 6 asks the question of every change
-- [ ] T039 Add the changelog entry to `CHANGELOG.md`, short and in the house voice, naming the version move and the two differences it makes on purpose
-- [ ] T040 Re-read the Constitution Check table in `plan.md` against the finished work and confirm all seven principles still pass, in particular that no runtime dependency was added and no reading changed its source
-- [ ] T041 Walk `specs/007-upgrade-idfkit-js/quickstart.md` end to end on a clean checkout, confirming every gate reports what the document says it will
+- [X] T037 Measure the cold visit after the upgrade with `npm run build`, then `ls -l public/schemas/types.json.gz public/schemas/docs.json.gz` and `du -sk public/schemas`, confirming the fetched growth is about 140 KB and within the 200 KB budget in FR-010, and that the 175 KB prose pool is staged but never fetched
+- [X] T038 Confirm the general notes are correctly left alone: `src/tour.js` unchanged and its storage key not bumped, because no feature was added, no control renamed and no step's subject moved. Confirm this deliberately rather than by omission, since quality gate 6 asks the question of every change
+- [X] T039 Add the changelog entry to `CHANGELOG.md`, short and in the house voice, naming the version move and the two differences it makes on purpose
+- [X] T040 Re-read the Constitution Check table in `plan.md` against the finished work and confirm all seven principles still pass, in particular that no runtime dependency was added and no reading changed its source
+- [X] T041 Walk `specs/007-upgrade-idfkit-js/quickstart.md` end to end on a clean checkout, confirming every gate reports what the document says it will
 
 ---
 

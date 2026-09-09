@@ -6,7 +6,7 @@
  * sliders are a named subset of it — so the drawing, the desk and the document
  * cannot disagree about what a control is called or what range it has.
  *
- * Nothing here touches an `IDFDocument`. These are descriptions; the appliers
+ * Nothing here touches an `IdfDocument`. These are descriptions; the appliers
  * that act on them live in `model.js`, next to the geometry they need.
  */
 
