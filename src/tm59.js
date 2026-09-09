@@ -1457,13 +1457,22 @@ export function readCriterionB(eso, category) {
   // three readers is deliberately not done: an optimisation nobody needs is a
   // second thing to keep correct.
   //
-  // Built per environment and keyed by day of the year, so a night can only
-  // ever be assembled out of hours the *same* environment held. A January and
-  // a July handed to the engine as two run periods must not lend each other a
-  // morning, and a design day cannot lend one at all — `weatherRuns` has
-  // already taken those out.
-  const byDay = new Map();
+  // One index **per environment**, keyed by day of the year inside it, so a
+  // night can only ever be assembled out of hours the *same* environment held.
+  // A January and a July handed to the engine as two run periods must not lend
+  // each other a morning, and a design day cannot lend one at all —
+  // `weatherRuns` has already taken those out. A single index shared across
+  // the environments read as though it kept that rule and did not: it is keyed
+  // by day of the year alone, so the join between two run periods is invisible
+  // to it. Nothing on this desk can reach the difference today, because
+  // `applyRun` writes one run period per *unbroken* group of months and two
+  // groups are therefore never a day apart — but a guarantee stated in a
+  // comment and enforced nowhere is the shape of thing this file exists to
+  // turn into structure.
+  const byRun = [];
   for (const run of series.runs) {
+    const byDay = new Map();
+    byRun.push(byDay);
     let lastMonth = 0;
     let lastDay = 0;
     let hours = null;
@@ -1492,31 +1501,34 @@ export function readCriterionB(eso, category) {
 
   let nights = 0;
   let counted = 0;
-  for (let n = SEASON_FIRST; n <= SEASON_LAST; n += 1) {
-    const evening = byDay.get(n);
-    const morning = byDay.get(n + 1);
-    if (!evening || !morning) continue;
-    let sum = evening.get(24);
-    if (sum === undefined) continue;
-    let complete = true;
-    for (let hour = 1; hour <= 8; hour += 1) {
-      const value = morning.get(hour);
-      if (value === undefined) {
-        complete = false;
-        break;
+  for (const byDay of byRun) {
+    for (let n = SEASON_FIRST; n <= SEASON_LAST; n += 1) {
+      const evening = byDay.get(n);
+      const morning = byDay.get(n + 1);
+      if (!evening || !morning) continue;
+      let sum = evening.get(24);
+      if (sum === undefined) continue;
+      let complete = true;
+      for (let hour = 1; hour <= 8; hour += 1) {
+        const value = morning.get(hour);
+        if (value === undefined) {
+          complete = false;
+          break;
+        }
+        sum += value;
       }
-      sum += value;
+      // A partial night is not a night, and it is counted in neither term. A
+      // run stopping at midnight on 30 September holds all 153 days of the
+      // period and no ninth hour for its last night; averaging the eight it
+      // has would letter a night that ended at 07:00 as one that ended at
+      // 08:00, and dropping it from the numerator while keeping it in the
+      // denominator would credit the building with a night it was never asked
+      // about. `Coverage.tail` is what says on the sheet whether the last one
+      // landed.
+      if (!complete) continue;
+      nights += 1;
+      if (sum / 9 > category.nightLimit) counted += 1;
     }
-    // A partial night is not a night, and it is counted in neither term. A run
-    // stopping at midnight on 30 September holds all 153 days of the period
-    // and no ninth hour for its last night; averaging the eight it has would
-    // letter a night that ended at 07:00 as one that ended at 08:00, and
-    // dropping it from the numerator while keeping it in the denominator would
-    // credit the building with a night it was never asked about.
-    // `Coverage.tail` is what says on the sheet whether the last one landed.
-    if (!complete) continue;
-    nights += 1;
-    if (sum / 9 > category.nightLimit) counted += 1;
   }
 
   if (!nights) return absent(ABSENCE.night);

@@ -1382,8 +1382,15 @@ export function serializePattern(hours, digits = 2) {
       if (typeof h !== 'number' || !Number.isFinite(h)) {
         throw new Error(`a pattern holds ${h} at ${at}, which is not a number`);
       }
-      if (h < 0 || h > 1) {
-        throw new Error(`a pattern holds ${h} at ${at}, outside the 0–1 a fraction of peak runs between`);
+      // The stops and the sentence both off `PATTERN_MIN` / `PATTERN_MAX`, for
+      // the reason their own declaration gives: a literal here is the third
+      // copy of the range and the only one a reader ever sees, so a range that
+      // moved would leave this refusal quoting the old one.
+      if (h < PATTERN_MIN || h > PATTERN_MAX) {
+        throw new Error(
+          `a pattern holds ${h} at ${at}, outside the ${PATTERN_MIN}–${PATTERN_MAX} ` +
+            'a fraction of peak runs between',
+        );
       }
       return h.toFixed(digits);
     })

@@ -1,5 +1,14 @@
 node_modules/
 dist/
+build/
+*.log
+.env*
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
 public/energyplus/
 public/schemas/
 public/weather/
