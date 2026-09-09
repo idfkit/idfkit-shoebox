@@ -44,8 +44,10 @@ import {
   controlFor,
   isMonthMask,
   parseHolidays,
+  parsePattern,
   refuses,
   serializeHolidays,
+  serializePattern,
 } from './controls.js';
 
 export const LINK_VERSION = 'v1';
@@ -97,6 +99,49 @@ for (const key of RESERVED) {
     throw new Error(`the reserved link key "${key}" collides with a control parameter`);
   }
 }
+
+/**
+ * And that every key the encoder writes is a key the decoder can read back.
+ *
+ * The collision above is the loud half of key ownership. This is the quiet
+ * half, and it is quiet in the way `readValue`'s ordering is: a control kind
+ * the reader has not been taught is not a syntax error and not a missing
+ * branch — the numeric gate catches it and every link carrying that key is
+ * refused as "not a number", which is a true sentence about the wrong thing.
+ * Nothing on the desk exercises that path until somebody shares a link with
+ * the key in it, by which time the format has been in the wild for a release.
+ *
+ * So the whole default desk is round-tripped here, at module load, exactly as
+ * `encodeState` would write it and `decodeState` would read it back. It is the
+ * cheapest true statement available: `String(value)` is what the encoder puts
+ * in the fragment, identity is what the decoder owes (`params[key]` is a
+ * scalar and the delta encoding compares it with `!==`), and a kind that has
+ * not been taught fails here rather than in somebody's address bar. Six keys
+ * joined with the room types and their hourly patterns, and the pattern kind
+ * is precisely the one that would have slipped through.
+ *
+ * It does not assert the *values* a link may carry — that is what `refuses`
+ * and the codec harness are for. It asserts that the vocabulary the two halves
+ * of this module use is one vocabulary.
+ */
+const assertReadable = () => {
+  for (const key of ALL_KEYS) {
+    const value = DEFAULT_PARAMETERS[key];
+    let back;
+    try {
+      back = readValue(key, String(value));
+    } catch (failure) {
+      throw new Error(`a link cannot carry ${key} at its own default: ${failure.message}`);
+    }
+    if (back !== value) {
+      throw new Error(
+        `a link carrying ${key}=${String(value)} decodes as ${String(back)}, which is not what it said`,
+      );
+    }
+  }
+};
+
+assertReadable();
 
 /**
  * Which environment a pinned hour belongs to, as the link spells it.
@@ -221,6 +266,26 @@ function readValue(key, raw) {
       throw new Error(`"${raw}" is not a year of twelve months with at least one in the run`);
     }
     return raw;
+  }
+  if (control.kind === 'pattern') {
+    // Above the numeric gate below for the third time, and this is the branch
+    // that would have proved the rule the hard way: a day is twenty-four
+    // comma-separated fractions, so a `pattern` case written into the switch
+    // *after* that regex is unreachable code, and every link carrying an
+    // hourly profile would be refused with "is not a number for occPattern" —
+    // a true sentence about the wrong thing, on a link that was perfectly
+    // good. Read `refuses` first so the refusal names the key and the field
+    // that is wrong, the way the numeric branch's does; the rules themselves
+    // live once, in `patternFault`, where the console's own boxes ask them.
+    const reason = refuses(control, raw);
+    if (reason) throw new Error(`${key} ${reason}`);
+    // Re-serialized for the reason the holiday list is: a link may only ever
+    // put the canonical spelling on `params`. `1,1,1,…` and `1.000,1.000,…`
+    // are one day written two ways, and both would pass the check above —
+    // but they are different strings, so they key two identical solves through
+    // `shapeKey`, and the identity diff in `encodeState` would go on writing a
+    // pattern that is sitting at its own default into every link minted after.
+    return serializePattern(parsePattern(raw), control.digits);
   }
   if (control.kind === 'days') {
     // Above the numeric gate below, not inside the switch after it: a holiday

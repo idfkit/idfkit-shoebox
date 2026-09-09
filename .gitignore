@@ -7,6 +7,11 @@ public/weather/
 # scratch for scripts/build-rates.mjs
 .rates-cache/
 
+# scratch for scripts/build-tm59.mjs. The CSV it reads is an independent
+# transcription of TM59:2026 Appendix E, which is a purchased document, so the
+# input stays out of the repository exactly as the tables themselves do.
+.tm59-cache/
+
 # Throwaway verification harnesses (see CLAUDE.md, "Verifying changes").
 harness/
 .harness/

@@ -2,6 +2,7 @@ import { IDFDocument, parseIdf } from '@idfkit/core';
 import {
   ADIABATIC,
   ADAPTIVE_RULES,
+  AS_DRAWN,
   BOUNDARY_KEYS,
   NEEDS_SETPOINT,
   OPENABLE_KEYS,
@@ -12,6 +13,7 @@ import {
   DEFAULT_PARAMETERS,
   monthSpans,
   parseHolidays,
+  parsePattern,
 } from './controls.js';
 import { END_USES } from './bill.js';
 
@@ -232,7 +234,7 @@ function must(doc, type, name = null) {
  * hazard is general and is written down here; the fix stays where the new
  * question is asked.
  */
-const holds = (doc, type) => doc.types().includes(type);
+export const holds = (doc, type) => doc.types().includes(type);
 
 /** Remove every object of a type, if any. */
 function clear(doc, type) {
@@ -1834,13 +1836,23 @@ function applyNetwork(doc, params) {
 }
 
 /**
+ * What a band schedule falls to outside its band.
+ *
+ * Named rather than left as a literal in the signature below because it is not
+ * only a default: it is the value an occupied-hour test has to stand above, and
+ * `occupiedFloor` answers that question with this constant rather than with a
+ * second copy of the number.
+ */
+const BAND_OFF = 0.1;
+
+/**
  * A day with a band in it, as a `Schedule:Compact`.
  *
  * Outside the band the value falls to `off` rather than to nothing, because a
  * building with literally no one in it overnight is a building whose equipment
  * has been unplugged.
  */
-function bandSchedule(doc, name, limits, params, { on = 1, off = 0.1 } = {}) {
+function bandSchedule(doc, name, limits, params, { on = 1, off = BAND_OFF } = {}) {
   drop(doc, 'Schedule:Compact', name);
   const schedule = doc.add('Schedule:Compact', name, { schedule_type_limits_name: limits });
   const rows = ['Through: 12/31'];
@@ -1881,26 +1893,167 @@ function dayRows(from, to, value, off) {
   return rows;
 }
 
+/**
+ * One day of a compact schedule from twenty-four hourly fractions.
+ *
+ * Same two-field rule as `dayRows` above, and the same reason for existing
+ * separately: a `Profile` is a band and can only say *when*, so it is written
+ * from a start, an end and two levels, while a `Pattern` is a shape and is
+ * written hour by hour. CIBSE TM59's bedroom stands above 0.7 in every hour of
+ * the day and at a different level in each part of it, which is exactly the
+ * profile a band cannot hold.
+ *
+ * Runs of equal hours are collapsed, so a flat day is one pair rather than
+ * twenty-four, and the collapse is **deterministic** — the run is closed at the
+ * last hour holding the value and the row is lettered `Until: HH:00` at the end
+ * of that hour, so the same twenty-four numbers always produce the same fields.
+ * That is not tidiness. `applyModel` runs on every parameter change and the
+ * sweep's restore is asserted byte-identical, so a collapse that depended on
+ * anything but the fractions themselves would break idempotence rather than
+ * merely look untidy.
+ *
+ * Hour `h` covers `h:00` to `h+1:00`, which is why the last row is
+ * `Until: 24:00` and not `Until: 23:00`.
+ */
+function patternRows(hours) {
+  const rows = [];
+  for (let h = 0; h < hours.length; h += 1) {
+    if (hours[h + 1] === hours[h]) continue;
+    rows.push(`Until: ${String(h + 1).padStart(2, '0')}:00`, hours[h]);
+  }
+  return rows;
+}
+
+/**
+ * A day-shaped `Schedule:Compact` written from a pattern.
+ *
+ * The day-type structure is `bandSchedule`'s, deliberately: the weekend and
+ * holiday selectors are not withdrawn under a named room type, so they have to
+ * go on reaching an object or they would be two live controls moving nothing.
+ * TM59 §3.7.1 asks for "the same profiles ... throughout the year for both
+ * weekends and weekdays", which is a *setting* of the weekend selector rather
+ * than a fact about the schedule writer, and the register's own preset writes
+ * it as one — leaving the reader free to disagree, which is the whole point of
+ * a preset being an overlay.
+ *
+ * A closed day is written as a pattern of zeros rather than as `bandSchedule`'s
+ * tenth. The tenth exists because a band says nothing about level, so the
+ * equipment's standing base gain has nowhere else to live; a pattern carries
+ * its own base — 19 W under a 150 W peak is 0.127 in Table E.1's own arithmetic
+ * — so a day nobody claims really is zero here. That difference is load
+ * bearing downstream: an occupied hour is one standing *above* the floor the
+ * applier wrote, which is `occupiedFloor` below.
+ */
+function patternSchedule(doc, name, hours, params) {
+  drop(doc, 'Schedule:Compact', name);
+  const schedule = doc.add('Schedule:Compact', name, { schedule_type_limits_name: 'Fraction' });
+  const shut = new Array(hours.length).fill(0);
+  const rows = ['Through: 12/31'];
+
+  rows.push('For: Weekdays SummerDesignDay WinterDesignDay');
+  rows.push(...patternRows(hours));
+  // Before `AllOtherDays` for the reason `bandSchedule` gives: the catch-all
+  // swallows a holiday unless something claims the day first.
+  if (params.holidayUse !== 'AsWeekend') {
+    rows.push('For: Holidays');
+    rows.push(...patternRows(params.holidayUse === 'Open' ? hours : shut));
+  }
+  rows.push('For: AllOtherDays');
+  rows.push(...patternRows(params.weekend === 'Occupied' ? hours : shut));
+
+  schedule.set('data', rows.map((field) => ({ field })));
+  return name;
+}
+
+/**
+ * The occupancy schedule, named once.
+ *
+ * Exported for the reason `WINDOW_CONSTRUCTION` is: the criteria read their
+ * denominator off this schedule's own value series in the run, so the name is
+ * written by an applier here and looked up by a reader elsewhere, and a name
+ * repeated in two files is a name that will one day be changed in only one of
+ * them.
+ */
+export const OCCUPANCY_SCHEDULE = 'Occupancy';
+const EQUIPMENT_SCHEDULE = 'EquipmentUse';
+const LIGHTING_SCHEDULE = 'LightingUse';
+
+/**
+ * The value an occupancy schedule has to stand *above* for the hour to count.
+ *
+ * A property of the schedule that was written, not of the reader, which is why
+ * it is answered here and not guessed there. `bandSchedule` writes 0.1 out of
+ * hours rather than zero — a building with literally no one in it overnight is
+ * a building whose equipment has been unplugged — so a reader testing `> 0`
+ * against the desk's own schedule counts every hour of the year as occupied.
+ * Measured over a Chicago TMY3 year, 1 May to 30 September: `> 0` gives 3,672
+ * hours, which is 153 × 24 and also, exactly, the figure CL:2026 publishes for
+ * a bedroom, so the wrong test agrees with a published number for entirely the
+ * wrong reason. `> 0.1` gives 1,100, which is 110 weekdays × a ten hour band.
+ *
+ * A pattern's own unoccupied hours are literally zero, in Table E.2 and in
+ * `patternSchedule` above, so the floor moves with the model in force.
+ */
+export const occupiedFloor = (params) => (params.roomType === AS_DRAWN ? BAND_OFF : 0);
+
 /** 10 — people, light and equipment. */
 function applyGains(doc, params, engaged) {
   clear(doc, 'People');
   clear(doc, 'Lights');
   clear(doc, 'ElectricEquipment');
-  drop(doc, 'Schedule:Compact', 'Occupancy');
+  drop(doc, 'Schedule:Compact', OCCUPANCY_SCHEDULE);
+  // Bypass removes, it does not zero, and a return from a named room type to
+  // `As drawn` is the same act one control down: the two pattern schedules have
+  // to leave the document or the next run carries orphans nothing references.
+  // They are dropped unconditionally rather than in the `As drawn` branch so
+  // there is one place the sweep happens, which is the arrangement every other
+  // applier here keeps.
+  drop(doc, 'Schedule:Compact', EQUIPMENT_SCHEDULE);
+  drop(doc, 'Schedule:Compact', LIGHTING_SCHEDULE);
   drop(doc, 'Schedule:Constant', 'Activity');
   if (!engaged) return;
 
-  bandSchedule(doc, 'Occupancy', 'Fraction', params);
+  // Two instruments on one strip, and only one of them is ever in the document.
+  // `As drawn` is the desk's own model — one band schedule shared by all three
+  // loads, a density and a watts per square metre — and it must go on writing
+  // exactly what it wrote before this feature existed, because every permalink
+  // minted before it omits all six new keys and takes their defaults. That is
+  // what keeps `LINK_VERSION` where it is and `MIGRATIONS` empty.
+  const drawn = params.roomType === AS_DRAWN;
+
+  if (drawn) {
+    bandSchedule(doc, OCCUPANCY_SCHEDULE, 'Fraction', params);
+  } else {
+    // Three schedules where the desk has one, which is the whole reason a named
+    // room type cannot be expressed as settings of the band: TM59's lights run
+    // 18:00 to 23:00 whatever the room is doing, and a schedule shared by the
+    // people, the lights and the equipment cannot say that at all.
+    patternSchedule(doc, OCCUPANCY_SCHEDULE, parsePattern(params.occPattern), params);
+    patternSchedule(doc, EQUIPMENT_SCHEDULE, parsePattern(params.equipPattern), params);
+    patternSchedule(doc, LIGHTING_SCHEDULE, parsePattern(params.lightPattern), params);
+  }
+
   doc.add('Schedule:Constant', 'Activity', {
     schedule_type_limits_name: 'Any Number',
     hourly_value: params.activity,
   });
 
+  // A density under `As drawn`, a count under a named room type, and that is
+  // what lets a standard prescribe the occupancy at all: people per square
+  // metre would need the floor area, and Massing is `UNTOUCHABLE` to a preset.
+  //
+  // The object is written even at zero occupants. It is not a channel being
+  // bypassed — Gains is engaged, the room is simply empty — and an empty room
+  // is a measurement rather than a missing one. It also carries the adaptive
+  // comfort model below, and the Air strip's `requires` only knows whether
+  // Gains is in the path, so a `People` withdrawn at zero would fatal the
+  // ASHRAE 55 venting rule with nothing on the desk saying why.
   const people = doc.add('People', 'Occupants', {
     zone_or_zonelist_or_space_or_spacelist_name: ZONE_NAME,
-    number_of_people_schedule_name: 'Occupancy',
-    number_of_people_calculation_method: 'Area/Person',
-    floor_area_per_person: params.occupancy,
+    number_of_people_schedule_name: OCCUPANCY_SCHEDULE,
+    ...(drawn
+      ? { number_of_people_calculation_method: 'Area/Person', floor_area_per_person: params.occupancy }
+      : { number_of_people_calculation_method: 'People', number_of_people: params.peopleCount }),
     fraction_radiant: 0.3,
     sensible_heat_fraction: 'Autocalculate',
     activity_level_schedule_name: 'Activity',
@@ -1925,10 +2078,16 @@ function applyGains(doc, params, engaged) {
   // so the honest fix is to leave it alone: the drift invariant in one line.
   if (comfort) people.thermal_comfort_model_1_type = comfort;
 
+  // Lighting stays a watts per square metre under both models, and is the one
+  // load that does. TM59's Table E.1 gives the lights as a density where it
+  // gives the people as a count and the equipment as absolute watts, so there
+  // is nothing to switch to: what changes is only which schedule the density
+  // runs on, and that is the fourth gap — the lights run 18:00 to 23:00 whether
+  // or not anybody is in the room.
   if (params.lighting > 0) {
     doc.add('Lights', 'Lighting', {
       zone_or_zonelist_or_space_or_spacelist_name: ZONE_NAME,
-      schedule_name: 'Occupancy',
+      schedule_name: drawn ? OCCUPANCY_SCHEDULE : LIGHTING_SCHEDULE,
       design_level_calculation_method: 'Watts/Area',
       watts_per_floor_area: params.lighting,
       fraction_radiant: params.lightRadiant,
@@ -1939,12 +2098,19 @@ function applyGains(doc, params, engaged) {
     });
   }
 
-  if (params.equipment > 0) {
+  // Whichever of the two levels is in force is also the one the gate asks
+  // about. Left at `params.equipment > 0` this would refuse to write a 450 W
+  // absolute load on a desk whose density happened to be zero, and write an
+  // object at an equipment peak of nothing — the strip's model switch silently
+  // reaching past its own control, which is the same drift `equipLatent`'s
+  // `needs` is written around in the declaration.
+  if ((drawn ? params.equipment : params.equipPeak) > 0) {
     doc.add('ElectricEquipment', 'Equipment', {
       zone_or_zonelist_or_space_or_spacelist_name: ZONE_NAME,
-      schedule_name: 'Occupancy',
-      design_level_calculation_method: 'Watts/Area',
-      watts_per_floor_area: params.equipment,
+      schedule_name: drawn ? OCCUPANCY_SCHEDULE : EQUIPMENT_SCHEDULE,
+      ...(drawn
+        ? { design_level_calculation_method: 'Watts/Area', watts_per_floor_area: params.equipment }
+        : { design_level_calculation_method: 'EquipmentLevel', design_level: params.equipPeak }),
       fraction_latent: params.equipLatent,
       fraction_radiant: 0.3,
       fraction_lost: 0,
@@ -2303,6 +2469,40 @@ const REPORTING_TYPES = [
 ];
 
 /**
+ * The occupancy schedule's own value series, hour by hour.
+ *
+ * This is the denominator every overheating share is taken over, and it is
+ * requested rather than recomputed for a reason that would have cost a silent
+ * wrong answer: evaluating the `Schedule:Compact` in JavaScript means
+ * reimplementing EnergyPlus's own day-type dispatch, since which branch an hour
+ * takes depends on the calendar the engine picked for the weather file — and
+ * `RunPeriod.day_of_week_for_start_day` is deliberately left empty here so that
+ * calendar is the file's, not ours. A second implementation of somebody else's
+ * dispatch is exactly the drift Principle III forbids, and it would fail
+ * quietly.
+ *
+ * It is affordable because it is **schedule-level, not per-surface**. Measured
+ * A/B interleaved on an annual Chicago TMY3 run under EnergyPlus 26.1.0: 484 ms
+ * against 473 ms, which is inside the run-to-run noise of 455 to 601 ms, and
+ * the .eso grows 2,276,091 to 2,346,213 bytes — **+3.1 %**. The per-surface
+ * request this page learned its lesson from added 158 series and took the same
+ * run from 681 ms to 2,984 ms. One series against fifteen is not that.
+ *
+ * Gated on the schedule actually being in the document, on the same terms as
+ * the pressure network's series below and for the same reason: EnergyPlus lists
+ * every variable it could not produce at the end of the error file, and the
+ * title block counts those warnings. Asked through `holds` because this is a
+ * *new* question about a type the document may not yet carry, and merely asking
+ * would register it here — at the foot of the file, where this reconciler runs
+ * — moving every schedule a later apply writes.
+ */
+function addOccupancyValue(doc) {
+  if (!holds(doc, 'Schedule:Compact')) return;
+  if (!doc.get('Schedule:Compact', OCCUPANCY_SCHEDULE)) return;
+  addVariable(doc, 'Schedule Value', 'Hourly', OCCUPANCY_SCHEDULE);
+}
+
+/**
  * Ask for exactly what the run's reader will read, and nothing else.
  *
  * Two rules meet here. The first is the old one: a bypassed channel is out of
@@ -2312,14 +2512,14 @@ const REPORTING_TYPES = [
  * block with warnings about itself.
  *
  * The second is why this takes a profile. A sweep sample is read for one
- * hourly series (`'extremes'`) or that series plus four monthly meters
- * (`'energy'`), yet it used to carry the sheet's whole apparatus — the
- * AllSummary tables, a DXF drawing, a constructions report, the dictionary,
- * fifteen-odd series — all computed, written, parsed and cloned per sample,
- * then discarded. Output volume is the knob that has already moved this app's
- * run time four-fold once (15 → 173 series took the annual run from 681 ms to
- * 2,984 ms, almost all of it after the simulation finished), so a study turns
- * it the other way. The profile is a mode of `applyModel` rather than a
+ * hourly series (`'extremes'`), that series plus four monthly meters
+ * (`'energy'`), or the three an overheating criterion needs (`'tm59'`), yet it
+ * used to carry the sheet's whole apparatus — the AllSummary tables, a DXF
+ * drawing, a constructions report, the dictionary, fifteen-odd series — all
+ * computed, written, parsed and cloned per sample, then discarded. Output
+ * volume is the knob that has already moved this app's run time four-fold once
+ * (15 → 173 series took the annual run from 681 ms to 2,984 ms, almost all of
+ * it after the simulation finished), so a study turns it the other way. The profile is a mode of `applyModel` rather than a
  * post-pass because this reconciler runs on every apply and would quietly put
  * back whatever a post-pass had stripped.
  *
@@ -2357,6 +2557,19 @@ function syncReporting(doc, state, reporting) {
     }
     return;
   }
+  if (reporting === 'tm59') {
+    // Three series against the sheet's fifteen, and every one of them is read.
+    // `zoneRuns` splits the run into environments off the zone air temperature,
+    // so a sample that only wanted operative temperature would have no way to
+    // tell one environment from the next; the criteria themselves are read off
+    // `Zone Operative Temperature`, never off air temperature, which is a
+    // different question by several degrees on a desk with heavy solar gain and
+    // a cold slab; and the schedule series is the denominator.
+    addVariable(doc, 'Zone Mean Air Temperature', 'Hourly');
+    addVariable(doc, 'Zone Operative Temperature', 'Hourly');
+    addOccupancyValue(doc);
+    return;
+  }
   if (reporting !== 'sheet') throw new Error(`unknown reporting profile "${reporting}"`);
 
   const diagnostics = doc.add('Output:Diagnostics', null);
@@ -2369,6 +2582,7 @@ function syncReporting(doc, state, reporting) {
     variable_name: 'Zone Wetbulb Globe Temperature',
     reporting_frequency: 'Hourly',
   });
+  addOccupancyValue(doc);
   for (const name of VARIABLES_MONTHLY) addVariable(doc, name, 'Monthly');
 
   // The engaged channels' balance-rail terms, deduplicated in channel order.

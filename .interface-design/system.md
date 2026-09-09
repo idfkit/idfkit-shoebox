@@ -233,6 +233,65 @@ listed beneath it, an entry field, and a row of ghost-ink stamps.
   days short stays four days short, so a notice shown once after the click would
   be a lie by expiry.
 
+### A day of hourly values, read as a shape and worked in a fold
+
+Twenty-four numbers is not twenty-four fields. A reader setting an hourly
+profile is setting a shape, so the shape is what stands on the strip and the
+numbers are what stands behind a disclosure.
+
+- **The reading is outside the fold and only the working is inside.** The
+  silhouette (the same 240 unit band the occupancy profile is drawn on) and one
+  line of lettering in the head are always visible, which is the desk's own
+  rule that every path reads without opening anything. Only the boxes cost a
+  tap.
+- **Six across and four down, because the rows are then the quarters the
+  drawing above is already ticked at**: 00, 06, 12, 18, 24. The afternoon is
+  the third band rather than something you count your way into. Four across is
+  roomier and rules the day at boundaries nothing on the sheet draws; twelve
+  across is the drawing's own shape and does not fit, since a box letters five
+  mono characters and twelve of those want about 440px.
+- **Size it against the narrower of the strip's two narrow cases, which is not
+  the phone.** The phone gives the strip 330px of content (390 less the body's
+  12px margins and the strip's own 18px sides). The multicolumn desk gives it
+  284px, because a column is never narrower than `--card` and 320 less those
+  same sides is what a column measures the moment another one opens. Measured
+  at 284: six cells of 47px, a 43px box in each, and `0.000` is 33.00px in IBM
+  Plex Mono at 11px, so nothing clips and a fourth decimal would still stand at
+  39.60px. No new threshold is declared for any of this, and none is needed:
+  the grid is the same six columns at both widths.
+- **Rule the top of each cell and make the column gutter `padding`.** The four
+  ruled bands are the structure, and the same mechanic the qualification block
+  records applies here: a grid has no row box to carry a border, and a
+  `column-gap` cuts a hole in every hairline so the bands read as ruled in
+  dashes. The last column hands its gutter back, as a segmented row's last cell
+  hands back its divider.
+- **The hour goes above its box, in ghost ink and the smallest mono on the
+  desk.** Side by side the pair is 58.5px of lettering in 43px of room. The
+  hour is the box's address rather than one of the day's readings, and the
+  readings are the figures under them.
+- **The values are margin numbers like every other settable figure**
+  (`.num-field`, box and border and fill already taken off), at the desk's
+  standard 11px tabular mono. Hold each one to its cell's width rather than to
+  the `size` attribute the field fits to its text: focus swaps the lettering
+  for the value itself, `0.500` becomes `0.5`, and a box that narrowed by two
+  characters as it was entered would walk the whole column sideways under the
+  caret.
+- **Any rule giving a folded block a `display` of its own owes it a `[hidden]`
+  twin.** This is the general rule, not a note about this control. An author
+  declaration beats the user agent's `[hidden] { display: none }` outright, so
+  the attribute does nothing at all. Measured by deleting the twin out of the
+  live stylesheet: a shut fold went straight back to computing `display: grid`
+  and put its twenty-four boxes into the tab order, seventy-two across the
+  three patterns of one strip. It is the failure `.link[hidden]` was written
+  for after `#studies-stop` was found rendering permanently, and it is
+  invisible until somebody reaches the strip with a keyboard.
+- **The fold's own offer sits where a scale's Study offer sits**, hard against
+  the reading with the label taking the slack, at the offer's whisper size
+  rather than the status row's: it is the one gesture the control's head
+  affords, and three of these stand on one strip. The word on it does not flip.
+  `aria-expanded` is the state, and what a reader sees is that the boxes are
+  there; a second saying of it is the one that goes stale.
+
 ### The square marker
 
 An `8px` to `9px` square with a `1px` border and `1px` radius means "a step that
@@ -468,6 +527,83 @@ Two mechanics that cost real debugging:
 - **Move a unit onto the label it belongs to.** A unit column on its own line
   reads as another value; folded, `46.6` under `READS, KWH/M²·YR` is the
   reading, and the unit column is dropped.
+
+**There are exactly two folding thresholds on this page and there must not be a
+third.** They answer two different questions and a new block joins whichever one
+its own question belongs to, rather than declaring its own:
+
+| Threshold | Question it answers | Who folds there | Head attribute |
+| --- | --- | --- | --- |
+| `780px` wide **or** `600px` tall | Can this window still hold the console as a column beside the sheet? | The console's strips (to the index sheet), and every table inside `.register`: the scoreboard and the shelf of kept schemes | `data-label` |
+| `620px` wide | Have this table's own columns collided? | The results schedule and the bill | `data-head` |
+
+Two consequences that are easy to get wrong, and both were:
+
+- **The scoreboard folds at 780, not at 620.** It lives inside `.register`, and
+  the register's fold is the *wider* of the two, so a rule written for the
+  scoreboard at 620 is dead code sitting under a live rule a hundred and sixty
+  pixels above it. A new row on that board is folded already; what it owes is
+  its `data-label` and, if it introduces a classed cell with a width, that width
+  given back.
+- **The two folds letter the head from two different attributes.** `data-label`
+  is the register's and `data-head` is the schedules'. One name would be
+  better and it is not worth a rename that touches every builder on the page,
+  so the rule is: use the attribute belonging to the fold your block actually
+  falls under, which is the table it is a row of. A cell carrying the other
+  one folds with no head at all, and the failure is invisible on a desk.
+
+### Prose on a schedule, and a count that is not a score
+
+Some things a table has to say are not readings. How many of a method's criteria
+were read, which of them stand outside that count, and which could not be read
+at all are statements *about* the rows, and a column of right-aligned mono is
+the wrong place for a sentence. Give them a row of their own, spanning the whole
+table (`tr.score-prose > td[colspan]`), set in the section's own prose face and
+measure rather than in the figure face.
+
+Two rules, and the second is the one that matters:
+
+- **A spanning cell is still a first child**, so any width the first column was
+  given through an id selector has to be handed back with `width: auto`. This is
+  the same repair the standard-name subhead already needed on that board.
+- **A count of criteria cleared must not be drawn as a total.** No figure face,
+  no marker, no rule above it, no colour, no percentage, no ratio. It names both
+  numbers in a sentence and it names its scope. A row set like a total is read
+  as one whatever its words say, and on a published method that is the interface
+  issuing a certificate the model cannot support. The individual criterion rows
+  carry verdicts, as every criterion row on this page does; **the method does
+  not**, and its name never appears beside a pass or a fail word.
+
+### Qualifying a reading in place
+
+The companion to `List the criteria the sheet cannot judge beside the ones it
+can`. That rule governs the clauses a method contains and this sheet never
+reaches; this one governs the readings it *does* letter, and the distance
+between what they measure and what the method means by them.
+
+- **In place, never on hover.** Same rule that put what *Chase* means above the
+  scoreboard: `pointer: coarse` has no hover, so a caveat that floats does not
+  exist on the phone where a figure is most likely to be carried away from the
+  page it was read on.
+- **One entry is two statements, so it gets two tracks**, as a `dl` laid out on
+  a grid: what the figure does not answer, and what that is measured or read
+  from. Written as one paragraph each they become grey blocks a reader skims,
+  and the point of the block is that a reader can *count* the reasons.
+- **The number of standing entries is asserted in the module, not hoped for.**
+  The interface promises a reader some specific number of reasons; a list that
+  one careless edit could shorten would still render perfectly.
+- **Rule the entries on both cells, and make the gutter `padding`, not `gap`.**
+  A grid has no row box to carry a border, so the hairline between entries is
+  drawn on each cell; a `column-gap` then cuts a hole in every one of them and
+  the block reads as ruled in dashes.
+- **Long unbroken strings belong to this pattern.** Qualifications quote file
+  names and standard labels, and a 43-character token with nothing to break on
+  sets the block's minimum width and pushes the sheet sideways at 390px. Give
+  the evidence track `overflow-wrap: anywhere`.
+- Folded, the evidence stands under the statement and letters the head the
+  layout was carrying for it. It folds at `620px`, the schedules' threshold, not
+  the register's: two tracks of prose survive some way below the width at which
+  five columns of figures stop being a table.
 
 ### Absence is not zero
 
