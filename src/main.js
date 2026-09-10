@@ -8021,11 +8021,9 @@ function axisOffers(snapshot = params, patch = patching()) {
       const faceless = refusesSweep(control);
       for (const side of sides) {
         const key = side ? side.key : control.key;
-        // Not sentence-cased: `refusesSweep` opens with the control's own key,
-        // and `northAxis` capitalised is `NorthAxis`, which is not the name of
-        // anything. The sentence is the studies' verbatim.
+        const channelOut = !faceless && !engaged;
         const reason = faceless
-          ? `${faceless}.`
+          ? null
           : !engaged
             ? `Patch ${channel.name} in; with it out of the path this control reaches no object.`
             : control.inert?.(snapshot)
@@ -8042,8 +8040,16 @@ function axisOffers(snapshot = params, patch = patching()) {
           // but `labelFor` may name oddly, so the declaration's own label is
           // the fallback.
           label: faceless ? (control.label ?? key) : labelFor(key),
-          available: !reason,
+          available: !faceless && !reason,
           reason,
+          // True where the whole channel is out of the path, so the sentence
+          // is one channel's rather than one control's.
+          channelOut,
+          // Refused because the control has no numeric face at all, rather
+          // than because of anything about this desk. Carried as a flag rather
+          // than as a sentence: the sentence is the same for all thirty-nine
+          // of them and is printed once over the group.
+          faceless: Boolean(faceless),
         });
       }
     }
@@ -8071,7 +8077,7 @@ function pickList({ label, summary, options, selected, onPick, multiple = false 
   head.append(el('b', null, label), document.createTextNode(summary));
   details.append(head);
   const list = el('div', 'survey-options');
-  for (const option of options) {
+  const draw = (option) => {
     const button = el('button', 'survey-option');
     button.type = 'button';
     const on = multiple ? selected.includes(option.id) : selected === option.id;
@@ -8080,13 +8086,60 @@ function pickList({ label, summary, options, selected, onPick, multiple = false 
       button.disabled = true;
       // In place, not on hover: `pointer: coarse` has no hover, so a reason
       // that only floats does not exist on the phone this is most read on.
-      button.append(el('span', null, option.label), el('small', null, option.reason));
+      // A control with no numeric face carries none of its own — the sentence
+      // is identical for all of them and is printed once over the group.
+      button.append(el('span', null, option.label));
+      if (option.reason) button.append(el('small', null, option.reason));
     } else {
       button.append(el('span', null, option.label));
       if (option.note) button.append(el('small', null, option.note));
       button.addEventListener('click', () => onPick(option.id));
     }
     list.append(button);
+  };
+
+  /**
+   * A heading for one run of options, carrying whatever is true of all of
+   * them.
+   *
+   * This is the design system's own rule — explain it in printed body text at
+   * the head of the block it belongs to, one sentence covering every copy of
+   * the control — applied twice, because the chooser broke it twice. A channel
+   * that is out of the path refuses every control it owns for one reason, and
+   * a control with no numeric face is refused by one rule shared with the
+   * other thirty-eight. Written per entry, those were 53 rows each repeating a
+   * whole paragraph, which is a list nobody can read down.
+   */
+  const heading = (name, note) => {
+    const head = el('div', 'survey-options-group');
+    head.append(el('b', null, name));
+    if (note) head.append(el('small', null, note));
+    list.append(head);
+  };
+
+  // Controls with a face first, grouped by the channel that owns them, in
+  // channel order. Controls with no numeric face at all go last under one
+  // statement of the rule — they stay in the list rather than being omitted,
+  // because a control absent from a chooser reads as one the desk does not
+  // have.
+  const faceless = options.filter((option) => option.faceless);
+  let group = null;
+  for (const option of options) {
+    if (option.faceless) continue;
+    if (option.group && option.group !== group) {
+      group = option.group;
+      heading(group, option.groupReason);
+    }
+    draw(option);
+  }
+  if (faceless.length) {
+    heading(
+      `${faceless.length} controls with no face`,
+      'A selector, a bearing, a daily profile or a list of dates carries no minimum, maximum or ' +
+        'step, so there is nothing to sweep along and no ground to cut. That is the same rule a ' +
+        'study is refused by.',
+    );
+    for (const option of faceless) draw(option);
   }
   details.append(list);
   return details;
@@ -8204,14 +8257,25 @@ function renderSurveyChoose() {
   const axisOptions = (other) =>
     axes.map((offer) => ({
       id: offer.key,
-      label: `${offer.channel.name} · ${offer.label}`,
+      // No channel prefix: the channel is the group heading above the run of
+      // controls that belong to it, so repeating it on every row is the same
+      // noise as repeating the channel's refusal on every row.
+      label: offer.label,
+      group: offer.channel.name,
+      // Stated once by the group where it is true of the whole channel; the
+      // per-entry `reason` below is for what differs *within* one — a wall
+      // that can carry no opening, a control inert at this desk.
+      groupReason: offer.channelOut ? offer.reason : null,
       // The one refusal that is about the pair rather than about the control:
       // a ground cut along one control twice is a line drawn twice.
       available: offer.available && offer.key !== other,
       reason:
         offer.key === other
           ? 'This control is already the other axis, and a ground needs two.'
-          : offer.reason,
+          : offer.channelOut
+            ? null
+            : offer.reason,
+      faceless: offer.faceless,
     }));
 
   host.append(

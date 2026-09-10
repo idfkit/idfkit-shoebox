@@ -4324,12 +4324,30 @@
         max-height: 220px;
         overflow-y: auto;
         padding-right: 4px;
+        /* Held to a readable measure. Without it the list takes the width of
+           its widest entry, which since the chooser began listing refusals is
+           a whole sentence — and the chooser is a wrapping flex row, so one
+           over-wide pick pushes the other two onto lines of their own. */
+        width: 300px;
+        max-width: 100%;
       }
 
       .survey-option {
+        /* A column, so a refusal sits **under** the control it refuses rather
+           than beside it. Side by side, a 150-character sentence set the row's
+           width and the whole chooser blew out sideways. */
         display: flex;
-        gap: 7px;
-        align-items: baseline;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        /* `flex: none` is not tidiness, it is the fix for the bug that shipped
+           here. `.survey-options` is a column flex container with a
+           `max-height`, so its items take the default `flex-shrink: 1` and 129
+           of them shared 220px between them: measured, every option computed
+           to **6px** tall — its padding and nothing else — while its wrapped
+           sentence carried on painting over the four rows below it. The list
+           has to scroll, which means its items must keep their own height. */
+        flex: none;
         border: 0;
         background: none;
         padding: 3px 5px;
@@ -4341,7 +4359,34 @@
            would be four thousand pixels of column. These are list entries. */
         min-width: 0;
         min-height: 0;
+        width: 100%;
         cursor: pointer;
+      }
+
+      /* One statement of whatever governs the run of options under it, rather
+         than a copy on each of its members. Printed in the list, not hovered. */
+      .survey-options-group {
+        flex: none;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        margin: 9px 0 3px;
+        padding-top: 7px;
+        border-top: 1px solid var(--rule-soft);
+      }
+
+      .survey-options-group:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+
+      .survey-options-group b {
+        font: 500 9px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+
+      .survey-options-group small {
+        font: 400 10px/1.45 var(--sans);
+        color: var(--ink-ghost);
       }
 
       .survey-option:hover { color: var(--redline); }
@@ -4352,6 +4397,10 @@
         display: block;
         color: var(--ink-ghost);
         font-size: 10px;
+        line-height: 1.4;
+        /* The reason is prose and wraps; the list is what scrolls. */
+        white-space: normal;
+        overflow-wrap: anywhere;
       }
 
       .survey-note { margin: 12px 0 0; font-size: 12px; line-height: 1.55; }

@@ -631,6 +631,35 @@ left and a session has no natural ceiling.
   where three of six surfaces are clickable and the key carries all six. It is
   also how the keyboard reaches them without a tab stop per mark.
 
+### A long list of offers, and the two ways it goes wrong
+
+A chooser that lists everything — ninety controls a ground can be cut along, and
+thirty-nine more that it cannot — is a list, not a menu. Two mistakes are easy
+to make in one and both shipped here before they were caught.
+
+**A height-capped column of flex items squashes them.** `display: flex;
+flex-direction: column` with a `max-height` gives every child the default
+`flex-shrink: 1`, so 129 entries shared 220px between them: each computed to
+**6px tall** — its padding and nothing else — while its wrapped text carried on
+painting over the four rows below it. The list scrolls, so its items must keep
+their own height: `flex: none` on every one. Cap the list's width too, or it
+takes the width of its widest entry and pushes its siblings onto lines of their
+own.
+
+**A reason that is true of a whole group belongs to the group.** This is the
+same rule as *Naming a control the reader has never met*, one level up: explain
+it in printed body text at the head of the block it belongs to, one sentence
+covering every member. Written per entry instead, a bypassed channel repeated
+"Patch Blinds in; with it out of the path this control reaches no object" on
+every control it owns, and one shared rule about controls with no numeric face
+appeared thirty-nine times — 53 rows of one paragraph, which is a list nobody
+reads down. Grouped under headings the same list carries **three** per-entry
+reasons, and those three are the ones that genuinely differ within a group: a
+wall that can carry no opening, a control inert at this desk.
+
+Group headings earn their keep twice over: they let each row drop the prefix it
+was repeating, and they make a long list navigable rather than a wall.
+
 ### Two boxes for a range
 
 Where a reader sets an interval — the extent a survey is cut over — use a pair

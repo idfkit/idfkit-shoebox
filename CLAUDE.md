@@ -1980,7 +1980,16 @@ output twenty times and report perfect agreement. That trap is closed by
 asserting the refusal outright. The harnesses therefore run **one EnergyPlus
 per process**, about 1.8 s each; the reuse half is a browser gate.
 
-**Transfer:** 21,837 bytes of brotli added against SC-012's 60 KB ceiling.
+**The axis chooser is a list of 129 offers, and it broke twice.** A column flex
+container with a `max-height` gives its children the default `flex-shrink: 1`,
+so all 129 shared 220px: every option computed to **6px** tall while its wrapped
+sentence painted over the four rows below it. `flex: none` on the item, a capped
+width on the list. And a refusal true of a whole channel was written on every
+control the channel owns — 53 rows repeating one paragraph. The channel is a
+group heading now and states it once, which leaves **three** per-entry reasons,
+the ones that genuinely differ within a group.
+
+**Transfer:** 22,588 bytes of brotli added against SC-012's 60 KB ceiling.
 `src/model.js` is untouched and no new `Output:Variable` is requested anywhere,
 which discharges the output-budget requirement outright.
 
