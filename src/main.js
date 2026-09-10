@@ -7732,7 +7732,7 @@ function queueSurvey(sv, { grid }) {
   // separate readings on this sheet refuse until the lattice is dense.
   if (sv.points.size) {
     const priority = new Map();
-    for (const want of refineOrder(sv)) {
+    for (const want of refineOrder(sv, { stance: sv.positionOf(sv.stance) })) {
       priority.set(want.iy, Math.max(priority.get(want.iy) ?? -Infinity, want.score));
     }
     specs.sort((left, right) => (priority.get(right.iy) ?? -Infinity) - (priority.get(left.iy) ?? -Infinity));
@@ -8594,7 +8594,11 @@ function drawGround(sv) {
   }
 
   /* ── the region where every reading improves, under everything ───────── */
-  const region = improvingRegion(sv);
+  // Against where the desk is standing, not where the ground was cut, and
+  // through `standingAt` rather than `positionOf` so a desk between two
+  // measured designs is told apart from one outside the extent entirely.
+  const here = sv.standingAt(params);
+  const region = improvingRegion(sv, here);
   for (const spot of region.spots) {
     root.append(
       svg('rect', {
@@ -8769,15 +8773,31 @@ function drawGround(sv) {
     root.append(mark);
   }
 
-  /* ── the stance: the desk's own armed square, third idiom of three ───── */
-  const at = sv.stanceAt;
+  /* ── the stance: where the desk is standing now ──────────────────────── */
+  //
+  // Read off the live desk, never off `survey.stance`. That snapshot is where
+  // the ground was *cut* and must not move — every row's samples are built
+  // from it — so reading the mark from it left the crosshair pinned to a
+  // position the reader had already walked away from, and FR-021 says in so
+  // many words that it must move when the desk moves.
+  //
+  // Drawn at the desk's true position, which may be between two measured
+  // columns after a slider nudge. A mark snapped to the nearest measured point
+  // would be claiming the reader is standing on a design they are not.
+  const at = sv.standingAt(params);
   if (at) {
     const x = px(at.ix);
     const y = py(at.iy);
     root.append(
       svg('line', { class: 'stance-rule', x1: x, y1: GROUND_PAD.top, x2: x, y2: GROUND_PAD.top + frame.h }),
       svg('line', { class: 'stance-rule', x1: GROUND_PAD.left, y1: y, x2: GROUND_PAD.left + frame.w, y2: y }),
-      svg('rect', { class: 'stance', x: x - 2.5, y: y - 2.5, width: 5, height: 5 }),
+      // Filled on a measured design, hollow between two — the tick-against-
+      // hollow-circle distinction the year rule already draws, and the
+      // difference between "the desk is on this run" and "the desk is here,
+      // and this survey has not run it".
+      at.on
+        ? svg('rect', { class: 'stance', x: x - 2.5, y: y - 2.5, width: 5, height: 5 })
+        : svg('rect', { class: 'stance stance-loose', x: x - 2.5, y: y - 2.5, width: 5, height: 5 }),
     );
   }
 
@@ -8802,7 +8822,8 @@ function drawGround(sv) {
     const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[event.key];
     if (step) {
       event.preventDefault();
-      const at = groundCursor ?? sv.stanceAt ?? { ix: 0, iy: 0 };
+      const here = sv.positionOf(params);
+      const at = groundCursor ?? here ?? { ix: 0, iy: 0 };
       groundCursor = {
         ix: Math.min(sv.x.count - 1, Math.max(0, at.ix + step[0])),
         iy: Math.min(sv.y.count - 1, Math.max(0, at.iy + step[1])),
@@ -8822,7 +8843,7 @@ function drawGround(sv) {
     }
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      const at = groundCursor ?? sv.stanceAt;
+      const at = groundCursor ?? sv.positionOf(params);
       const under = at && sv.spotAt(at.ix, at.iy);
       // Refused rather than approximated, exactly as a click on bare ground
       // is: there is no design here that this survey has measured.
@@ -8835,6 +8856,85 @@ function drawGround(sv) {
   });
 
   host.append(root);
+}
+
+/**
+ * The key to the ground.
+ *
+ * Five marks stand on this drawing and until now not one of them was named
+ * anywhere a reader could see: every explanation lived in a `<title>`, which
+ * `pointer: coarse` never shows, and which even on a desk requires knowing
+ * there is something there to hover. The reader who asked what the hatching
+ * meant was reading a drawing with no key, which is the drawing's fault.
+ *
+ * Each entry draws the mark itself rather than describing it, because a swatch
+ * a reader can match against the ground is the whole point of a key — and it
+ * is built from the same classes the ground uses, so a mark restyled there
+ * cannot come to disagree with its own key.
+ */
+function renderGroundKey(sv) {
+  const host = $('survey-key');
+  host.textContent = '';
+  const swatch = (draw) => {
+    const box = svg('svg', { viewBox: '0 0 14 10', 'aria-hidden': 'true' });
+    box.classList.add('ground');
+    for (const node of draw()) box.append(node);
+    return box;
+  };
+  const entry = (draw, said) => {
+    const li = el('li');
+    li.append(swatch(draw), el('span', null, said));
+    host.append(li);
+  };
+
+  entry(
+    () => [
+      svg('line', { class: 'spot', x1: 4, y1: 5, x2: 10, y2: 5 }),
+      svg('line', { class: 'spot', x1: 7, y1: 2, x2: 7, y2: 8 }),
+    ],
+    'A measured design — one completed run. The figure beside it is its reading.',
+  );
+  entry(
+    () => [svg('path', { class: 'contour', d: 'M0 8 C 4 8, 6 2, 14 2', fill: 'none' })],
+    'A contour: interpolation between measured designs, carrying no figure of its own.',
+  );
+  entry(
+    () => [
+      svg('line', { class: 'stance-rule', x1: 7, y1: 0, x2: 7, y2: 10 }),
+      svg('rect', { class: 'stance', x: 4.5, y: 2.5, width: 5, height: 5 }),
+    ],
+    'Where the desk is standing now. It moves when the desk moves, and is hollow between measured designs.',
+  );
+  const region = improvingRegion(sv, sv.standingAt(params));
+  if (region.spots.length) {
+    entry(
+      () => [svg('rect', { class: 'improving', x: 1, y: 1, width: 12, height: 8 })],
+      `Hatched: ${region.spots.length} measured ${region.spots.length === 1 ? 'design that reads' : 'designs that read'} ` +
+        `better than the one the desk is on. They are measured points, not gaps.`,
+    );
+  }
+  if (sv.gaps().length) {
+    entry(
+      () => [
+        svg('line', { class: 'gap', x1: 4, y1: 2, x2: 10, y2: 8 }),
+        svg('line', { class: 'gap', x1: 4, y1: 8, x2: 10, y2: 2 }),
+      ],
+      `A run that could not be completed. ${sv.gaps().length} on this ground, each carrying its reason.`,
+    );
+  }
+  if (traverse.length > 1) {
+    entry(
+      () => [
+        svg('polyline', { class: 'traverse', points: '1,8 5,3 9,7 13,2' }),
+        svg('circle', { class: 'traverse-stop', cx: 5, cy: 3, r: 1.6 }),
+      ],
+      'The traverse: designs the desk has stood on this session, in order. Each is restorable.',
+    );
+  }
+  entry(
+    () => [],
+    'Bare sheet with no contour across it has not been measured at all.',
+  );
 }
 
 /** One spot height, as a sentence — the tooltip, and the schedule's own row. */
@@ -9135,7 +9235,12 @@ function renderSurveyFinding(sv) {
     return;
   }
   const parts = [];
-  const region = improvingRegion(sv);
+  // Against where the desk is standing, not where the ground was cut. Read
+  // from the same call `drawGround` makes, or the sentence and the hatching
+  // under it disagree about the same region — which they did: 26 designs named
+  // in prose over a drawing showing none.
+  const here = sv.standingAt(params);
+  const region = improvingRegion(sv, here);
   if (region.spots.length) {
     const said = sv.readings
       .map((reading) => `a ${reading.better} ${reading.label.toLowerCase()}`)
@@ -9153,10 +9258,10 @@ function renderSurveyFinding(sv) {
   // published a weighting, and inventing one would be the drawing grading a
   // design instead of measuring it.
   if (sv.readings.length === 2) {
-    const at = sv.stanceAt;
-    const here = at && sv.spotAt(at.ix, at.iy);
-    if (here) {
-      const base = sv.readings.map((entry) => entry.valueOf(here.readings));
+    const at = sv.positionOf(params);
+    const standing = at && sv.spotAt(at.ix, at.iy);
+    if (standing) {
+      const base = sv.readings.map((entry) => entry.valueOf(standing.readings));
       const split = sv.spots().filter((spot) => {
         const values = sv.readings.map((entry) => entry.valueOf(spot.readings));
         if (values.some((value) => value === null) || base.some((value) => value === null)) return false;
@@ -9200,7 +9305,7 @@ function renderSurveyFinding(sv) {
       }
     }
   }
-  const exchange = freeExchange(sv);
+  const exchange = freeExchange(sv, here);
   if (exchange.flat) {
     parts.push('The reading does not move around the stance, so there is no exchange to state.');
   } else if (exchange.refusal) {
@@ -9213,7 +9318,10 @@ function renderSurveyFinding(sv) {
         `${within(exchange.tolerance, sv.readings[0])}.`,
     );
   }
-  host.textContent = parts.join(' ');
+  // Said once. The region and the exchange are two readings taken against the
+  // same stance, so when the stance itself is what refuses them they refuse
+  // with one sentence — and printed twice it reads as two different problems.
+  host.textContent = [...new Set(parts)].join(' ');
 }
 
 /* ── the pull ────────────────────────────────────────────────────────────── */
@@ -9550,9 +9658,12 @@ function letItFall() {
     surveySay('A link or a station is still attaching, so the ground is about to be re-measured. The descent waits for it.');
     return;
   }
-  const at = survey.stanceAt;
+  const at = survey.positionOf(params);
   if (!at) {
-    surveySay('The desk is standing outside the extent this ground was cut over, so there is nowhere on it to fall from.');
+    surveySay(
+      'The desk is not standing on a measured position of this ground, so there is nowhere on it to fall ' +
+        'from. Stand on a spot height first, or widen the extent.',
+    );
     return;
   }
   falling = { visited: new Set([`${at.ix},${at.iy}`]), steps: 0, said: [] };
@@ -9562,7 +9673,7 @@ function letItFall() {
 
 function fallOnce() {
   if (!falling || !survey) return;
-  const at = survey.stanceAt;
+  const at = survey.positionOf(params);
   const next = fallStep(survey, at, { visited: falling.visited });
   if (!next || next.stopped) {
     stopFalling(next?.stopped ?? 'The descent stopped.');
@@ -9824,6 +9935,7 @@ function renderSurvey() {
     `Every figure below is a completed ${survey.annual ? 'annual' : 'design-day'} run.`;
 
   drawGround(survey);
+  renderGroundKey(survey);
   renderPull();
   renderCoverage(survey);
   renderSurveyFinding(survey);

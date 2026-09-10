@@ -4506,6 +4506,14 @@
          "you are here" is learned once across the patch button, the rail pin
          and the plate marker. */
       .ground .stance { fill: var(--redline); stroke: none; }
+      /* The desk between two measured designs: hollow, because it is not
+         standing on a run. */
+      .ground .stance-loose { fill: none; stroke: var(--redline); stroke-width: 1; }
+      /* The crosshair is a reading, not a target. Left to take pointer events
+         it sat on top of the spot hit areas and swallowed clicks along its own
+         length — a thin dead cross through the ground, along exactly the row
+         and column a reader aims at most. */
+      .ground .stance-rule { pointer-events: none; }
 
       /* Where the keyboard is standing, which is not where the desk is: a ring
          rather than a second armed square, because the square already means
@@ -4631,6 +4639,32 @@
         cursor: pointer;
       }
       .pull-pick:hover { color: var(--redline); }
+
+      /* The key to the ground. A drawing that carries five different marks
+         has to name them somewhere the reader can see without hovering. */
+      .ground-key {
+        list-style: none;
+        margin: 9px 0 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 4px 14px;
+      }
+
+      .ground-key li {
+        display: flex;
+        align-items: baseline;
+        gap: 7px;
+        font: 400 10px/1.45 var(--sans);
+        color: var(--ink-3);
+      }
+
+      .ground-key svg {
+        flex: none;
+        width: 14px;
+        height: 10px;
+        overflow: visible;
+      }
 
       .relief-views {
         display: flex;
@@ -5047,6 +5081,11 @@
             <div class="survey-body" id="survey-drawing" hidden>
               <figure class="survey-plan">
                 <div class="ground" id="survey-ground"></div>
+                <!-- What every mark on the ground means, printed under it.
+                     Each one lived only in a `<title>` before, which under a
+                     coarse pointer does not exist at all — and a reader who
+                     cannot name a mark cannot read the drawing. -->
+                <ul class="ground-key" id="survey-key"></ul>
                 <figcaption>
                   <span class="fig">Fig. 2</span>
                   <span id="survey-plan-cap"></span>

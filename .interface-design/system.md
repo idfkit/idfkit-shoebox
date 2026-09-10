@@ -610,6 +610,28 @@ A second reading at the same point is lettered **under** the first, in
 reading against the other, and there is no published weighting on this sheet to
 rank them with.
 
+### A drawing that carries several marks carries a key
+
+Five marks stood on the surveyed ground — a measured design, a contour, the
+stance, a failed run, a hatched region — and not one was named anywhere a
+reader could see. Every explanation lived in a `<title>`, which under
+`pointer: coarse` does not exist and which even on a desk requires knowing
+there is something there to hover. A reader asked what the hatching meant, and
+the honest answer was that the drawing had no key.
+
+- **Draw the mark, do not describe it.** A swatch a reader can match against
+  the drawing is the point; build it from the same classes the drawing uses, so
+  a mark restyled in one place cannot come to disagree with its own key.
+- **Only list what is on the drawing.** A key line for gaps on a ground with no
+  gaps teaches a mark the reader will never meet.
+- **Count in the key where a count is what is being asked.** "Hatched: 26
+  measured designs that read better than the one the desk is on" answers the
+  question; "hatched: improving region" restates the label.
+
+The hatching was being read as *not yet computed* — the exact opposite of what
+it meant. That is the cost of an unlabelled mark: a reader will assign it a
+meaning, and the meaning they pick will be a reasonable one.
+
 ### A record of where a desk has been
 
 A list of designs the desk has stood on is a **schedule**, not a breadcrumb

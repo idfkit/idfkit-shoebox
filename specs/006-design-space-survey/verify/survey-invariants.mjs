@@ -247,7 +247,7 @@ console.log('survey invariants (gate 1, SC-003)');
 {
   // A bowl with its floor off-centre, so the descent has somewhere to go.
   const sv = ground({ count: FINE_GRID, surface: (ix, iy) => 20 + (ix - 5) ** 2 + (iy - 3) ** 2 });
-  let at = sv.stanceAt;
+  let at = sv.cutAt;
   ok('the stance is a measured position on its own ground', Boolean(at) && Boolean(sv.spotAt(at.ix, at.iy)));
   const visited = new Set([`${at.ix},${at.iy}`]);
   let last = reading.valueOf(sv.spotAt(at.ix, at.iy).readings);
@@ -277,7 +277,7 @@ console.log('survey invariants (gate 1, SC-003)');
   // Two positions carrying the identical reading is the oscillation shape, and
   // it is not hypothetical: a plateau at the floor of a hollow is common.
   const flat = ground({ count: COARSE_GRID, surface: () => 20 });
-  const start = flat.stanceAt;
+  const start = flat.cutAt;
   const step = fallStep(flat, start, { visited: new Set([`${start.ix},${start.iy}`]), reading });
   ok('a flat ground stops rather than stepping for ever', Boolean(step.stopped), String(step.stopped));
 }
@@ -330,7 +330,7 @@ console.log('survey invariants (gate 1, SC-003)');
   // Not at a grid position of its own: `wwrS` defaults to 0.35 against a
   // 0-to-0.9 extent in five steps, which lands nowhere near it.
   const sv = ground({ count: COARSE_GRID, surface: (ix, iy) => 20 + ix + iy });
-  const at = sv.stanceAt;
+  const at = sv.cutAt;
   ok(
     'the stance has a position on the ground even off the grid',
     Boolean(at),
@@ -363,7 +363,7 @@ console.log('survey invariants (gate 1, SC-003)');
   // arrive to four figures and be about nothing.
   const shoulder = (ix, iy) => 20 + 8 * Math.tanh(ix - 2) + iy * 0.05;
   const coarse = ground({ count: COARSE_GRID, surface: shoulder });
-  const answer = freeExchange(coarse, coarse.stanceAt, reading);
+  const answer = freeExchange(coarse, coarse.cutAt, reading);
   ok(
     'an exchange that would leave the measured ground is refused rather than stated',
     Boolean(answer.refusal),
@@ -376,7 +376,7 @@ console.log('survey invariants (gate 1, SC-003)');
   );
 
   const plane = ground({ count: FINE_GRID, surface: (ix, iy) => 20 + 2 * ix + 4 * iy });
-  const on = freeExchange(plane, plane.stanceAt, reading);
+  const on = freeExchange(plane, plane.cutAt, reading);
   ok('an exchange on a dense lattice is stated', !on.refusal && Number.isFinite(on.dy), JSON.stringify(on));
   // On a plane the second-order term is exactly zero, so the tolerance is too,
   // and the level line's slope is exactly -fx/fy.
@@ -389,7 +389,7 @@ console.log('survey invariants (gate 1, SC-003)');
   const region = improvingRegion(sv);
   ok('the improving region is non-empty on a bowl', region.spots.length > 0);
   ok('and every member of it is a measured spot height', region.spots.every((s) => s instanceof SpotHeight));
-  const here = sv.spotAt(sv.stanceAt.ix, sv.stanceAt.iy);
+  const here = sv.spotAt(sv.cutAt.ix, sv.cutAt.iy);
   const base = reading.valueOf(here.readings);
   ok(
     'and every member actually improves on the stance',

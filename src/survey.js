@@ -490,11 +490,73 @@ export class Survey {
     return found instanceof SpotHeight ? found : null;
   }
 
-  /** Where the stance stands on this ground, or null where an axis was narrowed past it. */
-  get stanceAt() {
-    const ix = this.x.indexOf(this.stance[this.x.key]);
-    const iy = this.y.indexOf(this.stance[this.y.key]);
+  /**
+   * Where the ground was **cut**, or null where an axis was narrowed past it.
+   *
+   * This is a property of the survey and it does not move: `rowsFor` builds
+   * every row's snapshot from `stance`, so a desk that moved mid-measurement
+   * must not change what the remaining rows are measuring, or two halves of
+   * one ground would be samples of two different buildings.
+   *
+   * It is emphatically **not** where the desk is now. That was the bug: this
+   * getter was called `stanceAt` and was read for the crosshair, the improving
+   * region, the free exchange, the refinement priority and both halves of the
+   * descent — so standing on a measured point moved the desk and moved none of
+   * them, and *Let it fall* fell from wherever the reader had been when they
+   * cut the ground rather than from where they were standing. Use
+   * `standingAt(desk)` for that, which is a question about the desk and
+   * therefore takes one.
+   */
+  get cutAt() {
+    return this.positionOf(this.stance);
+  }
+
+  /**
+   * Where a given desk stands on this ground, or null where it is outside the
+   * extent — read from the desk handed in rather than from anything stored,
+   * which is the only way it can be right after the desk has moved.
+   */
+  positionOf(desk) {
+    const ix = this.x.indexOf(desk[this.x.key]);
+    const iy = this.y.indexOf(desk[this.y.key]);
     return ix === -1 || iy === -1 ? null : { ix, iy };
+  }
+
+  /**
+   * The same question, answered for a desk that is *between* measured
+   * positions — a slider nudged off the lattice.
+   *
+   * Returns fractional indices so the mark can be drawn where the desk really
+   * is, and `on` says whether that position is a measured one. Every reading
+   * taken against the stance needs the second answer: "improves on the stance"
+   * has no meaning when the survey holds no reading for where the reader is
+   * standing, and inventing one from the nearest neighbour is the substitution
+   * this sheet refuses everywhere else.
+   */
+  standingAt(desk) {
+    const at = (axis) => {
+      const value = desk[axis.key];
+      const positions = axis.positions;
+      if (!Number.isFinite(value)) return null;
+      if (value < positions[0] || value > positions[positions.length - 1]) return null;
+      const exact = axis.indexOf(value);
+      if (exact !== -1) return exact;
+      // Between two positions: interpolate in *index* space, because the grid
+      // is drawn evenly by index and the positions are not evenly spaced in
+      // value once the stance's own value has been forced into the list.
+      for (let i = 0; i < positions.length - 1; i += 1) {
+        if (value >= positions[i] && value <= positions[i + 1]) {
+          const span = positions[i + 1] - positions[i];
+          return span === 0 ? i : i + (value - positions[i]) / span;
+        }
+      }
+      return null;
+    };
+    const ix = at(this.x);
+    const iy = at(this.y);
+    if (ix === null || iy === null) return null;
+    const on = Number.isInteger(ix) && Number.isInteger(iy);
+    return { ix, iy, on };
   }
 
   /** Every measured point, in lattice order. */
@@ -837,8 +899,35 @@ export function meshOf(lattice) {
  * building available, which it is not and cannot be shown to be from eighty-one
  * runs.
  */
-export function improvingRegion(survey, stance = survey.stanceAt) {
-  if (!stance) return { spots: [], refusal: 'The stance is outside the extent this ground was cut over.' };
+/**
+ * Why a reading taken against the stance cannot be taken, or null.
+ *
+ * Two different facts were arriving as one `null` and being lettered with one
+ * sentence: a desk **outside the extent** the ground was cut over, and a desk
+ * **between two measured designs** inside it — a slider nudged off the
+ * lattice. The second is much the commoner and was being told it was the
+ * first, which is a true-sounding sentence about the wrong thing and offers a
+ * fix ("widen the extent") that would not help.
+ */
+function standingRefusal(survey, stance) {
+  if (!stance) {
+    return (
+      'The desk is standing outside the extent this ground was cut over, so there is no reading here to ' +
+      'compare against. Widen the extent, or move the desk back inside it.'
+    );
+  }
+  if (stance.on === false) {
+    return (
+      'The desk is between two measured designs, so this survey holds no reading for where it is ' +
+      'standing. Stand on a spot height, or let the ground refine until one falls here.'
+    );
+  }
+  return null;
+}
+
+export function improvingRegion(survey, stance = survey.cutAt) {
+  const refused = standingRefusal(survey, stance);
+  if (refused) return { spots: [], refusal: refused };
   const here = survey.spotAt(stance.ix, stance.iy);
   if (!here) {
     return { spots: [], refusal: 'The stance itself has not been measured yet, so there is nothing to improve on.' };
@@ -882,8 +971,9 @@ export function improvingRegion(survey, stance = survey.stanceAt) {
  * is required and its absence is stated with the one thing that fixes it:
  * let the ground refine.
  */
-export function freeExchange(survey, stance = survey.stanceAt, reading = survey.readings[0]) {
-  if (!stance) return { refusal: 'The stance is outside the extent this ground was cut over.' };
+export function freeExchange(survey, stance = survey.cutAt, reading = survey.readings[0]) {
+  const refused = standingRefusal(survey, stance);
+  if (refused) return { refusal: refused };
   const { ix, iy } = stance;
   // The 3 x 3 has to be *small* as well as complete, and this is the gate the
   // first version was missing. Every term below is a finite difference across
@@ -1104,7 +1194,7 @@ export function fallStep(survey, from, { visited = null, reading = survey.readin
  * measurement supports. It is written as a sum of normalised terms rather than
  * as magic constants precisely so that it can be argued with.
  */
-export function refineOrder(survey, { reading = survey.readings[0], stance = survey.stanceAt } = {}) {
+export function refineOrder(survey, { reading = survey.readings[0], stance = survey.cutAt } = {}) {
   // Every reading the ground carries, not only the one the relief is drawn
   // from: the second is what makes a trade visible, and a trade is the most
   // interesting thing on a two-reading ground.

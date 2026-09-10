@@ -2000,7 +2000,35 @@ coarse pass — `surveyGrid` carries that — since dropping a measured 12 x 12 
 7 x 7 and climbing back out would be free in runs and expensive in what the
 reader is looking at, for no reason but a default argument.
 
-**Transfer:** 22,857 bytes of brotli added against SC-012's 60 KB ceiling.
+**The stance moved with the ground, not with the desk, and that was a bug in
+six places at once.** `Survey.stance` is the frozen desk the ground was *cut*
+through, and it has to be: `rowsFor` builds every row's snapshot from it, so a
+desk that moves mid-measurement must not change what the remaining rows are
+measuring. But a getter called `stanceAt` read that snapshot, and six things
+read the getter — the crosshair, the keyboard cursor's start, the improving
+region, the free exchange, the refinement priority and **both halves of the
+descent**. So standing on a measured point moved the desk and moved none of
+them, and *Let it fall* fell from wherever the reader had been when they cut
+the ground. FR-021 says in so many words that the mark must move when the desk
+moves.
+
+The two questions are now named apart: `cutAt` is where the ground was cut and
+does not move; `standingAt(desk)` is a question about a desk and therefore
+takes one. It also answers the case the single `null` was hiding — a desk
+**between** two measured designs after a slider nudge, which is much the
+commoner state and was being told it was outside the extent entirely, with a
+fix ("widen the extent") that would not have helped. The mark draws at the
+desk's true position between two columns and goes hollow there, because it is
+not standing on a run.
+
+**Nothing on the drawing said what any mark was.** Five marks and every
+explanation in a `<title>`, which `pointer: coarse` never shows. `renderGroundKey`
+prints the key under the plan, drawing each mark from the classes the ground
+itself uses so a restyled mark cannot disagree with its own key. The hatched
+region in particular was being read as "not yet computed" — it is the opposite,
+measured designs that read better than the one the desk is on.
+
+**Transfer:** 23,932 bytes of brotli added against SC-012's 60 KB ceiling.
 `src/model.js` is untouched and no new `Output:Variable` is requested anywhere,
 which discharges the output-budget requirement outright.
 
