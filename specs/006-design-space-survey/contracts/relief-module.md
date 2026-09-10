@@ -40,8 +40,8 @@ every reading (FR-024). It must not silently re-create and pretend nothing happe
 - It must not be the only carrier of any reading, gesture or refusal (FR-018c).
 - It must not offer vertical exaggeration (FR-018g). Its vertical scale is stated.
 - It must not coarsen its mesh by viewport (FR-018k). A phone draws what a desk draws.
-- It must not letter a figure. Lettering belongs to the plan and the schedule, which
-  read spot heights; the relief carries the shape and the posts.
+- It must not letter a figure. Lettering belongs to the plan and to the readout under
+  it, which read spot heights; the relief carries the shape and the posts.
 
 ## Accessibility contract
 

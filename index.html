@@ -4886,6 +4886,26 @@
       .survey-coverage b { color: var(--ink); font-weight: 400; }
       .survey-coverage .loose { color: var(--ink-ghost); }
 
+      /* The design under the reader, in the mono face every figure on this
+         page is set in, because it is a reading and not a caption — it is what
+         the schedule of spot heights used to letter, one row at a time.
+
+         `min-height` for two lines of it: the sentence carries two axes and up
+         to two readings, so it wraps on a narrow sheet, and a line that
+         changes height as the pointer crosses the plan would walk the coverage
+         figure and the finding up and down the page under the reader. The same
+         rule the run panels keep — a redraw never moves the page. */
+      .spot-readout {
+        margin: 14px 0 0;
+        min-height: 33px;
+        font: 400 11px/1.5 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+      }
+
+      /* Not a measurement: bare ground under the pointer, or no survey cut. */
+      .spot-readout.loose { color: var(--ink-ghost); }
+
       /* The traverse list. A schedule, so it folds at 620px with the others
          and every figure keeps the head it stood under. */
       .traverse { margin-top: 18px; }
@@ -5306,6 +5326,27 @@
               </figure>
             </div>
 
+            <!-- The design under the reader, in full, in one line. This is
+                 what the schedule of spot heights used to be: that table
+                 carried every position of the ground, which is 144 rows on a
+                 fine one and — since `.schedule` folds at 620px — some five
+                 hundred lines of table on a phone, under two drawings.
+
+                 It was carrying three real jobs and every one of them is a
+                 question about one design at a time. The plan letters only
+                 every second position on each axis past a ground of seven, so
+                 108 of 144 figures were lettered nowhere else; both drawings
+                 are `role="img"`, so their figures are invisible to assistive
+                 technology and the table was the only route to any of them;
+                 and the relief can refuse to draw. So the line is
+                 `role="status"` — a polite live region, which the cursor's
+                 sentence never had — and it is lettered by pointing at a tick
+                 or by walking the ground with the arrow keys.
+
+                 It is a reading, so it is never folded. Written by
+                 `renderSpotReadout` in main.js. -->
+            <p class="spot-readout" id="survey-spot" role="status"></p>
+
             <!-- Load bearing, not decoration. The relief is smooth, so it does
                  not report its own sample density the way a faceted one would;
                  these two figures are the only thing separating a coarse survey
@@ -5323,11 +5364,6 @@
               <table id="traverse-table"></table>
             </section>
             <p class="finding" id="survey-finding"></p>
-
-            <section class="schedule">
-              <p class="eyebrow">Schedule of spot heights<span class="base" id="survey-spots-scope"></span></p>
-              <table id="survey-spots"></table>
-            </section>
 
             <!-- E-02's own title-block cells. The sheet below is E-01's and
                  says what produced the run; this says what produced the ground. -->

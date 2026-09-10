@@ -1865,8 +1865,8 @@ and unlike a faceted one it does not report its own sample density in its own
 texture — so the density and the coverage figures are the only thing separating
 a coarse survey from a convincing picture of one. `Coverage` asserts
 `measured + gaps + unsurveyed === wanted` in its constructor, because a relief
-and a schedule of spot heights must never be able to disagree about how much
-was measured. This must not later be softened as cosmetic.
+and the count of what was measured must never be able to disagree. This must
+not later be softened as cosmetic.
 
 **Which way is better is declared, not assumed.** Ten of the thirteen readings
 are compliance metrics or costs where less is the definition. The zone's own
@@ -1898,7 +1898,53 @@ and down can argue from the picture. **One hue, ink levels only** — the readin
 is a magnitude with no direction, so `--cold` / `--warm` are not spent on it,
 which is why the survey is grey. `createRelief` returns `null` where no context
 can be had and the caller states the loss in place; every reading is on the
-plan and in the schedule already, so what is lost is the shape and nothing else.
+plan and under the reader's own pointer already, so what is lost is the shape
+and nothing else.
+
+**The schedule of spot heights is gone, and the readout is what it became.**
+That table carried every position of the ground — 144 rows on a fine one, and
+because `.schedule` folds at 620px, 144 blocks of four lines on a phone: some
+five hundred lines of table under two drawings, for a record almost nobody
+reads end to end. Its three jobs were all narrower than its size, and every one
+of them is a question about **one** design at a time, which is how a survey is
+actually read. `renderSpotReadout` answers all three in one line under the
+plan, lettered by pointing at a tick or by walking the ground with the arrow
+keys.
+
+- **108 of a fine ground's 144 figures were lettered nowhere else.** `figureAt`
+  thins the plan's figures to every second position on each axis once either
+  axis passes seven, because a figure at every position is illegible. Measured
+  on a 12 × 12 ground with 49 positions landed: 49 ticks drawn and **4**
+  figures on the plan.
+- **The table was the only route to any figure for assistive technology.**
+  Both drawings are `role="img"`, which makes the whole subtree presentational,
+  so every `<text>` on the plan is invisible and `surveyAriaLabel` carries the
+  axes and the coverage and no reading at all. The readout is `role="status"`
+  — a polite live region, which is what the cursor's sentence never had:
+  `surveySay` writes into the refusal paragraph and a refusal is not announced.
+  The sentence is now spoken by being written, and the refusal paragraph is
+  back to carrying only refusals, which is the conflation that fixed itself.
+- **The relief can refuse to draw** (FR-024), and the plan plus this line are
+  then the whole survey.
+
+Two things follow that are worth keeping straight. A hover **does not move the
+keyboard cursor** — the ring is where the keyboard is standing and a hover is
+not a move — and it re-renders nothing, so sweeping a pointer across 144 ticks
+costs a string apiece rather than 144 redraws of the ground. And a gap's reason
+is now lettered rather than living only in a `<title>`, which `pointer: coarse`
+never shows; before, a cross on a phone said only that something had failed.
+
+The line is a reading, so it is never folded. It carries `min-height` for two
+lines, because a sentence that changes height as the pointer crosses the plan
+would walk the coverage figure and the finding up and down the page under the
+reader — the same rule `resultPanels` keeps. Measured at 340px: two lines
+typically, three for the worst case this desk can compose (two axes with long
+labels and both TM59 readings).
+
+**It costs transfer rather than saving it**, and that is the honest figure:
+brotli went from 223,136 to 223,846 bytes, **+710**, because the prose these
+decisions are recorded in outweighs the table code deleted. The win is the
+length of the page, not the size of it.
 
 **The traverse is a record of the desk, not of the survey.** It is written by
 `commit` at the end of every gesture and by `patchChannel`, so a design reached
@@ -1966,8 +2012,8 @@ only when its own signature moves.
 - **A contour label tested only against other contour labels overprints the
   measured figures**, which hides a measurement behind an inference. The
   clearance test is seeded with where the spot figures will stand, and a level
-  simply goes unlettered where nothing clears — the schedule carries every
-  figure regardless.
+  simply goes unlettered where nothing clears — pointing at the tick letters it
+  regardless.
 - **Lettering the unit on both stops of an axis runs it off the frame.**
   `3.00 m²K/W` at the head of a 44 px gutter printed as `00 m²K/W`. The stops
   carry bare numbers and the axis label carries the unit once, which is how a

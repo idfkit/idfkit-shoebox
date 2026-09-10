@@ -9018,9 +9018,10 @@ function drawGround(sv) {
       svg('line', { class: 'spot', x1: x, y1: y - 2.5, x2: x, y2: y + 2.5 }),
     );
     const value = reading.valueOf(spot.readings);
-    // A figure at every one of eighty-one positions is illegible, so on the
-    // fine ground the figures thin out and the schedule below carries them
-    // all. Nothing is lost: the schedule is a reading, not an appendix.
+    // A figure at every one of a hundred and forty-four positions is
+    // illegible, so on the fine ground the figures thin out. The rest are not
+    // lost: pointing at any tick, or walking the ground with the arrow keys,
+    // letters that design in full under the plan.
     if (value !== null && figureAt(spot)) {
       const text = svg('text', {
         class: 'spot-figure',
@@ -9058,6 +9059,18 @@ function drawGround(sv) {
       style: 'cursor: crosshair',
     });
     hit.addEventListener('click', () => standOn(sv, spot));
+    // Pointing at a tick letters it under the plan. The `<title>` above is the
+    // desk's tooltip and `pointer: coarse` never shows one, which is the same
+    // hole the ground key was drawn to close — on a phone every explanation
+    // that lives only in a `<title>` does not exist. This is also how the 108
+    // figures a fine ground does not letter on the plan are read.
+    //
+    // The cursor is deliberately left where it is: the ring is the keyboard's
+    // position and a hover is not a move. Nothing is re-rendered either, so
+    // sweeping the pointer across 144 ticks costs a string apiece rather than
+    // 144 redraws of the ground.
+    hit.addEventListener('pointerenter', () => renderSpotReadout(sv, spot));
+    hit.addEventListener('pointerleave', (event) => releaseReadout(sv, event));
     mark.append(hit);
     root.append(mark);
   }
@@ -9074,6 +9087,19 @@ function drawGround(sv) {
     const title = svg('title');
     title.textContent = `No reading here — ${gap.reason}`;
     mark.append(title);
+    // A gap's reason was in a `<title>` and nowhere else, so on a phone the
+    // cross said only that something had failed. Pointing at it now letters
+    // why under the plan, on the same target size the ticks carry.
+    const miss = svg('rect', {
+      x: x - 12,
+      y: y - 12,
+      width: 24,
+      height: 24,
+      fill: 'transparent',
+    });
+    miss.addEventListener('pointerenter', () => renderSpotReadout(sv, gap));
+    miss.addEventListener('pointerleave', (event) => releaseReadout(sv, event));
+    mark.append(miss);
     root.append(mark);
   }
 
@@ -9135,14 +9161,12 @@ function drawGround(sv) {
       renderSurvey();
       $('survey-ground').querySelector('svg')?.focus({ preventScroll: true });
       // Said as well as drawn, or the mark is a colour and a position to a
-      // reader who cannot see it.
-      const under = sv.spotAt(groundCursor.ix, groundCursor.iy);
-      surveySay(
-        under
-          ? spotSentence(sv, under)
-          : `${formatValue(sv.x.key, sv.x.positions[groundCursor.ix])}, ` +
-            `${formatValue(sv.y.key, sv.y.positions[groundCursor.iy])} — not measured.`,
-      );
+      // reader who cannot see it. `renderSurvey` has just lettered the design
+      // under the new cursor into the readout, which is a live region, so the
+      // sentence is announced by being written rather than by being repeated
+      // into the refusal paragraph — which is where `surveySay` puts it, and
+      // which is not announced at all. A refusal says why there is no ground;
+      // this says what is on it, and one element cannot be both.
       return;
     }
     if (event.key === 'Enter' || event.key === ' ') {
@@ -9247,7 +9271,7 @@ function renderGroundKey(sv) {
   );
 }
 
-/** One spot height, as a sentence — the tooltip, and the schedule's own row. */
+/** One spot height, as a sentence — the tooltip, and the plan's own readout. */
 function spotSentence(sv, spot) {
   const said = sv.readings
     .map((reading) => {
@@ -9431,40 +9455,83 @@ function landTraverseReadings(snapshot, patch, readings) {
   }
 }
 
-/** The schedule of spot heights: every measured design, with its own figures. */
-function renderSpots(sv) {
-  const table = $('survey-spots');
-  table.textContent = '';
-  const spots = sv.spots();
-  const heads = [labelFor(sv.x.key), labelFor(sv.y.key), ...sv.readings.map((reading) => reading.label)];
-  const thead = tableHead(heads);
-  const tbody = el('tbody');
-  for (const spot of spots) {
-    const row = el('tr');
-    const cells = [
-      formatValue(sv.x.key, spot.x),
-      formatValue(sv.y.key, spot.y),
-      ...sv.readings.map((reading) => {
-        const value = reading.valueOf(spot.readings);
-        // An absence is an em dash and stays out of every total. Zero is a
-        // measurement; missing is not one.
-        return value === null ? '—' : reading.format(value, spot.readings);
-      }),
-    ];
-    cells.forEach((text, at) => {
-      const cell = el('td', null, text);
-      // Set where the cell is built, so the words over a column and the words
-      // beside a folded figure are one string.
-      cell.dataset.head = heads[at];
-      row.append(cell);
-    });
-    tbody.append(row);
+/**
+ * The design under the reader, lettered under the plan.
+ *
+ * This replaced the schedule of spot heights, and it is the same reading in a
+ * hundredth of the room. The schedule tabulated every position of the ground:
+ * 144 rows on a fine one, and because `.schedule` folds at 620px, 144 blocks
+ * of four lines on a phone — some five hundred lines of table under two
+ * drawings, for a record almost nobody reads end to end.
+ *
+ * What it was load bearing for is narrower than its size, and all of it is a
+ * question about **one** design at a time, which is how a survey is actually
+ * read: the reader points at a tick and asks what it says. Three jobs, one
+ * line.
+ *
+ *   - The plan letters only every second position on each axis once a ground
+ *     passes seven (`figureAt`), so 108 of a fine ground's 144 figures were
+ *     lettered nowhere else.
+ *   - Both drawings are `role="img"`, which makes their whole subtree
+ *     presentational, so every `<text>` figure on the plan is invisible to
+ *     assistive technology and `surveyAriaLabel` carries no reading at all.
+ *     The table was the only route to a measured figure. This line is
+ *     `role="status"` — a polite live region, which is what the cursor's
+ *     sentence never had, since `surveySay` writes into the refusal paragraph
+ *     and a refusal is not announced. Now it is spoken where it is lettered.
+ *   - The relief can refuse to draw (FR-024), and the plan plus this line are
+ *     then the whole survey.
+ *
+ * It is not in a fold and never can be: it is a reading, and readings do not
+ * go behind a disclosure.
+ */
+/**
+ * Give the readout back after a pointer leaves a tick — but only a *mouse*.
+ *
+ * A touch pointer does not hover: it comes into existence on contact and is
+ * destroyed on release, so `pointerleave` fires at the end of every tap. Left
+ * symmetrical with `pointerenter`, a tap on a tick lettered that design and
+ * took it away again in the same gesture, which on a phone is the whole of
+ * this line's usefulness — the reading would flash and revert before it could
+ * be read. So a finger leaves the reading standing until another tick is
+ * touched, which is what "point at a tick to read it" means on a device with
+ * no pointer to hover with, and a mouse restores the desk's own design as it
+ * always did.
+ *
+ * `pointerType` is the honest test, the same shape as the stylesheet's
+ * `pointer: coarse`: it names no device, it says what kind of pointer this is.
+ */
+function releaseReadout(sv, event) {
+  if (event.pointerType === 'mouse') renderSpotReadout(sv);
+}
+
+function renderSpotReadout(sv, at = groundCursor) {
+  const host = $('survey-spot');
+  const where = at ?? sv.positionOf(params);
+  const under = where && sv.spotAt(where.ix, where.iy);
+  if (under) {
+    host.textContent = spotSentence(sv, under);
+    host.classList.remove('loose');
+    return;
   }
-  table.append(thead, tbody);
-  keepTableSemantics(table);
-  $('survey-spots-scope').textContent = spots.length
-    ? `${spots.length} measured ${spots.length === 1 ? 'design' : 'designs'}`
-    : 'nothing measured yet';
+  // A position with no run under it says so, with its own coordinates, rather
+  // than going blank: "not measured" is a reading about the ground and the
+  // reader is entitled to it. A gap knows why it could not be run, which is
+  // the one thing a cross on the plan cannot letter.
+  if (where) {
+    const gap = sv.gaps().find((one) => one.ix === where.ix && one.iy === where.iy);
+    host.textContent =
+      `${labelFor(sv.x.key)} ${formatValue(sv.x.key, sv.x.positions[where.ix])}, ` +
+      `${labelFor(sv.y.key)} ${formatValue(sv.y.key, sv.y.positions[where.iy])} — ` +
+      (gap ? `no reading here. ${gap.reason}` : 'not measured.');
+    host.classList.add('loose');
+    return;
+  }
+  // The desk is off the surveyed ground entirely, which is a fact about the
+  // desk rather than an empty line.
+  host.textContent =
+    'Point at a tick, or walk the ground with the arrow keys, to read the design measured there.';
+  host.classList.add('loose');
 }
 
 /**
@@ -10087,7 +10154,13 @@ function drawRelief(sv) {
   const views = $('survey-views');
   if (!relief) {
     host.textContent = '';
-    host.append(el('p', 'survey-note bad', `${reliefLoss} Every reading is on the plan and in the schedule beside it.`));
+    host.append(
+      el(
+        'p',
+        'survey-note bad',
+        `${reliefLoss} The plan carries every measurement; point at a tick to read it.`,
+      ),
+    );
     views.textContent = '';
     caption.textContent = '';
     return;
@@ -10296,8 +10369,7 @@ function renderSurvey() {
     renderPull();
     $('survey-coverage').textContent = '';
     $('survey-finding').textContent = '';
-    $('survey-spots').textContent = '';
-    $('survey-spots-scope').textContent = '';
+    $('survey-spot').textContent = '';
     $('survey-axes').textContent = '';
     $('survey-lede').textContent =
       'Choose two controls and a reading, and the sheet surveys that reading over that ground — one real ' +
@@ -10323,7 +10395,7 @@ function renderSurvey() {
   renderPull();
   renderCoverage(survey);
   renderSurveyFinding(survey);
-  renderSpots(survey);
+  renderSpotReadout(survey);
   drawRelief(survey);
 
   $('survey-plan-cap').textContent =
