@@ -846,7 +846,7 @@ quantities the sheet letters in its mono face) that `solve` appends ahead of
 the finding's own clauses.
 
 - **What to say is decided by difference.** Ninety-odd controls, and room for
-  three, so the moves are ranked by how far each sits from its own default —
+  two, so the moves are ranked by how far each sits from its own default —
   the same identity diff `encodeState` takes to decide what a permalink must
   carry, for the same reason: what the reader changed is what the reader
   designed. `moved()` scores a scalar by its own travel (`Control.fraction`),
@@ -856,7 +856,7 @@ the finding's own clauses.
   flips outranked it the paragraph described the glass of a building whose
   ideal unit it never mentioned.
 - **Ranking chooses; declaration order reads.** `READING_ORDER` re-sorts the
-  three that won, because "which three" and "in what order" are different
+  two that won, because "which two" and "in what order" are different
   questions — left in rank order the clauses composed by luck, and a site
   clause, a mechanism and a caveat about the whole run do not join in any
   order you please.
@@ -904,6 +904,12 @@ the finding's own clauses.
 - The module is DOM-free and free of the network — the station arrives as
   `place: { name, zone }`, already read — so the Node harness can assert the
   sentences over documents it builds itself.
+- **Two moves and no station, to fit sixty words.** The description and the
+  finding share one paragraph held to sixty words together (`DESCRIPTION` in
+  `src/copy.js`). At three moves it ran seventy to ninety, so `MOVES` is two;
+  and `main.js` no longer passes `place`, because the title block's Location
+  and the site picker's climate zone already letter the station a few
+  centimetres above. `describeDesk` still accepts it.
 
 **A plan key's four walls are four subjects, not one.** The `Facade` controls —
 window-to-wall ratio and overhang projection — own a key per wall, so each wall
@@ -1001,7 +1007,7 @@ next visit, and setting it aside folds it to a one-line row that still reads.
   than none — treat updating the general notes as part of any feature's
   definition of done, and check them whenever a modification to the
   onboarding itself is requested.
-- **Bump the storage key** (`shoebox-general-notes-v2`) whenever the steps
+- **Bump the storage key** (`shoebox-general-notes-v4`) whenever the steps
   change meaning, so a returning reader gets the new sheet rather than stale
   ticks against notes they never read.
 - Completion only ever comes from the genuine event: the solve note from the
@@ -1136,6 +1142,11 @@ the conformance by itself, because there was never a flag to go stale.
   distinguishable when they are read aloud; both halves flip together when it is
   armed, since "Stop chasing … : hold its worst line up beside the drawing"
   describes the state being left rather than the one the press reaches.
+  Printed is not the same as always open. The lede keeps one sentence of at
+  most twenty words in view, saying what a press does and how to undo it, and
+  the ghost and the argument for it sit in a fold under that sentence. An
+  in-view summary plus a fold that opens where it stands meets "in place": a
+  press is not a hover.
 - **The worst line is ranked by ratio, not by difference.** LETI's energy line
   is 55 kWh/m²·yr and Passivhaus's heating line is 15, so 3 over means something
   different against each while 20 % over means the same against both.
@@ -1387,6 +1398,11 @@ silently fall below what it states. It is printed in place and never on hover,
 by the rule that put what *Chase* means above the scoreboard: `pointer: coarse`
 has no hover, so a caveat that floats does not exist on the phone where this
 sheet is most often read and least often checked against the method it names.
+In place does not mean always open. The block used to stand whole under the
+board, 520 words under five rows of figures; now the fold's summary states in
+view how many reasons there are, read off the list by `qualificationsSummary`
+rather than typed, and the entries are one press down. The count is what a
+reader who never opens it must still come away with.
 The weather qualification letters what the attached file declares about itself
 against what WFR:2026 requires (the DSY1 file for the site, 2050s, RCP8.5, 50th
 percentile, CIBSE's 28-zone system, labelled
@@ -1622,7 +1638,9 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   half a watt, which is where `watts()` itself stops distinguishing (−0.2 W
   already letters as `-0 W`) and is the rail's own threshold for a term worth
   drawing. The head also says what the `±` is — one side of the balance, not a
-  net — which nothing did.
+  net — which nothing did. Both halves fit one sentence of twenty-five words,
+  and that is what stays in view: this is the one explanation on the console
+  that is never folded, because the sign is the rail's whole argument.
 - **Two of the five readings are not the variable they are named after, and
   both now say so on the strip.** `Meter.note` is where a transformation is
   declared, the way Glazing's transmitted-solar meter already says where its
@@ -1910,6 +1928,21 @@ because zero is a measurement and missing is not one.
 **Comments explain why, not what.** The house style is prose, often several
 sentences, recording the reasoning and frequently the measurement or the error
 message that forced a decision. Match it.
+
+**Copy budgets and folds.** The sheet used to print every explanation it had,
+always: about 2,700 words of prose on the first screen and 2,300 more with the
+console open. What stays in view now is the reading, its verdict or absence,
+and at most one short line; the method, the derivation and the citation sit in
+a fold (`fold()` in `console.js`, one `.fold` rule in `index.html`, the pattern
+in `.interface-design/system.md`) attached to what it explains. Two rules keep
+it that way. Readings, verdicts, absence reasons, blocking reasons and refusals
+never go in a fold. And every always-visible string a declaration carries (a
+channel's `line`, a `requires.reason`, a general note's `step`, a fold's
+summary) is asserted at load against its budget in `src/copy.js`, so a line
+that grows past twelve words stops the page naming itself. Text composed at
+render time from the run is measured rather than asserted, because a throw
+mid-render would turn a copy defect into a broken sheet. New long text goes in
+the declaration's folded field (`blurb`, `note`, `body`), not in its glance.
 
 **Interface work** follows `.interface-design/system.md`: four surfaces on one
 hue, hairline borders and no shadows, one accent (`--redline`) plus a cold/warm

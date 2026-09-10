@@ -15,6 +15,7 @@ import {
   serializePattern,
 } from './controls.js';
 import { quantityField } from './field.js';
+import { BUDGETS, withinBudget } from './copy.js';
 // The rail's own units, from the module that owns reading a run. One
 // definition: a second copy here would be the first thing to drift the day a
 // figure changed precision on one surface and not the other.
@@ -56,6 +57,62 @@ const el = (tag, className, text) => {
   if (text != null) node.textContent = text;
   return node;
 };
+
+// The folds the reader has opened this session, by `data-fold` key. The strips
+// and the scoreboard are rebuilt from scratch on every solve, fifty
+// milliseconds apart during a drag, so a fold that only knew its own `open`
+// would snap shut under the reader on the next landing. The set is memory and
+// nothing else: how the sheet is being read is not what the building is, so it
+// reaches neither the link nor `localStorage`, and a reload closes every fold.
+const openFolds = new Set();
+
+/**
+ * The one disclosure for explanation that is not a reading: a native
+ * `<details class="fold">`, summary first. `label` names the subject where
+ * the summary's word alone does not ("Note" read aloud forty times names none
+ * of them). Readings, verdicts, absences and refusals never go in here.
+ */
+export function fold(key, summary, { label } = {}, ...children) {
+  const node = el('details', 'fold');
+  node.dataset.fold = key;
+  const head = el('summary', null, summary);
+  if (label) head.setAttribute('aria-label', label);
+  node.append(head, ...children);
+  node.open = openFolds.has(key);
+  node.addEventListener('toggle', () => {
+    if (node.open) openFolds.add(key);
+    else openFolds.delete(key);
+  });
+  return node;
+}
+
+// What the console's folds say while shut, declared once and held to the
+// summary budget at load, beside the builder that letters them.
+const SUMMARY = Object.freeze(
+  Object.fromEntries(
+    Object.entries({
+      // One word each where the aria-label names the subject: eighteen strips,
+      // sixty-odd notes and eight meters letter these at once on a wide desk,
+      // and three words a summary is three words a fold, every time.
+      note: 'Note',
+      channel: 'Background',
+      reading: 'Method',
+      unclosed: 'Why it does not close',
+    }).map(([key, text]) => [key, withinBudget(BUDGETS.SUMMARY, `console fold summary ${key}`, text)]),
+  ),
+);
+
+/**
+ * A control's note, one press down on the control it explains. About ninety
+ * controls carry one, of up to seventy-seven words, and a wide desk printed
+ * every one of them; the label and the face are the control, and the note is
+ * how it reaches the engine, which is for the reader who asks. The key is the
+ * control's own, so an open note survives every redraw of its strip.
+ */
+function noteFold(control) {
+  const key = control.key ?? control.from ?? control.label;
+  return fold(`ctl:${key}`, SUMMARY.note, { label: `Note on ${control.label}` }, el('p', 'ctl-note', control.note));
+}
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -266,23 +323,30 @@ export function mountConsole({
     note.hidden = true;
     strip.append(note);
 
-    const fold = el('div', 'strip-fold');
-    fold.id = `strip-fold-${channel.id}`;
-    fold.append(el('p', 'strip-blurb', channel.blurb));
+    // The channel's line in view and its blurb one press under it. Both sit
+    // inside the strip's own fold, so on the index sheet a folded strip still
+    // shows only its reading, its patch marker and any blocking note, and the
+    // line arrives with the controls when the strip is opened.
+    const stripFold = el('div', 'strip-fold');
+    stripFold.id = `strip-fold-${channel.id}`;
+    stripFold.append(
+      el('p', 'strip-line', channel.line),
+      fold(`strip:${channel.id}`, SUMMARY.channel, { label: `About ${channel.name}` }, el('p', 'strip-blurb', channel.blurb)),
+    );
 
     const body = el('div', 'strip-body');
     for (const control of channel.controls) body.append(buildControl(control, channel));
-    fold.append(body);
+    stripFold.append(body);
 
     const readout = buildReadout(channel);
-    if (readout) fold.append(readout.node);
+    if (readout) stripFold.append(readout.node);
 
     const meter = buildMeter(channel);
-    if (meter) fold.append(meter.node);
-    strip.append(fold);
+    if (meter) stripFold.append(meter.node);
+    strip.append(stripFold);
 
     strips.set(channel.id, {
-      strip, note, patch, solo: soloBtn, meter, readout, body, toggle, read, fold,
+      strip, note, patch, solo: soloBtn, meter, readout, body, toggle, read, fold: stripFold,
       mark: channel.bypassable ? mark : null,
     });
     return strip;
@@ -499,7 +563,7 @@ export function mountConsole({
     derived.hidden = true;
     row.append(derived);
     derivedLines.set(control.key, derived);
-    if (control.note) row.append(el('p', 'ctl-note', control.note));
+    if (control.note) row.append(noteFold(control));
 
     input.addEventListener('input', () => {
       markGesture(control.key);
@@ -572,7 +636,7 @@ export function mountConsole({
       return { button, option };
     });
     row.append(group);
-    if (control.note) row.append(el('p', 'ctl-note', control.note));
+    if (control.note) row.append(noteFold(control));
 
     // What the row was last drawn showing, so the scroll below can tell a
     // value that moved from a redraw that did not. Every station attach, study
@@ -688,7 +752,7 @@ export function mountConsole({
     });
 
     row.append(root);
-    if (control.note) row.append(el('p', 'ctl-note', control.note));
+    if (control.note) row.append(noteFold(control));
 
     faces.set(control.key, () => {
       const v = params[control.key];
@@ -837,7 +901,7 @@ export function mountConsole({
       return { side, item, out, stand, studyBtn };
     });
     row.append(legend);
-    if (control.note) row.append(el('p', 'ctl-note', control.note));
+    if (control.note) row.append(noteFold(control));
 
     // Four curves can stand under one plan key, so each wall gets an anchor of
     // its own and its card is hung after that. A card is inserted after the
@@ -1039,7 +1103,7 @@ export function mountConsole({
       return { face, item, out };
     });
     row.append(legend);
-    if (control.note) row.append(el('p', 'ctl-note', control.note));
+    if (control.note) row.append(noteFold(control));
 
     const redraw = () => {
       turning.setAttribute('transform', `rotate(${params.northAxis})`);
@@ -1101,7 +1165,7 @@ export function mountConsole({
     const grab = svg('rect', { x: 0, y: 0, width: 240, height: 20, fill: 'transparent', class: 'band-grab' });
     root.append(grab);
     row.append(root);
-    if (control.note) row.append(el('p', 'ctl-note', control.note));
+    if (control.note) row.append(noteFold(control));
 
     let anchor = null;
     const hourAt = (event) => {
@@ -1293,7 +1357,7 @@ export function mountConsole({
     });
     row.append(fold);
 
-    if (control.note) row.append(el('p', 'ctl-note', control.note));
+    if (control.note) row.append(noteFold(control));
 
     const redraw = () => {
       const text = params[control.key];
@@ -1441,7 +1505,7 @@ export function mountConsole({
     row.append(grid);
     const periods = el('p', 'ctl-note months-periods');
     row.append(periods);
-    if (control.note) row.append(el('p', 'ctl-note', control.note));
+    if (control.note) row.append(noteFold(control));
 
     faces.set(control.key, () => {
       const now = mask();
@@ -1542,7 +1606,7 @@ export function mountConsole({
     const outsideNote = el('p', 'ctl-note out');
     outsideNote.hidden = true;
     row.append(outsideNote);
-    if (control.note) row.append(el('p', 'ctl-note', control.note));
+    if (control.note) row.append(noteFold(control));
 
     // The weekday the run's year begins on, from the attached file, or null
     // while there is no file and therefore no calendar to letter against.
@@ -1712,7 +1776,7 @@ export function mountConsole({
       outsideNote.hidden = placed === null || lost === 0;
       outsideNote.textContent = outsideNote.hidden
         ? ''
-        : `${lost} of the ${listed} days listed fall in months the run does not cover, and the engine drops them without saying so.`;
+        : `${lost} of ${listed} listed days fall outside the run's months; the engine drops them silently.`;
 
       row.hidden = !control.shown(params);
       row.classList.toggle('idle', control.idle(params));
@@ -2028,7 +2092,18 @@ export function mountConsole({
     const sub = el('p', 'readout-sub');
     sub.hidden = true;
     node.append(sub);
-    if (channel.readout.note) node.append(el('p', 'meter-note', channel.readout.note));
+    // The label and the reading stay in view; how the engine's figures became
+    // this one is one press down, as every meter's is.
+    if (channel.readout.note) {
+      node.append(
+        fold(
+          `readout:${channel.id}`,
+          SUMMARY.reading,
+          { label: `How ${channel.readout.label} is read` },
+          el('p', 'meter-note', channel.readout.note),
+        ),
+      );
+    }
     return { node, value, sub };
   }
 
@@ -2054,7 +2129,19 @@ export function mountConsole({
     const fill = el('i', 'meter-fill');
     bar.append(el('i', 'meter-zero'), fill);
     node.append(bar);
-    if (channel.meter.note) node.append(el('p', 'meter-note', channel.meter.note));
+    // A meter whose reading is a transformation of an engine variable says so
+    // behind one press, on the meter it transforms. The label and the reading
+    // are the meter; the transformation is for the reader checking it.
+    if (channel.meter.note) {
+      node.append(
+        fold(
+          `meter:${channel.id}`,
+          SUMMARY.reading,
+          { label: `How ${channel.meter.label} is read` },
+          el('p', 'meter-note', channel.meter.note),
+        ),
+      );
+    }
     return { node, value, fill, bar, dir };
   }
 
@@ -2496,7 +2583,7 @@ export function mountConsole({
         el(
           'p',
           'rail-convention',
-          'Positive is heat arriving in the zone air, negative is heat leaving it — in and out on every term below. The ± total is one side of the balance, not a net of the two.',
+          'Positive is heat arriving in the zone air, negative is heat leaving it. The ± total is one side of the balance, not a net.',
         ),
       );
     }
@@ -2598,7 +2685,7 @@ export function mountConsole({
     const note = el('p', 'rail-note');
     if (missing.length) {
       note.textContent =
-        `${missing.map((c) => c.name).join(', ')} ${missing.length === 1 ? 'is' : 'are'} out of the path and not reported, so the rail is weighing ${terms.length} of the balance's five terms rather than closing it.`;
+        `${missing.map((c) => c.name).join(', ')} ${missing.length === 1 ? 'is' : 'are'} out of the path, so the rail weighs ${terms.length} of five terms.`;
       note.classList.add('loose');
       railHost.append(note);
       return;
@@ -2609,7 +2696,7 @@ export function mountConsole({
       // hand it, it hands straight back. Quoting a percentage of a 4 W stack
       // would be arithmetic, not a reading.
       note.textContent =
-        'Every path is within a few watts of balance. Nothing is driving this zone at this hour — patch in Air, Gains or System to give the rail something to weigh.';
+        'Every path is within a few watts of balance. Nothing drives this zone at this hour; patch in Air, Gains or System.';
     } else if (closure < 0.01) {
       note.textContent = `Closes to ${(closure * 100).toFixed(2)} %.`;
     } else {
@@ -2620,9 +2707,19 @@ export function mountConsole({
       // the balance is the longer one. So the magnitude is lettered and the
       // side is said in words, by the same rule that put `in` and `out` beside
       // every term above it.
+      // The residual and its side stay in view; why an hourly balance does not
+      // close exactly is the same sentence every time, so it folds.
       note.textContent = `Unclosed by ${watts(Math.abs(residual))} — ${
         residual > 0 ? 'more heat arriving than leaving' : 'more heat leaving than arriving'
-      }, ${(closure * 100).toFixed(1)} % of the stack. These are hourly means of sub-hourly terms, so they do not cancel exactly.`;
+      }, ${(closure * 100).toFixed(1)} % of the stack.`;
+      note.append(
+        fold(
+          'rail:unclosed',
+          SUMMARY.unclosed,
+          {},
+          el('span', null, 'These are hourly means of sub-hourly terms, so they do not cancel exactly.'),
+        ),
+      );
       note.classList.add('loose');
     }
     railHost.append(note);
