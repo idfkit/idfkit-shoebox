@@ -126,7 +126,7 @@ studies and confirm the sweeps agree with the ranking.
 - [X] T044 [US2] Letter which run kind the pull was read at in `src/main.js`, and report progress as it fills; reading at design-day cadence on an annual desk is admissible only if stated (research.md section 6, Principle IV)
 - [X] T045 [US2] Draw the pull in `src/main.js` using the signed meter bar idiom, with the direction stated in words beside every bar and not carried by hue alone (FR-025)
 - [X] T046 [US2] Implement `axesFrom(entries, a, b)` in `src/pull.js` and wire it in `src/main.js` so choosing two entries cuts the ground along them without retyping anything (FR-028)
-- [ ] T047 [US2] Write `specs/006-design-space-survey/verify/pull-vs-sweeps.mjs` covering gate 6 of quickstart.md: on 10 test desks the top three agree with three independent full sweeps on 10 of 10, with no tolerance to appeal to (SC-005)
+- [X] T047 [US2] Write `specs/006-design-space-survey/verify/pull-vs-sweeps.mjs` covering gate 6 of quickstart.md: on 10 test desks the top three agree with three independent full sweeps on 10 of 10, with no tolerance to appeal to (SC-005)
 
 **Checkpoint**: Both P1 stories work. The loop the feature exists for is closed.
 

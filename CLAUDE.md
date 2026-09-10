@@ -1913,6 +1913,18 @@ why nothing the reader tries moves the reading. `direction` is `'none'` only
 where the effect is *exactly* zero: there is no noise floor, because the engine
 is repeatable on one input.
 
+The ranking agrees with independent full sweeps on **10 desks of 10**, no
+tolerance — including the three that exist to reach the failure modes: a
+control at its stop, a channel patched out (Fabric out leaves 18 probed and 72
+inert), and a wall carrying no opening. The comparison is one a sweep can
+honestly make, which took a rewrite to get right: a probe steps a twentieth of
+the face and `samplePoints` lays its positions on the control's own step grid,
+so the probe's landing position is generally not one of them — measured,
+`groundReflect` probes 0.20 to 0.25 against a sweep that never visits 0.25.
+What is checked instead is the stance reading **exactly**, the sign of the
+sweep's own slope across the pair bracketing the stance, and the order of the
+top three.
+
 **The determinism gate has two halves and Node can only run one.** Twenty runs
 of one design agree exactly, measured. *Instance reuse* cannot be reached from
 Node at all: `main` cannot be called twice in one process — on the same
