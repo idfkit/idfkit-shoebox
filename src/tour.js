@@ -29,7 +29,10 @@
 // the sheet would have retired itself under v2's "all taken" rule and the note
 // about the criteria would never be shown at all. The key is the only thing
 // that separates "read the old sheet" from "read this one".
-const STORE = 'shoebox-general-notes-v3';
+// Bumped from v3 with E-02: the sheet gained a second drawing and a step, so
+// a returning reader is owed the new sheet rather than stale ticks against
+// notes they never read.
+const STORE = 'shoebox-general-notes-v4';
 const VIEWS = ['open', 'folded', 'retired'];
 
 // A sheet counts its own notes in words, and the count is read off the
@@ -142,6 +145,25 @@ export const NOTES = Object.freeze([
     // A click goes to the rows, because that is where the criteria are and the
     // ledes are already in view above them once the table is centred.
     focus: '#score',
+  }),
+  // E-02's own step, and it goes after the board rather than before it for a
+  // reason the flow decides: a survey is read *against* something, and the
+  // readings it can be cut for are exactly the ones the rest of the sheet has
+  // just taught. It is also the first step whose subject is a second drawing
+  // rather than a panel, which is why the pen circles the whole section.
+  new Note({
+    id: 'survey',
+    title: 'Survey the design space',
+    body:
+      'Choose two controls and a reading, and the sheet cuts a ground through ' +
+      'the desk as it stands — one real EnergyPlus run at every position of a ' +
+      'grid, contoured and drawn in relief. The contours between the runs are ' +
+      'interpolation and carry no figure; only the ticks do. Stand on any ' +
+      'measured point and the whole of E-01 becomes that building. Read the ' +
+      'pull first if you do not know which two controls are worth cutting ' +
+      'along: it ranks all ninety by how far each moves the reading here.',
+    target: '#survey',
+    focus: '#survey-choose',
   }),
   new Note({
     id: 'link',

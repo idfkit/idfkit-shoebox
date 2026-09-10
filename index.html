@@ -3995,15 +3995,18 @@
          outright. ────────────────────────────────────────────────── */
       @media (max-width: 620px) {
         .schedule thead,
-        .bill thead { display: none; }
+        .bill thead,
+        #pull-table thead { display: none; }
 
         .schedule tbody,
-        .bill tbody { display: block; }
+        .bill tbody,
+        #pull-table tbody { display: block; }
 
         /* Two tracks: the figures down the first, whatever qualifies them —
            a change against the scheme, a unit — down the second. */
         .schedule tr,
-        .bill tr {
+        .bill tr,
+        #pull-table tr {
           display: grid;
           grid-template-columns: minmax(0, 1fr) auto;
           align-items: baseline;
@@ -4035,6 +4038,7 @@
 
         /* A figure and the head it stood under, on one line. */
         .schedule td[data-head],
+        #pull-table td[data-head],
         .bill td[data-head] {
           display: flex;
           flex-direction: column;
@@ -4047,18 +4051,29 @@
           text-align: right;
         }
         .schedule td[data-head] { grid-column: 1; }
-        .schedule td[data-head] {
+        .schedule td[data-head],
+        #pull-table td[data-head] {
           flex-direction: row;
           align-items: baseline;
           justify-content: space-between;
           gap: 10px;
         }
+        /* The pull is one column of blocks, not two: its first cell is a
+           control's name and every cell after it a figure about that control,
+           so a second track would put the effect beside the name it belongs to
+           rather than under it. */
+        #pull-table td[data-head] { grid-column: 1 / -1; }
+        #pull-table td.num { text-align: right; }
+        /* The bar keeps its width in a folded row, or it collapses to nothing
+           in a flex line beside its own head. */
+        #pull-table .pull-bar { flex: 1 1 auto; }
         /* The sheet's one convention for "the column head, beside the figure"
            once a row has folded into a block. The two schedules and the
            scoreboard's qualifications all fold at this width and all letter
            the head the same way; only the box differs, which is what the
            two rules underneath set. */
         .schedule td[data-head]::before,
+        #pull-table td[data-head]::before,
         .bill td[data-head]::before,
         .qualifications dd[data-head]::before {
           content: attr(data-head);
@@ -4367,6 +4382,12 @@
         stroke-width: 2.5px;
       }
 
+      /* A second reading at the same point. Told apart by *position* — under
+         the first, never beside it — and by ink level, not by a hue and not by
+         a size: a size would rank one reading against the other, and there is
+         no weighting on this sheet to rank them with. */
+      .ground .spot-figure.second { fill: var(--ink-ghost); }
+
       .ground .gap { stroke: var(--ink-3); stroke-width: 1; }
       .ground .axis { stroke: var(--rule-firm); stroke-width: 1; }
       .ground .axis-label {
@@ -4384,6 +4405,18 @@
          "you are here" is learned once across the patch button, the rail pin
          and the plate marker. */
       .ground .stance { fill: var(--redline); stroke: none; }
+
+      /* Where the keyboard is standing, which is not where the desk is: a ring
+         rather than a second armed square, because the square already means
+         "the desk is here" and the two part company at the first arrow key. */
+      .ground .ground-cursor {
+        fill: none;
+        stroke: var(--redline);
+        stroke-width: 1;
+        stroke-dasharray: 2 2;
+      }
+
+      .ground svg:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
       .ground .stance-rule { stroke: var(--redline); stroke-width: 1; }
 
       /* The traverse: where the desk has stood, joined by a hairline. */
@@ -4408,6 +4441,95 @@
         color: var(--redline);
         border-color: var(--redline);
       }
+
+      /* The pull. A ranked list of signed bars, so it takes the balance
+         rail's signed-meter idiom — centre zero, `--inset` trough, a
+         `--rule-firm` hairline at 50% — with one difference that is not a
+         detail: the rail's hue pair encodes a signed *physical* quantity, and
+         "which way this control moves the reading" is not one. So the bars are
+         graphite and the direction is a word in its own column, which is
+         where the rail itself ended up for the same argument. */
+      .pull { margin-top: 18px; }
+
+      .pull-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .pull-lede {
+        margin: 6px 0 10px;
+        max-width: 68ch;
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--ink-3);
+      }
+
+      #pull-table { width: 100%; border-collapse: collapse; }
+      #pull-table td,
+      #pull-table th { padding: 5px 8px 5px 0; text-align: left; vertical-align: baseline; }
+      #pull-table td + td,
+      #pull-table th + th { padding-left: 14px; }
+
+      #pull-table td.num,
+      #pull-table th.num {
+        font: 400 11px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+      }
+
+      #pull-table tbody tr { border-bottom: 1px solid var(--rule-soft); }
+      #pull-table tbody tr.inert td { color: var(--ink-ghost); }
+      #pull-table tbody tr.chosen td { color: var(--redline); }
+
+      .pull-bar {
+        position: relative;
+        width: 100%;
+        min-width: 90px;
+        height: 6px;
+        background: var(--inset);
+        border: 1px solid var(--rule-soft);
+        border-radius: 1px;
+      }
+
+      .pull-bar::before {
+        content: '';
+        position: absolute;
+        inset: 0 auto;
+        left: 50%;
+        width: 1px;
+        background: var(--rule-firm);
+      }
+
+      .pull-said {
+        display: block;
+        margin-top: 3px;
+        font: 400 10.5px/1.3 var(--sans);
+        color: var(--ink-3);
+      }
+
+      .pull-fill {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        background: var(--ink-2);
+      }
+
+      /* Chosen as an axis: the desk's own accent, and the word beside it says
+         so too, because a colour cannot be the only thing carrying a state. */
+      .pull-pick {
+        border: 0;
+        background: none;
+        padding: 0;
+        min-width: 0;
+        min-height: 0;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .pull-pick:hover { color: var(--redline); }
 
       .relief-views {
         display: flex;
@@ -4762,6 +4884,21 @@
             <!-- The chooser: two axes and one or two readings, every offer
                  carrying its own refusal where it cannot be taken. -->
             <div class="survey-choose" id="survey-choose"></div>
+
+            <!-- The pull: every sweepable control ranked by how far it moves
+                 the chosen reading at the stance. The question that comes
+                 before the ground — which two controls are worth cutting one
+                 along — answered from real runs rather than from a hypothesis
+                 the reader already had. Written by `renderPull` in main.js. -->
+            <section class="pull" id="pull" hidden>
+              <div class="pull-head">
+                <p class="eyebrow">What is pulling this design<span class="base" id="pull-scope"></span></p>
+                <button type="button" class="link" id="pull-read">Read the pull</button>
+              </div>
+              <p class="pull-lede" id="pull-lede"></p>
+              <table id="pull-table"></table>
+              <p class="survey-note" id="pull-inert"></p>
+            </section>
 
             <!-- A refusal stands where the ground would have been, never
                  beside an empty drawing. -->

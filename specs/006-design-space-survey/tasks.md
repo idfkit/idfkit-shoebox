@@ -117,15 +117,15 @@ stance, so the reader knows which plane is worth cutting.
 **Independent Test**: Ask for the pull, then sweep the top three controls as ordinary
 studies and confirm the sweeps agree with the ranking.
 
-- [ ] T038 [P] [US2] Create `src/pull.js` with the `PullEntry` entity from data-model.md, asserting that `inert` and `effect` are never both set and never both null
-- [ ] T039 [US2] Implement `pullProbes(stance, patch, { quantity })` in `src/pull.js` using **one-sided** differences, so 90 controls cost at most 90 runs rather than 180 (research.md section 6)
-- [ ] T040 [US2] Detect inert controls in `src/pull.js` by reading the document and the patch bay rather than `params`, returning them as entries carrying their reason and costing no run (FR-027)
-- [ ] T041 [US2] Implement `rankPull` in `src/pull.js`, carrying `direction` as a word, `room`, and `atStop`, so a steep face with nowhere to go is never ranked as one with half its range in hand (FR-025, US2 scenario 2)
-- [ ] T042 [US2] Report `direction: 'none'` only where the effect is exactly zero in `src/pull.js`, with no effect dismissed as small, since the engine is repeatable and there is no noise floor (FR-026)
-- [ ] T043 [US2] Queue pull probes through the existing scheduler in `src/main.js` so a control already swept is a cache hit costing no engine run (FR-011, SC-011)
-- [ ] T044 [US2] Letter which run kind the pull was read at in `src/main.js`, and report progress as it fills; reading at design-day cadence on an annual desk is admissible only if stated (research.md section 6, Principle IV)
-- [ ] T045 [US2] Draw the pull in `src/main.js` using the signed meter bar idiom, with the direction stated in words beside every bar and not carried by hue alone (FR-025)
-- [ ] T046 [US2] Implement `axesFrom(entries, a, b)` in `src/pull.js` and wire it in `src/main.js` so choosing two entries cuts the ground along them without retyping anything (FR-028)
+- [X] T038 [P] [US2] Create `src/pull.js` with the `PullEntry` entity from data-model.md, asserting that `inert` and `effect` are never both set and never both null
+- [X] T039 [US2] Implement `pullProbes(stance, patch, { quantity })` in `src/pull.js` using **one-sided** differences, so 90 controls cost at most 90 runs rather than 180 (research.md section 6)
+- [X] T040 [US2] Detect inert controls in `src/pull.js` by reading the document and the patch bay rather than `params`, returning them as entries carrying their reason and costing no run (FR-027)
+- [X] T041 [US2] Implement `rankPull` in `src/pull.js`, carrying `direction` as a word, `room`, and `atStop`, so a steep face with nowhere to go is never ranked as one with half its range in hand (FR-025, US2 scenario 2)
+- [X] T042 [US2] Report `direction: 'none'` only where the effect is exactly zero in `src/pull.js`, with no effect dismissed as small, since the engine is repeatable and there is no noise floor (FR-026)
+- [X] T043 [US2] Queue pull probes through the existing scheduler in `src/main.js` so a control already swept is a cache hit costing no engine run (FR-011, SC-011)
+- [X] T044 [US2] Letter which run kind the pull was read at in `src/main.js`, and report progress as it fills; reading at design-day cadence on an annual desk is admissible only if stated (research.md section 6, Principle IV)
+- [X] T045 [US2] Draw the pull in `src/main.js` using the signed meter bar idiom, with the direction stated in words beside every bar and not carried by hue alone (FR-025)
+- [X] T046 [US2] Implement `axesFrom(entries, a, b)` in `src/pull.js` and wire it in `src/main.js` so choosing two entries cuts the ground along them without retyping anything (FR-028)
 - [ ] T047 [US2] Write `specs/006-design-space-survey/verify/pull-vs-sweeps.mjs` covering gate 6 of quickstart.md: on 10 test desks the top three agree with three independent full sweeps on 10 of 10, with no tolerance to appeal to (SC-005)
 
 **Checkpoint**: Both P1 stories work. The loop the feature exists for is closed.
@@ -142,12 +142,12 @@ hover unavailable, and again with the relief drawing disabled.
 **Placed here deliberately**: this story constrains US1 and US2 rather than standing
 alone, so it is verified and fixed while they are still fresh.
 
-- [ ] T048 [US8] Read the new layout threshold back from the stylesheet in `src/main.js` as a custom property, never as a `matchMedia` string (FR-050)
-- [ ] T049 [US8] Fold E-02 in `index.html` and `src/main.js` by the rules the console and the schedules already use, with folded content leaving the tab order via the `hidden` attribute and any table semantics dropped by `display: grid` restated (FR-051)
-- [ ] T050 [US8] Confirm the relief draws at 390 px **by default and at full mesh**, not gated on viewport and not coarsened by it, in `src/relief.js` and `src/main.js` (FR-018k)
-- [ ] T051 [US8] Give every gesture on the ground a coarse-pointer target and a keyboard route reaching the same designs in `src/main.js` and `src/relief.js` (FR-049)
-- [ ] T052 [US8] Ensure every reading the survey letters is readable without hovering, without sideways scrolling and without opening anything, including the schedule of spot heights, in `index.html` and `src/main.js` (FR-048)
-- [ ] T053 [US8] Add `data-head` to every schedule cell where it is built in `src/main.js`, so a folded figure keeps the head it was under as one string
+- [X] T048 [US8] Read the new layout threshold back from the stylesheet in `src/main.js` as a custom property, never as a `matchMedia` string (FR-050)
+- [X] T049 [US8] Fold E-02 in `index.html` and `src/main.js` by the rules the console and the schedules already use, with folded content leaving the tab order via the `hidden` attribute and any table semantics dropped by `display: grid` restated (FR-051)
+- [X] T050 [US8] Confirm the relief draws at 390 px **by default and at full mesh**, not gated on viewport and not coarsened by it, in `src/relief.js` and `src/main.js` (FR-018k)
+- [X] T051 [US8] Give every gesture on the ground a coarse-pointer target and a keyboard route reaching the same designs in `src/main.js` and `src/relief.js` (FR-049)
+- [X] T052 [US8] Ensure every reading the survey letters is readable without hovering, without sideways scrolling and without opening anything, including the schedule of spot heights, in `index.html` and `src/main.js` (FR-048)
+- [X] T053 [US8] Add `data-head` to every schedule cell where it is built in `src/main.js`, so a folded figure keeps the head it was under as one string
 - [ ] T054 [US8] Run gate 8 of quickstart.md by hand at 390 x 640 and in both themes, in monochrome and under forced colours, confirming measured, inferred and unsurveyed stay distinguishable (SC-007, SC-009)
 
 **Checkpoint**: The survey is usable on the device it will most often be read on.
@@ -161,14 +161,14 @@ alone, so it is verified and fixed while they are still fresh.
 **Independent Test**: Copy the link, open it in another browser, confirm the same axes,
 reading, extent and stance, and identical measured values at identical positions.
 
-- [ ] T055 [US7] Add `sv` to `RESERVED` in `src/permalink.js`, which already asserts the list against `ALL_KEYS` at module load so a future control key cannot collide with it
-- [ ] T056 [US7] Add the `sv` codec branch **above** `readValue`'s numeric regex, beside `selector`, in `src/permalink.js`. Written inside the per-kind switch it is unreachable and every survey link is refused as "is not a number"
-- [ ] T057 [US7] Re-serialise what the `sv` branch read in `src/permalink.js`, so two spellings of one survey do not key two identical solves and a default survey is not written into every minted link
-- [ ] T058 [US7] Encode axes, readings and extent into `sv` in `src/permalink.js` without restating the stance, which the parameter encoding already carries
-- [ ] T059 [US7] Refuse a link naming an unknown axis, reading or extent **whole**, with the reason on the sheet, never half loaded, in `src/permalink.js` and `src/main.js` (FR-046)
-- [ ] T060 [US7] Keep the relief's viewpoint out of the link in `src/relief.js` and `src/main.js`, by the chase pin's rule that how the desk is being read is not what it is (FR-044a)
-- [ ] T061 [US7] Confirm `LINK_VERSION` stays `v1` and `MIGRATIONS` stays empty in `src/permalink.js`, since no default, key name or range changes
-- [ ] T062 [US7] Write `specs/006-design-space-survey/verify/link-roundtrip.mjs` covering gate 4 of quickstart.md, including the regression that a `sv` value which is syntactically a number is still read as a survey (SC-004)
+- [X] T055 [US7] Add `sv` to `RESERVED` in `src/permalink.js`, which already asserts the list against `ALL_KEYS` at module load so a future control key cannot collide with it
+- [X] T056 [US7] Add the `sv` codec branch **above** `readValue`'s numeric regex, beside `selector`, in `src/permalink.js`. Written inside the per-kind switch it is unreachable and every survey link is refused as "is not a number"
+- [X] T057 [US7] Re-serialise what the `sv` branch read in `src/permalink.js`, so two spellings of one survey do not key two identical solves and a default survey is not written into every minted link
+- [X] T058 [US7] Encode axes, readings and extent into `sv` in `src/permalink.js` without restating the stance, which the parameter encoding already carries
+- [X] T059 [US7] Refuse a link naming an unknown axis, reading or extent **whole**, with the reason on the sheet, never half loaded, in `src/permalink.js` and `src/main.js` (FR-046)
+- [X] T060 [US7] Keep the relief's viewpoint out of the link in `src/relief.js` and `src/main.js`, by the chase pin's rule that how the desk is being read is not what it is (FR-044a)
+- [X] T061 [US7] Confirm `LINK_VERSION` stays `v1` and `MIGRATIONS` stays empty in `src/permalink.js`, since no default, key name or range changes
+- [X] T062 [US7] Write `specs/006-design-space-survey/verify/link-roundtrip.mjs` covering gate 4 of quickstart.md, including the regression that a `sv` value which is syntactically a number is still read as a survey (SC-004)
 
 **Checkpoint**: A survey is shareable and reproducible.
 
@@ -183,13 +183,13 @@ settles in a hollow that says it is a hollow.
 intermediate desk is a real solved design, the final desk is no worse than the start, the
 stop reason is stated, and the whole descent can be undone.
 
-- [ ] T063 [US3] Implement `fallStep(survey, from)` in `src/survey.js`, returning a measured neighbour only and never an interpolated position (FR-033, FR-035)
-- [ ] T064 [US3] Stop the descent with a stated reason when no measured neighbour improves, and detect the two-point oscillation rather than stepping forever, in `src/survey.js` (FR-035, edge case)
-- [ ] T065 [US3] Drive the descent from `src/main.js`, moving the desk through the same commit path each step so E-01 follows every step (US3 scenario 1)
-- [ ] T066 [US3] Make the descent stoppable at any moment, always leaving the desk on a completed design and never mid-run or on an interpolated position, in `src/main.js` (FR-036)
-- [ ] T067 [US3] State that the hollow is local to the stance it started from, with what was measured around it and no claim of optimality, in `src/main.js` (FR-037)
-- [ ] T068 [US3] State the descent as steps without animated flight where reduced motion is asked for, in `src/main.js` (FR-023, US3 scenario 4)
-- [ ] T069 [US3] Refuse a descent while a link is attaching or a station is changing, with the reason, in `src/main.js` (edge case)
+- [X] T063 [US3] Implement `fallStep(survey, from)` in `src/survey.js`, returning a measured neighbour only and never an interpolated position (FR-033, FR-035)
+- [X] T064 [US3] Stop the descent with a stated reason when no measured neighbour improves, and detect the two-point oscillation rather than stepping forever, in `src/survey.js` (FR-035, edge case)
+- [X] T065 [US3] Drive the descent from `src/main.js`, moving the desk through the same commit path each step so E-01 follows every step (US3 scenario 1)
+- [X] T066 [US3] Make the descent stoppable at any moment, always leaving the desk on a completed design and never mid-run or on an interpolated position, in `src/main.js` (FR-036)
+- [X] T067 [US3] State that the hollow is local to the stance it started from, with what was measured around it and no claim of optimality, in `src/main.js` (FR-037)
+- [X] T068 [US3] State the descent as steps without animated flight where reduced motion is asked for, in `src/main.js` (FR-023, US3 scenario 4)
+- [X] T069 [US3] Refuse a descent while a link is attaching or a station is changing, with the reason, in `src/main.js` (edge case)
 
 **Checkpoint**: The design can find its own level.
 
@@ -204,11 +204,11 @@ inventing a combined score.
 identified from measured points only, both figures are lettered at each spot height, and
 no combined score exists.
 
-- [ ] T070 [US4] Allow a second quantity on `Survey` in `src/survey.js`, throwing at three, since two is the ceiling and a third has nowhere honest to be drawn
-- [ ] T071 [US4] Implement `improvingRegion(survey, stance)` in `src/survey.js`, returning measured spot heights only and naming no optimum (FR-030)
-- [ ] T072 [US4] Letter both readings at every measured point in `src/main.js`, encoding the second by more than colour alone (FR-031, US4 scenario 1)
-- [ ] T073 [US4] State the trade in the two readings' own units where they disagree, offering no single figure ranking one against the other, in `src/main.js` (FR-031, US4 scenario 3)
-- [ ] T074 [US4] Offer an unavailable second reading greyed with its reason and its fix, reusing `offersFor` from `src/study.js` so the sheet has one vocabulary of outcomes (FR-002, US4 scenario 4)
+- [X] T070 [US4] Allow a second quantity on `Survey` in `src/survey.js`, throwing at three, since two is the ceiling and a third has nowhere honest to be drawn
+- [X] T071 [US4] Implement `improvingRegion(survey, stance)` in `src/survey.js`, returning measured spot heights only and naming no optimum (FR-030)
+- [X] T072 [US4] Letter both readings at every measured point in `src/main.js`, encoding the second by more than colour alone (FR-031, US4 scenario 1)
+- [X] T073 [US4] State the trade in the two readings' own units where they disagree, offering no single figure ranking one against the other, in `src/main.js` (FR-031, US4 scenario 3)
+- [X] T074 [US4] Offer an unavailable second reading greyed with its reason and its fix, reusing `offersFor` from `src/study.js` so the sheet has one vocabulary of outcomes (FR-002, US4 scenario 4)
 
 **Checkpoint**: Energy and comfort can be read together, honestly.
 
@@ -222,10 +222,10 @@ no combined score exists.
 exchange, then move the desk along it by hand and confirm the reading is unchanged within
 the stated tolerance.
 
-- [ ] T075 [US5] Implement `freeExchange(survey, stance)` in `src/survey.js`, returning the exchange in both controls' units together with the tolerance it holds to (FR-029)
-- [ ] T076 [US5] Refuse the exchange with what would fix it where the surrounding lattice is too coarse, rather than computing off a coarse grid with false precision, in `src/survey.js` (FR-029, US5 scenario 2)
-- [ ] T077 [US5] Say the reading does not move here rather than drawing a direction out of a flat ground, in `src/survey.js` (US5 scenario 3)
-- [ ] T078 [US5] Letter the free exchange as a sentence in `src/main.js`, so "this much wall insulation buys this much glazing at constant demand" is on the page
+- [X] T075 [US5] Implement `freeExchange(survey, stance)` in `src/survey.js`, returning the exchange in both controls' units together with the tolerance it holds to (FR-029)
+- [X] T076 [US5] Refuse the exchange with what would fix it where the surrounding lattice is too coarse, rather than computing off a coarse grid with false precision, in `src/survey.js` (FR-029, US5 scenario 2)
+- [X] T077 [US5] Say the reading does not move here rather than drawing a direction out of a flat ground, in `src/survey.js` (US5 scenario 3)
+- [X] T078 [US5] Letter the free exchange as a sentence in `src/main.js`, so "this much wall insulation buys this much glazing at constant demand" is on the page
 
 **Checkpoint**: The moves that cost nothing are visible.
 
@@ -239,12 +239,12 @@ the stated tolerance.
 traverse, restore an earlier one exactly, and confirm ground measured earlier is still
 drawn as measured.
 
-- [ ] T079 [US6] Add the `TraverseStop` entity to `src/survey.js` per data-model.md, holding frozen params, patch and the readings taken at that stop
-- [ ] T080 [US6] Record a stop on every commit that moves the desk in `src/main.js`, in order (FR-038)
-- [ ] T081 [US6] Draw the traverse on the plan in `src/main.js` as a chain of ghost marks joined by a hairline, with the current stop carrying the armed square
-- [ ] T082 [US6] Restore a stop exactly, including the readings taken at it, from `src/main.js` (FR-038, US6 scenario 1)
-- [ ] T083 [US6] Keep measurements that still apply when the stance moves, running only what is genuinely new, in `src/main.js` (US6 scenario 2)
-- [ ] T084 [US6] Clear the traverse and the survey where the sample cache is cleared, on a station change, in `src/main.js` (FR-052, US6 scenario 3)
+- [X] T079 [US6] Add the `TraverseStop` entity to `src/survey.js` per data-model.md, holding frozen params, patch and the readings taken at that stop
+- [X] T080 [US6] Record a stop on every commit that moves the desk in `src/main.js`, in order (FR-038)
+- [X] T081 [US6] Draw the traverse on the plan in `src/main.js` as a chain of ghost marks joined by a hairline, with the current stop carrying the armed square
+- [X] T082 [US6] Restore a stop exactly, including the readings taken at it, from `src/main.js` (FR-038, US6 scenario 1)
+- [X] T083 [US6] Keep measurements that still apply when the stance moves, running only what is genuinely new, in `src/main.js` (US6 scenario 2)
+- [X] T084 [US6] Clear the traverse and the survey where the sample cache is cleared, on a station change, in `src/main.js` (FR-052, US6 scenario 3)
 
 **Checkpoint**: Exploration is cumulative.
 
@@ -252,9 +252,9 @@ drawn as measured.
 
 ## Phase 11: Polish and Cross-Cutting Concerns
 
-- [ ] T085 State a consistent, stated effect for "Set studies aside" and "Clear all studies" on the survey in `src/main.js`, and make the counts the head letters include whatever they claim to include (FR-054)
-- [ ] T086 Update `NOTES` in `src/tour.js` and the `tour?.note(...)` call sites in `src/main.js` wherever the survey changes what a step teaches (FR-055)
-- [ ] T087 Bump the general-notes storage key in `src/tour.js` from `shoebox-general-notes-v2`, so a returning reader gets the new sheet rather than stale ticks (FR-055)
+- [X] T085 State a consistent, stated effect for "Set studies aside" and "Clear all studies" on the survey in `src/main.js`, and make the counts the head letters include whatever they claim to include (FR-054)
+- [X] T086 Update `NOTES` in `src/tour.js` and the `tour?.note(...)` call sites in `src/main.js` wherever the survey changes what a step teaches (FR-055)
+- [X] T087 Bump the general-notes storage key in `src/tour.js` from `shoebox-general-notes-v2`, so a returning reader gets the new sheet rather than stale ticks (FR-055)
 - [ ] T088 [P] Record the survey's component patterns, any new token and the new layout threshold in `.interface-design/system.md`, in this same change (FR-056)
 - [ ] T089 [P] Add the architecture section for the survey to `CLAUDE.md`, in house voice, recording the measurements and the failure modes that cost debugging (FR-056)
 - [ ] T090 [P] Add the CHANGELOG entry to `CHANGELOG.md`, short and in house voice

@@ -73,6 +73,7 @@ import {
   TraverseStop,
 } from './survey.js';
 import { createRelief } from './relief.js';
+import { PullReading, axesFrom, entryFrom, pullProbes, pullReadingFor, rankPull } from './pull.js';
 import { createEnginePool, poolLimit } from './pool.js';
 import { createStudyScheduler, makeStudyJob } from './scheduler.js';
 import { runBundle } from './bundle.js';
@@ -2123,6 +2124,16 @@ let surveyStop = null;
 let surveyEnqueueing = false;
 // Why the last survey could not be cut, standing in place of the ground.
 let surveyRefused = null;
+// Where the keyboard is standing on the ground, as lattice indices.
+//
+// One roving cursor rather than a tab stop per position, which is the house
+// rule the landmark marks already keep: "a row of tappable pips under sixty
+// faces would be two hundred new tab stops". Eighty-one focusable spot heights
+// would be worse. The ground takes one tab stop, the arrow keys walk this
+// cursor across it, and Enter stands on the design under it — so the keyboard
+// reaches every design the pointer can reach (FR-049), which is the promise,
+// rather than every design having a stop of its own, which is not.
+let groundCursor = null;
 // The designs the desk has stood on this session, in order (FR-038). A
 // session, not a history: cleared where the sample cache is cleared.
 const traverse = [];
@@ -2351,6 +2362,12 @@ function commit(key, value, done = false) {
       desk?.sync();
     }
     applyGeometry();
+    // One stop on the traverse per design the desk actually stands on
+    // (FR-038). Recorded here, in the one funnel every control comes through,
+    // rather than at the survey's own gestures: the reader walks the design
+    // space with the sliders as often as with the ground, and a traverse that
+    // only knew about the ground would be a record of one instrument.
+    if (!priced) recordTraverse();
     if (priced) reprice();
     else if (continuous()) pump();
   }
@@ -4031,6 +4048,23 @@ const schemeHash = (p = params) =>
     pin: pinnedHour,
     quantity: studyQuantity,
     studies: openStudies,
+    // The survey's declaration — its axes, its readings and each axis's
+    // extent — and nothing else. The stance is the desk and the desk is
+    // already what the pairs above encode; the measured values stay off it
+    // because the recipient re-measures to identical numbers (FR-044); and
+    // the relief's viewpoint stays off it by the chase pin's rule, that how
+    // the ground is being looked at is not what it is (FR-044a).
+    survey: survey
+      ? {
+          x: survey.x.key,
+          y: survey.y.key,
+          readings: survey.readings.map((reading) => reading.id),
+          extents: {
+            [survey.x.key]: { from: survey.x.from, to: survey.x.to },
+            [survey.y.key]: { from: survey.y.from, to: survey.y.to },
+          },
+        }
+      : null,
   });
 
 /** The absolute form, for the clipboard and the run bundle's manifest. */
@@ -4100,6 +4134,24 @@ function refuseLink(message) {
 }
 
 let linkedStudiesRestored = false;
+/**
+ * Cut the ground a link arrived carrying.
+ *
+ * After the studies rather than beside them, and after the station has landed
+ * where there is one, because a survey queues thirty-six runs and a sample
+ * built during a link attach would fatal on zero environments. The declaration
+ * has already been validated whole by `decodeSurvey` — a link naming an axis,
+ * a reading or an extent that cannot be honoured was refused before anything
+ * was loaded — so what is left here is to name it and let the ground fill.
+ */
+function restoreLinkedSurvey(state) {
+  if (!state?.survey) return;
+  const { x, y, readings, extents } = state.survey;
+  surveyChoice = { x, y, readings: [...readings] };
+  syncSurveyAxes();
+  openSurvey({ xKey: x, yKey: y, readingIds: readings, extents });
+}
+
 function restoreLinkedStudies(state) {
   if (linkedStudiesRestored || !state?.quantity) return;
   linkedStudiesRestored = true;
@@ -4208,6 +4260,9 @@ async function attachFromLink(linked) {
     syncSweepGate();
   }
   restoreLinkedStudies(linked);
+  // The ground last, and only now: it queues thirty-six runs, and a sample
+  // built before the station landed would fatal on zero environments.
+  restoreLinkedSurvey(linked);
   // The attach held the address still; now that the station is real, one
   // rewrite brings the bar back to lettering the desk.
   updatePermalink();
@@ -7383,10 +7438,25 @@ function syncStudyStatus(finalLine = null, { quietly = false } = {}) {
 // so the next idle pass does not quietly restart the work; the next desk
 // move lapses the suppression and the studies refresh as usual.
 studiesStopBtn.addEventListener('click', () => {
+  // Everything in the queue, which since E-02 is three kinds of work rather
+  // than one: studies, the survey's rows and the pull's probes all ride this
+  // scheduler, so one press sheds all three. Saying "studies" over that would
+  // be a count that does not include what it claims to include (FR-054), so
+  // the sentence names what actually went.
+  const shedding = [];
+  if ((studyScheduler?.progress().jobs ?? 0) > 0) {
+    if (desk?.studyCount()) shedding.push('studies');
+    if (surveyRows.size) shedding.push('the survey');
+    if (pullJobs.size) shedding.push('the pull');
+  }
   studyScheduler?.cancelWhere(() => true, 'shed');
   if (!pumping) {
     statusEl.className = 'status';
-    statusEl.textContent = 'Studies set aside — they refresh when the desk next moves.';
+    statusEl.textContent = shedding.length
+      ? `${shedding.join(', ').replace(/, ([^,]*)$/, ' and $1')} set aside — they resume when the desk next moves.`
+      : 'Nothing queued to set aside.';
+    // Sentence case, whichever of the three came first.
+    statusEl.textContent = statusEl.textContent.charAt(0).toUpperCase() + statusEl.textContent.slice(1);
   }
 });
 
@@ -7411,6 +7481,11 @@ function syncStudyControls() {
   studiesStopBtn.hidden = (studyScheduler?.progress().jobs ?? 0) === 0;
   const n = desk?.studyCount() ?? 0;
   studiesClearBtn.hidden = n === 0;
+  // The count says studies and means studies: E-02 has its own Clear, on E-02,
+  // beside the drawing it takes down. A single count spanning both would be a
+  // number that cannot be checked against anything the reader can see, and a
+  // button that cleared a drawing on another part of the sheet without saying
+  // so is the silent effect FR-054 exists to forbid.
   if (n > 0) studiesClearBtn.textContent = `Clear ${n} ${n === 1 ? 'study' : 'studies'}`;
 }
 
@@ -7442,7 +7517,12 @@ function syncStudyControls() {
  * it was wrong.
  */
 function clearAllStudies() {
-  studyScheduler?.cancelWhere(() => true, 'cleared');
+  // Only the studies' own jobs, by name. `cancelWhere(() => true)` would take
+  // the survey's rows and the pull's probes with them — work the reader did
+  // not ask to clear, from a button that says nothing about either, which is
+  // the silent effect FR-054 forbids. E-02 has its own Clear beside its own
+  // drawing.
+  studyScheduler?.cancelWhere((job) => job.origin !== 'survey' && job.origin !== 'pull', 'cleared');
   studies.clear();
   openStudies.clear();
   studyStops.clear();
@@ -7455,9 +7535,11 @@ function clearAllStudies() {
 }
 
 function onStudyUpdate(job, event) {
-  // A survey row carries a real control key, so without this gate every row
-  // would draw a study card under axis X and the last row to land would win.
+  // A survey row and a pull probe both carry a real control key, so without
+  // these gates every one of them would draw a study card under that control
+  // and the last to land would win.
   if (onSurveyUpdate(job, event)) return;
+  if (onPullUpdate(job, event)) return;
   if (event === 'idle') {
     syncStudyStatus();
     // Densify in idle time, not now: the queue just drained, and the reader
@@ -7687,6 +7769,12 @@ function onSurveyUpdate(job, event) {
   if (job?.origin !== 'survey') return false;
   if (event === 'point') {
     absorbSurveyRow(job);
+    // Off the real event and nothing else: the marker fills when a ground has
+    // actually measured a design, not when a chooser was opened or a button
+    // pressed. There is no Next button on this sheet and this step does not
+    // get one — that would be the onboarding taking the reader's word for it,
+    // which is the one thing this page never does.
+    if (survey && coverageOf(survey).measured > 0) tour?.note('survey');
     renderSurvey();
     return true;
   }
@@ -7848,6 +7936,24 @@ function closeSurvey() {
  */
 const surveyStacked = () =>
   getComputedStyle($('survey')).getPropertyValue('--survey').trim() === '1';
+
+/**
+ * How E-02 behaves in the layout it got — asked once, and asked of the
+ * stylesheet.
+ *
+ * `surveyStacked()` above reads `--survey` back rather than restating the
+ * media query as a `matchMedia` string, because a query and a string that
+ * disagree is a bug that exists at exactly one window size, which is the size
+ * nobody tests at (Principle VII).
+ *
+ * **What it does not decide is the relief.** The mesh is never coarsened by
+ * viewport and the drawing is never withheld on a narrow one (FR-018k): a
+ * phone draws what a desk draws, so no reader is handed a surface that appears
+ * to know less than somebody else's. What the flag decides is where the two
+ * drawings stand — side by side, or one under the other — and nothing about
+ * what either of them contains.
+ */
+const surveyLayout = () => (surveyStacked() ? 'stacked' : 'side by side');
 
 /** Every control a ground may be cut along, with its refusal where it has one. */
 function axisOffers(snapshot = params, patch = patching()) {
@@ -8084,6 +8190,7 @@ function drawGround(sv) {
   const root = svg('svg', {
     viewBox: `0 0 ${GROUND_SIZE} ${GROUND_SIZE}`,
     role: 'img',
+    tabindex: '0',
     'aria-label': surveyAriaLabel(sv),
   });
 
@@ -8252,9 +8359,18 @@ function drawGround(sv) {
   }
 
   /* ── the traverse, where the desk has already stood ──────────────────── */
+  //
+  // A chain of ghost marks joined by a hairline, with the current stop
+  // carrying the armed square — which is the stance mark below, so the two are
+  // one idiom rather than two. Each earlier stop is restorable: a click puts
+  // the desk back exactly where it was, params and patch together.
   if (traverse.length > 1) {
     const stops = traverse
-      .map((visit) => ({ ix: sv.x.indexOf(visit.params[sv.x.key]), iy: sv.y.indexOf(visit.params[sv.y.key]) }))
+      .map((visit) => ({
+        stop: visit,
+        ix: sv.x.indexOf(visit.params[sv.x.key]),
+        iy: sv.y.indexOf(visit.params[sv.y.key]),
+      }))
       .filter((at) => at.ix !== -1 && at.iy !== -1);
     if (stops.length > 1) {
       root.append(
@@ -8264,7 +8380,22 @@ function drawGround(sv) {
         }),
       );
       for (const at of stops.slice(0, -1)) {
-        root.append(svg('circle', { class: 'traverse-stop', cx: px(at.ix), cy: py(at.iy), r: 1.6 }));
+        const mark = svg('g');
+        mark.append(svg('circle', { class: 'traverse-stop', cx: px(at.ix), cy: py(at.iy), r: 1.6 }));
+        const title = svg('title');
+        title.textContent = `Stood here earlier — ${formatValue(sv.x.key, sv.x.positions[at.ix])} by ${formatValue(sv.y.key, sv.y.positions[at.iy])}. Click to go back to it.`;
+        mark.append(title);
+        const hit = svg('rect', {
+          x: px(at.ix) - 10,
+          y: py(at.iy) - 10,
+          width: 20,
+          height: 20,
+          fill: 'transparent',
+          style: 'cursor: pointer',
+        });
+        hit.addEventListener('click', () => restoreTraverse(at.stop));
+        mark.append(hit);
+        root.append(mark);
       }
     }
   }
@@ -8291,6 +8422,19 @@ function drawGround(sv) {
       });
       text.textContent = value.toFixed(reading.digits);
       mark.append(text);
+      // The second reading, where there is one, under the first (FR-031).
+      // Lettered rather than encoded as a hue or a radius: two readings side
+      // by side is exactly the arrangement that must not be summed into one,
+      // and a size or a colour is a summing in disguise — it ranks them. The
+      // sheet has no weighting to rank them with, because nobody published
+      // one, so both stand as figures in their own units.
+      const second = sv.readings[1];
+      if (second) {
+        const other = second.valueOf(spot.readings);
+        const under = svg('text', { class: 'spot-figure second', x, y: y + 11, 'text-anchor': 'middle' });
+        under.textContent = other === null ? '—' : other.toFixed(second.digits);
+        mark.append(under);
+      }
     }
     const title = svg('title');
     title.textContent = spotSentence(sv, spot);
@@ -8337,6 +8481,59 @@ function drawGround(sv) {
     );
   }
 
+  /* ── the keyboard's own mark ─────────────────────────────────────────── */
+  if (groundCursor) {
+    const x = px(groundCursor.ix);
+    const y = py(groundCursor.iy);
+    // A ring rather than a second armed square: the square is the stance and
+    // means "the desk is here", where this means "the keyboard is here" and
+    // the two are only the same thing until the first arrow key.
+    root.append(
+      svg('circle', {
+        class: 'ground-cursor',
+        cx: x,
+        cy: y,
+        r: 6,
+      }),
+    );
+  }
+
+  root.addEventListener('keydown', (event) => {
+    const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[event.key];
+    if (step) {
+      event.preventDefault();
+      const at = groundCursor ?? sv.stanceAt ?? { ix: 0, iy: 0 };
+      groundCursor = {
+        ix: Math.min(sv.x.count - 1, Math.max(0, at.ix + step[0])),
+        iy: Math.min(sv.y.count - 1, Math.max(0, at.iy + step[1])),
+      };
+      renderSurvey();
+      $('survey-ground').querySelector('svg')?.focus({ preventScroll: true });
+      // Said as well as drawn, or the mark is a colour and a position to a
+      // reader who cannot see it.
+      const under = sv.spotAt(groundCursor.ix, groundCursor.iy);
+      surveySay(
+        under
+          ? spotSentence(sv, under)
+          : `${formatValue(sv.x.key, sv.x.positions[groundCursor.ix])}, ` +
+            `${formatValue(sv.y.key, sv.y.positions[groundCursor.iy])} — not measured.`,
+      );
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      const at = groundCursor ?? sv.stanceAt;
+      const under = at && sv.spotAt(at.ix, at.iy);
+      // Refused rather than approximated, exactly as a click on bare ground
+      // is: there is no design here that this survey has measured.
+      if (!under) {
+        surveySay('That position has not been measured, so there is no design there to stand on.');
+        return;
+      }
+      standOn(sv, under);
+    }
+  });
+
   host.append(root);
 }
 
@@ -8382,6 +8579,23 @@ function standOn(sv, spot) {
   commit(sv.x.key, spot.x);
   commit(sv.y.key, spot.y, true);
   tour?.note('drag');
+}
+
+/**
+ * Go back to a design the desk has already stood on, exactly (FR-038).
+ *
+ * Params and patch together, through the same commit path a slider gesture
+ * uses, so everything that reads the desk follows. The ground is not re-cut:
+ * a traverse stop is a position on it, and its rest shape excludes both axes,
+ * so walking back along the traverse costs no runs at all where the stops
+ * differ only in the two surveyed controls.
+ */
+function restoreTraverse(stop) {
+  if (!stop) return;
+  const keys = Object.keys(stop.params).filter((key) => params[key] !== stop.params[key]);
+  if (!keys.length) return;
+  recordTraverse();
+  keys.forEach((key, at) => commit(key, stop.params[key], at === keys.length - 1));
 }
 
 /** One stop on the traverse, recorded where the desk actually moves (FR-038). */
@@ -8520,6 +8734,41 @@ function renderSurveyFinding(sv) {
   } else if (region.refusal) {
     parts.push(region.refusal);
   }
+  // Where two readings disagree, the trade is stated in both readings' own
+  // units and no single figure ranks one against the other (FR-031). There is
+  // no combined score on this sheet and there must not be one: nobody
+  // published a weighting, and inventing one would be the drawing grading a
+  // design instead of measuring it.
+  if (sv.readings.length === 2) {
+    const at = sv.stanceAt;
+    const here = at && sv.spotAt(at.ix, at.iy);
+    if (here) {
+      const base = sv.readings.map((entry) => entry.valueOf(here.readings));
+      const split = sv.spots().filter((spot) => {
+        const values = sv.readings.map((entry) => entry.valueOf(spot.readings));
+        if (values.some((value) => value === null) || base.some((value) => value === null)) return false;
+        const better = sv.readings.map((entry, at2) => entry.improves(values[at2], base[at2]));
+        return better[0] !== better[1];
+      });
+      if (split.length) {
+        const worst = split.reduce((left, right) => {
+          const gain = (spot) => Math.abs(sv.readings[0].valueOf(spot.readings) - base[0]);
+          return gain(right) > gain(left) ? right : left;
+        });
+        const said = sv.readings.map((entry, at2) => {
+          const value = entry.valueOf(worst.readings);
+          const change = value - base[at2];
+          return `${change >= 0 ? '+' : ''}${change.toFixed(entry.digits)} ${entry.unit} of ${entry.label.toLowerCase()}`;
+        });
+        parts.push(
+          `${split.length} measured ${split.length === 1 ? 'design trades' : 'designs trade'} one reading ` +
+            `against the other. The furthest is ${formatValue(sv.x.key, worst.x)} by ` +
+            `${formatValue(sv.y.key, worst.y)}: ${said.join(' against ')}. Both are stated in their own ` +
+            'units and neither is ranked against the other, because nobody published a weighting.',
+        );
+      }
+    }
+  }
   const exchange = freeExchange(sv);
   if (exchange.flat) {
     parts.push('The reading does not move around the stance, so there is no exchange to state.');
@@ -8534,6 +8783,260 @@ function renderSurveyFinding(sv) {
     );
   }
   host.textContent = parts.join(' ');
+}
+
+/* ── the pull ────────────────────────────────────────────────────────────── */
+
+let pullReading = null; // the last ranking, or null
+let pullJobs = new Map(); // job id -> the probe spec it came from
+let pullLanded = new Map(); // job id -> { here, there }
+let pullStance = null;
+const pullFinished = new Map(); // job id -> its probe spec, once landed
+
+/**
+ * Read the pull: one run per sweepable control, ranked at the stance.
+ *
+ * Queued through the existing scheduler, so a control already swept as a study
+ * or already measured by a survey is a cache hit and costs no engine run
+ * (FR-011, SC-011). There is no second pool and no second cache — the probes
+ * are study jobs sweeping two points, and the round-robin is what keeps them
+ * from holding the queue against a study or a survey.
+ */
+function readPull() {
+  if (!studyScheduler || !survey) return;
+  if (pullJobs.size) {
+    for (const id of [...pullJobs.keys()]) studyScheduler.cancel(id, 'stopped');
+    pullJobs.clear();
+    pullLanded.clear();
+    renderPull();
+    return;
+  }
+  if (!autoOn() || linkAttachPending || stationAttaching) {
+    surveySay('The pull waits for auto-solve and for any link or station still attaching.');
+    return;
+  }
+  const reading = pullReadingFor(survey.readings[0].id);
+  const stance = { ...params };
+  const patch = patching();
+  const state = channelState(stance, patch);
+  const engaged = [...state].filter(([, value]) => value.engaged).map(([id]) => id);
+  const { needed, carried } = surveyContents(survey);
+  const { probes, inert } = pullProbes(stance, patch, {
+    quantity: reading.quantity,
+    engaged,
+    annual: Boolean(epwText),
+    epw: epwText ?? null,
+    needed,
+    carried,
+    // The rest of the desk excluding the probed key, exactly as a study's is:
+    // a probe is a study of two points, and moving the control it probes only
+    // walks along the answer it gave.
+    restShape: null,
+  });
+  pullStance = { stance, patch, reading, inert, annual: Boolean(epwText) };
+  pullJobs = new Map();
+  pullLanded = new Map();
+  pullFinished.clear();
+  surveyEnqueueing = true;
+  try {
+    for (const probe of probes) {
+      const job = makeStudyJob({ ...probe, restShape: restShapeKey(probe.key, stance, patch) });
+      pullJobs.set(job.id, probe);
+      studyScheduler.enqueue(job);
+    }
+  } finally {
+    surveyEnqueueing = false;
+  }
+  studyScheduler.drain();
+  renderPull();
+}
+
+/** A landed probe, absorbed. Returns true where the event was a probe's. */
+function onPullUpdate(job, event) {
+  if (job?.origin !== 'pull') return false;
+  if (event === 'point' || event === 'done' || event === 'failed') {
+    const reading = pullStance?.reading;
+    if (reading) {
+      const here = job.curve[0]?.sample ? reading.valueOf(job.curve[0].sample.readings) : null;
+      const there = job.curve[1]?.sample ? reading.valueOf(job.curve[1].sample.readings) : null;
+      pullLanded.set(job.id, { here, there });
+    }
+    if (event !== 'point') pullDone(job.id);
+    renderPull();
+    return true;
+  }
+  if (event === 'cancelled') {
+    pullDone(job.id);
+    renderPull();
+    return true;
+  }
+  return false;
+}
+
+function pullDone(id) {
+  const probe = pullJobs.get(id);
+  if (probe) pullFinished.set(id, probe);
+  pullJobs.delete(id);
+}
+
+/** Every entry the ranking currently holds, measured and inert together. */
+function pullEntries() {
+  if (!pullStance) return [];
+  const entries = [...pullStance.inert];
+  for (const [id, probe] of [...pullFinished, ...pullJobs]) {
+    const landed = pullLanded.get(id);
+    if (!landed) continue;
+    entries.push(entryFrom(probe, { ...landed, reading: pullStance.reading }));
+  }
+  return rankPull(entries);
+}
+
+/**
+ * The ranking, drawn.
+ *
+ * The signed meter bar the balance rail uses, with one difference that is not
+ * a detail: the rail's `--warm` / `--cold` pair encodes a signed *physical*
+ * quantity, and "which way this control moves the reading" is not one. So the
+ * bars are graphite and the direction is a word in its own column — which is
+ * where the rail itself ended up, for the argument that a hue cannot be the
+ * only thing saying which way a term points (FR-025).
+ */
+function renderPull() {
+  const section = $('pull');
+  if (!section) return;
+  section.hidden = !survey;
+  if (!survey) return;
+
+  const running = pullJobs.size > 0;
+  $('pull-read').textContent = running ? 'Stop reading the pull' : 'Read the pull';
+  const entries = pullEntries();
+  const measured = entries.filter((entry) => !entry.inert);
+  const inert = entries.filter((entry) => entry.inert);
+
+  if (!pullStance) {
+    $('pull-scope').textContent = '';
+    $('pull-lede').textContent =
+      'Which of the ninety sweepable controls actually move this reading, at the desk as it stands — one ' +
+      'run each, ranked. It is the question that comes before the ground: which two controls are worth ' +
+      'cutting one along.';
+    $('pull-table').textContent = '';
+    $('pull-inert').textContent = '';
+    return;
+  }
+
+  // Read off what the probes were actually run at, never off the desk as it
+  // stands now: a station attached while the ranking was landing would have
+  // the sentence describe a year the runs never saw.
+  const kind = pullStance.annual ? 'annual' : 'design-day';
+  pullReading = measured.length
+    ? new PullReading({
+        kind,
+        reading: pullStance.reading,
+        entries,
+        probed: pullFinished.size,
+        cached: 0,
+      })
+    : null;
+
+  const total = pullFinished.size + pullJobs.size;
+  $('pull-scope').textContent = running
+    ? `${pullFinished.size} of ${total} controls read`
+    : `${measured.length} controls read, ${inert.length} inert`;
+  // Which run kind the ranking was read at, stated rather than assumed. On an
+  // annual desk 90 runs is about 16 s, and a reader watching a ranking settle
+  // is entitled to know whether they are looking at a year or at two days.
+  $('pull-lede').textContent = pullReading
+    ? `${pullReading.said} ${running ? 'The order settles as the runs land; the top entries are stable early.' : ''}`.trim()
+    : 'Reading the pull — one run per control, at the desk as it stands.';
+
+  const table = $('pull-table');
+  table.textContent = '';
+  const heads = ['Control', 'Moves the reading', 'Per unit', 'Effect', 'Room left'];
+  const thead = el('thead');
+  const headRow = el('tr');
+  heads.forEach((head, at) => {
+    const cell = el('th', at >= 3 ? 'num' : null, head);
+    headRow.append(cell);
+  });
+  thead.append(headRow);
+  const tbody = el('tbody');
+  const widest = Math.max(...measured.map((entry) => entry.pull), 0) || 1;
+  for (const entry of measured.slice(0, 20)) {
+    const row = el('tr');
+    if ([surveyChoice.x, surveyChoice.y].includes(entry.key)) row.classList.add('chosen');
+    // The control's name is the way to cut a ground along it (FR-028): choosing
+    // two entries names two axes without anything being retyped.
+    const pick = el('button', 'pull-pick', entry.label);
+    pick.type = 'button';
+    pick.title = `Make ${entry.label} an axis of the survey`;
+    pick.addEventListener('click', () => nameSurveyAxis(entry.key));
+    const name = el('td');
+    name.append(pick);
+
+    // The bar, and the word beside it. Both, always: in monochrome, under
+    // forced colours, or read aloud as a swatch and a number, a bar says
+    // nothing whatever about which way it points.
+    const barCell = el('td');
+    const bar = el('div', 'pull-bar');
+    const fill = el('div', 'pull-fill');
+    const width = (entry.pull / widest) * 50;
+    const rising = entry.direction === 'raise';
+    fill.style.left = rising ? '50%' : `${50 - width}%`;
+    fill.style.width = `${width}%`;
+    bar.append(fill);
+    // The word, always, beside the bar. In monochrome, under forced colours,
+    // or read aloud as a swatch and a number, a bar says nothing whatever
+    // about which way it points — the same argument that put `in` and `out`
+    // beside every figure on the balance rail.
+    const said = el(
+      'span',
+      'pull-said',
+      entry.direction === 'none'
+        ? 'does not move it'
+        : entry.direction === 'raise'
+          ? 'raises it'
+          : 'lowers it',
+    );
+    barCell.append(bar, said);
+
+    const cells = [
+      name,
+      barCell,
+      el('td', null, entry.perUnit || '—'),
+      el('td', 'num', formatEffect(entry, pullStance.reading)),
+      el('td', 'num', entry.atStop ? 'At its stop' : `${entry.room.toFixed(2)}${entry.perUnit ? ` ${entry.perUnit}` : ''}`),
+    ];
+    cells.forEach((cell, at) => {
+      // Set where the cell is built, so the words over a column and the words
+      // beside a folded figure are one string. Written rather than assigned:
+      // `dataset` is a getter-only property, and `Object.assign` onto it
+      // throws — which, from inside a scheduler callback, took down the drain
+      // and left the ranking reading `0 of 37` for ever with the runs quietly
+      // completing behind it.
+      cell.dataset.head = heads[at];
+      row.append(cell);
+    });
+    tbody.append(row);
+  }
+  table.append(thead, tbody);
+  keepTableSemantics(table);
+
+  // Inert controls are listed rather than omitted or drawn as zero: "this
+  // reaches nothing here" is often exactly the answer to "why does nothing I
+  // try move this reading" (FR-027).
+  $('pull-inert').textContent = inert.length
+    ? `${inert.length} controls reach no object at this stance and cost no run: ` +
+      `${inert.slice(0, 4).map((entry) => `${entry.label} — ${entry.inert.toLowerCase()}`).join('; ')}` +
+      `${inert.length > 4 ? `; and ${inert.length - 4} more.` : ''}`
+    : '';
+}
+
+/** One effect, per unit of the control's own travel and in the reading's units. */
+function formatEffect(entry, reading) {
+  if (entry.effect === null) return '—';
+  const magnitude = Math.abs(entry.effect);
+  const digits = magnitude >= 100 ? 0 : magnitude >= 1 ? 2 : 3;
+  return `${entry.effect.toFixed(digits)} ${reading.unit}`;
 }
 
 /* ── letting the design fall ─────────────────────────────────────────────── */
@@ -8729,6 +9232,7 @@ function renderSurvey() {
 
   if (!survey) {
     drawing.hidden = true;
+    renderPull();
     $('survey-coverage').textContent = '';
     $('survey-finding').textContent = '';
     $('survey-spots').textContent = '';
@@ -8754,6 +9258,7 @@ function renderSurvey() {
     `Every figure below is a completed ${survey.annual ? 'annual' : 'design-day'} run.`;
 
   drawGround(survey);
+  renderPull();
   renderCoverage(survey);
   renderSurveyFinding(survey);
   renderSpots(survey);
@@ -8804,6 +9309,7 @@ function refreshSurvey() {
 }
 
 $('survey-fall').addEventListener('click', () => letItFall());
+$('pull-read').addEventListener('click', () => readPull());
 // Clearing the survey takes the drawing down and touches neither `params` nor
 // the document, so no solve follows — the same difference `clearAllStudies`
 // keeps from Revert all beside it. The sample cache is deliberately kept: those
@@ -8847,7 +9353,9 @@ if (linkError) {
     'This scheme skips the sizing days but attaches no weather, so there is nothing to solve. Set Design days to Run on the Run strip, or pick a station.';
 } else if (autoOn()) {
   restoreLinkedStudies(linked);
+  restoreLinkedSurvey(linked);
   pump();
 } else {
   restoreLinkedStudies(linked);
+  restoreLinkedSurvey(linked);
 }
