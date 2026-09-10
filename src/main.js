@@ -8165,7 +8165,12 @@ function cutFromChoice() {
    page can letter, hit-test and read out. */
 
 const GROUND_SIZE = 320;
-const GROUND_PAD = { left: 44, right: 12, top: 12, bottom: 34 };
+// The bottom gutter carries two courses of type — the axis stops and the axis
+// label — under a row of spot figures that at 12 x 12 reaches the frame edge,
+// and a second reading puts a second figure under the first. Measured at the
+// finest ground the desk can produce; below 42 the stops print through the
+// bottom row.
+const GROUND_PAD = { left: 44, right: 12, top: 14, bottom: 42 };
 
 function groundFrame(sv) {
   const w = GROUND_SIZE - GROUND_PAD.left - GROUND_PAD.right;
@@ -8258,21 +8263,21 @@ function drawGround(sv) {
       const text = svg('text', {
         class: 'axis-stop',
         x: GROUND_PAD.left,
-        y: GROUND_PAD.top + frame.h + 12,
+        y: GROUND_PAD.top + frame.h + 16,
         'text-anchor': 'start',
       });
       text.textContent = stop(axis, lo);
       const text2 = svg('text', {
         class: 'axis-stop',
         x: GROUND_PAD.left + frame.w,
-        y: GROUND_PAD.top + frame.h + 12,
+        y: GROUND_PAD.top + frame.h + 16,
         'text-anchor': 'end',
       });
       text2.textContent = stop(axis, hi);
       const label = svg('text', {
         class: 'axis-label',
         x: GROUND_PAD.left + frame.w / 2,
-        y: GROUND_PAD.top + frame.h + 25,
+        y: GROUND_PAD.top + frame.h + 30,
         'text-anchor': 'middle',
       });
       label.textContent = axisTitle(axis);
@@ -8762,10 +8767,28 @@ function renderSurveyFinding(sv) {
         return better[0] !== better[1];
       });
       if (split.length) {
-        const worst = split.reduce((left, right) => {
-          const gain = (spot) => Math.abs(sv.readings[0].valueOf(spot.readings) - base[0]);
-          return gain(right) > gain(left) ? right : left;
+        // The design where the *improvement* is largest, not where the first
+        // reading moved most. Ranked the second way, the exemplar was the
+        // design that made one reading worst while the other barely moved —
+        // "+5.4 °C of high against +0.0 °C of low", which is a trade nobody
+        // would make and therefore says nothing about the trade there is.
+        // Each reading's change is scaled by its own range across the ground,
+        // because the two are in different units and neither may be ranked
+        // against the other in absolute terms.
+        const spans = sv.readings.map((entry) => {
+          const values = sv.spots().map((spot) => entry.valueOf(spot.readings)).filter((v) => v !== null);
+          const span = Math.max(...values) - Math.min(...values);
+          return span > 0 ? span : 1;
         });
+        const gain = (spot) =>
+          Math.min(
+            ...sv.readings.map((entry, at2) => {
+              const value = entry.valueOf(spot.readings);
+              const better = entry.improves(value, base[at2]);
+              return better ? Math.abs(value - base[at2]) / spans[at2] : 0;
+            }).filter((score) => score > 0),
+          );
+        const worst = split.reduce((left, right) => (gain(right) > gain(left) ? right : left));
         const said = sv.readings.map((entry, at2) => {
           const value = entry.valueOf(worst.readings);
           const change = value - base[at2];
@@ -8773,7 +8796,7 @@ function renderSurveyFinding(sv) {
         });
         parts.push(
           `${split.length} measured ${split.length === 1 ? 'design trades' : 'designs trade'} one reading ` +
-            `against the other. The furthest is ${formatValue(sv.x.key, worst.x)} by ` +
+            `against the other. The largest gain is at ${formatValue(sv.x.key, worst.x)} by ` +
             `${formatValue(sv.y.key, worst.y)}: ${said.join(' against ')}. Both are stated in their own ` +
             'units and neither is ranked against the other, because nobody published a weighting.',
         );

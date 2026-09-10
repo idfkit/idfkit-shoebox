@@ -33,9 +33,9 @@ with a missing file rather than a wrong answer.
 | `scheduler-fairness.mjs` | FR-053 | A many-job survey and a single study interleave rather than one starving the other. Fake pool, no engine. |
 | `repeatability.mjs` | SC-005a, FR-026a | One design measured 20 times returns identical readings, and instance reuse is asserted to be refused rather than measured. **Stop-the-line**: a failure changes the design, not the code. |
 | `survey-invariants.mjs` | SC-003 | No figure originates outside a `SpotHeight`; no triangle touches a gap; coverage sums; every contour segment lies inside an emitted cell. No engine. |
-| `survey-ground.mjs` | SC-010 | Every spot height traces to a run; 20 injected failures each appear as a gap with a reason and none is filled; an all-failed survey states that it measured nothing. |
+| `survey-ground.mjs` | SC-010 | Builds a real coarse ground under Node. Every spot height traces to a run; 20 injected failures each appear as a gap with a reason and none is filled; an all-failed survey states that it measured nothing. About 90 s. |
 | `link-roundtrip.mjs` | SC-004 | Every `sv` field round-trips exactly and every malformed class is refused whole — including the regression that a `sv` value which is syntactically a number is still read as a survey. No engine. |
-| `pull-vs-sweeps.mjs` | SC-005 | On 10 test desks the pull's top three agree with three independent full sweeps, 10 of 10. |
+| `pull-vs-sweeps.mjs` | SC-005 | On 10 test desks the pull's top three agree with three independent full sweeps, 10 of 10. **Expect half an hour**: one process per run, ~37 probes and three 21-point sweeps per desk. |
 | `idempotence.mjs` | Gate 3 | Three applications of a survey sample's overlay are byte-identical, and the restore is byte-exact. |
 
 ## Running one
@@ -81,3 +81,23 @@ module across runs: `@idfkit/engine`'s worker holds one `wasmModule` and resets
 `/output` between calls, and reaching it from Node means shimming
 `importScripts`, `self` and `fetch` around a web worker, which measures the
 shim.
+
+
+## What these harnesses cannot answer
+
+Two of quickstart.md's gates are not reachable from Node and are named here so
+that nobody looks for them among the files above.
+
+**The timings** (SC-001's 5 s and 30 s, SC-002's 10 percent live cadence) have
+to be taken in a **foreground** browser tab. Chrome clamps background-tab timers
+to roughly 1 Hz, which is plainly visible in any measurement taken through
+automation: every figure lands within 10 ms of a whole second. A number taken
+that way is a measurement of the throttle.
+
+**Instance reuse** — the second half of SC-005a — is a browser gate for the
+reason set out above: `main` cannot be called twice in one Node process at all.
+
+One thing worth knowing before taking the timings by hand: `requestIdleCallback`
+is deferred indefinitely in a backgrounded tab, so a survey's densify simply
+never runs there. It is scheduled with a two-second timeout for that reason, and
+the same is probably owed to `densifyStudies`.
