@@ -1901,38 +1901,72 @@ can be had and the caller states the loss in place; every reading is on the
 plan and under the reader's own pointer already, so what is lost is the shape
 and nothing else.
 
-**The schedule of spot heights is gone, and the readout is what it became.**
-That table carried every position of the ground — 144 rows on a fine one, and
-because `.schedule` folds at 620px, 144 blocks of four lines on a phone: some
-five hundred lines of table under two drawings, for a record almost nobody
-reads end to end. Its three jobs were all narrower than its size, and every one
-of them is a question about **one** design at a time, which is how a survey is
-actually read. `renderSpotReadout` answers all three in one line under the
-plan, lettered by pointing at a tick or by walking the ground with the arrow
-keys.
+**The reading stands in view and the record is folded under it.** The schedule
+of spot heights carries every position of the ground — 144 rows on a fine one,
+and because `.schedule` folds each row into a block at 620px, some five hundred
+lines of table on a phone under two drawings. It is shut by default now, and
+`renderSpotReadout` letters in view the thing a reader actually wants from it:
+the design under their own pointer, in full, lettered by pointing at a tick or
+by walking the ground with the arrow keys.
 
-- **108 of a fine ground's 144 figures were lettered nowhere else.** `figureAt`
-  thins the plan's figures to every second position on each axis once either
-  axis passes seven, because a figure at every position is illegible. Measured
-  on a 12 × 12 ground with 49 positions landed: 49 ticks drawn and **4**
-  figures on the plan.
-- **The table was the only route to any figure for assistive technology.**
-  Both drawings are `role="img"`, which makes the whole subtree presentational,
-  so every `<text>` on the plan is invisible and `surveyAriaLabel` carries the
-  axes and the coverage and no reading at all. The readout is `role="status"`
-  — a polite live region, which is what the cursor's sentence never had:
-  `surveySay` writes into the refusal paragraph and a refusal is not announced.
-  The sentence is now spoken by being written, and the refusal paragraph is
-  back to carrying only refusals, which is the conflation that fixed itself.
+That split is the point. The schedule's three jobs are all questions about
+**one** design at a time, which is how a survey is read; the table answered
+them by printing all 144 answers at once. So the readout answers them where
+they are asked, and the table stays as the complete record for the reader who
+wants to compare rows or scan a column.
+
+**This is the one table of readings on the sheet behind a disclosure, and the
+rule it looks like it breaks is worth stating.** *Readings never go in a fold*
+is about the reading the page is **for**, and that is in view: the readout, the
+coverage line, and the plan's own figures. The fold holds the *record*, which
+is a different thing — the same shape as the TM59 qualifications block, where
+the count stays in view and the entries are one press down. The summary carries
+the count for exactly that reason: a reader who never opens it must still come
+away with what it holds.
+
+The `<details>` is **static markup** and only its table is rebuilt, because
+`renderSurvey` runs on every landed sample — a fold rebuilt 144 times over one
+ground would slam itself shut under a reader who had opened it, which is the
+hazard that made `renderSurveyChoose` stop rebuilding the extent fields.
+
+The three jobs, and why a line in view answers each of them better than a table
+one press away:
+
+- **108 of a fine ground's 144 figures are lettered nowhere on the plan.**
+  `figureAt` thins the plan's figures to every second position on each axis
+  once either axis passes seven, because a figure at every position is
+  illegible. Measured on a 12 × 12 ground with 49 positions landed: 49 ticks
+  drawn and **4** figures on the plan. Pointing at any tick letters it.
+- **A shut table is no route to a figure at all for assistive technology, and
+  neither was an open one.** Both drawings are `role="img"`, which makes the
+  whole subtree presentational, so every `<text>` on the plan is invisible and
+  `surveyAriaLabel` carries the axes and the coverage and no reading. The
+  readout is `role="status"` — a polite live region, which is what the cursor's
+  sentence never had: `surveySay` writes into the refusal paragraph and a
+  refusal is not announced. The sentence is now spoken by being written, and
+  the refusal paragraph is back to carrying only refusals, which is the
+  conflation that fixed itself on the way past.
 - **The relief can refuse to draw** (FR-024), and the plan plus this line are
-  then the whole survey.
+  then the survey without anything needing to be opened.
 
-Two things follow that are worth keeping straight. A hover **does not move the
-keyboard cursor** — the ring is where the keyboard is standing and a hover is
-not a move — and it re-renders nothing, so sweeping a pointer across 144 ticks
-costs a string apiece rather than 144 redraws of the ground. And a gap's reason
-is now lettered rather than living only in a `<title>`, which `pointer: coarse`
-never shows; before, a cross on a phone said only that something had failed.
+Three things follow that are worth keeping straight. A hover **does not move
+the keyboard cursor** — the ring is where the keyboard is standing and a hover
+is not a move — and it re-renders nothing, so sweeping a pointer across 144
+ticks costs a string apiece rather than 144 redraws of the ground. A gap's
+reason is now lettered rather than living only in a `<title>`, which
+`pointer: coarse` never shows; before, a cross on a phone said only that
+something had failed.
+
+And **`pointerleave` is honoured only for a mouse**, which is the subtlest of
+the three. A touch pointer does not hover: it comes into existence on contact
+and is destroyed on release, so `pointerleave` fires at the end of *every* tap.
+Left symmetrical with `pointerenter`, a tap lettered a design and took it away
+again in the same gesture — the reading flashed and reverted before it could be
+read, which is the whole of this line's usefulness on a phone. So a finger
+leaves the reading standing until another tick is touched, and a mouse restores
+the desk's own design as it always did. `event.pointerType` is the honest test,
+the same shape as the stylesheet's `pointer: coarse`: it names no device, it
+says what kind of pointer this is.
 
 The line is a reading, so it is never folded. It carries `min-height` for two
 lines, because a sentence that changes height as the pointer crosses the plan
@@ -1942,9 +1976,11 @@ typically, three for the worst case this desk can compose (two axes with long
 labels and both TM59 readings).
 
 **It costs transfer rather than saving it**, and that is the honest figure:
-brotli went from 223,136 to 223,846 bytes, **+710**, because the prose these
-decisions are recorded in outweighs the table code deleted. The win is the
-length of the page, not the size of it.
+brotli went from 223,136 to 224,556 bytes, **+1,420** — the readout, the fold
+and the prose these decisions are recorded in, with no table code removed to
+pay for them. What was bought is the length of the page, not its size: shut,
+the schedule is **17px** of summary against the **3,875px** it stands at open
+on a 12 × 12 ground.
 
 **The traverse is a record of the desk, not of the survey.** It is written by
 `commit` at the end of every gesture and by `patchChannel`, so a design reached

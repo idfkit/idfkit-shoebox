@@ -9021,7 +9021,8 @@ function drawGround(sv) {
     // A figure at every one of a hundred and forty-four positions is
     // illegible, so on the fine ground the figures thin out. The rest are not
     // lost: pointing at any tick, or walking the ground with the arrow keys,
-    // letters that design in full under the plan.
+    // letters that design in full under the plan, and the folded schedule
+    // below carries them all at once.
     if (value !== null && figureAt(spot)) {
       const text = svg('text', {
         class: 'spot-figure',
@@ -9458,33 +9459,97 @@ function landTraverseReadings(snapshot, patch, readings) {
 /**
  * The design under the reader, lettered under the plan.
  *
- * This replaced the schedule of spot heights, and it is the same reading in a
- * hundredth of the room. The schedule tabulated every position of the ground:
- * 144 rows on a fine one, and because `.schedule` folds at 620px, 144 blocks
- * of four lines on a phone — some five hundred lines of table under two
- * drawings, for a record almost nobody reads end to end.
+ * This is what stands in view now that the schedule of spot heights is folded
+ * shut, and it is what makes folding it legitimate. The schedule tabulates
+ * every position of the ground — 144 rows on a fine one, and because
+ * `.schedule` folds each row into a block at 620px, some five hundred lines of
+ * table on a phone under two drawings.
  *
- * What it was load bearing for is narrower than its size, and all of it is a
- * question about **one** design at a time, which is how a survey is actually
- * read: the reader points at a tick and asks what it says. Three jobs, one
- * line.
+ * Its three jobs are all questions about **one** design at a time, which is
+ * how a survey is actually read: the reader points at a tick and asks what it
+ * says. The table answered them by printing all 144 answers at once. This
+ * answers them where they are asked, and the table stays behind the fold as
+ * the complete record for comparing rows or scanning a column.
  *
  *   - The plan letters only every second position on each axis once a ground
- *     passes seven (`figureAt`), so 108 of a fine ground's 144 figures were
- *     lettered nowhere else.
+ *     passes seven (`figureAt`), so 108 of a fine ground's 144 figures are
+ *     lettered nowhere on it.
  *   - Both drawings are `role="img"`, which makes their whole subtree
  *     presentational, so every `<text>` figure on the plan is invisible to
  *     assistive technology and `surveyAriaLabel` carries no reading at all.
- *     The table was the only route to a measured figure. This line is
- *     `role="status"` — a polite live region, which is what the cursor's
- *     sentence never had, since `surveySay` writes into the refusal paragraph
- *     and a refusal is not announced. Now it is spoken where it is lettered.
+ *     A shut table is no route to a figure and neither was an open one. This
+ *     line is `role="status"` — a polite live region, which is what the
+ *     cursor's sentence never had, since `surveySay` writes into the refusal
+ *     paragraph and a refusal is not announced. Now it is spoken where it is
+ *     lettered.
  *   - The relief can refuse to draw (FR-024), and the plan plus this line are
- *     then the whole survey.
+ *     then the survey without anything needing to be opened.
  *
- * It is not in a fold and never can be: it is a reading, and readings do not
- * go behind a disclosure.
+ * It is not in a fold and never can be: it is the reading, and the reading is
+ * what may not go behind a disclosure. The record may.
  */
+/**
+ * The schedule of spot heights: every measured design, with its own figures.
+ *
+ * Folded shut by default, which is the one place on this sheet where a table
+ * of readings sits behind a disclosure — so the rule it looks like it breaks
+ * is worth stating. "Readings never go in a fold" is a rule about the reading
+ * a page is *for*, and what stands in view here is `renderSpotReadout`: the
+ * design under the reader, in full, always, plus the coverage line saying how
+ * much was measured and the plan's own figures. The fold holds the complete
+ * record — all 144 rows of it — which is a different thing from the reading,
+ * and it is the same shape as the TM59 qualifications block, where the count
+ * stays in view and the entries are one press down.
+ *
+ * The summary carries the count, so what is behind the fold is known without
+ * opening it. That is the condition on folding anything here: a reader who
+ * never opens it must still come away with what it holds.
+ *
+ * Two things about where this lives. The `<details>` is **static markup** in
+ * index.html and only its table is rebuilt, because `renderSurvey` runs on
+ * every landed sample — a fold rebuilt 144 times over one ground would slam
+ * itself shut under a reader who had opened it, which is the same hazard that
+ * made `renderSurveyChoose` stop rebuilding the extent fields. And the rows
+ * are built even while shut rather than on first open: `.schedule` folds each
+ * row into a block at 620px and the cells carry their own heads, so the work
+ * is the same either way, and a lazy build would put a second state into a
+ * function that has none.
+ */
+function renderSpots(sv) {
+  const table = $('survey-spots');
+  table.textContent = '';
+  const spots = sv.spots();
+  const heads = [labelFor(sv.x.key), labelFor(sv.y.key), ...sv.readings.map((reading) => reading.label)];
+  const thead = tableHead(heads);
+  const tbody = el('tbody');
+  for (const spot of spots) {
+    const row = el('tr');
+    const cells = [
+      formatValue(sv.x.key, spot.x),
+      formatValue(sv.y.key, spot.y),
+      ...sv.readings.map((reading) => {
+        const value = reading.valueOf(spot.readings);
+        // An absence is an em dash and stays out of every total. Zero is a
+        // measurement; missing is not one.
+        return value === null ? '—' : reading.format(value, spot.readings);
+      }),
+    ];
+    cells.forEach((text, at) => {
+      const cell = el('td', null, text);
+      // Set where the cell is built, so the words over a column and the words
+      // beside a folded figure are one string.
+      cell.dataset.head = heads[at];
+      row.append(cell);
+    });
+    tbody.append(row);
+  }
+  table.append(thead, tbody);
+  keepTableSemantics(table);
+  $('survey-spots-scope').textContent = spots.length
+    ? `${spots.length} measured ${spots.length === 1 ? 'design' : 'designs'}`
+    : 'nothing measured yet';
+}
+
 /**
  * Give the readout back after a pointer leaves a tick — but only a *mouse*.
  *
@@ -10158,7 +10223,8 @@ function drawRelief(sv) {
       el(
         'p',
         'survey-note bad',
-        `${reliefLoss} The plan carries every measurement; point at a tick to read it.`,
+        `${reliefLoss} The plan carries every measurement: point at a tick to read it, ` +
+          'or open the schedule below.',
       ),
     );
     views.textContent = '';
@@ -10370,6 +10436,8 @@ function renderSurvey() {
     $('survey-coverage').textContent = '';
     $('survey-finding').textContent = '';
     $('survey-spot').textContent = '';
+    $('survey-spots').textContent = '';
+    $('survey-spots-scope').textContent = '';
     $('survey-axes').textContent = '';
     $('survey-lede').textContent =
       'Choose two controls and a reading, and the sheet surveys that reading over that ground — one real ' +
@@ -10396,6 +10464,7 @@ function renderSurvey() {
   renderCoverage(survey);
   renderSurveyFinding(survey);
   renderSpotReadout(survey);
+  renderSpots(survey);
   drawRelief(survey);
 
   $('survey-plan-cap').textContent =

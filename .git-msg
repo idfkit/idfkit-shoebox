@@ -1,0 +1,54 @@
+Fold the schedule, and letter the design under the reader
+
+The schedule of spot heights took a lot of the sheet: 144 rows on a fine
+ground, and because `.schedule` folds each row into a block at 620px, some
+five hundred lines of table on a phone under two drawings. It is shut by
+default now — 17px of summary against the 3,875px it stands at open — and it
+keeps every row for the reader who wants to compare them.
+
+What makes the fold legitimate is the line that now stands in view. The
+schedule's three jobs are all questions about one design at a time, which is
+how a survey is read; the table answered them by printing all 144 answers at
+once. `renderSpotReadout` answers them where they are asked, lettered by
+pointing at a tick or by walking the ground with the arrow keys.
+
+  - The plan letters only every second position on each axis once a ground
+    passes seven, so 108 of a fine ground's 144 figures are lettered nowhere
+    on it. Measured on a 12 x 12 ground with 49 positions landed: 49 ticks
+    drawn, 4 figures on the plan.
+  - Both drawings are role="img", which makes the whole subtree
+    presentational, so a shut table is no route to a figure for assistive
+    technology and neither was an open one — surveyAriaLabel carries no
+    reading. The readout is role="status", the live region the cursor's
+    sentence never had: surveySay writes into the refusal paragraph and a
+    refusal is not announced. The refusal paragraph now carries only refusals.
+  - The relief can refuse to draw (FR-024), and the plan plus this line are
+    then the survey without anything needing to be opened.
+
+"Readings never go in a fold" is not broken by this and the distinction is
+worth keeping: that rule is about the reading the page is for, which stays in
+view — the readout, the coverage line, the plan's own figures. The fold holds
+the record, which is a different thing, and its summary carries the count so a
+reader who never opens it still knows what it holds. Same shape as the TM59
+qualifications block.
+
+A gap's reason is lettered now too, rather than living only in a <title>,
+which pointer: coarse never shows.
+
+Three things that needed getting right. The <details> is static markup and
+only its table is rebuilt, because renderSurvey runs on every landed sample
+and a rebuilt fold would slam shut under a reader who had opened it — the
+hazard that made renderSurveyChoose stop rebuilding the extent fields;
+verified the node survives six redraws while the table refilled 49 to 144
+rows. A hover does not move the keyboard cursor and re-renders nothing. And
+pointerleave is honoured only for a mouse: a touch pointer is destroyed on
+release, so a symmetrical handler lettered a tapped design and took it away
+again in the same gesture.
+
+Costs 1,420 bytes of brotli (223,136 to 224,556) and removes none, since
+nothing was deleted to pay for it.
+
+Verified in the browser on a 12 x 12 Denver ground: shut by default with the
+count in its summary, open it survives every redraw, hover, touch, arrow keys,
+the unmeasured branch and a survey permalink all letter correctly, console
+clean, exit 0. Module gates and the build pass.

@@ -4906,6 +4906,15 @@
       /* Not a measurement: bare ground under the pointer, or no survey cut. */
       .spot-readout.loose { color: var(--ink-ghost); }
 
+      /* The complete record, shut by default. The summary states its count in
+         view, so what is behind the fold is known without opening it — the
+         condition on folding anything on this sheet. */
+      .schedule-fold { margin-top: 18px; }
+      /* The summary is a flex row with its own gap, so the `.base` margin that
+         separates a count from an eyebrow would be counted twice here. */
+      .schedule-fold > summary .base { margin-left: 0; }
+      .schedule-fold > summary + .schedule { margin-top: 10px; }
+
       /* The traverse list. A schedule, so it folds at 620px with the others
          and every figure keeps the head it stood under. */
       .traverse { margin-top: 18px; }
@@ -5364,6 +5373,37 @@
               <table id="traverse-table"></table>
             </section>
             <p class="finding" id="survey-finding"></p>
+
+            <!-- The complete record: every measured design with its own
+                 figures. Shut by default, because open it is 144 rows on a
+                 fine ground and — since `.schedule` folds each row into a
+                 block at 620px — some five hundred lines of table on a phone,
+                 under two drawings.
+
+                 This is the one table of readings on the sheet that sits
+                 behind a disclosure, so the rule it looks like it breaks is
+                 worth stating. "Readings never go in a fold" is about the
+                 reading the page is *for*, and that stands in view: the
+                 readout above letters the design under the reader in full and
+                 always, the coverage line says how much was measured, and the
+                 plan carries its own figures. This holds the record, which is
+                 a different thing — the same shape as the TM59 qualifications
+                 block, where the count stays in view and the entries are one
+                 press down. The summary carries the count for that reason: a
+                 reader who never opens it must still know what it holds.
+
+                 Static markup rather than built by `fold()`, because
+                 `renderSurvey` runs on every landed sample and a rebuilt
+                 `<details>` would slam shut under a reader who had opened it
+                 — the hazard that made `renderSurveyChoose` stop rebuilding
+                 the extent fields. Only the table inside is rewritten, by
+                 `renderSpots` in main.js. -->
+            <details class="fold schedule-fold" data-fold="survey:spots">
+              <summary>Schedule of spot heights<span class="base" id="survey-spots-scope"></span></summary>
+              <section class="schedule">
+                <table id="survey-spots"></table>
+              </section>
+            </details>
 
             <!-- E-02's own title-block cells. The sheet below is E-01's and
                  says what produced the run; this says what produced the ground. -->
