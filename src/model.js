@@ -15,6 +15,7 @@ import {
   parseHolidays,
   parsePattern,
 } from './controls.js';
+import { MARGIN, builds, openingFor, sizeOpening } from './aperture.js';
 import { END_USES } from './bill.js';
 import { RunContents } from './contents.js';
 
@@ -192,9 +193,6 @@ const WIND_MANAGER = 'WindManager';
 const INTERNAL_MASS = 'Internal Mass';
 const INTERNAL_MASS_CON = 'INTERNALMASS';
 
-/** A reveal, so an opening never runs into the corner of its own wall. */
-const MARGIN = 0.05;
-
 /* ══ reading the document, strictly ══════════════════════════════════════ */
 
 /**
@@ -371,51 +369,45 @@ const vertexGroups = (verts) =>
   }));
 
 /**
- * An opening on one wall, sized to hit that wall's window-to-wall ratio.
+ * The glass of one wall's opening, cut to the rough opening its ratio asks for.
  *
- * All three aperture types spend the same area; they differ only in how they
- * spend it. Punched scales both dimensions by √r, which keeps the light in
- * proportion with its wall and guarantees a reveal on all four sides at any
- * ratio. Ribbon fixes the width and lets the height fall out of the area. Full
- * height does the reverse.
+ * `sizeOpening` gives the rough opening, glass and frame together, because
+ * that is what a window-to-wall ratio measures; the vertices written here are
+ * the glass inside it, since EnergyPlus lays a `WindowProperty:FrameAndDivider`
+ * round the outside of whatever it is handed. Unframed the two are one.
+ *
+ * Whether the wall carries an opening at all is asked of the desk through
+ * `openingFor`, not of these vertices, because it is the question the plan key
+ * greys the wall on: sized off the drawn wall, whose length after a turn is the
+ * width to within an ulp, the two could disagree at the one ratio where the
+ * answer changes. The geometry is still sized off the drawn wall, as it always
+ * was, so an unframed desk writes the file it wrote before.
  *
  * Wound to match the base surface -- upper-left, lower-left, lower-right,
  * upper-right seen from outside -- so the outward normal still points out.
  */
 function apertureOn(wall, params) {
   const r = params[wall.wwr];
-  if (!(r > 0)) return null;
+  if (!openingFor(params, wall.side, r)?.glazes) return null;
 
   const [a, b] = [wall.a, wall.b];
   const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
   const H = params.height;
-  const maxW = Math.max(0.1, length - 2 * MARGIN);
-  const maxH = Math.max(0.1, H - 2 * MARGIN);
-  const area = r * length * H;
-
-  let w;
-  let h;
-  if (params.aperture === 'Ribbon') {
-    w = maxW;
-    h = Math.min(area / w, maxH);
-  } else if (params.aperture === 'Full') {
-    h = maxH;
-    w = Math.min(area / h, maxW);
-  } else {
-    const s = Math.sqrt(r);
-    w = Math.min(length * s, maxW);
-    h = Math.min(H * s, maxH);
-  }
+  const f = params.frameWidth;
+  const rough = sizeOpening({ ratio: r, length, height: H, aperture: params.aperture, frame: f });
 
   const u = [(b[0] - a[0]) / length, (b[1] - a[1]) / length];
   const at = (t) => [a[0] + u[0] * t, a[1] + u[1] * t];
-  const t0 = (length - w) / 2;
-  const t1 = t0 + w;
+  // The glass stands one frame width inside the rough opening on every side.
+  const t0 = (length - rough.width) / 2 + f;
+  const t1 = t0 + rough.glassWidth;
 
-  // Where the opening sits in the travel it has left. Full height has none.
-  const travel = Math.max(0, H - h - 2 * MARGIN);
-  const z0 = params.aperture === 'Full' ? MARGIN : MARGIN + travel * params.sill;
-  const z1 = z0 + h;
+  // Where the rough opening sits in the travel it has left. Full height has
+  // none. The travel is taken by the frame as well as the glass, which is what
+  // keeps the frame inside its wall at a sill of 0 or 1.
+  const travel = Math.max(0, H - rough.height - 2 * MARGIN);
+  const z0 = (params.aperture === 'Full' ? MARGIN : MARGIN + travel * params.sill) + f;
+  const z1 = z0 + rough.glassHeight;
 
   const [p0, p1] = [at(t0), at(t1)];
   return {
@@ -463,7 +455,9 @@ const windowVertexFields = (verts) =>
  */
 function overhangOn(opening, wall, params) {
   const d = params[wall.overhang];
-  if (!opening || !(d > 0)) return null;
+  // Not `d > 0`: an overhang within `COINCIDENT` of the wall is a surface the
+  // engine deletes, and the Shading key refuses that wall with a sentence.
+  if (!opening || !builds(d)) return null;
   const head = opening.z1 + params.ohRise;
   const [p0, p1] = [opening.at(opening.t0), opening.at(opening.t1)];
   const out = (p) => [p[0] + opening.n[0] * d, p[1] + opening.n[1] * d];
@@ -479,7 +473,8 @@ function overhangOn(opening, wall, params) {
 /** The two vertical fins at an opening's jambs, if there are any. */
 function finsOn(opening, params) {
   const d = params.fin;
-  if (!opening || !(d > 0)) return [];
+  // The same refusal as the overhang's, and the fin control is greyed on it.
+  if (!opening || !builds(d)) return [];
   const off = params.finOffset;
   const head = opening.z1 + params.ohRise;
   const sides = [
@@ -577,7 +572,9 @@ function skylightsOn(params) {
  */
 function curbOn(light, params) {
   const c = params.skyCurb;
-  if (!(c > 0)) return [];
+  // A 1 cm curb is deleted on every bearing, not only on turned ones: its short
+  // edge is the difference of two heights, and 4.582 − 4.572 is not 0.01.
+  if (!builds(c)) return [];
   const base = params.height;
   const top = base + c;
   return light.plan.map((a, i) => {
@@ -2762,7 +2759,17 @@ export function geometryFacts(doc) {
   // walls glazed to 1.0 against four walls of denominator reads 0.75 — and
   // that is a number about no part of the building.
   const wallArea = area(walls.filter((s) => s.boundary === 'outdoors'));
-  const wwr = wallArea > 0 ? glazing / wallArea : NaN;
+  // Over the rough opening, glass and frame together, which is what a
+  // window-to-wall ratio measures and what the Glazing strip's ratio means (see
+  // `sizeOpening`). Read off the glass and the frame the document holds, with
+  // the ring counted the way the engine counts it for its own "area (with
+  // frame)" test: `(w + 2f)(h + 2f) − wh`, which is `f` times the glass's
+  // perimeter plus the four corners. `glazing` stays the glass alone, since that
+  // is what the quantities panel letters as glazing.
+  const openings = windows
+    .filter((w) => hostType.get(w.host) === 'wall')
+    .reduce((total, w) => total + roughArea(w), 0);
+  const wwr = wallArea > 0 ? openings / wallArea : NaN;
 
   // Against the gross roof, which is what a skylight-to-roof ratio is measured
   // over: the rooflights are subsurfaces and the roof polygon still holds the
@@ -2791,7 +2798,11 @@ export function geometryFacts(doc) {
   // window-to-wall ratio to be computed differently.
   const byName = new Map(surfaces.map((s) => [s.name, s]));
   const glassOn = new Map();
-  for (const w of windows) glassOn.set(w.host, (glassOn.get(w.host) ?? 0) + polygonArea(w.verts));
+  const roughOn = new Map();
+  for (const w of windows) {
+    glassOn.set(w.host, (glassOn.get(w.host) ?? 0) + polygonArea(w.verts));
+    roughOn.set(w.host, (roughOn.get(w.host) ?? 0) + roughArea(w));
+  }
   const faces = WALLS.map((wall) => {
     const surface = byName.get(wall.name);
     if (!surface) return null;
@@ -2820,7 +2831,7 @@ export function geometryFacts(doc) {
       // building has to be able to make.
       boundary: surface.boundary,
       glazing: glass,
-      ratio: face > 0 ? glass / face : NaN,
+      ratio: face > 0 ? (roughOn.get(wall.name) ?? 0) / face : NaN,
       // Off the vertices, so it is the way this wall is really looking rather
       // than the compass point its plan key is named after. `turn()` puts the
       // orientation into the geometry and leaves every name where it was, so
@@ -2890,11 +2901,44 @@ export function geometryFacts(doc) {
   };
 }
 
-/** Window vertices, for the axonometric and the glazing area. */
+/**
+ * The frame EnergyPlus lays round a window, read off the object the window
+ * names. Zero where it names none, and a throw where it names one the document
+ * does not hold, because a frame the ratio counted and the engine never saw is
+ * the disagreement this reader exists to rule out.
+ */
+function frameOf(doc, window) {
+  const name = window.frame_and_divider_name;
+  if (!name) return 0;
+  return Number(must(doc, 'WindowProperty:FrameAndDivider', String(name)).frame_width);
+}
+
+/**
+ * A window's rough opening: its glass and the frame ring round it.
+ *
+ * The ring is `(w + 2f)(h + 2f) − wh`, the figure EnergyPlus reports as "frame
+ * area" when it refuses a window too large for its wall, written as `f` times
+ * the glass's perimeter plus the four corner squares so that it needs no idea of
+ * which edge is the width. Unframed it adds nothing, so an unframed ratio is the
+ * glass ratio it always was.
+ */
+function roughArea(window) {
+  const glass = polygonArea(window.verts);
+  const f = window.frame;
+  if (!(f > 0)) return glass;
+  const perimeter = window.verts.reduce((sum, v, i) => {
+    const n = window.verts[(i + 1) % window.verts.length];
+    return sum + Math.hypot(n[0] - v[0], n[1] - v[1], n[2] - v[2]);
+  }, 0);
+  return glass + f * perimeter + 4 * f * f;
+}
+
+/** Window vertices and frames, for the axonometric and the glazing area. */
 export function windowGeometry(doc) {
   return doc.all('FenestrationSurface:Detailed').map((window) => ({
     name: window.name,
     host: String(window.building_surface_name),
+    frame: frameOf(doc, window),
     verts: [1, 2, 3, 4].map((i) => [
       Number(window.get(`vertex_${i}_x_coordinate`)),
       Number(window.get(`vertex_${i}_y_coordinate`)),

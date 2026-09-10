@@ -46,6 +46,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one recreates the same questions and re-solves them locally; links minted
   before this feature continue to open with no studies, as they did before.
 
+### Fixed
+
+- **A window-to-wall ratio now includes its frame, and a large framed window no
+  longer stops the run.** The ratio is measured over the whole opening, frame
+  included, as ASHRAE 90.1 measures it. A wider frame therefore means less
+  glass, not a bigger hole. Before, a ratio near 0.9 with a wide frame produced
+  a window bigger than its wall, and EnergyPlus stopped before simulating. A
+  small ratio with a frame wide enough to leave no glass is now refused on the
+  plan key, which says why. Desks without a frame produce the same file as
+  before.
+- **Fins, overhangs and curbs 1 cm deep are refused.** At that depth
+  EnergyPlus merges the shade's edges and deletes it, so the run went ahead
+  without a shade that the drawing still showed.
+
 ## [0.3.0] - 2026-09-03
 
 ### Added
