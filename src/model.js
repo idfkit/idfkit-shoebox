@@ -1,4 +1,4 @@
-import { IDFDocument, parseIdf } from '@idfkit/core';
+import { IdfDocument, parseIdf } from '@idfkit/core';
 import {
   ADIABATIC,
   ADAPTIVE_RULES,
@@ -212,28 +212,38 @@ function must(doc, type, name = null) {
 }
 
 /**
- * Whether the document carries a type at all, asked without creating it.
+ * Whether the document carries a type at all.
  *
- * `doc.all(type)` and `doc.get(type, name)` both go through the document's own
- * `collection()`, which *inserts an empty collection* for a type it has never
- * seen — and `types()` is insertion order, which is the order the IDF is
- * written in. So merely asking whether a type is present moves every later
- * object of that type to the position of the question.
+ * This used to be a guard against a real hazard, and the hazard is gone. Under
+ * `@idfkit/core` 0.1.0, `doc.all(type)` and `doc.get(type, name)` both went
+ * through the document's own `collection()`, which *inserted an empty
+ * collection* for a type it had never seen — and `types()` is insertion order,
+ * which is the order the IDF is written in. So merely asking whether a type was
+ * present moved every later object of that type to the position of the
+ * question. `applyAir` asks one such question, and because Air is applied at 09
+ * and Gains writes the occupancy schedule at 10, it moved all three
+ * `Schedule:Compact` objects seventy lines up the file.
  *
- * Measured: `applyAir` gained a `drop(doc, 'Schedule:Compact', …)` to take the
- * network's setpoint schedule out, and because Air is applied at 09 and Gains
- * writes the occupancy schedule at 10, that one question moved all three
- * `Schedule:Compact` objects seventy lines up the file. Nothing about the model
- * changed and the engine could not tell the difference, which is exactly why it
- * is worth a guard: a reordering with no symptom is one nobody would find.
+ * 0.3.0-rc.3 stopped registering on read. Measured on the new libraries: on a
+ * document holding two types, `all()` and `get()` against an absent type both
+ * leave it holding two, and a document asked about `Schedule:Compact` before
+ * adding one serialises byte-identically to a document never asked. Across the
+ * eight desk positions the harness writes, the type count fell from a uniform
+ * 69 — every type any applier had ever swept — to between 28 and 45, which is
+ * the count of types actually present.
  *
- * Used at that one call site rather than folded into `clear` and `drop`
- * themselves, deliberately. Every existing sweep in this file already registers
- * whatever it clears, and the current ordering of the whole document is the
- * accumulated result of that — guarding the helpers rewrites the object order
- * of every IDF this page has ever published, in a change about air flow. The
- * hazard is general and is written down here; the fix stays where the new
- * question is asked.
+ * The guard stays, for two reasons and not out of caution. It still answers
+ * exactly what its name claims, and it now costs a `types()` scan and nothing
+ * else, where before it was the only way to ask the question without changing
+ * the answer. And it documents a hazard a reader will meet again the moment
+ * they open an older bundle: the object order of every IDF this page published
+ * before this upgrade is the accumulated result of the old behaviour, so a
+ * file written then and a file written now are not line-for-line comparable
+ * even where the building is identical. That difference was measured against
+ * the engine rather than argued about — `07-everything-in` reorders eleven
+ * types within a thirteen-object window and runs to byte-identical `.eso` and
+ * `.mtr` — and the note under "Reading an absent type" in `CLAUDE.md` carries
+ * the whole of it.
  */
 export const holds = (doc, type) => doc.types().includes(type);
 
@@ -641,7 +651,7 @@ const VARIABLES_MONTHLY = [
 
 /** Build the model. `schema` comes from a `SchemaBundle` load. */
 export function buildModel(schema, parameters = DEFAULT_PARAMETERS, bypass = DEFAULT_BYPASS) {
-  const doc = new IDFDocument(schema);
+  const doc = new IdfDocument(schema);
 
   doc.add('Version', null, { version_identifier: '26.1' });
   doc.add('Timestep', null, { number_of_timesteps_per_hour: 4 });
@@ -1431,9 +1441,12 @@ const AIR_TYPES = Object.freeze([
 function applyAir(doc, params, engaged) {
   for (const type of AIR_TYPES) clear(doc, type);
   // By name, not by type: `clear(doc, 'Schedule:Compact')` would take the
-  // occupancy band and the always-on schedule with it. Guarded on the type
-  // being present at all, because asking for a name in a type the document has
-  // never held *registers* that type at this point in the file — see `holds`.
+  // occupancy band and the always-on schedule with it. The `holds` guard was
+  // once load-bearing — asking for a name in a type the document had never held
+  // registered that type at this point in the file, and moved every later
+  // schedule up with it. `@idfkit/core` 0.3.0-rc.3 no longer registers on read,
+  // so the question is now free to ask; the guard is kept because it still says
+  // what it means and skipping a drop that cannot match is honest either way.
   if (holds(doc, 'Schedule:Compact')) drop(doc, 'Schedule:Compact', AFN_SETPOINT);
   if (!engaged) return;
 
@@ -2492,10 +2505,12 @@ const REPORTING_TYPES = [
  * Gated on the schedule actually being in the document, on the same terms as
  * the pressure network's series below and for the same reason: EnergyPlus lists
  * every variable it could not produce at the end of the error file, and the
- * title block counts those warnings. Asked through `holds` because this is a
- * *new* question about a type the document may not yet carry, and merely asking
- * would register it here — at the foot of the file, where this reconciler runs
- * — moving every schedule a later apply writes.
+ * title block counts those warnings. Asked through `holds` rather than through
+ * `doc.get` alone: under the libraries this was written against, merely asking
+ * about an absent type registered it here — at the foot of the file, where this
+ * reconciler runs — and moved every schedule a later apply writes. That is no
+ * longer true from `@idfkit/core` 0.3.0-rc.3, which does not register on read,
+ * so the call now reads as what it always meant rather than as a workaround.
  */
 function addOccupancyValue(doc) {
   if (!holds(doc, 'Schedule:Compact')) return;
