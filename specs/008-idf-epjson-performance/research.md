@@ -249,33 +249,64 @@ instance with byte-identical output.
 
 ## Recommendation
 
-**Take the compact IDF for the run, and only for the run.** It is 5.1× smaller,
-0.3 ms cheaper to write, byte-identical in result at all eight positions, and
-costs one option on one call site. It buys no measurable engine time and should
-not be sold as if it did.
+**Change nothing in `src/`.**
 
-**But the run bundle is not free to follow it, and that is the one decision this
-measurement cannot make.** `bundle.js` holds "the text passed to `ep.run`, not a
-fresh `writeIdf` that might have moved since", because the bundle's whole claim
-is that deleting the `!` header leaves byte-for-byte what ran. So switching the
-run to compact IDF switches the bundle's `model.idf` with it — a 4 KB file with
-every field unlabelled on one line, handed to a reader who was invited to open it
-and check the page against it. The two rules are both right and they now pull
-against each other: the bundle cannot write a second, prettier copy without
-giving up the thing it exists to promise, and it cannot ship the compact one
-without giving up most of what a reader could do with it.
+The compact IDF is the tempting one and it does not survive the second question.
+It is genuinely 5.1× smaller, genuinely byte-identical in result, and genuinely
+0.30 ms cheaper to write — and then: who consumes that? Traced through, nobody.
 
-The honest resolutions are to leave the live solve alone, or to take the compact
-IDF for the solve and have the bundle carry the run's exact bytes *plus* a
-lettered rendering of the same document, named as a rendering in the manifest so
-nobody mistakes which one ran. What is not available is switching the writer and
-saying nothing: 22 KB of comments is what makes `model.idf` legible, and the
-bundle is where legibility was the point.
+- The **worker** takes the text through `postMessage`. 22 KB structured-cloned
+  against a 50 ms design day is not measurable.
+- The **run bundle** ships `model.idf` beside a `.epw`, which is about 1.5 MB.
+  Saving 1.6 KB of the zipped IDF there is a rounding error on the download, and
+  it is the one place the comments are doing work.
+- A **study sample** carries `{ idf, epw, floorArea }`; the EPW dominates that
+  too. Four sweeps in the queue is 1.8 MB of IDF against a 256 MB heap.
+- Nothing **persists** it. A kept scheme stores a permalink fragment; the
+  permalink carries parameters. Neither has ever held model text.
 
-**Do not move to epJSON.** The reader is genuinely faster per object and it would
-be the right call for a model an order of magnitude bigger. At this one it saves
-1.3 ms of a 123 ms design day, produces a *larger* file than the compact IDF, and
-costs the environment order — on a sheet whose columns, plate and pin are all
-lettered from it. `writeEpJson` also needs the enum repair before it produces
-anything that runs at all, and that is worth reporting upstream whether or not
-this page ever uses the format.
+So the saving is real and it is spent nowhere, which on this sheet is the same
+as not being a saving. `writeIdf(doc)` also happens to be the writer whose output
+a person can read, and `model.idf` in the bundle exists precisely so a person can
+read it: `bundle.js` holds "the text passed to `ep.run`, not a fresh `writeIdf`
+that might have moved since", so switching the solve switches the bundle with it.
+That is a real cost against a benefit with no consumer, and it is not a close
+call.
+
+The measurement is still worth having, for the thing it rules out. "The IDF is
+bulky, let us compact it" and "epJSON is the modern format, it must parse faster"
+are both reasonable-sounding and both wrong here, and the reason they are wrong —
+a 30 ms schema floor that no format touches, and 106 objects being nowhere near
+enough to pay for a faster reader — is the sort of thing that gets re-proposed
+every year or so unless the number is written down.
+
+**Two conditions would change the answer**, and both are worth naming so this can
+be reopened rather than re-argued:
+
+- **The model grows by an order of magnitude.** The slope is 14.5 µs per object
+  for IDF and 6.0 for epJSON, so around 8,000 objects the reader difference
+  reaches the 20 ms the AFN network already spends out of the live budget. Nothing
+  the desk can currently draw comes close: the largest position is 106 objects.
+- **`writeIdf` becomes the profile's top line.** It is 0.80 ms against a 50 ms
+  design day today. If a future feature makes the live cadence much tighter, the
+  0.35 ms that `comments: false` saves is there to be taken — and `comments:
+  false`, not `compressed`, is the one to take, because it is 0.30 ms of the same
+  0.35 and leaves every field on its own labelled line.
+
+**Do not move to epJSON under any of those conditions either**, without first
+dealing with the ordering. The reader is faster per object and would be the right
+call for a big enough model, but it runs `SizingPeriod:DesignDay` in name order,
+and the shipped names put the cooling day first. The results schedule's columns,
+the plate's traces and `resolvePin`'s `runs[0]` fallback all read that order. The
+fix, if it were ever wanted, is to name the design days so that alphabetical order
+is the order intended — which is a strange thing to have to know, and is exactly
+why it belongs written down rather than discovered.
+
+**The `writeEpJson` enum fault is upstream's and is worth reporting whether or not
+this page ever uses the format.** It was already known there as
+idfkit/idfkit-js#10, framed as a casing divergence from the `ConvertInputFormat`
+oracle and allowlisted in the conformance corpus' `known-divergence.toml`. What
+was not known is the consequence, which is reported on that issue: the written
+epJSON does not load, and `validateDocument` returns `isValid: true` on the way
+past. The oracle is not a different convention here, it is the fix — EnergyPlus's
+own converter emits `Counterclockwise` and `Discrete` from the same input.
