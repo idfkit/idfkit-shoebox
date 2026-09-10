@@ -357,6 +357,67 @@ numbers are what stands behind a disclosure.
   `aria-expanded` is the state, and what a reader sees is that the boxes are
   there; a second saying of it is the one that goes stale.
 
+### The fold
+
+The one disclosure for every explanation that is not itself a reading. The
+sheet used to satisfy "nothing only on hover" by printing everything, always,
+and put about 2,000 words on the first screen. A fold satisfies the same rule
+and costs the reader nothing they did not ask for: a press is not a hover, and
+the text opens where it stands, under the thing it explains.
+
+- **Native `<details class="fold">`**, one `<summary>` first. The keyboard,
+  the announcement as expandable and the opening all come free; a
+  `<button aria-expanded>` would be a second implementation of all three.
+- **The register's marker, `+` closed and `−` open**, in mono, ahead of the
+  summary. Every fold on the page opens the same way.
+- **The summary names what the fold holds, in six words or fewer**: `Method`,
+  `Sources`, `Criteria c and d`. Where the word alone names nothing, as
+  `Note` does, the summary carries an `aria-label` naming its subject.
+- **Summary in the control note's face**: `400 10.5px/1.45` sans in
+  `--ink-ghost`, `--ink-2` on hover, the `--rule-focus` ring on
+  `:focus-visible`, `width: fit-content` so the target is the words and not
+  the column. The open body keeps its host's own note style, so moving a note
+  into a fold does not restyle it.
+- **A stable `data-fold` key**, `<kind>:<id>` (`ctl:wallR`,
+  `target:phi-heat`, `strip:fabric`). The scoreboard and the strips are rebuilt
+  on every solve, fifty milliseconds apart during a drag, so an open fold
+  would snap shut under the reader. The builder, `fold()` in `console.js`,
+  keeps the keys the reader has opened in a `Set` and rebuilds those open.
+- **Open for the session only.** The set lives in memory. How the sheet is
+  being read is not what the building is, so it reaches neither the link nor
+  `localStorage`, and a reload closes every fold.
+- **`.fold` sets `display`, so it has a `.fold[hidden]` twin.** Inside a
+  folded strip the strip's own `hidden` takes every fold out of the tab order.
+
+**What never goes in a fold**: readings, figures, units, labels, verdicts, em
+dashes and the reason beside each, blocking reasons, refusals and their
+remedies. Those are what the sheet is for, and a refusal nobody sees is a
+silent fallback.
+
+### Copy budgets
+
+What stays in view is a glance, and a glance stays one only if something
+refuses it the day it grows. The budgets are declared once, in `src/copy.js`,
+and the declaring modules assert their strings against them at load: an
+over-long channel line stops the page naming the channel, the count and the
+limit.
+
+| Budget | Words | Holds |
+| --- | --- | --- |
+| `STRIP_LINE` | 12 | a channel's line in the console |
+| `STEP` | 15 | a general note's instruction, the notes lede |
+| `STANDING` | 15 | a blocking reason, a refusal |
+| `ABSENCE` | 12 | the reason beside an em dash |
+| `SUMMARY` | 6 | a fold's summary |
+| `BLOCK` | 25 | one block's explanation in view, a page lede |
+| `CHASE` | 20 | the Chase sentence above the board |
+| `DESCRIPTION` | 60 | the description and finding together |
+| `CEILING` | 40 | any single visible block |
+
+The last five bound text composed at render time from the run, which is
+measured at four desk positions rather than thrown on: a throw mid-render would
+turn a copy defect into a broken sheet. A fold's long form has no budget.
+
 ### The square marker
 
 An `8px` to `9px` square with a `1px` border and `1px` radius means "a step that
@@ -885,6 +946,11 @@ between what they measure and what the method means by them.
   scoreboard: `pointer: coarse` has no hover, so a caveat that floats does not
   exist on the phone where a figure is most likely to be carried away from the
   page it was read on.
+- **In place, and folded under a summary that states the count.** The `dl`
+  sits inside a `.fold` whose summary says how many reasons there are ("Four
+  reasons this is not TM59"), with the number read off the list rather than
+  typed. Printed whole it was 520 words under five rows of figures; a reader
+  who never opens it still leaves knowing there are reasons and how many.
 - **One entry is two statements, so it gets two tracks**, as a `dl` laid out on
   a grid: what the figure does not answer, and what that is measured or read
   from. Written as one paragraph each they become grey blocks a reader skims,

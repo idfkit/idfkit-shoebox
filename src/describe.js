@@ -8,7 +8,7 @@
  *
  * Two rules hold it up, and they are the same two the rest of the sheet keeps:
  *
- * - **Everything measurable is read off the `IDFDocument`.** Areas, ratios,
+ * - **Everything measurable is read off the `IdfDocument`.** Areas, ratios,
  *   overhangs and the way each wall faces come through `geometryFacts`, not off
  *   `params`, so a wall that took a clamp on its way into the model is
  *   described as it was built rather than as it was asked for. Only the
@@ -657,8 +657,16 @@ function moves(doc, params, facts, state) {
 
 /* ══ the paragraph ═══════════════════════════════════════════════════════ */
 
-/** How much of the desk the moves sentence will carry. */
-const MOVES = 3;
+/**
+ * How much of the desk the moves sentence will carry.
+ *
+ * Two moves, not three. The description and the finding share one paragraph
+ * under the plate, held to sixty words together, and at three moves it ran
+ * seventy to ninety. Ranking is untouched, so the two said are the two highest
+ * of the three it used to say. `MOVE_WORDS` bounds the sentence, not the count:
+ * lowering it would truncate whichever move won rather than choose fewer.
+ */
+const MOVES = 2;
 const MOVE_WORDS = 36;
 
 /**

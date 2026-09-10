@@ -23,15 +23,23 @@
  * keeps a one-line row that still reads — the index sheet's rule, applied here.
  */
 
+import { BUDGETS, withinBudget } from './copy.js';
+import { fold } from './console.js';
+
 // v3 because the TM59 work added a step. A reader carrying a v2 entry has six
 // squares filled against a sheet that now has seven, and the seventh would
 // stand unfilled beside six ticks as though they had skipped it — or, worse,
 // the sheet would have retired itself under v2's "all taken" rule and the note
 // about the criteria would never be shown at all. The key is the only thing
 // that separates "read the old sheet" from "read this one".
-// Bumped from v3 with E-02: the sheet gained a second drawing and a step, so
-// a returning reader is owed the new sheet rather than stale ticks against
-// notes they never read.
+//
+// v4 for two reasons that arrived together, either of which would have been
+// enough on its own. E-02 gave the sheet a second drawing and a step, so a
+// returning reader's six ticks would stand against a sheet that now has
+// eight. And each note's words changed: every note now leads with a one-line
+// step in view and folds its fuller body. The completion events did not move,
+// but a returning reader's ticks were taken against notes they would no longer
+// recognise, and the rule is that a changed sheet is met as a new one.
 const STORE = 'shoebox-general-notes-v4';
 const VIEWS = ['open', 'folded', 'retired'];
 
@@ -47,9 +55,14 @@ const TALLY = Object.freeze([
 ]);
 
 class Note {
-  constructor({ id, title, body, target, focus = null, desk = false }) {
+  constructor({ id, title, step, body, target, focus = null, desk = false }) {
+    // The step is what stands in view: one instruction, held to the step
+    // budget below. The body folds under it, so a first reader meets seven
+    // lines rather than 340 words, and the reader who wants the why opens it.
+    if (!step) throw new Error(`General note "${id}" carries no step`);
     this.id = id;
     this.title = title;
+    this.step = step;
     this.body = body;
     // What the markup pen circles while this note is the next move. A note
     // whose subject lives on the console points at the desk button until the
@@ -68,6 +81,7 @@ export const NOTES = Object.freeze([
   new Note({
     id: 'solve',
     title: 'Watch the first solve',
+    step: 'Wait for the first run: two Denver design days, solved in this tab.',
     body:
       'The engine compiles inside this tab and solves two Denver design days ' +
       'unasked. Every figure below is read off that run — nothing on the ' +
@@ -77,6 +91,7 @@ export const NOTES = Object.freeze([
   new Note({
     id: 'drag',
     title: 'Drag a dimension',
+    step: 'Drag Width, under the drawing, and watch the run follow your hand.',
     body:
       'Take hold of Width, under the drawing. Auto-solve re-runs as you ' +
       'drag, and the ghost ticks hold where you started, so a change reads ' +
@@ -88,6 +103,7 @@ export const NOTES = Object.freeze([
   new Note({
     id: 'station',
     title: 'Attach a year of weather',
+    step: 'Pick a weather station to run a full 8,760-hour year there.',
     body:
       'Pick any of 17,292 stations. The run becomes a full 8,760-hour year ' +
       'at that place, design conditions and all. Patch in System or Gains ' +
@@ -98,9 +114,9 @@ export const NOTES = Object.freeze([
   new Note({
     id: 'desk',
     title: 'Open the model console',
+    step: 'Open the model console to work the building channel by channel.',
     body:
-      'Eighteen channels in the order the physics happens. Every control ' +
-      'writes a real object into the IDF, and every strip reads back what ' +
+      'Every control writes a real object into the IDF, and every strip reads back what ' +
       'its path contributes. The scales are ruled with the cases anyone in ' +
       'the trade already knows — single, double, triple; code limits; the ' +
       'engine\'s own defaults — and each says which one you are standing in ' +
@@ -110,6 +126,7 @@ export const NOTES = Object.freeze([
   new Note({
     id: 'patch',
     title: 'Patch a channel out',
+    step: 'Patch a channel out to take its objects out of the model.',
     body:
       'The patch button takes a channel\'s objects out of the document — ' +
       'removed, not zeroed — so the drawing and the model always agree ' +
@@ -130,6 +147,7 @@ export const NOTES = Object.freeze([
   new Note({
     id: 'tm59',
     title: 'Read the overheating criteria',
+    step: 'Run some of May to September with Gains in, then read the board.',
     body:
       'The board under the results reads one run against every published line at ' +
       'once — no standard is selected and none is remembered, so the score is only ' +
@@ -154,6 +172,7 @@ export const NOTES = Object.freeze([
   new Note({
     id: 'survey',
     title: 'Survey the design space',
+    step: 'Choose two controls and a reading, and cut a ground of real runs.',
     body:
       'Choose two controls and a reading, and the sheet cuts a ground through ' +
       'the desk as it stands — one real EnergyPlus run at every position of a ' +
@@ -168,6 +187,7 @@ export const NOTES = Object.freeze([
   new Note({
     id: 'link',
     title: 'Carry the scheme away',
+    step: 'Copy the scheme link, or take the run bundle with its exact IDF.',
     body:
       'The scheme link re-solves this desk in any browser; the run bundle ' +
       'carries the exact IDF this sheet handed the engine, for a local ' +
@@ -195,6 +215,21 @@ if (!TALLY[NOTES.length]) {
 
 /** The count in words, for the prose that has to say it. */
 const TALLIED = TALLY[NOTES.length];
+
+// The two ledes the block can carry, and the word on each fold, declared here
+// so that they can be held to their budgets before anything is drawn.
+const LEDE = Object.freeze({
+  open: `${TALLIED} steps. Each square fills when its step actually happens on this desk.`,
+  finished: `All ${TALLIED.toLowerCase()} steps taken. These notes retire on the next visit.`,
+});
+const MORE = 'More';
+
+// Every step and both ledes against the step budget, the fold's word against
+// the summary budget: a note that has grown back into a paragraph stops the
+// page naming itself, which is the only way it stays a line.
+for (const n of NOTES) withinBudget(BUDGETS.STEP, `general note ${n.id} step`, n.step);
+for (const [key, text] of Object.entries(LEDE)) withinBudget(BUDGETS.STEP, `general notes ${key} lede`, text);
+withinBudget(BUDGETS.SUMMARY, 'general note fold summary', MORE);
 
 /**
  * Read what the last visit left. A browser that refuses storage, or a
@@ -295,11 +330,7 @@ export function mountTour({ openDesk } = {}) {
             ${finished ? 'Retire these notes' : 'Set these notes aside'}
           </button>
         </div>
-        <p class="notes-lede">${
-          finished
-            ? `All ${TALLIED.toLowerCase()} steps taken. These notes retire on the next visit — the sheet is yours.`
-            : `${TALLIED} steps. Each square fills when its step has actually happened on this desk — the notes read the model, they do not take your word for it.`
-        }</p>
+        <p class="notes-lede">${finished ? LEDE.finished : LEDE.open}</p>
         <ol class="notes-grid">
           ${NOTES.map((n, i) => {
             const taken = done.has(n.id);
@@ -314,7 +345,7 @@ export function mountTour({ openDesk } = {}) {
                   <span class="note-no">${i + 1}</span>
                   <span class="note-title">${n.title}</span>
                 </span>
-                <span class="note-body">${n.body}</span>
+                <span class="note-step">${n.step}</span>
               </button>
             </li>`;
           }).join('')}
@@ -326,6 +357,15 @@ export function mountTour({ openDesk } = {}) {
     }
     for (const b of host.querySelectorAll('[data-note]')) {
       b.addEventListener('click', () => stage(NOTES.find((n) => n.id === b.dataset.note)));
+      // The body folds beside the note's button rather than inside it: a
+      // disclosure inside a button is two controls in one, and a press on it
+      // would stage the note's scene as well as open it. Beside it, opening
+      // the fold does exactly one thing and never fills a marker.
+      const n = NOTES.find((note) => note.id === b.dataset.note);
+      const body = document.createElement('span');
+      body.className = 'note-body';
+      body.innerHTML = n.body;
+      b.after(fold(`note:${n.id}`, MORE, { label: `More on ${n.title.toLowerCase()}` }, body));
     }
     syncGuide();
   }

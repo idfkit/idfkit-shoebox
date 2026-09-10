@@ -460,9 +460,11 @@ export const QUANTITIES = Object.freeze([
 export const QUANTITY_BY_ID = Object.freeze(Object.fromEntries(QUANTITIES.map((quantity) => [quantity.id, quantity])));
 
 export const OPENING_QUANTITY_BASIS = Object.freeze({
-  demand: 'A weather year and System are both in the path, so the opening question is thermal demand.',
-  tm59a: 'The desk is chasing TM59 and its seasonal occupied run can answer criterion a.',
-  extremes: 'Without an annual system or a TM59 chase, the opening question is the zone temperature range.',
+  // Lettered after "Opened here:" on the study card, so each is held to a
+  // standing message's fifteen words with that prefix counted.
+  demand: 'A weather year with System in, so the opening question is thermal demand.',
+  tm59a: 'Chasing TM59, and this run can answer criterion a.',
+  extremes: 'No annual system or TM59 chase, so the question is zone temperature range.',
 });
 
 /** The legacy inference retained once as an opening guess, never as live state. */
