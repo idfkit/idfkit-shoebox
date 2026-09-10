@@ -8082,26 +8082,55 @@ function surveyReadingOffers(snapshot = params, patch = patching(), epw = epwTex
 }
 
 /**
- * One disclosure of offers, closed reading what is selected.
+ * One chooser of offers, closed reading what is selected.
  *
- * Drawn as a title-block cell: its caption, how many offers it holds, the
- * value, and the fold marker (the last from CSS). The count is of what can be
- * chosen *at this desk*, with the whole list beside it where some are
- * refused — "129 controls" over a list of which 37 can be picked would be the
- * cell claiming a choice the reader does not have.
+ * Drawn as a title-block cell: its caption, how many offers it holds, and the
+ * value with its fold marker. The count is of what can be chosen *at this
+ * desk*, with the whole list beside it where some are refused — "129
+ * controls" over a list of which 37 can be picked would be the cell claiming
+ * a choice the reader does not have.
+ *
+ * Pressing the value turns it into the box you type in, with the whole list
+ * standing under it until a word is typed. Closed, the value is a button
+ * rather than an input holding the selection, because two readings can stand
+ * in one cell and an input does not wrap. Not a `details`: a text field
+ * inside a `summary` is a field whose Space key toggles the disclosure in
+ * some engines.
  */
-function pickList({ label, noun, summary, options, selected, onPick, multiple = false }) {
-  const details = el('details', 'survey-pick');
-  const head = el('summary');
+function pickList({ label, noun, summary, placeholder, options, selected, onPick, multiple = false }) {
+  const cell = el('div', 'survey-pick survey-combo');
+  cell.dataset.pick = label;
+  const head = el('div', 'survey-pick-head');
   const open = options.filter((option) => option.available).length;
   const count = open === options.length ? `${open} ${noun}` : `${open} of ${options.length} ${noun}`;
-  head.append(
-    el('b', null, label),
-    el('span', 'survey-pick-count', count),
-    el('span', 'survey-pick-value', summary),
-  );
-  details.append(head);
+  const opener = el('button', 'survey-pick-open');
+  opener.type = 'button';
+  const sign = el('span', 'survey-pick-sign', '+');
+  sign.setAttribute('aria-hidden', 'true');
+  opener.append(el('span', 'survey-pick-value', summary || placeholder), sign);
+  // The caption is lettered outside the button, so it is said inside it too:
+  // "Choose a control" read aloud does not say which axis.
+  opener.setAttribute('aria-label', `${label}: ${summary || placeholder}`);
+  opener.setAttribute('aria-expanded', 'false');
+  const field = el('input', 'survey-pick-field');
+  field.hidden = true;
+  const closer = el('button', 'survey-pick-close', '−');
+  closer.type = 'button';
+  closer.hidden = true;
+  closer.setAttribute('aria-label', `Close the ${noun} for ${label}`);
+  head.append(el('b', null, label), el('span', 'survey-pick-count', count), opener, field, closer);
+  cell.append(head);
   const list = el('div', 'survey-options');
+  list.hidden = true;
+  list.id = `survey-options-${label.toLowerCase().replace(/\W+/g, '-')}`;
+  // Every row with the words it can be found by and the heading it stands
+  // under, so the filter can hide a heading once nothing beneath it matches.
+  // The channel's name is among a row's words: "fabric" is how a reader who
+  // knows where a control lives but not what it is called would look for it.
+  const fold = (text) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  const rows = [];
+  const heads = [];
+  let under = null;
   const draw = (option) => {
     const button = el('button', 'survey-option');
     button.type = 'button';
@@ -8118,9 +8147,25 @@ function pickList({ label, noun, summary, options, selected, onPick, multiple = 
     } else {
       button.append(el('span', null, option.label));
       if (option.note) button.append(el('small', null, option.note));
-      button.addEventListener('click', () => onPick(option.id));
+      button.addEventListener('click', (event) => {
+        onPick(option.id);
+        // A pick redraws the chooser, which takes the focused row with it and
+        // drops a keyboard reader on the body. `detail` is 0 for a key press
+        // and a click count otherwise, so only a keyed pick is handed back to
+        // the cell it was made in.
+        if (event.detail === 0) {
+          $('survey-choose')
+            .querySelector(`[data-pick="${label}"] .survey-pick-open`)
+            ?.focus();
+        }
+      });
     }
     list.append(button);
+    // Each word whole and in its parts, so "fact" finds U-factor as well as
+    // "u-fact" does.
+    const text = fold(`${under?.dataset.group ?? ''} ${option.label} ${option.note ?? ''}`);
+    const words = text.split(/\s+/).flatMap((word) => [word, ...word.split(/[^\p{L}\p{N}]+/u)]);
+    rows.push({ button, head: under, words: words.filter(Boolean) });
   };
 
   /**
@@ -8139,7 +8184,10 @@ function pickList({ label, noun, summary, options, selected, onPick, multiple = 
     const head = el('div', 'survey-options-group');
     head.append(el('b', null, name));
     if (note) head.append(el('small', null, note));
+    head.dataset.group = name;
     list.append(head);
+    heads.push(head);
+    under = head;
   };
 
   // Controls with a face first, grouped by the channel that owns them, in
@@ -8166,8 +8214,172 @@ function pickList({ label, noun, summary, options, selected, onPick, multiple = 
     );
     for (const option of faceless) draw(option);
   }
-  details.append(list);
-  return details;
+
+  // Typing filters. 129 rows is a list read by scrolling only if the reader
+  // does not already know the name, and usually they do. Every word typed has
+  // to begin one of a row's words, in any order, so "glaz s" finds Glazing S.
+  // Begin, not appear anywhere: matched inside words, the lone "s" of that
+  // query found Visible transmittance and Panes, which is a filter that has
+  // stopped filtering. A refused row that matches stays in the list,
+  // refused, for the reason the unfiltered list keeps it: a control missing
+  // from a chooser reads as one the desk does not have.
+  field.type = 'text';
+  // What is held, in ghost ink, so the box opens empty without hiding the
+  // selection it is about to replace.
+  field.placeholder = summary || `Type to filter ${noun}`;
+  field.autocomplete = 'off';
+  field.spellcheck = false;
+  field.setAttribute('role', 'combobox');
+  field.setAttribute('aria-autocomplete', 'list');
+  field.setAttribute('aria-expanded', 'true');
+  field.setAttribute('aria-label', `Filter the ${noun} for ${label}`);
+  field.setAttribute('aria-controls', list.id);
+  const none = el('p', 'survey-filter-none');
+  none.hidden = true;
+  list.append(none);
+
+  const apply = () => {
+    const terms = fold(field.value).split(/\s+/).filter(Boolean);
+    const shown = new Set();
+    let matches = 0;
+    for (const row of rows) {
+      const match = terms.every((term) => row.words.some((word) => word.startsWith(term)));
+      row.button.hidden = !match;
+      if (match) {
+        matches += 1;
+        shown.add(row.head);
+      }
+    }
+    for (const group of heads) group.hidden = !shown.has(group);
+    // Said, not left as an empty box: an empty list under a filter reads as a
+    // chooser that failed to draw.
+    none.hidden = matches > 0;
+    none.textContent = matches ? '' : `No ${noun} match “${field.value.trim()}”.`;
+    list.scrollTop = 0;
+  };
+  const pickable = () => rows.filter((row) => !row.button.hidden && !row.button.disabled).map((row) => row.button);
+
+  // Open is one state carried by four elements, so it is set in one place.
+  // Closing empties the box, so a cell reopened shows the whole list again: a
+  // filter left standing from last time would open onto four rows with
+  // nothing saying the other 125 were hidden on purpose.
+  const show = (on) => {
+    cell.classList.toggle('open', on);
+    list.hidden = !on;
+    field.hidden = !on;
+    closer.hidden = !on;
+    opener.hidden = on;
+    opener.setAttribute('aria-expanded', String(on));
+    if (!on && field.value) {
+      field.value = '';
+      apply();
+    }
+  };
+  // Whatever takes the focus is shown and focused *before* whatever gives it
+  // up is hidden. The other way round, a click on the value opened nothing:
+  // the click had focused the opener, `show` hid it, and `focus()`'s own
+  // style update found the focused element gone and blurred it with no
+  // relatedTarget, which the focusout below reads as the reader leaving — so
+  // the cell closed inside the click that opened it, before the field could
+  // take the focus. Only a real pointer finds this: a page without window
+  // focus fires no focus events, and a scripted `.click()` opened every time.
+  const openCell = () => {
+    if (!list.hidden) return;
+    field.hidden = false;
+    field.focus();
+    show(true);
+  };
+  const closeCell = (refocus) => {
+    if (refocus) {
+      opener.hidden = false;
+      opener.focus();
+    }
+    show(false);
+  };
+
+  // A letter typed on the closed cell, or on a row, lands in the box: the
+  // reader should not have to find the box before they can use it. Space is
+  // left alone, because on the value it is the key that opens the cell and on
+  // a row it is the key that picks it.
+  const printable = (event) =>
+    event.key.length === 1 && event.key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey;
+  const typeInto = (event) => {
+    event.preventDefault();
+    openCell();
+    field.value += event.key;
+    apply();
+    field.focus();
+  };
+
+  opener.addEventListener('click', openCell);
+  opener.addEventListener('keydown', (event) => {
+    if (printable(event)) typeInto(event);
+    else if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      openCell();
+    }
+  });
+  // The caption and the count are part of the cell a finger lands on, and a
+  // press on them that did nothing would make the cell's own edge a lie.
+  head.addEventListener('click', (event) => {
+    if (event.target === head || event.target.matches('b, .survey-pick-count')) openCell();
+  });
+  closer.addEventListener('mousedown', (event) => event.preventDefault());
+  closer.addEventListener('click', () => closeCell(true));
+  // A press on a row or on the list's scroll must not take the focus out of
+  // the box, or the focusout below would close the list under the pointer
+  // before the click it is part of could land.
+  list.addEventListener('mousedown', (event) => event.preventDefault());
+  // Leaving the cell closes it, the way a field is left: nothing on this
+  // sheet stays open over the drawing once the reader has gone elsewhere.
+  cell.addEventListener('focusout', (event) => {
+    if (!list.hidden && !cell.contains(event.relatedTarget)) closeCell(false);
+  });
+
+  field.addEventListener('input', apply);
+  field.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      pickable()[0]?.focus();
+    } else if (event.key === 'Enter') {
+      // Enter picks only when the filter has left exactly one choice. With
+      // several, nothing on the list says which is first, so picking one would
+      // be a guess about what the reader meant; the focus moves to the list
+      // instead and the next Enter is theirs.
+      event.preventDefault();
+      const left = pickable();
+      if (left.length === 1) left[0].click();
+      else left[0]?.focus();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      if (field.value) {
+        field.value = '';
+        apply();
+      } else {
+        closeCell(true);
+      }
+    }
+  });
+  list.addEventListener('keydown', (event) => {
+    if (printable(event)) {
+      typeInto(event);
+      return;
+    }
+    const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
+    if (!step && event.key !== 'Escape') return;
+    event.preventDefault();
+    if (event.key === 'Escape') {
+      field.focus();
+      return;
+    }
+    const left = pickable();
+    const next = left.indexOf(document.activeElement) + step;
+    if (next < 0) field.focus();
+    else left[Math.min(next, left.length - 1)]?.focus();
+  });
+
+  cell.append(list);
+  return cell;
 }
 
 /** What the chooser is currently holding, so a half-made survey survives a redraw. */
@@ -8304,7 +8516,7 @@ function renderSurveyChoose() {
   host.textContent = '';
   const axes = axisOffers();
   const readings = surveyReadingOffers();
-  const named = (key) => (key ? labelFor(key) : 'Choose a control');
+  const named = (key) => (key ? labelFor(key) : '');
 
   const axisOptions = (other) =>
     axes.map((offer) => ({
@@ -8335,6 +8547,7 @@ function renderSurveyChoose() {
       label: 'Axis X',
       noun: 'controls',
       summary: named(surveyChoice.x),
+      placeholder: 'Choose a control',
       options: axisOptions(surveyChoice.y),
       selected: surveyChoice.x,
       onPick: (key) => {
@@ -8352,6 +8565,7 @@ function renderSurveyChoose() {
       label: 'Axis Y',
       noun: 'controls',
       summary: named(surveyChoice.y),
+      placeholder: 'Choose a control',
       options: axisOptions(surveyChoice.x),
       selected: surveyChoice.y,
       onPick: (key) => {
@@ -8364,9 +8578,8 @@ function renderSurveyChoose() {
     pickList({
       label: 'Reading',
       noun: 'readings',
-      summary: surveyChoice.readings.length
-        ? surveyChoice.readings.map((id) => READING_BY_ID[id].label).join(' + ')
-        : 'Choose a reading',
+      summary: surveyChoice.readings.map((id) => READING_BY_ID[id].label).join(' + '),
+      placeholder: 'Choose a reading',
       options: readings.map((offer) => ({
         id: offer.reading.id,
         label: offer.reading.label,

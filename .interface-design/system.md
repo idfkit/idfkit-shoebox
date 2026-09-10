@@ -739,6 +739,22 @@ than across it.
   cell claiming a choice the reader does not have.
 - **The value wraps rather than ellipsising**: two readings can stand in one
   cell, and a closed cell has to read without being opened.
+- **The value is the box you type in.** Pressing it (or its caption) turns
+  the value line into an entry field in place, lettered exactly as the value
+  was, with no box of its own: the cell's hairline is its edge and the text
+  cursor and caret say it takes typing. It holds the current selection as its
+  placeholder; the whole list
+  stands under it until a word is typed. Closed, the value is a button rather
+  than an input, because two readings can stand in one cell and an input does
+  not wrap. Leaving the cell closes it. It is not a `details`: a text field
+  inside a `summary` has its Space key toggle the disclosure in some engines.
+- **Typing filters.** A letter typed on the closed cell or on a row lands in
+  the box. Every
+  word typed must begin a word of the row's label, note or channel name, in
+  any order; matched anywhere inside a word, a lone `s` finds half the list. A refused row that matches stays, refused. Nothing matching is said in
+  a sentence, not left as an empty box. Enter picks only when one choice is
+  left; Escape clears the filter, then closes the cell. Reopening shows the
+  whole list.
 
 ### Two boxes for a range
 

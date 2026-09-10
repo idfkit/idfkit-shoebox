@@ -4316,7 +4316,7 @@
          survey. The list is held to the same measure for the reason it always
          was: left to size itself it takes the width of its widest refusal,
          which is a whole sentence. */
-      details.survey-pick {
+      .survey-combo {
         /* The row stretches its items, which was invisible while a picker had
            no outline and is not now: opening one drew the closed cells beside
            it 280px tall and empty. Only the cells opt out; the flip and the
@@ -4328,11 +4328,11 @@
         border-radius: var(--r);
         transition: border-color 0.15s ease;
       }
-      details.survey-pick:hover,
-      details.survey-pick[open] { border-color: var(--rule-firm); }
-      /* The ring goes round the cell, not the summary inside it, or it would
+      .survey-combo:hover,
+      .survey-combo.open { border-color: var(--rule-firm); }
+      /* The ring goes round the cell, not the button inside it, or it would
          be drawn across the cell's own hairline. */
-      details.survey-pick:has(> summary:focus-visible) {
+      .survey-combo:has(.survey-pick-open:focus-visible) {
         outline: 2px solid var(--rule-focus);
         outline-offset: 2px;
       }
@@ -4344,30 +4344,30 @@
          the last two columns and the value the first two, so each takes the
          room the other's row leaves free and only the caption and the marker
          size a column. */
-      .survey-pick > summary {
+      .survey-pick-head {
         display: grid;
         grid-template-columns: auto minmax(0, 1fr) auto;
         align-items: baseline;
         gap: 3px 8px;
         padding: 6px 9px 7px;
         cursor: pointer;
-        list-style: none;
         font: 400 11px/1.3 var(--mono);
         font-variant-numeric: tabular-nums;
         color: var(--ink);
       }
+      .survey-combo.open .survey-pick-head {
+        cursor: auto;
+        border-bottom: 1px solid var(--rule);
+      }
 
-      .survey-pick > summary::-webkit-details-marker { display: none; }
-      .survey-pick > summary:focus-visible { outline: none; }
-
-      .survey-pick > summary b,
+      .survey-pick-head b,
       .survey-pick-count {
         font: 500 9.5px/1.3 var(--cond);
         text-transform: uppercase;
         letter-spacing: 0.11em;
         color: var(--ink-3);
       }
-      .survey-pick > summary b { grid-column: 1; }
+      .survey-pick-head b { grid-column: 1; }
       .survey-pick-count {
         grid-column: 2 / 4;
         justify-self: end;
@@ -4375,24 +4375,61 @@
         text-align: right;
       }
 
+      /* Closed, the value and its marker are one button across the row.
+         `all: unset` takes off the page's 168 x 46 button slab, and the hover
+         rule is held above `button:hover:not(:disabled)`, which is one
+         element more specific than a bare class and would paint it solid. */
+      .survey-pick-open,
+      .survey-pick-close {
+        all: unset;
+        cursor: pointer;
+        font: inherit;
+        color: inherit;
+      }
+      .survey-pick-open {
+        grid-column: 1 / 4;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        min-width: 0;
+      }
+      .survey-combo .survey-pick-open:hover,
+      .survey-combo .survey-pick-close:hover { background: none; color: inherit; }
+      .survey-pick-open:focus-visible { outline: none; }
+
       /* Two readings can stand here at once, so the value wraps rather than
          ellipsising: a closed cell has to read without being opened. */
-      .survey-pick-value { grid-column: 1 / 3; min-width: 0; overflow-wrap: anywhere; }
+      .survey-pick-value { min-width: 0; overflow-wrap: anywhere; }
+      .survey-pick-sign { flex: none; color: var(--ink-3); }
 
-      /* The fold marker, silent to a screen reader: `details` already says
-         whether it is expanded, and "plus" read aloud says nothing more. */
-      .survey-pick > summary::after {
-        content: '+' / '';
+      /* Open, the value line is typed into where it stands, lettered exactly
+         as the value was. No box of its own: the cell's hairline is already
+         the field's edge, and the text cursor and the caret are what say it
+         takes typing. The caret is also the focus mark, so no ring. */
+      .survey-pick-field {
+        all: unset;
+        grid-column: 1 / 3;
+        min-width: 0;
+        cursor: text;
+        font: inherit;
+        color: var(--ink);
+      }
+      .survey-pick-field::placeholder { color: var(--ink-ghost); }
+      .survey-pick-close {
         grid-column: 3;
-        align-self: end;
-        color: var(--ink-3);
-      }
-      .survey-pick[open] > summary::after { content: '\2212' / ''; color: var(--redline); }
-
-      .survey-pick[open] > summary {
         color: var(--redline);
-        border-bottom: 1px solid var(--rule);
       }
+      .survey-combo .survey-pick-close:hover { color: var(--redline); }
+      .survey-pick-close:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 1px; }
+
+      /* Every one of these declares `display` (or unsets it), which beats the
+         user agent's `[hidden]` outright, so each needs its twin or the
+         closed value and the open box would both stand. */
+      .survey-pick-open[hidden],
+      .survey-pick-field[hidden],
+      .survey-pick-close[hidden],
+      .survey-options[hidden] { display: none; }
 
       .survey-options {
         display: flex;
@@ -4472,6 +4509,18 @@
         /* The reason is prose and wraps; the list is what scrolls. */
         white-space: normal;
         overflow-wrap: anywhere;
+      }
+
+      /* Both set `display`, which beats the user agent's `[hidden]` outright,
+         so without these twins a filtered-out row would go on standing. */
+      .survey-option[hidden],
+      .survey-options-group[hidden] { display: none; }
+
+      .survey-filter-none {
+        flex: none;
+        margin: 3px 5px;
+        font: 400 11px/1.4 var(--sans);
+        color: var(--ink-3);
       }
 
       .survey-note { margin: 12px 0 0; font-size: 12px; line-height: 1.55; }
