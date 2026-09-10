@@ -1283,10 +1283,16 @@ for (const preset of PRESETS) {
   // desk it can be checked against; over the reader's own it is their business.
   const over = applyPreset(DEFAULT_PARAMETERS, DEFAULT_BYPASS, preset);
   const engaged = (id) => !over.bypass[id];
+  // Both readers `channelState` hands a precondition, and the reason resolved
+  // the way it resolves it: a reason may be a function of the parameters, and
+  // interpolated bare it would letter the function's source into the throw.
+  const patchedOut = (id) => Boolean(over.bypass[id]);
   for (const id of preset.engages) {
     const { requires } = CHANNEL_BY_ID[id];
-    if (requires && !requires.test(over.params, engaged)) {
-      throw new Error(`${preset.id} engages "${id}", which its own settings then block: ${requires.reason}`);
+    if (requires && !requires.test(over.params, engaged, patchedOut)) {
+      const reason =
+        typeof requires.reason === 'function' ? requires.reason(over.params, engaged, patchedOut) : requires.reason;
+      throw new Error(`${preset.id} engages "${id}", which its own settings then block: ${reason}`);
     }
   }
 }

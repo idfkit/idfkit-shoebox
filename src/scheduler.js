@@ -21,6 +21,11 @@
  *                                safe against the pump.
  *   runSample(built)           — the pool; resolves to an engine result
  *   readPoint(job, result, built) — extract every answerable quantity, or null
+ *   refuses(job, value)        — SYNCHRONOUS and pure: the sentence saying why
+ *                                this position is not the building the sweep
+ *                                is about, or null. A refused position is
+ *                                never built, run or cached; it lands as a
+ *                                point carrying the sentence and draws as a gap
  *   contextFor(job)            — SYNCHRONOUS: facts the quantity readers
  *                                needs that the sweep does not change, built
  *                                once for the whole study (see below)
@@ -112,6 +117,7 @@ export function createStudyScheduler({
   buildSample,
   runSample,
   readPoint,
+  refuses = () => null,
   contextFor = () => null,
   paused,
   capacity,
@@ -209,13 +215,17 @@ export function createStudyScheduler({
   const readingOf = (entry, quantity) => entry?.readings?.[quantity] ?? null;
   const drew = (point) => point?.reading != null;
 
-  function land(job, index, sample) {
+  function land(job, index, sample, refused = null) {
     if (!active(job)) return; // cancelled while this sample was in flight
     job.curve[index] = {
       value: job.points[index],
       reading: readingOf(sample, job.quantity),
       ...(sample?.readings ?? {}),
       sample,
+      // Kept apart from a failed run, which is also a point with no reading:
+      // a failure is the engine's and says nothing about the position, where
+      // a refusal is a fact about the position and has a sentence to say.
+      refused,
     };
     job.done += 1;
     onUpdate(job, 'point');
@@ -244,6 +254,14 @@ export function createStudyScheduler({
   function dispatch(job, index) {
     job.started.add(index);
     const value = job.points[index];
+    // Asked before the cache, because nothing about a refused position is worth
+    // a lookup: it is refused for what it is, not for what a run of it said.
+    // Landed synchronously and outside `inFlight`, like a cache hit.
+    const refusal = refuses(job, value);
+    if (refusal) {
+      land(job, index, null, refusal);
+      return;
+    }
     const { identity, entry: hit } = lookup(job, value);
     if (hit) {
       land(job, index, hit);

@@ -1800,7 +1800,7 @@ export function mountConsole({
   * control just walks it along the curve.
    */
   function studyCard(key, study) {
-    const { control } = controlFor(key);
+    const { control, channel } = controlFor(key);
     const card = el('div', 'study-card');
     const head = el('div', 'study-head');
     head.append(el('span', 'study-tag', 'Study'), ...studySubject(key));
@@ -1834,6 +1834,26 @@ export function mountConsole({
           'study-quantity-waiting',
           study.waiting.reason ??
             `Waiting for ${study.waiting.quantity}: ${study.waiting.missing} sample${study.waiting.missing === 1 ? '' : 's'} still need a run.`,
+        ),
+      );
+    }
+
+    // Positions refused for taking this control's own channel out of the path.
+    // They draw as a gap like a failed run, so the gap has to say which kind it
+    // is. One sentence stands for all of them, the one at the refused position
+    // nearest the drawn curve, because that is the edge the reader is looking
+    // at and each position's sentence carries its own numbers.
+    const refused = study.curve.filter((point) => point?.refused);
+    if (refused.length) {
+      const drawn = study.curve.filter((point) => point && !point.refused).map((point) => point.value);
+      const gap = (point) => (drawn.length ? Math.min(...drawn.map((v) => Math.abs(v - point.value))) : 0);
+      const edge = refused.reduce((best, point) => (gap(point) < gap(best) ? point : best));
+      const total = study.progress?.total ?? study.curve.length;
+      card.append(
+        el(
+          'p',
+          'study-refused',
+          `Not drawn at ${refused.length} of ${total} positions, where this control takes the ${channel.name} channel out of the model. At ${control.format(edge.value)}: ${edge.refused}`,
         ),
       );
     }

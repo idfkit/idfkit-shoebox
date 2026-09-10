@@ -11,6 +11,7 @@ import {
   leakageBuildUp,
   modelFacts,
   occupiedFloor,
+  sampleRefusal,
   setAnnual,
   setDesignConditions,
   shadeGeometry,
@@ -6773,6 +6774,12 @@ function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? nul
  * travels is the quantity's own requirement, which is what the throw's own
  * sentence claims to be checking; the rest of the desk is already in the cache
  * key through `deskKey`, so nothing about sample identity is lost.
+ *
+ * The one channel a sample may not lose is the swept control's own, and that
+ * is refused before this is ever consulted: a heating setpoint swept past the
+ * cooling one blocks System, and solved anyway those positions would be the
+ * free-running building drawn on the conditioned building's curve. See
+ * `sampleRefusal`.
  */
 function sampleContentsFor(quantity, snapshot, patch, epw) {
   const state = channelState(snapshot, patch);
@@ -6844,6 +6851,10 @@ studyScheduler = createStudyScheduler({
     return { bucket, exact: JSON.stringify([bucket, carried.serialize()]) };
   },
   buildSample,
+  // Asked of the control's own channel only; see `sampleRefusal` for why
+  // another channel going out under the overlay is still a position.
+  refuses: (job, value) =>
+    sampleRefusal({ ...job.snapshot, [job.key]: value }, job.patch, controlFor(job.key).channel.id),
   runSample: async ({ idf, epw }) => {
     const result = await studyPool.run({ idf, epw });
     // The counter counts engine runs, so cache hits — honestly — do not turn it.
@@ -7376,7 +7387,10 @@ function onStudyUpdate(job, event) {
     desk.setStudy(key, study, { stale: study.restShape !== restShapeKey(key) });
     // A curve the reader asked for says so when it lands; one that healed
     // itself in the background just appears, which is the whole point of it.
-    syncStudyStatus(`Study drawn — ${job.total} ${kind} runs across ${said}.`, {
+    // A refused position reached no engine, so it is not a run.
+    const refused = job.curve.filter((point) => point?.refused).length;
+    const runs = `${job.total - refused} ${kind} runs across ${said}`;
+    syncStudyStatus(`Study drawn — ${refused ? `${runs}, ${refused} positions refused` : runs}.`, {
       quietly: job.origin !== 'manual',
     });
   } else if (event === 'failed') {
@@ -7391,8 +7405,14 @@ function onStudyUpdate(job, event) {
     // A failure is worth saying whichever way the study was asked for — it is
     // the one study outcome that leaves nothing drawn to speak for itself.
     if (!pumping) {
+      // A curve with every position refused never ran at all, and "failed to
+      // solve" would send the reader looking for an engine error that does
+      // not exist. It says what the strip would say instead.
+      const refused = job.curve.find((point) => point?.refused);
       statusEl.className = 'status bad';
-      statusEl.textContent = `The study of ${said} could not be drawn: every sample failed to solve.`;
+      statusEl.textContent = refused && job.curve.every((point) => point?.refused)
+        ? `The study of ${said} could not be drawn: every position takes its own channel out of the model. ${refused.refused}`
+        : `The study of ${said} could not be drawn: every sample failed to solve.`;
     }
   } else if (event === 'cancelled') {
     desk.setStudyProgress(key, null);

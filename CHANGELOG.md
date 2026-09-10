@@ -46,6 +46,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one recreates the same questions and re-solves them locally; links minted
   before this feature continue to open with no studies, as they did before.
 
+### Fixed
+
+- **A heating setpoint above the cooling one no longer kills the run.** The two
+  sliders overlap and could pass each other, which EnergyPlus refuses in the
+  first warmup timestep. The System strip is now blocked, naming both setpoints,
+  until they are level or apart; Heat only and Cool only are unaffected.
+- **A study no longer mixes a building with a system and one without.** A
+  position where the swept control takes its own channel out of the model is
+  refused, drawn as a gap, and the card says why.
+
 ## [0.3.0] - 2026-09-03
 
 ### Added

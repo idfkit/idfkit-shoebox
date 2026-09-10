@@ -1868,6 +1868,25 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   control type. Not valid for this zone.`) that takes the run down before any
   environment starts, whatever the weather. So `applySystem` picks the number
   and the object together, and clears all three setpoint types on every apply.
+- **A heating setpoint above the cooling one is a warmup fatal, and the two
+  faces overlap.** `heatSet` runs 10 to 26 °C and `coolSet` 18 to 34, so the
+  sliders can pass each other, and the dual thermostat then stops the run with
+  `DualSetPointWithDeadBand: Effective heating set-point higher than effective
+  cooling set-point`. It took about one design in ten of an 800-point Latin
+  hypercube over the System-in desk. The System channel's `requires` blocks
+  with both numbers in the sentence; neither slider is clamped to the other.
+  The engine's test is strict and the gate matches it: equal setpoints run with
+  the default desk's warning count, 0.5 K crossed fatals. It does not fire at
+  "Heat only" or "Cool only", where one setpoint reaches no object, and a link
+  carrying a crossed pair decodes to the blocked desk rather than being refused,
+  because the desk can reach it. A study sweeping either setpoint past the
+  other **refuses** those positions rather than solving them with System out:
+  `sampleRefusal` in `model.js` refuses any sample where the swept control takes
+  its *own* channel out of the path, so a curve never joins a conditioned zone
+  to a free-running one. Another channel going out under the overlay (Blinds
+  losing its window as a wall's ratio reaches zero) is still a position and
+  still runs. A refused position is never built or cached, draws as a gap, and
+  the card says which sentence refused it.
 - **An economizer requires a cooling flow limit**, or EnergyPlus raises a severe
   error. Nothing here is autosized, so the limit is computed from zone volume.
 - **A shading device cannot be hung on `WindowMaterial:SimpleGlazingSystem`**,

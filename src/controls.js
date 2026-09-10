@@ -3087,6 +3087,17 @@ const assertSetpointModes = () => {
   }
 };
 
+/**
+ * The availability modes under which one setpoint reaches no object.
+ *
+ * `applySystem` writes a `ThermostatSetpoint:SingleHeating` or
+ * `:SingleCooling` for these and a dual setpoint for every other mode, so they
+ * are the modes where the order of the two setpoints is not a question the
+ * engine asks. The System channel's precondition reads it; the literals match
+ * the ones `applySystem` switches on.
+ */
+const SINGLE_SETPOINT = Object.freeze(new Set(['HeatingOnly', 'CoolingOnly']));
+
 export const CHANNELS = Object.freeze([
   new Channel({
     id: 'massing',
@@ -4210,6 +4221,34 @@ export const CHANNELS = Object.freeze([
     blurb:
       'The master bus. Bypassed, this is the free-running zone the sheet was built on and the plate reads a float. Engaged, an ideal unit holds the setpoints and the plate reads what that costs.',
     bypassed: true,
+    requires: {
+      // The two setpoint faces overlap, 18 to 26 °C, and nothing about either
+      // slider knows where the other stands. A heating setpoint above the
+      // cooling one is a thermostat asked to heat and cool the same air at
+      // once, and the engine stops in the first warmup timestep:
+      //
+      //   ** Severe ** DualSetPointWithDeadBand: Effective heating set-point
+      //                higher than effective cooling set-point - increase
+      //                deadband if using unmixed air model
+      //   ** Fatal  ** Program terminates due to above conditions.
+      //
+      // Measured: about one design in ten of an 800-point Latin hypercube over
+      // the System-in desk died this way. The test is EnergyPlus's own, which
+      // is strict: 22 over 21.5 fatals, 22 and 22 runs clean with the default
+      // desk's warning count, so equal setpoints are a zero deadband and not a
+      // refusal. Neither slider is clamped to the other, which would be the
+      // desk quietly moving a number the reader set.
+      //
+      // Only the dual thermostat carries both numbers. At "Heat only" and
+      // "Cool only" `applySystem` writes a single-setpoint object and the other
+      // setpoint reaches nothing, so a crossed pair there is two numbers and
+      // one of them unread: measured, both run clean at 24 over 19. The
+      // setback cannot cross them either, since it lowers heating and raises
+      // cooling and so only ever widens the occupied band's gap.
+      test: (p) => SINGLE_SETPOINT.has(p.availability) || p.heatSet <= p.coolSet,
+      reason: (p) =>
+        `The heating setpoint, ${p.heatSet.toFixed(1)} °C, is above the cooling setpoint, ${p.coolSet.toFixed(1)} °C, so the unit would be asked to heat and cool the same air at once — bring them level or apart, or make it heat only or cool only.`,
+    },
     meter: new Meter({
       label: 'System air transfer',
       rail: true,

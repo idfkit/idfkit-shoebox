@@ -908,6 +908,29 @@ export function channelState(params, bypass) {
   return state;
 }
 
+/**
+ * Why one sample of a sweep is not the building the sweep is about, or null.
+ *
+ * A study is one control moved on one building, so a position where that
+ * control takes its *own* channel out of the path is refused rather than run.
+ * Sweep the heating setpoint past the cooling one and System is blocked:
+ * solved anyway, those samples are the free-running building, and the curve
+ * would join a conditioned zone to one with no system at all as though one
+ * number had moved. `envLeak` at its Sealed stop under the pressure network is
+ * the same shape — the Air channel blocked by its own control.
+ *
+ * Another channel going out under the overlay is deliberately left alone. Sweep
+ * the only glazed wall's ratio to nothing and Blinds and Daylight lose the
+ * opening they act on; that position is still one building, the one with no
+ * window, and the blind it no longer has would have done nothing to it.
+ *
+ * The sentence is the channel's own `requires` reason at that position, so the
+ * card says exactly what the strip would have said had the desk stood there.
+ */
+export function sampleRefusal(params, bypass, channelId) {
+  return channelState(params, bypass).get(channelId).blocked;
+}
+
 /* ══ the appliers ════════════════════════════════════════════════════════ */
 
 /**
