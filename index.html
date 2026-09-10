@@ -4400,6 +4400,15 @@
          fourth surface. */
       .ground .improving { fill: url(#survey-hatch); stroke: none; }
 
+      /* The survey offer sits under the Study offer on a plan key's legend,
+         in the same 50px column, so it takes the same shape rather than a new
+         one — the difference between them is which drawing they reach, and
+         that is carried by the word and by the armed state, not by chrome. */
+      .plan-read .survey-offer[aria-pressed='true'] {
+        color: var(--redline);
+        border-color: var(--redline);
+      }
+
       .relief-views {
         display: flex;
         flex-wrap: wrap;

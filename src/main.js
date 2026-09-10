@@ -3315,6 +3315,7 @@ desk = mountConsole({
   onReset: () => revert(),
   onStudy: (key) => studyRun(key),
   onStudyQuantity: (id) => chooseStudyQuantity(id),
+  onSurvey: (key) => nameSurveyAxis(key),
   onStudyClear(key) {
     studies.delete(key);
     openStudies.delete(key);
@@ -7802,7 +7803,19 @@ function openSurvey({ xKey, yKey, readingIds, extents = {} }) {
   cancelSurveyJobs('moved');
   survey = cut;
   renderSurvey();
-  if (autoOn() && !linkAttachPending) queueSurvey(survey, { grid: COARSE_GRID });
+  // Gated on the same switch the studies are, and it says which of the three
+  // it is waiting on rather than standing there apparently inert (FR-014). A
+  // sample built during a link attach would fatal on zero environments, and
+  // the button gate does not cover this path.
+  const waiting = !autoOn()
+    ? 'Auto-solve is off, so nothing is measured yet. Turn it on, or run the sheet by hand.'
+    : linkAttachPending
+      ? 'A link is still attaching. The ground is measured as soon as its station lands.'
+      : stationAttaching
+        ? 'A station is still attaching. The ground is measured against the new climate once it lands.'
+        : null;
+  if (waiting) surveySay(waiting);
+  else queueSurvey(survey, { grid: COARSE_GRID });
   updatePermalink();
 }
 
@@ -7942,6 +7955,7 @@ function renderSurveyChoose() {
       selected: surveyChoice.x,
       onPick: (key) => {
         surveyChoice = { ...surveyChoice, x: key };
+        syncSurveyAxes();
         cutFromChoice();
       },
     }),
@@ -7952,6 +7966,7 @@ function renderSurveyChoose() {
       selected: surveyChoice.y,
       onPick: (key) => {
         surveyChoice = { ...surveyChoice, y: key };
+        syncSurveyAxes();
         cutFromChoice();
       },
     }),
@@ -7986,6 +8001,38 @@ function renderSurveyChoose() {
     }),
   );
 }
+
+/**
+ * Name one axis from a plan key's legend, and cut when both are named.
+ *
+ * The console's offer fills the chooser rather than cutting a ground on its
+ * own, because a ground needs two controls and the second one — with the
+ * extent and the reading — is chosen on E-02. Pressing an armed offer takes
+ * that axis off again, which is what makes the button a switch rather than a
+ * one-way trigger.
+ */
+function nameSurveyAxis(key) {
+  const { x, y } = surveyChoice;
+  if (x === key) surveyChoice = { ...surveyChoice, x: null };
+  else if (y === key) surveyChoice = { ...surveyChoice, y: null };
+  else if (!x) surveyChoice = { ...surveyChoice, x: key };
+  else if (!y) surveyChoice = { ...surveyChoice, y: key };
+  // Both taken: the newest press replaces the older axis, which is the same
+  // rule the reading chooser follows. Refusing here would be the interface
+  // arguing with a gesture it understood perfectly well.
+  else surveyChoice = { ...surveyChoice, x: y, y: key };
+  syncSurveyAxes();
+  cutFromChoice();
+  if (surveyChoice.x && surveyChoice.y && !surveyChoice.readings.length) {
+    // Two axes and nothing to read them for. Say so where the reader is
+    // looking, rather than leaving E-02 apparently inert.
+    surveySay('Two axes named. Choose a reading on E-02 and the ground is cut.');
+    $('survey').scrollIntoView({ block: 'start', behavior: 'auto' });
+  }
+}
+
+const syncSurveyAxes = () =>
+  desk?.setSurveyAxes([surveyChoice.x, surveyChoice.y].filter(Boolean));
 
 /** Cut a ground the moment the chooser holds enough to cut one. */
 function cutFromChoice() {
@@ -8765,6 +8812,7 @@ $('survey-fall').addEventListener('click', () => letItFall());
 $('survey-clear').addEventListener('click', () => {
   surveyChoice = { x: null, y: null, readings: [] };
   surveyRefused = null;
+  syncSurveyAxes();
   closeSurvey();
 });
 

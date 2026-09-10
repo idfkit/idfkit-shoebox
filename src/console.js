@@ -80,6 +80,7 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
  */
 export function mountConsole({
   host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear, onStudyQuantity, onPin,
+  onSurvey,
 }) {
   const strips = new Map(); // channel id -> { redraw(), meter, patch, solo }
   const faces = new Map(); // parameter key -> redraw for that control
@@ -89,6 +90,17 @@ export function mountConsole({
   const rows = new Map();
   const cards = new Map(); // parameter key -> { node, kind, study, syncTick }
   const studyButtons = new Map(); // parameter key -> that scale's Study button
+  // parameter key -> that wall's Survey button, on the plan keys only. A
+  // survey is cut along two controls, so an offer under every one of the
+  // ninety sweepable faces would be ninety more tab stops asking half a
+  // question. The plan keys are where it belongs instead: four walls of one
+  // decision is exactly the shape a reader wants a second axis for, and the
+  // legend already carries a per-wall offer and a per-wall refusal.
+  const surveyButtons = new Map();
+  // Which two keys the survey is currently cut along, so the offers can say
+  // which is armed. Never remembered anywhere else: this is a reflection of
+  // main.js's own state, pushed in, exactly as `engaged` is.
+  let surveyAxes = [];
   // parameter key -> the line under its face that letters what the model was
   // given for it. See `setDerived`.
   const derivedLines = new Map();
@@ -359,6 +371,58 @@ export function mountConsole({
     btn.addEventListener('click', () => onStudy?.(key));
     studyButtons.set(key, btn);
     return btn;
+  }
+
+  /**
+   * The survey offer on one wall of a plan key.
+   *
+   * The same shape as the Study offer beside it and refused by the same two
+   * sentences — the channel's when it is out of the path, the wall's own when
+   * that wall's number reaches no object — because a survey axis and a study
+   * subject are the same question about a control and answering them with two
+   * different sentences is how the two surfaces come to disagree about which
+   * controls can be swept (FR-039).
+   *
+   * Pressing it names an axis rather than cutting a ground: a survey needs
+   * two, and the second is chosen on E-02 where the extent and the reading are
+   * chosen too. The button says which of the two it would fill.
+   */
+  function surveyOffer(key, name, control, channel) {
+    if (channel?.prices) return null;
+    const btn = el('button', 'study survey-offer', 'Survey');
+    btn.type = 'button';
+    btn.addEventListener('click', () => onSurvey?.(key));
+    surveyButtons.set(key, btn);
+    return btn;
+  }
+
+  function syncSurveyOffer(btn, channel, { idle, unreached = null, key }) {
+    if (!btn) return;
+    const name = labelFor(key);
+    const out = !engaged.has(channel.id);
+    const disabled = !sweepGate.ok || out || idle;
+    const at = surveyAxes.indexOf(key);
+    const title = !sweepGate.ok
+      ? sweepGate.reason
+      : out
+        ? 'This path is out of the model — patch it in to survey it.'
+        : idle
+          ? unreached ?? 'Set, but not reaching the model — there is nothing to survey along.'
+          : at === 0
+            ? `${name} is axis X of the survey. Press to take it off.`
+            : at === 1
+              ? `${name} is axis Y of the survey. Press to take it off.`
+              : `Cut the design space along ${name}: it becomes an axis of the survey on E-02, where the ` +
+                'second axis and the reading are chosen.';
+    if (btn.disabled !== disabled) btn.disabled = disabled;
+    if (btn.title !== title) btn.title = title;
+    // In words as well as in state, because `aria-pressed` alone is a fact
+    // about a control and the reader wants a fact about the drawing.
+    const pressed = String(at !== -1);
+    if (btn.getAttribute('aria-pressed') !== pressed) btn.setAttribute('aria-pressed', pressed);
+    const label = at === -1 ? 'Survey' : at === 0 ? 'Axis X' : 'Axis Y';
+    if (btn.textContent !== label) btn.textContent = label;
+    if (btn.getAttribute('aria-label') !== title) btn.setAttribute('aria-label', title);
   }
 
   /**
@@ -833,8 +897,10 @@ export function mountConsole({
       if (stand) item.append(stand);
       const studyBtn = studyOffer(side.key, labelFor(side.key), control, channel);
       if (studyBtn) item.append(studyBtn);
+      const surveyBtn = surveyOffer(side.key, labelFor(side.key), control, channel);
+      if (surveyBtn) item.append(surveyBtn);
       legend.append(item);
-      return { side, item, out, stand, studyBtn };
+      return { side, item, out, stand, studyBtn, surveyBtn };
     });
     row.append(legend);
     if (control.note) row.append(el('p', 'ctl-note', control.note));
@@ -892,6 +958,11 @@ export function mountConsole({
         syncStudyOffer(read.studyBtn, channel, {
           idle: spent || !reaches,
           unreached: reaches ? null : read.side.reasonFor(params),
+        });
+        syncSurveyOffer(read.surveyBtn, channel, {
+          idle: spent || !reaches,
+          unreached: reaches ? null : read.side.reasonFor(params),
+          key: read.side.key,
         });
       }
       row.classList.toggle('idle', spent);
@@ -2398,6 +2469,27 @@ export function mountConsole({
       if (!moved) return;
       if (indexing) window.scrollBy(0, moved);
       else stripHost.scrollTop += moved;
+    },
+
+    /**
+     * Which two controls the ground is currently cut along.
+     *
+     * Pushed in rather than held: there is no remembered survey in the
+     * console, exactly as there is no remembered standard, and for the same
+     * reason — a flag here would be a second copy of a fact `main.js` already
+     * holds, free to go stale the moment a station change takes the ground
+     * down.
+     */
+    setSurveyAxes(keys) {
+      surveyAxes = [...keys];
+      for (const [key, btn] of surveyButtons) {
+        const { channel, control, side } = controlFor(key);
+        syncSurveyOffer(btn, channel, {
+          idle: Boolean(control.inert?.(params)) || (side ? !side.reaches(params) : false),
+          unreached: side && !side.reaches(params) ? side.reasonFor(params) : null,
+          key,
+        });
+      }
     },
 
     /** Remove every study card when the reader clears the studies themselves. */

@@ -869,11 +869,31 @@ export function improvingRegion(survey, stance = survey.stanceAt) {
 export function freeExchange(survey, stance = survey.stanceAt, reading = survey.readings[0]) {
   if (!stance) return { refusal: 'The stance is outside the extent this ground was cut over.' };
   const { ix, iy } = stance;
+  // The 3 x 3 has to be *small* as well as complete, and this is the gate the
+  // first version was missing. Every term below is a finite difference across
+  // two axis steps, so on a five-position axis the "level line at the stance"
+  // is stated from readings half the design space apart — an answer to four
+  // significant figures about a line that is nowhere near level, which is
+  // false precision, and false precision on this sheet is worse than an em
+  // dash because the reader has no way to see it. A third of the extent is
+  // where a nine-position axis (a quarter) clears and a five-position one (a
+  // half) does not, which is the distinction that actually matters.
+  const spans = (axis, at) =>
+    (axis.positions[at + 1] - axis.positions[at - 1]) / (axis.positions[axis.count - 1] - axis.positions[0]);
   if (ix < 1 || iy < 1 || ix >= survey.x.count - 1 || iy >= survey.y.count - 1) {
     return {
       refusal:
         'The stance is on the edge of the ground, so there is no measured neighbour on one side to take a ' +
         'gradient against. Widen the extent, or move the desk in from the edge.',
+    };
+  }
+  if (spans(survey.x, ix) > 1 / 3 || spans(survey.y, iy) > 1 / 3) {
+    return {
+      refusal:
+        'The ground is too coarse around the stance to state an exchange: the nearest measured neighbours ' +
+        'are more than a third of the extent away, and a level line drawn between them would be stated to ' +
+        'four figures about a line that is nowhere near level. Let the ground refine, or narrow the extent ' +
+        'so the same runs cover less of it.',
     };
   }
   const value = (dx, dy) => {
@@ -928,6 +948,29 @@ export function freeExchange(survey, stance = survey.stanceAt, reading = survey.
   const fyy = (n - 2 * c + s) / (hy1 * hy1);
   const fxy = (ne - nw - se + sw) / (4 * hx1 * hy1);
   const tolerance = Math.abs(0.5 * (fxx * dx * dx + 2 * fxy * dx * dy + fyy * dy * dy));
+  // The second gate: does the exchange stay on the ground it was measured from?
+  //
+  // A comparison of the second-order term against the first-order one was
+  // tried here first and is not well founded — along the level line the
+  // first-order change is exactly zero by construction, which is the whole
+  // point of it, so there is nothing for the curvature to be large *against*.
+  // What actually goes wrong on a shoulder is visible in the answer itself:
+  // where the reading barely moves along Y, holding it still costs a step of Y
+  // longer than the extent contains. Measured on a coarse ground over a
+  // `tanh` shoulder, one step of glazing "buys" 24.6 m²K/W of wall resistance
+  // across an axis that runs 0.2 to 10 — an exchange nobody can make, stated
+  // to three figures. So the step is required to land on the ground it was
+  // read off.
+  const reach = survey.y.positions[survey.y.count - 1] - survey.y.positions[0];
+  if (Math.abs(dy) > Math.abs(reach)) {
+    return {
+      refusal:
+        `Holding ${reading.label.toLowerCase()} still over one step of ` +
+        `${survey.x.control.label.toLowerCase()} would take ` +
+        `${survey.y.control.label.toLowerCase()} further than this ground extends, so there is no exchange ` +
+        'here that the survey has measured. Widen the extent on that axis, or let the ground refine.',
+    };
+  }
   return { dx, dy, tolerance, flat: false, refusal: null, reading, fx, fy };
 }
 

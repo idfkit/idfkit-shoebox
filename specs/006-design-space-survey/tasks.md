@@ -82,7 +82,7 @@ measured point moves the desk to exactly that design.
 - [X] T013 [P] [US1] Implement `latticeOf(survey)` in `src/survey.js`, returning a `Float64Array` of readings and a parallel `Uint8Array` validity mask, as the one representation both drawings consume
 - [X] T014 [P] [US1] Implement `contoursOf(lattice, levels)` in `src/survey.js` by marching squares, resolving saddle cases 5 and 10 consistently by the cell mean, emitting nothing for a cell whose mask is not fully set
 - [X] T015 [US1] Implement `meshOf(lattice)` in `src/survey.js`, emitting an indexed triangle cell only where all four corners are measured, so a gap is a hole in the geometry rather than a styled region (FR-016, FR-018h)
-- [ ] T016 [US1] Write `specs/006-design-space-survey/verify/survey-invariants.mjs` covering gate 1 of quickstart.md: no figure originates outside a `SpotHeight` over at least 50 points, no triangle touches a gap, coverage sums, and every contour segment lies inside an emitted cell (SC-003)
+- [X] T016 [US1] Write `specs/006-design-space-survey/verify/survey-invariants.mjs` covering gate 1 of quickstart.md: no figure originates outside a `SpotHeight` over at least 50 points, no triangle touches a gap, coverage sums, and every contour segment lies inside an emitted cell (SC-003)
 - [X] T017 [US1] Add E-02's markup to `index.html`: the sheet, its title block cell, the plan host, the relief host, the coverage line and the schedule of spot heights
 - [X] T018 [US1] Add E-02's inline styles to `index.html`, declaring the new layout threshold once as a custom property to be read back by script, considering height as well as width (FR-050)
 - [X] T019 [US1] Draw the contoured plan as inline SVG in `src/main.js`: axes lettered with the controls' own names and stops, contours with values at their turns, spot heights as tick marks carrying their numbers in the mono face (FR-018a, FR-020)
@@ -101,9 +101,9 @@ measured point moves the desk to exactly that design.
 - [X] T032 [US1] Implement the refinement priority in `src/survey.js`, preferring steep ground and ground near the reader over ground already flat and well described (FR-010)
 - [X] T033 [US1] Implement standing on a measured point in `src/main.js`, routing through the same commit path a slider gesture uses so the drawing, quantities, bill, schedule, description, studies and link all follow (FR-032), and refusing any position that was not measured (FR-033)
 - [X] T034 [US1] Leave the address bar alone during the gesture and update it on release in `src/main.js`, by the rule every gesture on this sheet follows (FR-034)
-- [ ] T035 [US1] Add the survey's entry point and its per-axis offers to the plan-key legends in `src/console.js`, refusing an axis with that wall's or that channel's own sentence rather than a generic one (FR-039, US1 scenario 7)
-- [ ] T036 [US1] Gate survey work on the auto-solve control and on any pending link or station attach in `src/main.js`, saying which it is waiting on (FR-014), and pause on gesture, resuming on release (FR-013)
-- [ ] T037 [US1] Write `specs/006-design-space-survey/verify/survey-ground.mjs` covering gate 2 of quickstart.md: every spot height traces to a run, 20 injected failures each appear as a gap with a reason and none is filled, and an all-failed survey states that it measured nothing (SC-010)
+- [X] T035 [US1] Add the survey's entry point and its per-axis offers to the plan-key legends in `src/console.js`, refusing an axis with that wall's or that channel's own sentence rather than a generic one (FR-039, US1 scenario 7)
+- [X] T036 [US1] Gate survey work on the auto-solve control and on any pending link or station attach in `src/main.js`, saying which it is waiting on (FR-014), and pause on gesture, resuming on release (FR-013)
+- [X] T037 [US1] Write `specs/006-design-space-survey/verify/survey-ground.mjs` covering gate 2 of quickstart.md: every spot height traces to a run, 20 injected failures each appear as a gap with a reason and none is filled, and an all-failed survey states that it measured nothing (SC-010)
 
 **Checkpoint**: US1 is fully functional. The MVP stops here and is worth shipping.
 
