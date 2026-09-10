@@ -70,6 +70,7 @@ import {
   meshOf,
   refineOrder,
   rowsFor,
+  SpotHeight,
   TraverseStop,
 } from './survey.js';
 import { createRelief } from './relief.js';
@@ -2362,16 +2363,19 @@ function commit(key, value, done = false) {
       desk?.sync();
     }
     applyGeometry();
-    // One stop on the traverse per design the desk actually stands on
-    // (FR-038). Recorded here, in the one funnel every control comes through,
-    // rather than at the survey's own gestures: the reader walks the design
-    // space with the sliders as often as with the ground, and a traverse that
-    // only knew about the ground would be a record of one instrument.
-    if (!priced) recordTraverse();
     if (priced) reprice();
     else if (continuous()) pump();
   }
   if (done) {
+    // One stop on the traverse per design the desk actually came to rest on
+    // (FR-038), and **at the end of the gesture rather than inside it**.
+    // Standing on a measured point is two commits, one per axis, and recording
+    // each would put the half-moved desk between them on the traverse — a
+    // design nobody chose and, on a plan key, one that is not even on the
+    // ground. Recorded in the one funnel every control comes through rather
+    // than at the survey's own gestures, because the reader walks the design
+    // space with the sliders as often as with the drawing.
+    if (!PRICED_KEYS.has(key)) recordTraverse();
     endGesture();
     desk?.settle();
     if (autoOn()) pump();
@@ -3903,7 +3907,7 @@ async function attach(row, pick, sizing) {
   // whose readings are no longer true of anything is not a history worth
   // keeping (FR-052). The chooser's own selection stays: which two controls
   // the reader is interested in is not a property of the weather.
-  closeSurvey();
+  closeSurvey({ forgetTraverse: true });
   // The comfort line goes with them, and for the same reason: it is 365 daily
   // means of one city's year, and Bavaria's May is not Denver's. Cleared here
   // rather than left to fall out of the identity check in `runningMeanFor`,
@@ -7741,8 +7745,11 @@ function absorbSurveyRow(job) {
   for (let ix = 0; ix < job.curve.length; ix += 1) {
     const point = job.curve[ix];
     if (!point) continue;
+    // A position already carrying a run is left alone; a gap is re-landed, so
+    // a densify that finally reaches a position the coarse pass failed on
+    // records the run rather than the old refusal.
     const already = survey.at(ix, iy);
-    if (already && !(already instanceof Object && 'reason' in already)) continue;
+    if (already instanceof SpotHeight) continue;
     landPoint(survey, {
       ix,
       iy,
@@ -7787,7 +7794,11 @@ function onSurveyUpdate(job, event) {
   }
   if (event === 'cancelled') {
     surveyRows.delete(job.id);
-    if (job.cancelled === 'shed') surveyStop = surveyRestShape(survey ?? job, params, patching());
+    // A global Set-aside suppresses the ground the way a per-study Stop does,
+    // or the next idle refine would quietly restart the work just shed. Only
+    // where there is still a ground to suppress: a cancel that arrives after
+    // `closeSurvey` has nothing to take a rest shape of.
+    if (job.cancelled === 'shed' && survey) surveyStop = surveyRestShape(survey);
     if (!surveyRows.size) surveyPass = null;
     renderSurvey();
     return true;
@@ -7937,12 +7948,31 @@ function cancelSurveyJobs(reason) {
   surveyPass = null;
 }
 
-/** Take the ground down. Touches no parameter: a survey never moved one. */
-function closeSurvey() {
+/**
+ * Take the ground down. Touches no parameter: a survey never moved one.
+ *
+ * **The traverse is kept unless the caller says otherwise**, and the
+ * distinction is the same one `clearAllStudies` draws from Revert all. Taking
+ * a drawing down is not a claim that the designs the reader stood on were
+ * wrong, and the traverse is a record of the desk rather than of the survey —
+ * it is written by `commit`, from every control on the sheet. Only a station
+ * change invalidates it, because then every reading taken at every stop is of
+ * another city's weather (FR-052).
+ *
+ * The pull goes with the ground either way: its ranking is taken at a stance
+ * against a reading the ground was cut for, and it is drawn inside E-02.
+ */
+function closeSurvey({ forgetTraverse = false } = {}) {
   cancelSurveyJobs('cleared');
+  for (const id of [...pullJobs.keys()]) studyScheduler?.cancel(id, 'cleared');
+  pullJobs.clear();
+  pullLanded.clear();
+  pullFinished.clear();
+  pullStance = null;
   survey = null;
   surveyStop = null;
-  traverse.length = 0;
+  groundCursor = null;
+  if (forgetTraverse) traverse.length = 0;
   renderSurvey();
   updatePermalink();
 }
@@ -9145,11 +9175,21 @@ function fallOnce() {
   );
   standOn(survey, next);
   surveySay(`Step ${falling.steps}: ${falling.said[falling.said.length - 1]}.`);
-  // One step per frame, so each intermediate desk is actually drawn. A loop
-  // would move the desk to the hollow with nothing in between ever seen, which
-  // is the whole difference between letting a design fall and computing where
-  // it lands.
-  requestAnimationFrame(() => fallOnce());
+  // A quarter second per step, and neither of the two obvious alternatives.
+  //
+  // A loop would move the desk to the hollow with nothing in between ever
+  // seen, which is the whole difference between letting a design fall and
+  // computing where it lands. `requestAnimationFrame` was the first attempt
+  // and is worse than it sounds: sixty designs a second is not watching a
+  // descent, every one of them commits and re-solves E-01, and a backgrounded
+  // tab stops delivering frames at all — measured, the descent took one step
+  // and stalled.
+  //
+  // This is not an animation and it is not disabled under reduced motion
+  // (FR-023): each step is a discrete state the reader asked for and can read,
+  // and the alternative — arriving at the hollow with no steps — is the thing
+  // that loses information rather than the thing that spares it.
+  setTimeout(() => fallOnce(), 250);
 }
 
 /**
