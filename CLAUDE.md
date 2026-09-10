@@ -1989,7 +1989,18 @@ control the channel owns — 53 rows repeating one paragraph. The channel is a
 group heading now and states it once, which leaves **three** per-entry reasons,
 the ones that genuinely differ within a group.
 
-**Transfer:** 22,588 bytes of brotli added against SC-012's 60 KB ceiling.
+**Flipping the axes costs no engine runs**, and that is a property of the
+arrangement rather than an optimisation worth being pleased about. A sample's
+cache identity is the whole desk, so the design at glazing 0.3 against wall
+resistance 5 is the same design whichever of the two the rows are cut along:
+every point of a flipped ground is the same desk transposed and comes back out
+of the cache. Measured, a flipped 12 x 12 spends **0 runs of 144**. It is also
+why the flip re-cuts at the density the ground already had rather than at the
+coarse pass — `surveyGrid` carries that — since dropping a measured 12 x 12 to
+7 x 7 and climbing back out would be free in runs and expensive in what the
+reader is looking at, for no reason but a default argument.
+
+**Transfer:** 22,857 bytes of brotli added against SC-012's 60 KB ceiling.
 `src/model.js` is untouched and no new `Output:Variable` is requested anywhere,
 which discharges the output-budget requirement outright.
 

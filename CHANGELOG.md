@@ -34,7 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   numbers.
 
   Each axis can be narrowed to the range worth looking at, and the ground is
-  re-cut over it — the runs already inside the new extent are reused. Every
+  re-cut over it — the runs already inside the new extent are reused. The two
+  axes can be swapped with one press, which costs no simulation at all: a
+  flipped ground is the same designs transposed. Every
   design the desk has stood on this session is listed with the readings taken
   at it and can be restored exactly, whether it was reached from the survey or
   with the sliders.

@@ -4268,6 +4268,14 @@
 
       .survey-pick { min-width: 0; }
 
+      /* Between the two pickers it swaps, aligned with their values rather
+         than their heads — it acts on the pair, not on either one. */
+      .survey-flip {
+        display: flex;
+        align-items: flex-end;
+        padding-bottom: 1px;
+      }
+
       /* The extent boxes sit beside the axis they narrow, taking the chooser's
          own head style so the pair reads as one control: which control, and
          over what range. Not a disclosure — there is nothing to open. */

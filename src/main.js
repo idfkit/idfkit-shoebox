@@ -2123,6 +2123,10 @@ let surveyStop = null;
 // Held true across the enqueue loop, so `paused()` reports the queue shut for
 // exactly as long as a survey's rows are going in together.
 let surveyEnqueueing = false;
+// The count the current ground was asked for, so a re-cut that is not meant to
+// lose detail — flipping the axes — can come back at the density it had rather
+// than dropping to the coarse pass and climbing out of it again.
+let surveyGrid = COARSE_GRID;
 // Why the last survey could not be cut, standing in place of the ground.
 let surveyRefused = null;
 // Where the keyboard is standing on the ground, as lattice indices.
@@ -7901,6 +7905,7 @@ function refineSurvey() {
     });
   }
   survey = refined;
+  surveyGrid = FINE_GRID;
   queueSurvey(survey, { grid: FINE_GRID });
   renderSurvey();
 }
@@ -7913,7 +7918,7 @@ function refineSurvey() {
  * shapes, a reading this desk cannot answer. `axisFor` and `makeSurvey` throw
  * for the first two and the offer roster answers the third.
  */
-function openSurvey({ xKey, yKey, readingIds, extents = {} }) {
+function openSurvey({ xKey, yKey, readingIds, extents = {}, count = COARSE_GRID }) {
   if (!studyScheduler) return;
   const stance = { ...params };
   const patch = patching();
@@ -7923,8 +7928,8 @@ function openSurvey({ xKey, yKey, readingIds, extents = {} }) {
     return reading;
   });
   const cut = makeSurvey({
-    x: axisFor(xKey, { ...(extents[xKey] ?? {}), count: COARSE_GRID, stance }),
-    y: axisFor(yKey, { ...(extents[yKey] ?? {}), count: COARSE_GRID, stance }),
+    x: axisFor(xKey, { ...(extents[xKey] ?? {}), count, stance }),
+    y: axisFor(yKey, { ...(extents[yKey] ?? {}), count, stance }),
     readings,
     stance,
     patch,
@@ -7955,7 +7960,10 @@ function openSurvey({ xKey, yKey, readingIds, extents = {} }) {
         ? 'A station is still attaching. The ground is measured against the new climate once it lands.'
         : null;
   if (waiting) surveySay(waiting);
-  else queueSurvey(survey, { grid: COARSE_GRID });
+  else {
+    surveyGrid = count;
+    queueSurvey(survey, { grid: count });
+  }
   updatePermalink();
 }
 
@@ -8158,6 +8166,33 @@ const withoutExtent = (choice, which) => {
 };
 
 /**
+ * Swap the two axes, between the two pickers it swaps.
+ *
+ * Here rather than up in the head's act row because it is a gesture *about*
+ * these two controls, and the head's acts — Let it fall, Clear the survey —
+ * are about the ground as a whole. It sits where the reader's eye already is
+ * when they decide the ground is the wrong way round.
+ *
+ * The label names what it does rather than what it is: a bare glyph would be
+ * the unnamed-verb problem the design system writes about, and the same
+ * sentence rides the `title` so it is read aloud as well as seen.
+ */
+function flipButton() {
+  const wrap = el('div', 'survey-pick survey-flip');
+  const { x, y } = surveyChoice;
+  if (!x || !y) return wrap;
+  const button = el('button', 'link', 'Flip axes');
+  button.type = 'button';
+  button.title =
+    `Cut the same ground the other way round: ${labelFor(y)} across and ${labelFor(x)} up. ` +
+    'Every position has already been run, so this costs no simulation.';
+  button.setAttribute('aria-label', button.title);
+  button.addEventListener('click', () => flipSurveyAxes());
+  wrap.append(button);
+  return wrap;
+}
+
+/**
  * The two boxes that narrow one axis (FR-006).
  *
  * `axisFor`, `openSurvey` and the `sv` codec have carried `from` and `to`
@@ -8294,6 +8329,7 @@ function renderSurveyChoose() {
       },
     }),
     extentField('x'),
+    flipButton(),
     pickList({
       label: 'Axis Y',
       summary: named(surveyChoice.y),
@@ -8373,13 +8409,40 @@ const syncSurveyAxes = () =>
   desk?.setSurveyAxes([surveyChoice.x, surveyChoice.y].filter(Boolean));
 
 /** Cut a ground the moment the chooser holds enough to cut one. */
-function cutFromChoice() {
+function cutFromChoice({ count = COARSE_GRID } = {}) {
   const { x, y, readings, extents } = surveyChoice;
   if (!x || !y || !readings.length) {
     renderSurvey();
     return;
   }
-  openSurvey({ xKey: x, yKey: y, readingIds: readings, extents: extents ?? {} });
+  openSurvey({ xKey: x, yKey: y, readingIds: readings, extents: extents ?? {}, count });
+}
+
+/**
+ * Turn the ground ninety degrees.
+ *
+ * **It costs no engine runs at all**, and that is a property of the
+ * arrangement rather than an optimisation. A sample's cache identity is the
+ * whole desk — `deskKey({ ...snapshot, [key]: value }, patch)` — so the design
+ * at glazing 0.3 against wall resistance 5 is the same design whichever of the
+ * two the rows are cut along. Every measured point of a flipped ground is the
+ * same desk transposed, so the whole thing comes back out of the cache the
+ * scheduler already holds.
+ *
+ * Which is also why the flip re-cuts at the density the ground already had
+ * rather than at the coarse pass: dropping a measured 12 x 12 to 7 x 7 and
+ * climbing back out of it would be free in runs and expensive in what the
+ * reader is looking at, for no reason but the default argument.
+ *
+ * The extents need no swapping — they are keyed by control, not by axis, which
+ * is what makes a narrowed extent survive this and a change of axis drop it.
+ */
+function flipSurveyAxes() {
+  const { x, y } = surveyChoice;
+  if (!x || !y) return;
+  surveyChoice = { ...surveyChoice, x: y, y: x };
+  syncSurveyAxes();
+  cutFromChoice({ count: surveyGrid });
 }
 
 /* The plan. Inline SVG, so every contour and every tick is a real node the
