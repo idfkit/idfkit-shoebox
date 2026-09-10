@@ -1152,6 +1152,7 @@
       }
       .schedule .base,
       .bill .base,
+      .survey .base,
       .register .base {
         text-transform: none;
         letter-spacing: 0;
@@ -1160,6 +1161,7 @@
         margin-left: 10px;
       }
       .schedule .base:empty,
+      .survey .base:empty,
       .bill .base:empty,
       .register .base:empty { display: none; }
       /* the schedule changes subject: a firmer rule and a breath of space */
@@ -4016,15 +4018,21 @@
          outright. ────────────────────────────────────────────────── */
       @media (max-width: 620px) {
         .schedule thead,
-        .bill thead { display: none; }
+        .bill thead,
+        #pull-table thead,
+        #traverse-table thead { display: none; }
 
         .schedule tbody,
-        .bill tbody { display: block; }
+        .bill tbody,
+        #pull-table tbody,
+        #traverse-table tbody { display: block; }
 
         /* Two tracks: the figures down the first, whatever qualifies them —
            a change against the scheme, a unit — down the second. */
         .schedule tr,
-        .bill tr {
+        .bill tr,
+        #pull-table tr,
+        #traverse-table tr {
           display: grid;
           grid-template-columns: minmax(0, 1fr) auto;
           align-items: baseline;
@@ -4056,6 +4064,8 @@
 
         /* A figure and the head it stood under, on one line. */
         .schedule td[data-head],
+        #pull-table td[data-head],
+        #traverse-table td[data-head],
         .bill td[data-head] {
           display: flex;
           flex-direction: column;
@@ -4068,18 +4078,32 @@
           text-align: right;
         }
         .schedule td[data-head] { grid-column: 1; }
-        .schedule td[data-head] {
+        .schedule td[data-head],
+        #pull-table td[data-head],
+        #traverse-table td[data-head] {
           flex-direction: row;
           align-items: baseline;
           justify-content: space-between;
           gap: 10px;
         }
+        /* The pull is one column of blocks, not two: its first cell is a
+           control's name and every cell after it a figure about that control,
+           so a second track would put the effect beside the name it belongs to
+           rather than under it. */
+        #pull-table td[data-head],
+        #traverse-table td[data-head] { grid-column: 1 / -1; }
+        #pull-table td.num { text-align: right; }
+        /* The bar keeps its width in a folded row, or it collapses to nothing
+           in a flex line beside its own head. */
+        #pull-table .pull-bar { flex: 1 1 auto; }
         /* The sheet's one convention for "the column head, beside the figure"
            once a row has folded into a block. The two schedules and the
            scoreboard's qualifications all fold at this width and all letter
            the head the same way; only the box differs, which is what the
            two rules underneath set. */
         .schedule td[data-head]::before,
+        #pull-table td[data-head]::before,
+        #traverse-table td[data-head]::before,
         .bill td[data-head]::before,
         .qualifications dd[data-head]::before {
           content: attr(data-head);
@@ -4188,6 +4212,7 @@
           border-top: 0;
         }
         .qualifications > dt:first-child + dd { padding-top: 4px; }
+
         /* A block on its own line rather than a flex item beside the figure:
            a qualification's `because` is a paragraph, not a cell. */
         .qualifications dd[data-head]::before {
@@ -4195,6 +4220,726 @@
           margin-bottom: 3px;
         }
       }
+      /* ══ E-02: the design space survey ══════════════════════════════════
+
+         A second drawing on the same board, so it takes the sheet's own
+         vocabulary and adds nothing: ink levels only, hairline rules, the
+         armed square for the stance, `--redline` for what is live. The
+         reading is **not** a signed physical quantity — a demand intensity
+         has no direction, only a magnitude — so `--cold` / `--warm` are not
+         used here at all and the ground is graphite. That is the same
+         argument that keeps the bill uncoloured, one drawing along.
+
+         `--survey`, below, is this feature's one layout threshold. It answers
+         a different question from `--index` and from the schedules' 620px: not
+         "can the window hold a column" and not "can a table keep its columns",
+         but "can the plan and the relief stand side by side". They are two
+         drawings of one ground, each wanting its own square, so they part
+         company some way above the width at which a table does.
+
+         Unlike `--index` and `--fold` it is **not** read back by script, and
+         that is the honest state rather than an omission: nothing in E-02
+         behaves differently by layout. The relief draws at full mesh on every
+         device by decision (FR-018k), the plan's own drawing is a fixed viewBox
+         that scales, and the schedules fold on their own breakpoint. A
+         read-back with no consumer is the second source of truth the
+         declare-once rule exists to prevent, inverted — so there is none, and
+         no `matchMedia` string either. Give it one the day a module actually
+         needs to ask. ────────────────────────────────────────────────────── */
+      .survey {
+        --survey: 0;
+        margin-top: 26px;
+        padding-top: 20px;
+        border-top: 1px solid var(--rule-firm);
+      }
+
+      .survey-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+
+      .survey-lede {
+        margin: 6px 0 0;
+        max-width: 68ch;
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--ink-3);
+      }
+
+      .survey-acts {
+        display: flex;
+        gap: 14px;
+        flex: none;
+      }
+
+      /* The chooser. Two axes and one or two readings, each a native
+         disclosure for the reason the desk quantity is one: ninety controls
+         are far too many for a segmented rule, and the closed summary still
+         states what is selected, so the block reads without being opened. */
+      .survey-choose {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 18px;
+        margin-top: 14px;
+        padding: 11px 0 13px;
+        border-top: 1px solid var(--rule-soft);
+        border-bottom: 1px solid var(--rule-soft);
+      }
+
+      .survey-pick { min-width: 0; }
+
+      /* Between the two pickers it swaps, aligned with their values rather
+         than their heads — it acts on the pair, not on either one. */
+      .survey-flip {
+        display: flex;
+        align-items: flex-end;
+        padding-bottom: 1px;
+      }
+
+      /* The extent boxes sit beside the axis they narrow, taking the chooser's
+         own head style so the pair reads as one control: which control, and
+         over what range. Not a disclosure — there is nothing to open. */
+      .survey-extent { display: flex; flex-direction: column; gap: 6px; }
+      .survey-extent b {
+        font: 500 9.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+      /* `.num-field` is `font: inherit` by design — it takes the lettering of
+         whatever it replaced, which on a strip is the control's own readout.
+         Here it replaces nothing, so the pair has to set the face itself or
+         the boxes come out at the section's body size, twice the mono the
+         chooser's summaries are lettered in. */
+      .survey-extent-pair {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        font: 400 11px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+      }
+      .survey-extent-rule {
+        font: 400 10.5px/1.3 var(--sans);
+        color: var(--ink-ghost);
+      }
+
+      /* Each picker is a title-block cell: one hairline round the caption, the
+         count and the value, and the list folds out *inside* it. A bare line
+         of mono under a caption is how this sheet letters a reading, and a
+         reading cannot be pressed, so an unruled summary looked like one more
+         figure. The cell's width is fixed and the list takes it, so opening a
+         picker changes its height and nothing else: sized by its own
+         contents, the summary was as wide as "Choose a control" and the list
+         300px, and opening Axis X shoved Axis Y along the row. 220px is
+         three cells, the flip and a pair of extents on one line of the
+         survey. The list is held to the same measure for the reason it always
+         was: left to size itself it takes the width of its widest refusal,
+         which is a whole sentence. */
+      .survey-combo {
+        /* The row stretches its items, which was invisible while a picker had
+           no outline and is not now: opening one drew the closed cells beside
+           it 280px tall and empty. Only the cells opt out; the flip and the
+           extents still want the stretch to sit on the row's foot. */
+        align-self: flex-start;
+        width: 220px;
+        max-width: 100%;
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        transition: border-color 0.15s ease;
+      }
+      .survey-combo:hover,
+      .survey-combo.open { border-color: var(--rule-firm); }
+      /* The ring goes round the cell, not the button inside it, or it would
+         be drawn across the cell's own hairline. */
+      .survey-combo:has(.survey-pick-open:focus-visible) {
+        outline: 2px solid var(--rule-focus);
+        outline-offset: 2px;
+      }
+
+      /* Three columns, not two. With two, the count set the width of the
+         column the fold marker shares, and the value's column was what was
+         left: "Choose a control" broke onto two lines and the cell stood
+         59px tall until a control was picked, then 45. Here the count spans
+         the last two columns and the value the first two, so each takes the
+         room the other's row leaves free and only the caption and the marker
+         size a column. */
+      .survey-pick-head {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: baseline;
+        gap: 3px 8px;
+        padding: 6px 9px 7px;
+        cursor: pointer;
+        font: 400 11px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+      }
+      .survey-combo.open .survey-pick-head {
+        cursor: auto;
+        border-bottom: 1px solid var(--rule);
+      }
+
+      .survey-pick-head b,
+      .survey-pick-count {
+        font: 500 9.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+      .survey-pick-head b { grid-column: 1; }
+      .survey-pick-count {
+        grid-column: 2 / 4;
+        justify-self: end;
+        color: var(--ink-ghost);
+        text-align: right;
+      }
+
+      /* Closed, the value and its marker are one button across the row.
+         `all: unset` takes off the page's 168 x 46 button slab, and the hover
+         rule is held above `button:hover:not(:disabled)`, which is one
+         element more specific than a bare class and would paint it solid. */
+      .survey-pick-open,
+      .survey-pick-close {
+        all: unset;
+        cursor: pointer;
+        font: inherit;
+        color: inherit;
+      }
+      .survey-pick-open {
+        grid-column: 1 / 4;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        min-width: 0;
+      }
+      .survey-combo .survey-pick-open:hover,
+      .survey-combo .survey-pick-close:hover { background: none; color: inherit; }
+      .survey-pick-open:focus-visible { outline: none; }
+
+      /* Two readings can stand here at once, so the value wraps rather than
+         ellipsising: a closed cell has to read without being opened. */
+      .survey-pick-value { min-width: 0; overflow-wrap: anywhere; }
+      .survey-pick-sign { flex: none; color: var(--ink-3); }
+
+      /* Open, the value line is typed into where it stands, lettered exactly
+         as the value was. No box of its own: the cell's hairline is already
+         the field's edge, and the text cursor and the caret are what say it
+         takes typing. The caret is also the focus mark, so no ring. */
+      .survey-pick-field {
+        all: unset;
+        grid-column: 1 / 3;
+        min-width: 0;
+        cursor: text;
+        font: inherit;
+        color: var(--ink);
+      }
+      .survey-pick-field::placeholder { color: var(--ink-ghost); }
+      .survey-pick-close {
+        grid-column: 3;
+        color: var(--redline);
+      }
+      .survey-combo .survey-pick-close:hover { color: var(--redline); }
+      .survey-pick-close:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 1px; }
+
+      /* Every one of these declares `display` (or unsets it), which beats the
+         user agent's `[hidden]` outright, so each needs its twin or the
+         closed value and the open box would both stand. */
+      .survey-pick-open[hidden],
+      .survey-pick-field[hidden],
+      .survey-pick-close[hidden],
+      .survey-options[hidden] { display: none; }
+
+      .survey-options {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        max-height: 220px;
+        overflow-y: auto;
+        padding: 4px 4px 6px 4px;
+      }
+
+      .survey-option {
+        /* A column, so a refusal sits **under** the control it refuses rather
+           than beside it. Side by side, a 150-character sentence set the row's
+           width and the whole chooser blew out sideways. */
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        /* `flex: none` is not tidiness, it is the fix for the bug that shipped
+           here. `.survey-options` is a column flex container with a
+           `max-height`, so its items take the default `flex-shrink: 1` and 129
+           of them shared 220px between them: measured, every option computed
+           to **6px** tall — its padding and nothing else — while its wrapped
+           sentence carried on painting over the four rows below it. The list
+           has to scroll, which means its items must keep their own height. */
+        flex: none;
+        border: 0;
+        background: none;
+        padding: 3px 5px;
+        text-align: left;
+        font: 400 11px/1.35 var(--sans);
+        color: var(--ink-2);
+        border-radius: var(--r);
+        /* The page's own button slab is 168 x 46, which in a list of ninety
+           would be four thousand pixels of column. These are list entries. */
+        min-width: 0;
+        min-height: 0;
+        width: 100%;
+        cursor: pointer;
+      }
+
+      /* One statement of whatever governs the run of options under it, rather
+         than a copy on each of its members. Printed in the list, not hovered. */
+      .survey-options-group {
+        flex: none;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        margin: 9px 0 3px;
+        padding-top: 7px;
+        border-top: 1px solid var(--rule-soft);
+      }
+
+      .survey-options-group:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+
+      .survey-options-group b {
+        font: 500 9px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+
+      .survey-options-group small {
+        font: 400 10px/1.45 var(--sans);
+        color: var(--ink-ghost);
+      }
+
+      .survey-option:hover { color: var(--redline); }
+      .survey-option[aria-pressed='true'] { color: var(--ink); }
+      .survey-option[aria-pressed='true']::before { content: '·'; }
+      .survey-option[disabled] { color: var(--ink-ghost); cursor: not-allowed; }
+      .survey-option small {
+        display: block;
+        color: var(--ink-ghost);
+        font-size: 10px;
+        line-height: 1.4;
+        /* The reason is prose and wraps; the list is what scrolls. */
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+
+      /* Both set `display`, which beats the user agent's `[hidden]` outright,
+         so without these twins a filtered-out row would go on standing. */
+      .survey-option[hidden],
+      .survey-options-group[hidden] { display: none; }
+
+      .survey-filter-none {
+        flex: none;
+        margin: 3px 5px;
+        font: 400 11px/1.4 var(--sans);
+        color: var(--ink-3);
+      }
+
+      .survey-note { margin: 12px 0 0; font-size: 12px; line-height: 1.55; }
+      .survey-note.bad { color: var(--redline); }
+
+      /* Two drawings of one ground, each wanting a square. */
+      .survey-body {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 18px;
+        margin-top: 16px;
+      }
+
+      /* The `[hidden]` twin this block needs, and it is not optional: an
+         author `display` declaration beats the user agent's
+         `[hidden] { display: none }` outright, so `el.hidden = true` on a rule
+         that sets `display` does nothing whatever. Measured here: with no
+         survey cut, two empty framed boxes stood under the chooser where the
+         drawings would go — the same failure `.link[hidden]` and
+         `.bill[hidden]` are each the fix for. Any new class that sets or
+         unsets `display` and is toggled by the attribute needs its own. */
+      .survey-body[hidden] { display: none; }
+
+      .survey-plan,
+      .survey-relief { margin: 0; min-width: 0; }
+
+      .ground,
+      .relief {
+        background: var(--inset);
+        border: 1px solid var(--rule-soft);
+        border-radius: var(--r);
+        aspect-ratio: 1 / 1;
+        width: 100%;
+      }
+
+      .ground svg { display: block; width: 100%; height: 100%; }
+
+      /* The relief is a canvas with its lettering over it: WebGL has no text,
+         so the axis names and stops are real SVG positioned from the same
+         matrices the GPU is handed. */
+      .relief { position: relative; }
+      .relief canvas { display: block; width: 100%; height: 100%; }
+      .relief-lettering {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        overflow: visible;
+      }
+      /* Haloed against the sheet, the way the plan's own spot figures are.
+         The orbit puts one corner of the base behind the terrain at every
+         viewpoint, so a stop lettered there lands on the drawing however far
+         it is pushed out — and a stop that cannot be read is not a stop. */
+      .relief-lettering text {
+        paint-order: stroke;
+        stroke: var(--sheet);
+        stroke-width: 3px;
+        stroke-linejoin: round;
+      }
+      .relief-lettering .relief-stop {
+        font: 400 8px/1 var(--mono);
+        fill: var(--ink-3);
+      }
+      .relief-lettering .relief-axis {
+        font: 500 8.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        fill: var(--ink-3);
+      }
+      /* The unit on the height's name, set apart from the capitals round it:
+         kWh/m² uppercased reads as a different unit. */
+      .relief-lettering .relief-unit {
+        font: 400 8px/1 var(--mono);
+        text-transform: none;
+        letter-spacing: 0;
+      }
+      /* The height scale's rule and ticks, in the ink the base's own axis
+         rules are drawn in. */
+      .relief-lettering line {
+        stroke: var(--ink-3);
+        stroke-width: 0.75;
+      }
+
+      /* The measured ground, the inference over it, and the ground nobody has
+         stood on — told apart three ways, because colour may not be the only
+         carrier and here there is no colour to spend anyway.
+
+           measured   a tick mark and a lettered figure
+           inferred   a hairline contour, no figure anywhere on it
+           unsurveyed bare sheet: no contour is carried across it at all
+
+         The third is the important one and it is drawn by *absence*: an
+         unmeasured cell emits no geometry, so there is nothing to style and
+         nothing that can later be styled into looking measured. */
+      .ground .contour {
+        fill: none;
+        stroke: var(--ink-ghost);
+        stroke-width: 0.75;
+      }
+
+      .ground .contour.major { stroke: var(--ink-3); stroke-width: 1; }
+
+      .ground .level {
+        font: 400 8.5px/1 var(--mono);
+        fill: var(--ink-3);
+        paint-order: stroke;
+        stroke: var(--inset);
+        stroke-width: 3px;
+      }
+
+      .ground .spot { stroke: var(--ink); stroke-width: 1; }
+      .ground .spot-figure {
+        font: 400 8px/1 var(--mono);
+        fill: var(--ink-2);
+        paint-order: stroke;
+        stroke: var(--inset);
+        stroke-width: 2.5px;
+      }
+
+      /* A second reading at the same point. Told apart by *position* — under
+         the first, never beside it — and by ink level, not by a hue and not by
+         a size: a size would rank one reading against the other, and there is
+         no weighting on this sheet to rank them with. */
+      .ground .spot-figure.second { fill: var(--ink-ghost); }
+
+      .ground .gap { stroke: var(--ink-3); stroke-width: 1; }
+      .ground .axis { stroke: var(--rule-firm); stroke-width: 1; }
+      .ground .axis-label {
+        font: 500 8.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        fill: var(--ink-3);
+      }
+      .ground .axis-stop {
+        font: 400 8px/1 var(--mono);
+        fill: var(--ink-3);
+      }
+
+      /* The stance: the desk's armed square, third idiom of three, so that
+         "you are here" is learned once across the patch button, the rail pin
+         and the plate marker. */
+      .ground .stance { fill: var(--redline); stroke: none; }
+      /* The desk between two measured designs: hollow, because it is not
+         standing on a run. */
+      .ground .stance-loose { fill: none; stroke: var(--redline); stroke-width: 1; }
+      /* The crosshair is a reading, not a target. Left to take pointer events
+         it sat on top of the spot hit areas and swallowed clicks along its own
+         length — a thin dead cross through the ground, along exactly the row
+         and column a reader aims at most. */
+      .ground .stance-rule { pointer-events: none; }
+
+      /* Where the keyboard is standing, which is not where the desk is: a ring
+         rather than a second armed square, because the square already means
+         "the desk is here" and the two part company at the first arrow key. */
+      .ground .ground-cursor {
+        fill: none;
+        stroke: var(--redline);
+        stroke-width: 1;
+        stroke-dasharray: 2 2;
+      }
+
+      .ground svg:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+      .ground .stance-rule { stroke: var(--redline); stroke-width: 1; }
+
+      /* The traverse: where the desk has stood, joined by a hairline. */
+      .ground .traverse {
+        fill: none;
+        stroke: var(--ink-ghost);
+        stroke-width: 1;
+        stroke-dasharray: 2 2;
+      }
+      .ground .traverse-stop { fill: var(--ink-ghost); }
+
+      /* Where both readings improve on the stance. Hatched rather than
+         tinted: the palette has no hue to spend and a wash would read as a
+         fourth surface. */
+      .ground .improving { fill: url(#survey-hatch); stroke: none; }
+
+      /* The survey offer sits under the Study offer on a plan key's legend,
+         in the same 50px column, so it takes the same shape rather than a new
+         one — the difference between them is which drawing they reach, and
+         that is carried by the word and by the armed state, not by chrome. */
+      .plan-read .survey-offer[aria-pressed='true'] {
+        color: var(--redline);
+        border-color: var(--redline);
+      }
+
+      /* The pull. A ranked list of signed bars, so it takes the balance
+         rail's signed-meter idiom — centre zero, `--inset` trough, a
+         `--rule-firm` hairline at 50% — with one difference that is not a
+         detail: the rail's hue pair encodes a signed *physical* quantity, and
+         "which way this control moves the reading" is not one. So the bars are
+         graphite and the direction is a word in its own column, which is
+         where the rail itself ended up for the same argument. */
+      .pull { margin-top: 18px; }
+
+      .pull-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .pull-lede {
+        margin: 6px 0 10px;
+        max-width: 68ch;
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--ink-3);
+      }
+
+      #pull-table { width: 100%; border-collapse: collapse; }
+      #pull-table td,
+      #pull-table th { padding: 5px 8px 5px 0; text-align: left; vertical-align: baseline; }
+      #pull-table td + td,
+      #pull-table th + th { padding-left: 14px; }
+
+      #pull-table td.num,
+      #pull-table th.num {
+        font: 400 11px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+      }
+
+      #pull-table tbody tr { border-bottom: 1px solid var(--rule-soft); }
+      #pull-table tbody tr.inert td { color: var(--ink-ghost); }
+      #pull-table tbody tr.chosen td { color: var(--redline); }
+
+      .pull-bar {
+        position: relative;
+        width: 100%;
+        min-width: 90px;
+        height: 6px;
+        background: var(--inset);
+        border: 1px solid var(--rule-soft);
+        border-radius: 1px;
+      }
+
+      .pull-bar::before {
+        content: '';
+        position: absolute;
+        inset: 0 auto;
+        left: 50%;
+        width: 1px;
+        background: var(--rule-firm);
+      }
+
+      .pull-said {
+        display: block;
+        margin-top: 3px;
+        font: 400 10.5px/1.3 var(--sans);
+        color: var(--ink-3);
+      }
+
+      .pull-fill {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        background: var(--ink-2);
+      }
+
+      /* Chosen as an axis: the desk's own accent, and the word beside it says
+         so too, because a colour cannot be the only thing carrying a state. */
+      .pull-pick {
+        border: 0;
+        background: none;
+        padding: 0;
+        min-width: 0;
+        min-height: 0;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .pull-pick:hover { color: var(--redline); }
+
+      /* The key to the ground. A drawing that carries five different marks
+         has to name them somewhere the reader can see without hovering. */
+      .ground-key {
+        list-style: none;
+        margin: 9px 0 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 4px 14px;
+      }
+
+      .ground-key li {
+        display: flex;
+        align-items: baseline;
+        gap: 7px;
+        font: 400 10px/1.45 var(--sans);
+        color: var(--ink-3);
+      }
+
+      .ground-key svg {
+        flex: none;
+        width: 14px;
+        height: 10px;
+        overflow: visible;
+      }
+
+      .relief-views {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+
+      .relief-view {
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        background: none;
+        color: var(--ink-2);
+        font: 500 9px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        padding: 5px 8px;
+        min-width: 0;
+        min-height: 0;
+        cursor: pointer;
+      }
+
+      .relief-view[aria-pressed='true'] { background: var(--ink); color: var(--vellum); }
+      .relief-view:hover { border-color: var(--redline); color: var(--redline); }
+      .relief-view[aria-pressed='true']:hover { color: var(--vellum); }
+
+      /* Load bearing, not a caption. The relief is smooth, so unlike a
+         faceted one it does not report its own sample density in its own
+         texture — these two figures are the only thing separating a coarse
+         survey from a convincing picture of one. */
+      .survey-coverage {
+        margin: 14px 0 0;
+        font: 400 11px/1.5 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink-2);
+      }
+
+      .survey-coverage b { color: var(--ink); font-weight: 400; }
+      .survey-coverage .loose { color: var(--ink-ghost); }
+
+      /* The traverse list. A schedule, so it folds at 620px with the others
+         and every figure keeps the head it stood under. */
+      .traverse { margin-top: 18px; }
+      .traverse[hidden] { display: none; }
+
+      #traverse-table { width: 100%; border-collapse: collapse; }
+      #traverse-table td,
+      #traverse-table th { padding: 5px 8px 5px 0; text-align: left; vertical-align: baseline; }
+      #traverse-table td + td,
+      #traverse-table th + th { padding-left: 14px; }
+      #traverse-table tbody tr { border-bottom: 1px solid var(--rule-soft); }
+
+      #traverse-table td.num,
+      #traverse-table th.num {
+        font: 400 11px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+      }
+
+      /* The stop the desk is standing on now carries the armed square, the
+         same idiom as the stance mark on the plan and the patch button. */
+      #traverse-table tbody tr.here td { color: var(--ink); }
+      #traverse-table tbody tr.here .traverse-go::before { content: '▪ '; color: var(--redline); }
+
+      .traverse-go {
+        border: 0;
+        background: none;
+        padding: 0;
+        min-width: 0;
+        min-height: 0;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .traverse-go:hover { color: var(--redline); }
+      .traverse-go[disabled] { cursor: default; }
+
+      .survey-stamp { margin-top: 20px; }
+      .survey-stamp div:nth-child(4n) { border-right: 0; }
+      .survey-stamp div { border-bottom: 0; }
+
+      /* ── E-02 on a narrower window ──────────────────────────────────────
+         The plan and the relief stop standing side by side well before a
+         table stops keeping its columns, because each of them wants a square
+         and two squares in one measure is two very small squares. Height is
+         asked as well as width, by the rule that caught the console out: two
+         squares and a schedule stacked in a short window is a page of
+         scrolling with nothing on the screen to say where you are. */
+      @media (max-width: 900px), (max-height: 620px) {
+        .survey { --survey: 1; }
+        .survey-body { grid-template-columns: minmax(0, 1fr); }
+      }
+
     </style>
   </head>
   <body>
@@ -4492,6 +5237,105 @@
               </p>
               <table id="shelf-table" hidden></table>
               <p class="register-note" id="shelf-foot"></p>
+            </div>
+          </section>
+
+          <!-- E-02, the design space survey. A second drawing on the same
+               sheet: one chosen reading surveyed over two chosen controls, cut
+               through the desk's current stance. Everything on it is built out
+               of completed EnergyPlus runs; the contours and the relief are
+               inference drawn between them and say so in place, on both, because
+               a continuous surface is read as continuous data wherever it is
+               drawn. Written by `renderSurvey` in main.js. -->
+          <section class="survey" id="survey" aria-labelledby="survey-title" hidden>
+            <header class="survey-head">
+              <div>
+                <p class="eyebrow" id="survey-title">Design space survey<span class="base" id="survey-axes"></span></p>
+                <p class="survey-lede" id="survey-lede"></p>
+              </div>
+              <div class="survey-acts">
+                <button type="button" class="link" id="survey-fall" hidden>Let it fall</button>
+                <button type="button" class="link" id="survey-clear" hidden>Clear the survey</button>
+              </div>
+            </header>
+
+            <!-- The chooser: two axes and one or two readings, every offer
+                 carrying its own refusal where it cannot be taken. -->
+            <div class="survey-choose" id="survey-choose"></div>
+
+            <!-- The pull: every sweepable control ranked by how far it moves
+                 the chosen reading at the stance. The question that comes
+                 before the ground — which two controls are worth cutting one
+                 along — answered from real runs rather than from a hypothesis
+                 the reader already had. Written by `renderPull` in main.js. -->
+            <section class="pull" id="pull" hidden>
+              <div class="pull-head">
+                <p class="eyebrow">What is pulling this design<span class="base" id="pull-scope"></span></p>
+                <button type="button" class="link" id="pull-read">Read the pull</button>
+              </div>
+              <p class="pull-lede" id="pull-lede"></p>
+              <table id="pull-table"></table>
+              <button type="button" class="link" id="pull-more" hidden></button>
+              <p class="survey-note" id="pull-inert"></p>
+            </section>
+
+            <!-- A refusal stands where the ground would have been, never
+                 beside an empty drawing. -->
+            <p class="survey-note bad" id="survey-refusal" hidden></p>
+
+            <div class="survey-body" id="survey-drawing" hidden>
+              <figure class="survey-plan">
+                <div class="ground" id="survey-ground"></div>
+                <!-- What every mark on the ground means, printed under it.
+                     Each one lived only in a `<title>` before, which under a
+                     coarse pointer does not exist at all — and a reader who
+                     cannot name a mark cannot read the drawing. -->
+                <ul class="ground-key" id="survey-key"></ul>
+                <figcaption>
+                  <span class="fig">Fig. 2</span>
+                  <span id="survey-plan-cap"></span>
+                </figcaption>
+              </figure>
+              <figure class="survey-relief">
+                <div class="relief" id="survey-relief" role="img" aria-label="Relief of the surveyed ground"></div>
+                <div class="relief-views" id="survey-views" role="group" aria-label="Viewpoint"></div>
+                <figcaption>
+                  <span class="fig">Fig. 3</span>
+                  <span id="survey-relief-cap"></span>
+                </figcaption>
+              </figure>
+            </div>
+
+            <!-- Load bearing, not decoration. The relief is smooth, so it does
+                 not report its own sample density the way a faceted one would;
+                 these two figures are the only thing separating a coarse survey
+                 from a convincing picture of one. -->
+            <p class="survey-coverage" id="survey-coverage"></p>
+
+            <!-- The traverse: every design the desk has stood on this session,
+                 in order, each one restorable. It is drawn on the plan as a
+                 chain of ghost marks, but the plan can only show the stops that
+                 fall inside the current extent — so the list is where the rest
+                 of them live, and it is where the keyboard reaches all of them.
+                 Written by `renderTraverse` in main.js. -->
+            <section class="traverse" id="traverse" hidden>
+              <p class="eyebrow">Where this desk has stood<span class="base" id="traverse-count"></span></p>
+              <table id="traverse-table"></table>
+            </section>
+            <p class="finding" id="survey-finding"></p>
+
+            <section class="schedule">
+              <p class="eyebrow">Schedule of spot heights<span class="base" id="survey-spots-scope"></span></p>
+              <table id="survey-spots"></table>
+            </section>
+
+            <!-- E-02's own title-block cells. The sheet below is E-01's and
+                 says what produced the run; this says what produced the ground. -->
+            <div class="titleblock survey-stamp">
+              <div><span>Sheet</span><b>E-02</b><i>Design space survey</i></div>
+              <div><span>Ground</span><b id="s-ground">—</b><i id="s-ground-sub">Positions asked for</i></div>
+              <div><span>Reading</span><b id="s-reading">—</b><i id="s-reading-sub">Surveyed quantity</i></div>
+              <div><span>Runs</span><b id="s-runs">—</b><i id="s-runs-sub">Completed simulations</i></div>
             </div>
           </section>
         </div>

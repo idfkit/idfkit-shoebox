@@ -50,6 +50,7 @@ import {
   serializePattern,
 } from './controls.js';
 import { QUANTITY_BY_ID } from './study.js';
+import { READING_BY_ID, refusesAxis } from './survey.js';
 
 export const LINK_VERSION = 'v1';
 
@@ -94,7 +95,7 @@ const MIGRATIONS = Object.freeze({});
  * quietly collide with one — `controlFor` would route the collision to a
  * parameter and the link would mean two things at once.
  */
-const RESERVED = Object.freeze(['in', 'out', 'stn', 'win', 'at', 'sty']);
+const RESERVED = Object.freeze(['in', 'out', 'stn', 'win', 'at', 'sty', 'sv']);
 for (const key of RESERVED) {
   if (ALL_KEYS.includes(key)) {
     throw new Error(`the reserved link key "${key}" collides with a control parameter`);
@@ -209,7 +210,7 @@ export { PIN_KINDS, encodePin, decodePin };
  * samples that disagree by up to 9 % on degree days, so a link that named only
  * the site would reproduce a different year than the one argued over.
  */
-export function encodeState({ params, bypass, station = null, pin = null, quantity = null, studies = [] }) {
+export function encodeState({ params, bypass, station = null, pin = null, quantity = null, studies = [], survey = null }) {
   const pairs = new URLSearchParams();
   for (const key of ALL_KEYS) {
     // `String` rather than a display format: the display rounds, and a link
@@ -247,8 +248,94 @@ export function encodeState({ params, bypass, station = null, pin = null, quanti
     studyKeys.sort((left, right) => order.get(left) - order.get(right));
     pairs.append('sty', `${quantity}${studyKeys.length ? `.${studyKeys.join(',')}` : ''}`);
   }
+  if (survey) pairs.append('sv', encodeSurvey(survey));
   const body = pairs.toString();
   return body ? `${LINK_VERSION}&${body}` : '';
+}
+
+/**
+ * The survey, as one value: axes, readings, and each axis's extent.
+ *
+ * `x*y*readings*xFrom_xTo*yFrom_yTo`, and the three separators are the only
+ * ones available rather than a preference. `URLSearchParams` leaves exactly
+ * four punctuation marks alone — `*`, `.`, `-` and `_` — and escapes
+ * everything else, tilde and colon included; a tilde was tried first and an
+ * address bar came back reading `sv=wwrS%7EwallR%7Ehigh`, which gives up
+ * precisely the legibility this whole encoding is arranged around, the same
+ * way `at=year%408-3T13` did before the pin's `@` became a full stop.
+ *
+ * Of the four, `-` cannot separate an extent because an extent may be
+ * negative (a ground temperature, an azimuth) and the minus sign is already
+ * spoken for. `.` is spent on the decimal point, so it separates the reading
+ * ids, which are alphanumeric and carry none. That leaves `*` between fields
+ * and `_` inside an extent: `sv=wwrS*wallR*high*0_0.9*0.2_10`.
+ *
+ * **The stance is not restated.** It is the desk, and the desk is already what
+ * the rest of the fragment encodes; a second copy would be free to disagree
+ * with the first. Neither are the measured values (FR-044): the recipient
+ * re-measures and gets identical numbers, because the engine is repeatable on
+ * one input. Nor the camera (FR-044a), which is how the ground is being looked
+ * at rather than what was measured — the chase pin's rule.
+ */
+function encodeSurvey({ x, y, readings, extents = {} }) {
+  const extent = (key) => {
+    const at = extents[key];
+    if (!at || (at.from === null && at.to === null)) return '';
+    return `${at.from}_${at.to}`;
+  };
+  return [x, y, readings.join('.'), extent(x), extent(y)].join('*').replace(/\*+$/, '');
+}
+
+/**
+ * And back. Validated against the control declarations before anything is
+ * returned, so a link naming an axis, a reading or an extent that cannot be
+ * honoured is refused **whole** with the reason on the sheet (FR-046).
+ */
+function decodeSurvey(raw) {
+  const parts = raw.split('*');
+  if (parts.length < 3 || parts.length > 5) {
+    throw new Error(`"${raw}" is not a survey value like wwrS*wallR*high*0_0.9*0.2_10`);
+  }
+  const [x, y, readings, xExtent = '', yExtent = ''] = parts;
+  if (x === y) throw new Error(`the survey is cut along ${x} twice, and a ground needs two controls`);
+  const extents = {};
+  for (const [key, text] of [[x, xExtent], [y, yExtent]]) {
+    let control;
+    try {
+      ({ control } = controlFor(key));
+    } catch {
+      throw new Error(`no control is called "${key}"`);
+    }
+    // Refused by the sentence `axisFor` throws: a link is the other way a bare
+    // key reaches this feature, and the two gates have to agree or a shared
+    // link would cut a ground the desk itself refuses.
+    const refusal = refusesAxis(key);
+    if (refusal) throw new Error(refusal);
+    if (!text) {
+      extents[key] = { from: null, to: null };
+      continue;
+    }
+    const bounds = text.split('_');
+    if (bounds.length !== 2) throw new Error(`"${text}" is not an extent like 0_0.9`);
+    const [from, to] = bounds.map((bound) => {
+      // The same text gate the numeric branch below uses, and for the same
+      // reason: `Number('')` is 0 and `Number('0x18')` is 24, either of which
+      // would load an extent the sharer never set.
+      if (!/^-?\d+(\.\d+)?$/.test(bound)) throw new Error(`"${bound}" is not a number in the extent of ${key}`);
+      return Number(bound);
+    });
+    if (from < control.min || to > control.max || !(to > from)) {
+      throw new Error(`${key} runs ${control.min} to ${control.max}, and the survey asks for ${from} to ${to}`);
+    }
+    extents[key] = { from, to };
+  }
+  const ids = readings.split('.');
+  if (!ids.length || ids.length > 2) throw new Error(`a survey carries one or two readings, not ${ids.length}`);
+  if (ids.length === 2 && ids[0] === ids[1]) throw new Error(`the survey carries "${ids[0]}" twice`);
+  for (const id of ids) {
+    if (!READING_BY_ID[id]) throw new Error(`no survey reading is called "${id}"`);
+  }
+  return { x, y, readings: ids, extents };
 }
 
 /** One value, read through the control that owns its key. Throws, never clamps. */
@@ -433,6 +520,25 @@ export function decodeState(raw) {
     study = { quantity, controls };
   }
 
+  // The survey. Read here, in `decodeState`, and **never** as a branch of
+  // `readValue`, which is the trap this codebase has now met three times: that
+  // function's numeric regex runs before its per-kind switch, so a branch
+  // written inside the switch is unreachable and every survey link would be
+  // refused as "is not a number for sv" — a true sentence about the wrong
+  // thing, on a link that was perfectly good. A reserved key is not a control
+  // key at all, so it belongs out here with `at` and `sty`, above everything
+  // `readValue` does; the reserved skip below is what keeps it from ever
+  // reaching that function.
+  //
+  // It is re-serialized on the way back out by `encodeSurvey`, for the reason
+  // the holiday list and the hourly pattern both are: two spellings of one
+  // survey — an omitted extent against an extent written out at the control's
+  // own stops — are the same ground written two ways, and they would key two
+  // identical solves and put a survey sitting at its own default into every
+  // link minted after.
+  const encodedSurvey = pairs.get('sv');
+  const survey = encodedSurvey === null ? null : decodeSurvey(encodedSurvey);
+
   // `in` and `out` are lists and repeat by design; every other key — the
   // station pair included — is one claim, and a repeated one is two claims
   // about one thing. Either could be meant, so neither is taken. The check
@@ -456,5 +562,11 @@ export function decodeState(raw) {
     );
   }
 
-  return study ? { params, bypass, station, pin, quantity: study.quantity, studies: study.controls } : { params, bypass, station, pin };
+  const scheme = { params, bypass, station, pin };
+  if (study) {
+    scheme.quantity = study.quantity;
+    scheme.studies = study.controls;
+  }
+  if (survey) scheme.survey = survey;
+  return scheme;
 }

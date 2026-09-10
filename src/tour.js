@@ -33,7 +33,10 @@ import { fold } from './console.js';
 // about the criteria would never be shown at all. The key is the only thing
 // that separates "read the old sheet" from "read this one".
 //
-// v4 because each note's words changed: every note now leads with a one-line
+// v4 for two reasons that arrived together, either of which would have been
+// enough on its own. E-02 gave the sheet a second drawing and a step, so a
+// returning reader's six ticks would stand against a sheet that now has
+// eight. And each note's words changed: every note now leads with a one-line
 // step in view and folds its fuller body. The completion events did not move,
 // but a returning reader's ticks were taken against notes they would no longer
 // recognise, and the rule is that a changed sheet is met as a new one.
@@ -160,6 +163,26 @@ export const NOTES = Object.freeze([
     // A click goes to the rows, because that is where the criteria are and the
     // ledes are already in view above them once the table is centred.
     focus: '#score',
+  }),
+  // E-02's own step, and it goes after the board rather than before it for a
+  // reason the flow decides: a survey is read *against* something, and the
+  // readings it can be cut for are exactly the ones the rest of the sheet has
+  // just taught. It is also the first step whose subject is a second drawing
+  // rather than a panel, which is why the pen circles the whole section.
+  new Note({
+    id: 'survey',
+    title: 'Survey the design space',
+    step: 'Choose two controls and a reading, and cut a ground of real runs.',
+    body:
+      'Choose two controls and a reading, and the sheet cuts a ground through ' +
+      'the desk as it stands — one real EnergyPlus run at every position of a ' +
+      'grid, contoured and drawn in relief. The contours between the runs are ' +
+      'interpolation and carry no figure; only the ticks do. Stand on any ' +
+      'measured point and the whole of E-01 becomes that building. Read the ' +
+      'pull first if you do not know which two controls are worth cutting ' +
+      'along: it ranks all ninety by how far each moves the reading here.',
+    target: '#survey',
+    focus: '#survey-choose',
   }),
   new Note({
     id: 'link',
