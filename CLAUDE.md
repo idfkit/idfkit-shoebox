@@ -1761,7 +1761,10 @@ is the same call.
 - **The rows go in in one breath.** `enqueue` drains on the way out, so
   enqueuing nine rows one at a time fills the pool from row 0 before row 1 is
   in the list, and the coarse pass lands as one finished row over eight empty
-  ones. `paused()` is held true across the loop.
+  ones. The scheduler's `enqueueAll` admits them together and drains once;
+  it replaced a module flag that held `paused()` true across the caller's own
+  loop, which made the pause mean two things and had been copied to the pull
+  under the survey's name.
 - **A survey's rest shape omits *both* axes**, where a study's omits only its
   swept key. Standing on a measured point is the whole point of the drawing,
   and a rest shape that omitted only X would cancel the ground the first time
@@ -2075,6 +2078,14 @@ the cut faces down every silhouette edge, and the base those cells laid flat.
   the base to the surface — which is what a pin through a solid ought to be —
   the shaft is inside the block at every viewpoint, the depth test hides all of
   it, and the mark reduces to a single dot with no pin in it.
+- **Between two measured designs the pin stands hollow, not nowhere.** It was
+  dropped there, so typing a figure between two positions took away the one
+  mark saying where the desk was. It now stands at the desk's true fractional
+  position on the surface the relief draws (`surfaceAt` reads the same two
+  triangles `meshOf` emits, so it sits on the drawing rather than a hair off
+  it), with the armed square hollow, which is the plan's own mark for that
+  state. No figure is lettered off it. Over an unmeasured cell there is no
+  surface and no pin.
 
 **Two bugs the block found, both of the kind that look like a maths error and
 are not.** The base was carried in the drawing's normalised units and therefore

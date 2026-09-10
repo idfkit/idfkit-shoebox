@@ -182,9 +182,18 @@ uniform vec4 uFlat;
 uniform vec4 uAccent;
 uniform vec4 uRule;
 // 0 surface · 1 cut face · 2 base · 3 post · 4 furniture · 5 pin · 6 strata
+// · 7 the pin's head between two measured designs
 uniform int uMode;
 out vec4 outColor;
 void main() {
+  if (uMode == 7) {
+    // The armed square hollow, as the plan draws the stance between two
+    // measured designs: the desk is here, and this survey has not run it.
+    vec2 c = abs(gl_PointCoord - 0.5);
+    if (max(c.x, c.y) < 0.3) discard;
+    outColor = uAccent;
+    return;
+  }
   if (uMode == 5) {
     // The one accent on this drawing, and it says the same thing here as it
     // says on the plan, the patch button and the rail: the desk is here.
@@ -309,6 +318,12 @@ export function createRelief(host, { onLost = null } = {}) {
   const strataPosition = gl.createBuffer();
   const arrisPosition = gl.createBuffer();
   const pinPosition = gl.createBuffer();
+  // Looked up once: the program never relinks, and each lookup is a round trip
+  // to the driver that `paint` used to make three to five times a frame.
+  const attribute = {
+    position: gl.getAttribLocation(program, 'aPosition'),
+    measured: gl.getAttribLocation(program, 'aMeasured'),
+  };
   const uniform = {
     projection: gl.getUniformLocation(program, 'uProjection'),
     view: gl.getUniformLocation(program, 'uView'),
@@ -326,6 +341,34 @@ export function createRelief(host, { onLost = null } = {}) {
   let held = null; // the last mesh and lattice, so a camera move needs no rebuild
   let lost = false;
 
+  // The five inks, resolved once and again only when the theme changes.
+  // `inkOf` reads computed style straight after touching the DOM, which forces
+  // a style recalculation of the whole page, and `paint` runs on every landed
+  // sample and every camera step: five of those a frame cost more than the
+  // drawing did. The theme is the only thing that moves them — the explicit
+  // toggle stamps `data-theme`, the system setting answers
+  // `prefers-color-scheme` — so those two are what clear the cache.
+  let resolved = null;
+  const inks = () =>
+    (resolved ??= {
+      low: inkOf(host, '--ink-ghost', '#b9b3a6'),
+      high: inkOf(host, '--ink', '#23262b'),
+      // The cut faces and the base take the trough's own tone, which is what
+      // every inset on this page is drawn in. It reads as the block the ground
+      // sits in rather than as more ground.
+      flat: inkOf(host, '--inset', '#efebe2'),
+      accent: inkOf(host, '--redline', '#a6392b'),
+      rule: inkOf(host, '--ink-3', '#6f7480'),
+    });
+  const retheme = () => {
+    resolved = null;
+    paint();
+  };
+  const scheme = window.matchMedia?.('(prefers-color-scheme: dark)');
+  scheme?.addEventListener('change', retheme);
+  const stamp = new MutationObserver(retheme);
+  stamp.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
   // `webglcontextlost` must be handled and must not be silently recovered
   // from: a relief that quietly re-created itself would be a drawing that had
   // stopped being of the ground and said nothing. The caller states the loss
@@ -335,17 +378,6 @@ export function createRelief(host, { onLost = null } = {}) {
     lost = true;
     onLost?.('The browser took back the drawing context for this relief.');
   });
-
-  function resize() {
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    const width = Math.max(1, Math.round(host.clientWidth * ratio));
-    const height = Math.max(1, Math.round(host.clientHeight * ratio));
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width;
-      canvas.height = height;
-    }
-    gl.viewport(0, 0, canvas.width, canvas.height);
-  }
 
   /**
    * World space, matching the vertex shader exactly.
@@ -393,7 +425,7 @@ export function createRelief(host, { onLost = null } = {}) {
 
   /** Bind one buffer of `vec3` positions and draw it. */
   function drawArray(buffer, data, mode, count, uMode) {
-    const positions = gl.getAttribLocation(program, 'aPosition');
+    const positions = attribute.position;
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     if (data) gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(positions);
@@ -404,7 +436,7 @@ export function createRelief(host, { onLost = null } = {}) {
 
   function paint() {
     if (lost || !held) return;
-    const { mesh, extent, block } = held;
+    const { mesh, block } = held;
     resize();
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -433,18 +465,16 @@ export function createRelief(host, { onLost = null } = {}) {
     gl.uniformMatrix4fv(uniform.view, false, viewMatrix);
     const scale = [mesh.nx - 1 || 1, mesh.ny - 1 || 1, 0.45];
     gl.uniform3f(uniform.scale, scale[0], scale[1], scale[2]);
-    gl.uniform4fv(uniform.low, inkOf(host, '--ink-ghost', '#b9b3a6'));
-    gl.uniform4fv(uniform.high, inkOf(host, '--ink', '#23262b'));
-    // The cut faces and the base take the trough's own tone, which is what
-    // every inset on this page is drawn in. It reads as the block the ground
-    // sits in rather than as more ground.
-    gl.uniform4fv(uniform.flat, inkOf(host, '--inset', '#efebe2'));
-    gl.uniform4fv(uniform.accent, inkOf(host, '--redline', '#a6392b'));
-    gl.uniform4fv(uniform.rule, inkOf(host, '--ink-3', '#6f7480'));
+    const ink = inks();
+    gl.uniform4fv(uniform.low, ink.low);
+    gl.uniform4fv(uniform.high, ink.high);
+    gl.uniform4fv(uniform.flat, ink.flat);
+    gl.uniform4fv(uniform.accent, ink.accent);
+    gl.uniform4fv(uniform.rule, ink.rule);
     gl.uniform1f(uniform.pointSize, 4);
 
-    const positions = gl.getAttribLocation(program, 'aPosition');
-    const flags = gl.getAttribLocation(program, 'aMeasured');
+    const positions = attribute.position;
+    const flags = attribute.measured;
 
     /* ── the block, first, so the terrain sits on it ────────────────────── */
     if (block && block.indices.length) {
@@ -523,13 +553,14 @@ export function createRelief(host, { onLost = null } = {}) {
       const stand = PIN_HEIGHT;
       const shaft = new Float32Array([pin.ix, pin.iy, pin.z, pin.ix, pin.iy, pin.z + stand]);
       drawArray(pinPosition, shaft, gl.LINES, 2, 5);
-      gl.uniform1f(uniform.pointSize, 7);
-      drawArray(pinPosition, new Float32Array([pin.ix, pin.iy, pin.z + stand]), gl.POINTS, 1, 5);
+      // A hollow head is drawn larger, or its ring is a pixel wide and reads
+      // as a smaller filled square.
+      gl.uniform1f(uniform.pointSize, pin.measured ? 7 : 10);
+      drawArray(pinPosition, new Float32Array([pin.ix, pin.iy, pin.z + stand]), gl.POINTS, 1, pin.measured ? 5 : 7);
       gl.uniform1f(uniform.pointSize, 4);
     }
 
     letterAxes(mesh, block, projection, viewMatrix, scale);
-    void extent;
   }
 
   /**
@@ -770,37 +801,34 @@ export function createRelief(host, { onLost = null } = {}) {
       // The ruling arrives in the reading's own units and in lattice space; it
       // is normalised here with everything else, so one rule governs how a
       // height becomes a position in the box.
-      const rule = (flat) => {
-        if (!flat?.length) return null;
+      const lifted = (flat) => {
         const out = new Float32Array(flat);
         for (let i = 2; i < out.length; i += 3) out[i] = normalise(out[i]);
         return out;
       };
-      held.strata = rule(strata);
-      held.arrises = rule(arrises);
+      held.strata = strata?.length ? lifted(strata) : null;
+      held.arrises = arrises?.length ? lifted(arrises) : null;
       if (stance) {
-        held.stance = { ix: stance.ix, iy: stance.iy, z: normalise(stance.value) };
+        held.stance = {
+          ix: stance.ix,
+          iy: stance.iy,
+          z: normalise(stance.value),
+          measured: stance.measured !== false,
+        };
       }
 
-      const scaled = new Float32Array(mesh.positions);
-      for (let i = 2; i < scaled.length; i += 3) scaled[i] = normalise(scaled[i]);
       gl.bindBuffer(gl.ARRAY_BUFFER, position);
-      gl.bufferData(gl.ARRAY_BUFFER, scaled, gl.STATIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, lifted(mesh.positions), gl.STATIC_DRAW);
       gl.bindBuffer(gl.ARRAY_BUFFER, measured);
       gl.bufferData(gl.ARRAY_BUFFER, Float32Array.from(mesh.measuredFlags), gl.STATIC_DRAW);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, elements);
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STATIC_DRAW);
 
       if (block) {
-        // The block's own top edge follows the terrain, so its heights are
-        // normalised too — but its base is already in normalised units below
-        // zero and must be left where `blockOf` put it.
         // Every height the block carries is a reading, base included, so the
         // whole array normalises in one pass with nothing to exempt.
-        const body = new Float32Array(block.positions);
-        for (let i = 2; i < body.length; i += 3) body[i] = normalise(body[i]);
         gl.bindBuffer(gl.ARRAY_BUFFER, blockPosition);
-        gl.bufferData(gl.ARRAY_BUFFER, body, gl.STATIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, lifted(block.positions), gl.STATIC_DRAW);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, blockElements);
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, block.indices, gl.STATIC_DRAW);
       }
@@ -811,6 +839,8 @@ export function createRelief(host, { onLost = null } = {}) {
 
     dispose() {
       held = null;
+      scheme?.removeEventListener('change', retheme);
+      stamp.disconnect();
       host.textContent = '';
     },
 

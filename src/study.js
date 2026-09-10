@@ -133,15 +133,21 @@ export function refusesSweep(control) {
  * hourly fractions are a shape rather than a position, and there is nothing
  * here to interpolate between.
  */
-export function samplePoints(control, current, n = SWEEP_SAMPLES) {
+export function samplePoints(control, current, n = SWEEP_SAMPLES, { from = control.min, to = control.max } = {}) {
   const refusal = refusesSweep(control);
   if (refusal) throw new Error(`samplePoints: ${refusal}`);
   const { min, max, step } = control;
+  // Snapped to the control's own grid, anchored at its own minimum even when
+  // the span is narrower: a survey axis cut over part of a face has to land on
+  // exactly the positions a study of the whole face does, or a densify and a
+  // study stop sharing cache keys with nothing to say so.
   const grid = (v) => Math.min(max, Math.max(min, min + Math.round((v - min) / step) * step));
 
   const points = [];
-  for (let i = 0; i < n; i += 1) points.push(grid(min + (i / (n - 1)) * (max - min)));
-  points.push(current);
+  for (let i = 0; i < n; i += 1) points.push(grid(from + (i / (n - 1)) * (to - from)));
+  // A null `current` is a stance outside the span: a caller who narrowed the
+  // span past it has said so, and forcing it back in would widen the span.
+  if (current !== null) points.push(current);
   points.sort((a, b) => a - b);
 
   // Snapping goes through floating point, so "the same position" can arrive as

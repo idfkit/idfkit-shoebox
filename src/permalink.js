@@ -50,7 +50,7 @@ import {
   serializePattern,
 } from './controls.js';
 import { QUANTITY_BY_ID } from './study.js';
-import { READING_BY_ID } from './survey.js';
+import { READING_BY_ID, refusesAxis } from './survey.js';
 
 export const LINK_VERSION = 'v1';
 
@@ -301,26 +301,16 @@ function decodeSurvey(raw) {
   const extents = {};
   for (const [key, text] of [[x, xExtent], [y, yExtent]]) {
     let control;
-    let channel;
     try {
-      ({ control, channel } = controlFor(key));
+      ({ control } = controlFor(key));
     } catch {
       throw new Error(`no control is called "${key}"`);
     }
-    if (![control.min, control.max, control.step].every(Number.isFinite)) {
-      throw new Error(`the control "${key}" has no numeric face to survey along`);
-    }
-    // A priced channel prices the run rather than shaping it, so nothing it
-    // owns reaches the IDF and a ground cut along it would be the same
-    // building at every position. Refused here as well as in `axisFor`: a link
-    // is the other way a bare key reaches this feature, and the two gates have
-    // to agree or a shared link would cut a ground the desk itself refuses.
-    if (channel.prices) {
-      throw new Error(
-        `the control "${key}" is on the ${channel.name} channel, which prices the run rather than shaping ` +
-          'it, so there is no ground to cut along it',
-      );
-    }
+    // Refused by the sentence `axisFor` throws: a link is the other way a bare
+    // key reaches this feature, and the two gates have to agree or a shared
+    // link would cut a ground the desk itself refuses.
+    const refusal = refusesAxis(key);
+    if (refusal) throw new Error(refusal);
     if (!text) {
       extents[key] = { from: null, to: null };
       continue;

@@ -394,6 +394,15 @@ export function createStudyScheduler({
     );
   }
 
+  function admit(job, front) {
+    const prior = byKey.get(job.id);
+    if (prior) cancel(prior, 'moved');
+    byKey.set(job.id, job);
+    if (front) jobs.unshift(job);
+    else jobs.push(job);
+    wasIdle = false;
+  }
+
   function drain() {
     while (!paused() && inFlight < capacity()) {
       const next = takeNext();
@@ -416,12 +425,21 @@ export function createStudyScheduler({
   return {
     /** Queue a study. A job already running under this key is superseded. */
     enqueue(job, { front = false } = {}) {
-      const prior = byKey.get(job.id);
-      if (prior) cancel(prior, 'moved');
-      byKey.set(job.id, job);
-      if (front) jobs.unshift(job);
-      else jobs.push(job);
-      wasIdle = false;
+      admit(job, front);
+      drain();
+    },
+
+    /**
+     * Queue several jobs in one breath, then drain once.
+     *
+     * What the round-robin needs to interleave them: enqueued one at a time,
+     * each drain fills the pool from the first job before the second is in
+     * the list, and a survey's coarse pass landed as one finished row over
+     * eight empty ones. Callers used to get this by holding `paused()` true
+     * across their own loop, which made the pause mean two things.
+     */
+    enqueueAll(batch) {
+      for (const job of batch) admit(job, false);
       drain();
     },
 

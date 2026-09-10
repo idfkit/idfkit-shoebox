@@ -387,7 +387,7 @@ export function mountConsole({
    * two, and the second is chosen on E-02 where the extent and the reading are
    * chosen too. The button says which of the two it would fill.
    */
-  function surveyOffer(key, name, control, channel) {
+  function surveyOffer(key, channel) {
     if (channel?.prices) return null;
     const btn = el('button', 'study survey-offer', 'Survey');
     btn.type = 'button';
@@ -401,26 +401,24 @@ export function mountConsole({
     const name = labelFor(key);
     const out = !engaged.has(channel.id);
     const disabled = !sweepGate.ok || out || idle;
-    const at = surveyAxes.indexOf(key);
+    const axis = ['X', 'Y'][surveyAxes.indexOf(key)] ?? null;
     const title = !sweepGate.ok
       ? sweepGate.reason
       : out
         ? 'This path is out of the model — patch it in to survey it.'
         : idle
           ? unreached ?? 'Set, but not reaching the model — there is nothing to survey along.'
-          : at === 0
-            ? `${name} is axis X of the survey. Press to take it off.`
-            : at === 1
-              ? `${name} is axis Y of the survey. Press to take it off.`
-              : `Cut the design space along ${name}: it becomes an axis of the survey on E-02, where the ` +
-                'second axis and the reading are chosen.';
+          : axis
+            ? `${name} is axis ${axis} of the survey. Press to take it off.`
+            : `Cut the design space along ${name}: it becomes an axis of the survey on E-02, where the ` +
+              'second axis and the reading are chosen.';
     if (btn.disabled !== disabled) btn.disabled = disabled;
     if (btn.title !== title) btn.title = title;
     // In words as well as in state, because `aria-pressed` alone is a fact
     // about a control and the reader wants a fact about the drawing.
-    const pressed = String(at !== -1);
+    const pressed = String(axis !== null);
     if (btn.getAttribute('aria-pressed') !== pressed) btn.setAttribute('aria-pressed', pressed);
-    const label = at === -1 ? 'Survey' : at === 0 ? 'Axis X' : 'Axis Y';
+    const label = axis ? `Axis ${axis}` : 'Survey';
     if (btn.textContent !== label) btn.textContent = label;
     if (btn.getAttribute('aria-label') !== title) btn.setAttribute('aria-label', title);
   }
@@ -897,7 +895,7 @@ export function mountConsole({
       if (stand) item.append(stand);
       const studyBtn = studyOffer(side.key, labelFor(side.key), control, channel);
       if (studyBtn) item.append(studyBtn);
-      const surveyBtn = surveyOffer(side.key, labelFor(side.key), control, channel);
+      const surveyBtn = surveyOffer(side.key, channel);
       if (surveyBtn) item.append(surveyBtn);
       legend.append(item);
       return { side, item, out, stand, studyBtn, surveyBtn };
@@ -2482,14 +2480,12 @@ export function mountConsole({
      */
     setSurveyAxes(keys) {
       surveyAxes = [...keys];
-      for (const [key, btn] of surveyButtons) {
-        const { channel, control, side } = controlFor(key);
-        syncSurveyOffer(btn, channel, {
-          idle: Boolean(control.inert?.(params)) || (side ? !side.reaches(params) : false),
-          unreached: side && !side.reaches(params) ? side.reasonFor(params) : null,
-          key,
-        });
-      }
+      // Through each plan key's own redraw, which is the one place an offer's
+      // state is decided. Restated here it read a `control.inert` no control
+      // declares, so an offer on an idle control came back enabled after every
+      // axis change and went dim again on the next redraw. Four walls share
+      // one redraw, so each is run once.
+      for (const redraw of new Set([...surveyButtons.keys()].map((key) => faces.get(key)))) redraw?.();
     },
 
     /** Remove every study card when the reader clears the studies themselves. */

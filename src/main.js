@@ -66,6 +66,8 @@ import {
   landPoint,
   latticeOf,
   levelsFor,
+  surfaceAt,
+  improvingClause,
   makeSurvey,
   meshOf,
   refineOrder,
@@ -2123,9 +2125,6 @@ let surveyPass = null;
 // of the desk moves, so an idle refine does not quietly restart work the
 // reader just shed.
 let surveyStop = null;
-// Held true across the enqueue loop, so `paused()` reports the queue shut for
-// exactly as long as a survey's rows are going in together.
-let surveyEnqueueing = false;
 // The count the current ground was asked for, so a re-cut that is not meant to
 // lose detail — flipping the axes — can come back at the density it had rather
 // than dropping to the coarse pass and climbing out of it again.
@@ -2275,11 +2274,21 @@ function applyGeometry() {
   // against `restShapeKey(job.key)` — which omits only the swept one — would
   // never match and every row would be cancelled on every single apply,
   // including the applies the survey's own samples cause.
+  //
+  // Each shape is taken once per apply rather than once per job: the
+  // predicate runs for every queued row and probe, a pull alone is up to
+  // ninety of them, and every shape is a serialisation of the whole desk.
+  const surveyShape = survey ? surveyRestShape(survey) : null;
+  const shapes = new Map();
+  const shapeOmitting = (key) => {
+    if (!shapes.has(key)) shapes.set(key, restShapeKey(key));
+    return shapes.get(key);
+  };
   studyScheduler?.cancelWhere(
     (job) =>
       job.origin === 'survey'
-        ? survey === null || job.restShape !== surveyRestShape(survey)
-        : job.restShape !== restShapeKey(job.key),
+        ? surveyShape === null || job.restShape !== surveyShape
+        : job.restShape !== shapeOmitting(job.key),
     'moved',
   );
   modelState = applyModel(model, params, patching());
@@ -7135,7 +7144,7 @@ studyScheduler = createStudyScheduler({
   // together: enqueued one at a time with a drain on each, row 0 would fill the
   // pool before row 1 was in the list and the coarse pass would land as one
   // finished row over eight empty ones.
-  paused: () => gesture || surveyEnqueueing,
+  paused: () => gesture,
   capacity: () => studyCapacity,
   onUpdate: onStudyUpdate,
 });
@@ -7573,7 +7582,7 @@ function onStudyUpdate(job, event) {
     syncStudyStatus();
     // Densify in idle time, not now: the queue just drained, and the reader
     // may be reaching for a control this instant.
-    (window.requestIdleCallback ?? ((fn) => setTimeout(fn, 300)))(() => densifyStudies());
+    whenIdle(() => densifyStudies());
     return;
   }
   const key = job.key;
@@ -7715,7 +7724,8 @@ function surveyRefusal(sv) {
  * the list, and the coarse pass would land as one finished row over eight
  * empty ones. `paused()` is already true during a gesture, so the natural
  * place for that breath is a gesture — but a survey is opened between
- * gestures, so the enqueue is bracketed explicitly.
+ * gestures, so the rows go in through `enqueueAll`, which admits the lot and
+ * drains once.
  */
 /** The rest of the desk, excluding both axes — see `deskKey`'s note. */
 function surveyRestShape(sv, p = params, patch = patching()) {
@@ -7741,18 +7751,15 @@ function queueSurvey(sv, { grid }) {
     specs.sort((left, right) => (priority.get(right.iy) ?? -Infinity) - (priority.get(left.iy) ?? -Infinity));
   }
   surveyRows.clear();
-  surveyEnqueueing = true;
-  try {
-    for (const spec of specs) {
-      const job = makeStudyJob(spec);
-      surveyRows.set(job.id, spec.iy);
-      studyScheduler.enqueue(job);
-    }
-  } finally {
-    surveyEnqueueing = false;
-  }
+  const jobs = specs.map((spec) => {
+    const job = makeStudyJob(spec);
+    surveyRows.set(job.id, spec.iy);
+    return job;
+  });
+  // Set before the drain, as it always was: a row answered wholly from the
+  // cache can finish inside it, and the pass it finishes has to be known.
   surveyPass = grid;
-  studyScheduler.drain();
+  studyScheduler.enqueueAll(jobs);
 }
 
 /**
@@ -7807,14 +7814,14 @@ function onSurveyUpdate(job, event) {
     // get one — that would be the onboarding taking the reader's word for it,
     // which is the one thing this page never does.
     if (survey && coverageOf(survey).measured > 0) tour?.note('survey');
-    renderSurvey();
+    renderSurveySoon();
     return true;
   }
   if (event === 'done' || event === 'failed') {
     absorbSurveyRow(job);
     surveyRows.delete(job.id);
     if (!surveyRows.size) onSurveyPassDone();
-    renderSurvey();
+    renderSurveySoon();
     return true;
   }
   if (event === 'cancelled') {
@@ -7825,7 +7832,7 @@ function onSurveyUpdate(job, event) {
     // `closeSurvey` has nothing to take a rest shape of.
     if (job.cancelled === 'shed' && survey) surveyStop = surveyRestShape(survey);
     if (!surveyRows.size) surveyPass = null;
-    renderSurvey();
+    renderSurveySoon();
     return true;
   }
   return false;
@@ -7847,18 +7854,39 @@ function onSurveyPassDone() {
   if (surveyStop === surveyRestShape(survey)) return;
   // In idle time, by the rule `densifyStudies` follows: the queue has just
   // drained and the reader may be reaching for a control this instant.
-  //
-  // **With a timeout, which `densifyStudies` does not have and probably
-  // should.** Chrome defers `requestIdleCallback` indefinitely in a
-  // backgrounded tab: measured here, a coarse ground landed and the densify
-  // simply never ran — no error, no symptom, a survey that stayed at 36 of 36
-  // for as long as anybody watched. The timeout is the API's own answer to
-  // that, and a two-second ceiling is far outside the window where the reader
-  // is still reaching for the control this defers around.
-  const later = window.requestIdleCallback
-    ? (fn) => window.requestIdleCallback(fn, { timeout: 2000 })
-    : (fn) => setTimeout(fn, 300);
-  later(() => refineSurvey());
+  whenIdle(() => refineSurvey());
+}
+
+/**
+ * Run `fn` in idle time, but not never.
+ *
+ * Chrome defers `requestIdleCallback` indefinitely in a backgrounded tab:
+ * measured here, a coarse ground landed and the densify simply never ran — no
+ * error, no symptom, a survey that stayed at 36 of 36 for as long as anybody
+ * watched. The timeout is the API's own answer to that, and a two-second
+ * ceiling is far outside the window where the reader is still reaching for
+ * the control a deferral is for. One helper, because the fix was first made
+ * at one of the three sites that needed it and only noted as owing at another.
+ */
+function whenIdle(fn, { timeout = 2000, fallback = 300 } = {}) {
+  if (window.requestIdleCallback) window.requestIdleCallback(fn, { timeout });
+  else setTimeout(fn, fallback);
+}
+
+/**
+ * Letter E-02 once per frame, however many samples land in it.
+ *
+ * `renderSurvey` rebuilds the plan, the schedules, the key and the relief's
+ * mesh, and a pool of six on design days lands several samples a frame. Each
+ * one used to rebuild the lot, and the reader can only ever see the last.
+ */
+let surveyFrame = 0;
+function renderSurveySoon() {
+  if (surveyFrame) return;
+  surveyFrame = requestAnimationFrame(() => {
+    surveyFrame = 0;
+    renderSurvey();
+  });
 }
 
 /**
@@ -8389,8 +8417,8 @@ let surveyChoice = { x: null, y: null, readings: [], extents: {} };
 const withoutExtent = (choice, which) => {
   const key = choice[which];
   if (!key) return choice.extents ?? {};
-  const { [key]: gone, ...rest } = choice.extents ?? {};
-  void gone;
+  const rest = { ...choice.extents };
+  delete rest[key];
   return rest;
 };
 
@@ -9139,11 +9167,16 @@ function renderGroundKey(sv) {
     'Where the desk is standing now. It moves when the desk moves, and is hollow between measured designs.',
   );
   const region = improvingRegion(sv, sv.standingAt(params));
-  if (region.spots.length) {
+  // Which way "improves" is said, per reading, off the same declarations the
+  // region is built from — never "better", which is lower for a demand and
+  // higher for the zone's own low.
+  const clause = improvingClause(sv.readings);
+  if (region.spots.length && clause) {
+    const count = region.spots.length;
     entry(
       () => [svg('rect', { class: 'improving', x: 1, y: 1, width: 12, height: 8 })],
-      `Hatched: ${region.spots.length} measured ${region.spots.length === 1 ? 'design that reads' : 'designs that read'} ` +
-        `better than the one the desk is on. They are measured points, not gaps.`,
+      `Hatched: ${count} measured ${count === 1 ? 'design' : 'designs'} with ${clause} than the one the ` +
+        'desk is on. They are measured points, not gaps.',
     );
   }
   if (sv.gaps().length) {
@@ -9358,10 +9391,7 @@ function renderSpots(sv) {
   table.textContent = '';
   const spots = sv.spots();
   const heads = [labelFor(sv.x.key), labelFor(sv.y.key), ...sv.readings.map((reading) => reading.label)];
-  const thead = el('thead');
-  const headRow = el('tr');
-  for (const head of heads) headRow.append(el('th', null, head));
-  thead.append(headRow);
+  const thead = tableHead(heads);
   const tbody = el('tbody');
   for (const spot of spots) {
     const row = el('tr');
@@ -9613,17 +9643,13 @@ function readPull() {
   pullJobs = new Map();
   pullLanded = new Map();
   pullFinished.clear();
-  surveyEnqueueing = true;
-  try {
-    for (const probe of probes) {
+  studyScheduler.enqueueAll(
+    probes.map((probe) => {
       const job = makeStudyJob({ ...probe, restShape: restShapeKey(probe.key, stance, patch) });
       pullJobs.set(job.id, probe);
-      studyScheduler.enqueue(job);
-    }
-  } finally {
-    surveyEnqueueing = false;
-  }
-  studyScheduler.drain();
+      return job;
+    }),
+  );
   renderPull();
 }
 
@@ -9995,7 +10021,10 @@ function drawRelief(sv) {
       onLost: (reason) => {
         reliefLoss = reason;
         relief = null;
-        drawRelief(sv);
+        // The ground current when the context goes, not the one this handler
+        // was made under: it is made once, and holding that first survey here
+        // kept it alive for the session and would redraw the loss over it.
+        if (survey) drawRelief(survey);
       },
     });
     if (!relief && !reliefLoss) {
@@ -10017,6 +10046,23 @@ function drawRelief(sv) {
   const levels = levelsFor(lattice);
   const at = sv.standingAt(params);
   const under = at && at.on ? sv.spotAt(at.ix, at.iy) : null;
+  // The pin stands where the desk stands. On a measured design it stands on
+  // that run's reading and its head is filled; between two it stands on the
+  // surface the relief draws there and its head is hollow — the plan's own
+  // filled-against-hollow mark, making the same claim: the desk is here, and
+  // this survey has not run it. Standing on the drawn surface lends the pin
+  // no reading, since nothing is lettered off it, as nothing is lettered off
+  // the surface. The pin used to be dropped between designs instead, so
+  // typing a figure between two positions took away the one mark on this
+  // drawing saying where the desk was. Over a cell the survey has not
+  // measured there is no surface to stand on, and no pin.
+  let stance = null;
+  if (under) {
+    stance = { ix: at.ix, iy: at.iy, value: reading.valueOf(under.readings), measured: true };
+  } else if (at && !at.on) {
+    const value = surfaceAt(lattice, at.ix, at.iy);
+    if (value !== null) stance = { ix: at.ix, iy: at.iy, value, measured: false };
+  }
   const block = blockOf(lattice);
   relief.draw({
     mesh: meshOf(lattice),
@@ -10029,11 +10075,7 @@ function drawRelief(sv) {
     // an oblique says which way each corner folds.
     strata: strataOf(block, levels),
     arrises: arrisesOf(block),
-    // The pin, only where the desk is standing on a design this survey has
-    // actually run. Between two measured points there is no height to stand a
-    // pin at, and interpolating one would be the relief inventing a reading —
-    // the plan's hollow mark carries that state instead.
-    stance: under ? { ix: at.ix, iy: at.iy, value: sv.readings[0].valueOf(under.readings) } : null,
+    stance,
     axes: {
       x: { label: labelFor(sv.x.key), from: stopOf(sv.x, 0), to: stopOf(sv.x, sv.x.count - 1) },
       y: { label: labelFor(sv.y.key), from: stopOf(sv.y, 0), to: stopOf(sv.y, sv.y.count - 1) },
@@ -10052,15 +10094,30 @@ function drawRelief(sv) {
   // Named viewpoints as real buttons: a coarse-pointer target and a tab stop
   // apiece, so every camera move the pointer can make the keyboard can make
   // too (FR-018e). There is no drag-to-orbit here that these do not cover.
+  //
+  // A camera move repaints what the relief already holds and re-letters the
+  // buttons and the label. It used to call `drawRelief` as well, after
+  // `setView` had already painted, which rebuilt the lattice, the mesh and the
+  // block and uploaded them all again to show the same ground from elsewhere.
+  const named = [];
+  const markView = () => {
+    for (const [button, viewpoint] of named) {
+      button.setAttribute('aria-pressed', String(relief.view.azimuth === viewpoint.azimuth));
+    }
+    host.setAttribute(
+      'aria-label',
+      `${surveyAriaLabel(sv)} Drawn from ${relief.view.azimuth}° at ${relief.view.elevation}° above.`,
+    );
+  };
   views.textContent = '';
   for (const viewpoint of relief.viewpoints) {
     const button = el('button', 'relief-view', viewpoint.label);
     button.type = 'button';
-    button.setAttribute('aria-pressed', String(relief.view.azimuth === viewpoint.azimuth));
     button.addEventListener('click', () => {
       relief.setView(viewpoint);
-      drawRelief(sv);
+      markView();
     });
+    named.push([button, viewpoint]);
     views.append(button);
   }
   for (const [label, step] of [['Turn left', { azimuth: -1 }], ['Turn right', { azimuth: 1 }]]) {
@@ -10068,16 +10125,13 @@ function drawRelief(sv) {
     button.type = 'button';
     button.addEventListener('click', () => {
       relief.step(step);
-      drawRelief(sv);
+      markView();
     });
     views.append(button);
   }
+  markView();
 
   const coverage = coverageOf(sv);
-  host.setAttribute(
-    'aria-label',
-    `${surveyAriaLabel(sv)} Drawn from ${relief.view.azimuth}° at ${relief.view.elevation}° above.`,
-  );
   // The inference is declared here as well as on the plan, because a
   // continuous surface is read as continuous data wherever it is drawn and a
   // declaration on the other figure does not reach a reader looking at this
@@ -10292,7 +10346,7 @@ renderSurvey();
 // The first instance compiled ahead of the first click, in idle time: the
 // binary is an HTTP-cache hit off the pump's download, so this trades a few
 // idle milliseconds for the first study starting on a warm engine.
-(window.requestIdleCallback ?? ((fn) => setTimeout(fn, 1500)))(() => studyPool.prewarm());
+whenIdle(() => studyPool.prewarm(), { fallback: 1500 });
 
 // The verdict on a link the page was opened with, now that boot has finished
 // writing the status line. A refusal stops auto-solve, so no pump starts and

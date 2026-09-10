@@ -36,7 +36,7 @@
  */
 
 import { CHANNEL_BY_ID, controlFor } from './controls.js';
-import { QUANTITY_BY_ID, refusesSweep, sampleOrder } from './study.js';
+import { QUANTITY_BY_ID, refusesSweep, sampleOrder, samplePoints } from './study.js';
 
 /* ══ how big the ground is ═══════════════════════════════════════════════ */
 
@@ -266,16 +266,10 @@ export class Axis {
  * designs that cannot exist.
  */
 export function axisFor(key, { from = null, to = null, count = COARSE_GRID, stance }) {
-  const { channel, control, side } = controlFor(key); // throws naming an unowned key
-  const refusal = refusesSweep(control);
+  const { control, side } = controlFor(key); // throws naming an unowned key
+  const refusal = refusesAxis(key);
   if (refusal) throw new Error(`axisFor: ${refusal}`);
-  if (channel.prices) {
-    throw new Error(
-      `axisFor: ${key} is on the ${channel.name} channel, which prices the run rather than shaping it. ` +
-        'Nothing it owns reaches the IDF, so a ground cut along it would be the same building at every position',
-    );
-  }
-  const { min, max, step } = control;
+  const { min, max } = control;
   const lo = from === null ? min : from;
   const hi = to === null ? max : to;
   for (const [name, value] of [['from', lo], ['to', hi]]) {
@@ -289,27 +283,55 @@ export function axisFor(key, { from = null, to = null, count = COARSE_GRID, stan
     throw new Error(`axisFor: a ground needs at least two positions on ${key}, not ${count}`);
   }
 
-  const grid = (v) => Math.min(max, Math.max(min, min + Math.round((v - min) / step) * step));
-  const raw = [];
-  for (let i = 0; i < count; i += 1) raw.push(grid(lo + (i / (count - 1)) * (hi - lo)));
   const current = stance[key];
   // The stance's own value goes in only where it is inside the extent. A
   // reader who narrowed the extent past where they are standing has said so,
   // and forcing the stance back in would silently widen the extent they set.
   const inside = Number.isFinite(current) && current >= Math.min(lo, hi) && current <= Math.max(lo, hi);
-  if (inside) raw.push(current);
-  raw.sort((a, b) => a - b);
-
-  const tol = step / 1000;
-  const positions = [];
-  for (const v of raw) {
-    if (positions.length && Math.abs(positions[positions.length - 1] - v) < tol) {
-      if (inside && v === current) positions[positions.length - 1] = current;
-    } else {
-      positions.push(v);
-    }
-  }
+  // `samplePoints` itself, so a survey axis snaps and dedupes exactly as a
+  // study's sweep does: the 6 → 11 and 11 → 21 subset property that lets a
+  // densify and a study share runs depends on the two agreeing to the ulp,
+  // and a second copy of the rounding is how they would stop agreeing.
+  const positions = samplePoints(control, inside ? current : null, count, { from: lo, to: hi });
   return new Axis({ key, control, side, from: lo, to: hi, positions });
+}
+
+/**
+ * Why a control cannot be an axis of a ground, or null where it can.
+ *
+ * One sentence for both ways a bare key reaches this feature — the chooser
+ * through `axisFor` and a shared link through `decodeSurvey` — because two
+ * copies of the rule are how a link comes to cut a ground the desk itself
+ * refuses, or to be refused for a different reason from the desk's.
+ */
+export function refusesAxis(key) {
+  const { channel, control } = controlFor(key);
+  const faceless = refusesSweep(control);
+  if (faceless) return `the control "${key}" has no numeric face to survey along: ${faceless}`;
+  if (channel.prices) {
+    return (
+      `the control "${key}" is on the ${channel.name} channel, which prices the run rather than shaping it. ` +
+      'Nothing it owns reaches the IDF, so a ground cut along it would be the same building at every position'
+    );
+  }
+  return null;
+}
+
+/**
+ * What improving on the stance means for these readings, in words: "a lower
+ * High", "a lower TEDI and a lower CEDI", "a higher Low".
+ *
+ * The hatched region is every measured design that improves on the stance in
+ * every reading the ground carries, and which way is an improvement is
+ * declared per reading — less for a demand or a bill, more for the zone's own
+ * low. The key used to say the hatched designs "read better", which named
+ * neither, so a reader looking at a ground of the low had nothing to tell them
+ * the hatch marked the warmer designs rather than the cooler ones. Null where
+ * any reading declares no direction, since there is then no region to name.
+ */
+export function improvingClause(readings) {
+  if (!readings.length || readings.some((reading) => !reading.better)) return null;
+  return readings.map((reading) => `a ${reading.better} ${reading.label}`).join(' and ');
 }
 
 /**
@@ -886,6 +908,33 @@ export function meshOf(lattice) {
     ny,
     cells: indices.length / 6,
   };
+}
+
+/**
+ * The height of the surface `meshOf` draws, at a fractional lattice position,
+ * or null over a cell it draws nothing across.
+ *
+ * Taken off the two triangles the cell is actually drawn as, split along the
+ * same bottom-left to top-right diagonal, so a mark stood on it sits on the
+ * drawing rather than a hair above or below it where bilinear interpolation
+ * and the triangles disagree. It is the drawing's height and not a reading:
+ * nothing may be lettered from it, as nothing is lettered from the surface.
+ */
+export function surfaceAt({ values, mask, nx, ny }, ix, iy) {
+  if (!(ix >= 0 && iy >= 0 && ix <= nx - 1 && iy <= ny - 1)) return null;
+  const x0 = Math.min(Math.floor(ix), nx - 2);
+  const y0 = Math.min(Math.floor(iy), ny - 2);
+  if (x0 < 0 || y0 < 0) return null;
+  const bl = x0 + y0 * nx;
+  const br = bl + 1;
+  const tl = bl + nx;
+  const tr = tl + 1;
+  if (!mask[bl] || !mask[br] || !mask[tl] || !mask[tr]) return null;
+  const fx = ix - x0;
+  const fy = iy - y0;
+  return fx >= fy
+    ? values[bl] + fx * (values[br] - values[bl]) + fy * (values[tr] - values[br])
+    : values[bl] + fy * (values[tl] - values[bl]) + fx * (values[tr] - values[tl]);
 }
 
 /**
