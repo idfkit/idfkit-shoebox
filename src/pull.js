@@ -52,7 +52,7 @@ import { refusesSweep } from './study.js';
  * entry that carried both would be two claims about one control.
  */
 export class PullEntry {
-  constructor({ key, control, side, channel, direction = null, effect = null, perUnit = '', room = 0, atStop = false, inert = null, at = null }) {
+  constructor({ key, control, side, channel, direction = null, effect = null, perUnit = '', room = 0, atStop = false, inert = null }) {
     if (!key) throw new Error('a pull entry needs a control key');
     if ((inert === null) === (effect === null)) {
       throw new Error(
@@ -82,8 +82,6 @@ export class PullEntry {
     /** True where `room` is zero: a steep face with nowhere left to go. */
     this.atStop = Boolean(atStop);
     this.inert = inert;
-    /** Where the probe was taken, so a reader can check the arithmetic. */
-    this.at = at;
     Object.freeze(this);
   }
 
@@ -102,22 +100,18 @@ export class PullEntry {
  * forgets to print.
  */
 export class PullReading {
-  constructor({ kind, reading, entries, probed }) {
+  constructor({ kind, reading, entries }) {
     if (kind !== 'annual' && kind !== 'design-day') {
       throw new Error(`a pull was read at "${kind}", which is not a run kind`);
     }
     this.kind = kind;
     this.reading = reading;
+    // Deliberately no count of cache hits: the scheduler reports a landed
+    // sample and says nothing about whether it cost an engine run, so a
+    // `cached` field here could only ever be zero — a claim rather than a
+    // measurement. The desk's own solve counter is where the reader can see
+    // what a pull actually spent.
     this.entries = Object.freeze([...entries]);
-    /**
-     * Controls probed. Deliberately **not** a count of cache hits beside it:
-     * the scheduler reports a landed sample and says nothing about whether it
-     * cost an engine run, so a `cached` field here could only ever be zero —
-     * a figure that is a claim rather than a measurement, which is the one
-     * thing this sheet exists not to print. The desk's own solve counter is
-     * where the reader can see what a pull actually spent.
-     */
-    this.probed = probed;
     Object.freeze(this);
   }
 
@@ -160,7 +154,7 @@ function inertReason(control, side, channel, engaged, snapshot) {
  * the only step available — a probe off the end of the face would be a
  * position the desk cannot hold.
  */
-export function pullProbes(stance, patch, { quantity, engaged, annual, epw = null, needed, carried, restShape, id = 'pull' }) {
+export function pullProbes(stance, patch, { quantity, engaged, annual, epw = null, needed, carried, id = 'pull' }) {
   if (!quantity) throw new Error('pullProbes: a pull is read against one declared quantity');
   const engagedSet = new Set(engaged);
   const probes = [];
@@ -209,7 +203,6 @@ export function pullProbes(stance, patch, { quantity, engaged, annual, epw = nul
           quantity: quantity.id,
           needed,
           carried,
-          restShape,
           points: [here, to],
           // The stance first, because it is the likeliest cache hit on the
           // desk — every study and the sheet's own solve share it.
@@ -221,7 +214,6 @@ export function pullProbes(stance, patch, { quantity, engaged, annual, epw = nul
           channel,
           from: here,
           to,
-          size,
         });
       }
     }
@@ -239,7 +231,7 @@ export function pullProbes(stance, patch, { quantity, engaged, annual, epw = nul
  * this sheet deciding which of its own measurements to believe.
  */
 export function entryFrom(probe, { here, there, reading }) {
-  const { control, side, channel, key, from, to, size } = probe;
+  const { control, side, channel, key, from, to } = probe;
   if (here === null || there === null) {
     return new PullEntry({
       key,
@@ -282,7 +274,6 @@ export function entryFrom(probe, { here, there, reading }) {
     perUnit: control.unit || '',
     room: Math.max(0, room),
     atStop: Math.max(0, room) === 0,
-    at: { from, to, size, here, there },
   });
 }
 

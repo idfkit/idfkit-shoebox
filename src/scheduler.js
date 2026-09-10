@@ -58,6 +58,7 @@ export function makeStudyJob({
   needed,
   carried = needed,
   restShape,
+  omits = key,
   points,
   order,
   origin,
@@ -101,9 +102,12 @@ export function makeStudyJob({
     needed,
     carried,
     restShape,
+    // The key or keys `restShape` leaves out, so the cancel point can take the
+    // live desk's shape the same way without knowing who owns the job.
+    omits,
     points,
     order,
-    origin, // 'manual' | 'refresh'
+    origin, // 'manual' | 'refresh' | 'survey' | 'pull'
     asked, // the sample count requested — the coarse pass is later densified
     openingBasis,
     curve: new Array(points.length),

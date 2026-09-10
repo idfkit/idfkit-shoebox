@@ -190,6 +190,18 @@ export class Reading {
     }
     return this.better === 'lower' ? value < against : value > against;
   }
+
+  /**
+   * One value lettered as the study card letters it: through the series' own
+   * formatter where it declares one — the bill's currency — and by `digits`
+   * and `unit` otherwise. `bag` is the sample's readings bag the value came
+   * out of, which is where a formatter finds what it needs.
+   */
+  format(value, bag) {
+    return this.series.format
+      ? this.series.format(value, bag?.[this.quantity.id])
+      : `${value.toFixed(this.digits)} ${this.unit}`;
+  }
 }
 
 /** Every reading a survey may be cut for, one per series across the roster. */
@@ -331,7 +343,10 @@ export function refusesAxis(key) {
  */
 export function improvingClause(readings) {
   if (!readings.length || readings.some((reading) => !reading.better)) return null;
-  return readings.map((reading) => `a ${reading.better} ${reading.label}`).join(' and ');
+  // Lower-cased to sit inside a sentence, except an acronym: "a lower tedi"
+  // is not a metric anybody publishes.
+  const noun = (label) => (/^[A-Z]{2,}\b/.test(label) ? label : label[0].toLowerCase() + label.slice(1));
+  return readings.map((reading) => `a ${reading.better} ${noun(reading.label)}`).join(' and ');
 }
 
 /**
@@ -394,8 +409,10 @@ export class Gap {
  */
 export class Coverage {
   constructor({ wanted, measured, gaps, density }) {
+    // `unsurveyed` is the remainder, so the sum holds by construction; what
+    // can fail is a remainder below zero, or a count that is not a number.
     const unsurveyed = wanted - measured - gaps;
-    if (unsurveyed < 0 || measured + gaps + unsurveyed !== wanted) {
+    if (!(unsurveyed >= 0)) {
       throw new Error(
         `coverage does not sum: ${measured} measured and ${gaps} gaps against ${wanted} wanted. A relief and ` +
           'a schedule of spot heights must never be able to disagree about how much was measured',
@@ -407,15 +424,6 @@ export class Coverage {
     this.unsurveyed = unsurveyed;
     this.density = density;
     Object.freeze(this);
-  }
-
-  get complete() {
-    return this.measured + this.gaps === this.wanted;
-  }
-
-  /** The share of the asked-for ground that carries a run, 0 to 1. */
-  get fraction() {
-    return this.wanted ? this.measured / this.wanted : 0;
   }
 }
 
@@ -429,11 +437,16 @@ export class Coverage {
  * longer true of anything.
  */
 export class TraverseStop {
-  constructor({ params, patch, readings = null, at }) {
+  constructor({ params, patch, shape, readings = null, at }) {
     if (!params || !patch) throw new Error('a traverse stop needs the desk it was standing on');
+    if (typeof shape !== 'string') throw new Error('a traverse stop needs the shape key of its desk');
     if (!Number.isInteger(at)) throw new Error('a traverse stop needs its place in the order');
     this.params = Object.freeze({ ...params });
     this.patch = Object.freeze({ ...patch });
+    // Taken once, since the stop is frozen: every "is the desk standing here"
+    // is a string comparison rather than a whole-desk serialisation per stop,
+    // and that question is asked after every live solve of a drag.
+    this.shape = shape;
     this.readings = readings;
     this.at = at;
     Object.freeze(this);
@@ -442,7 +455,7 @@ export class TraverseStop {
 
 /* ══ the survey ══════════════════════════════════════════════════════════ */
 
-const pointKey = (ix, iy) => `${ix},${iy}`;
+export const pointKey = (ix, iy) => `${ix},${iy}`;
 
 /**
  * One ground under measurement.
@@ -534,14 +547,14 @@ export class Survey {
   }
 
   /**
-   * Where a given desk stands on this ground, or null where it is outside the
-   * extent — read from the desk handed in rather than from anything stored,
-   * which is the only way it can be right after the desk has moved.
+   * Where a given desk stands on this ground, or null where it is not on a
+   * measured position — read from the desk handed in rather than from anything
+   * stored, which is the only way it can be right after the desk has moved.
+   * `standingAt` restricted to `on`, so the two cannot come to disagree.
    */
   positionOf(desk) {
-    const ix = this.x.indexOf(desk[this.x.key]);
-    const iy = this.y.indexOf(desk[this.y.key]);
-    return ix === -1 || iy === -1 ? null : { ix, iy };
+    const at = this.standingAt(desk);
+    return at?.on ? { ix: at.ix, iy: at.iy } : null;
   }
 
   /**
@@ -643,13 +656,16 @@ export function rowsFor(survey, { needed, carried, restShape, origin = 'survey',
     needed,
     carried,
     restShape,
+    // A row is a study of two controls, so its rest shape leaves both out, and
+    // the cancel point has to ask it the same question.
+    omits: [survey.x.key, survey.y.key],
     points,
     order: sampleOrder(points, survey.stance[survey.x.key]),
     origin,
     asked: points.length,
-    // Not part of the job the scheduler understands; carried alongside so the
-    // caller can put a landed sample back at the right row without keeping a
-    // second map from job id to index.
+    // Not part of the job the scheduler understands, and `makeStudyJob` drops
+    // it: the caller reads it off the spec to rank the rows and to map a job id
+    // back to its row.
     iy,
   }));
 }
@@ -1167,7 +1183,7 @@ function standingRefusal(survey, stance) {
   return null;
 }
 
-export function improvingRegion(survey, stance = survey.cutAt) {
+export function improvingRegion(survey, stance) {
   const refused = standingRefusal(survey, stance);
   if (refused) return { spots: [], refusal: refused };
   const here = survey.spotAt(stance.ix, stance.iy);
@@ -1213,7 +1229,7 @@ export function improvingRegion(survey, stance = survey.cutAt) {
  * is required and its absence is stated with the one thing that fixes it:
  * let the ground refine.
  */
-export function freeExchange(survey, stance = survey.cutAt, reading = survey.readings[0]) {
+export function freeExchange(survey, stance, reading = survey.readings[0]) {
   const refused = standingRefusal(survey, stance);
   if (refused) return { refusal: refused };
   const { ix, iy } = stance;
@@ -1436,7 +1452,7 @@ export function fallStep(survey, from, { visited = null, reading = survey.readin
  * measurement supports. It is written as a sum of normalised terms rather than
  * as magic constants precisely so that it can be argued with.
  */
-export function refineOrder(survey, { reading = survey.readings[0], stance = survey.cutAt } = {}) {
+export function refineOrder(survey, { reading = survey.readings[0], stance }) {
   // Every reading the ground carries, not only the one the relief is drawn
   // from: the second is what makes a trade visible, and a trade is the most
   // interesting thing on a two-reading ground.

@@ -69,6 +69,7 @@ import {
   surfaceAt,
   improvingClause,
   makeSurvey,
+  pointKey,
   meshOf,
   refineOrder,
   rowsFor,
@@ -2269,28 +2270,21 @@ function applyGeometry() {
   // along its own curve, costs nothing. Samples already on an engine cannot
   // be stopped; they land into the cancelled job and are dropped.
   //
-  // A survey row is asked a different question from a study's, because it is a
-  // study of two controls: its rest shape omits both axes, so comparing it
-  // against `restShapeKey(job.key)` — which omits only the swept one — would
-  // never match and every row would be cancelled on every single apply,
+  // Each job says which keys its rest shape leaves out (`omits`): a study its
+  // swept key, a survey row both axes. Compared against the swept key alone, a
+  // row would never match and would be cancelled on every single apply,
   // including the applies the survey's own samples cause.
   //
   // Each shape is taken once per apply rather than once per job: the
   // predicate runs for every queued row and probe, a pull alone is up to
   // ninety of them, and every shape is a serialisation of the whole desk.
-  const surveyShape = survey ? surveyRestShape(survey) : null;
   const shapes = new Map();
-  const shapeOmitting = (key) => {
-    if (!shapes.has(key)) shapes.set(key, restShapeKey(key));
-    return shapes.get(key);
+  const shapeOmitting = (omits) => {
+    const id = String(omits);
+    if (!shapes.has(id)) shapes.set(id, deskKey(params, patching(), omits));
+    return shapes.get(id);
   };
-  studyScheduler?.cancelWhere(
-    (job) =>
-      job.origin === 'survey'
-        ? surveyShape === null || job.restShape !== surveyShape
-        : job.restShape !== shapeOmitting(job.key),
-    'moved',
-  );
+  studyScheduler?.cancelWhere((job) => job.restShape !== shapeOmitting(job.omits), 'moved');
   modelState = applyModel(model, params, patching());
   SURFACES = surfaceGeometry(model);
   WINDOWS = windowGeometry(model);
@@ -6918,9 +6912,13 @@ function landedFrom(eso, job, built) {
   };
 }
 
+/** The ids of the channels a desk has in the path. */
+function engagedChannels(snapshot, patch) {
+  return [...channelState(snapshot, patch)].filter(([, value]) => value.engaged).map(([id]) => id);
+}
+
 function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? null) {
-  const state = channelState(snapshot, patch);
-  const channels = [...state].filter(([, value]) => value.engaged).map(([id]) => id);
+  const channels = engagedChannels(snapshot, patch);
   const engaged = new Set(channels);
   const card = assume(resolveRates(station), snapshot);
   const uses = END_USES.filter((use) => !use.needs || engaged.has(use.needs));
@@ -6972,18 +6970,20 @@ function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? nul
  * travels is the quantity's own requirement, which is what the throw's own
  * sentence claims to be checking; the rest of the desk is already in the cache
  * key through `deskKey`, so nothing about sample identity is lost.
+ *
+ * A list of quantities, because a ground surveyed for demand and overheating is
+ * one set of runs read twice, not two sets: the needs are their union.
  */
-function sampleContentsFor(quantity, snapshot, patch, epw) {
-  const state = channelState(snapshot, patch);
-  const channels = [...state].filter(([, value]) => value.engaged).map(([id]) => id);
-  const needed = contentsFor(quantity, channels);
+function sampleContentsFor(quantities, snapshot, patch, annual) {
+  const channels = engagedChannels(snapshot, patch);
+  const needed = RunContents.union(quantities.map((quantity) => contentsFor(quantity, channels)));
   const carried = new RunContents({
     variables: needed.variables,
     meters: needed.meters,
     tables: needed.tables,
-    annual: Boolean(epw),
+    annual,
     channels: needed.channels,
-    season: Boolean(epw) && touchesSeason(snapshot.months),
+    season: annual && touchesSeason(snapshot.months),
   });
   return { needed, carried };
 }
@@ -7140,10 +7140,8 @@ studyScheduler = createStudyScheduler({
     runningMean: runningMeanFor(job.epw),
     occupiedFloor: occupiedFloor(job.snapshot),
   }),
-  // Shut during a gesture, and shut for the breath a survey's rows go in
-  // together: enqueued one at a time with a drain on each, row 0 would fill the
-  // pool before row 1 was in the list and the coarse pass would land as one
-  // finished row over eight empty ones.
+  // Shut during a gesture. A survey's rows go in together through
+  // `enqueueAll`, which admits the lot and drains once.
   paused: () => gesture,
   capacity: () => studyCapacity,
   onUpdate: onStudyUpdate,
@@ -7271,7 +7269,7 @@ function jobForStudy(key, { origin = 'refresh', n = SWEEP_SAMPLES, openingBasis 
   const epw = epwText ?? null;
   if (!studyQuantity) throw new Error(`the study of ${key} was queued before the desk quantity was initialized`);
   const quantity = quantityOf(studyQuantity);
-  const { needed, carried } = sampleContentsFor(quantity, snapshot, patch, epw);
+  const { needed, carried } = sampleContentsFor([quantity], snapshot, patch, Boolean(epw));
   const points = samplePoints(control, snapshot[key], n);
   return makeStudyJob({
     key,
@@ -7680,39 +7678,22 @@ function onStudyUpdate(job, event) {
 
 const SURVEY_ID = 'survey';
 
-/**
- * What a survey's runs must carry, over both of its readings at once.
- *
- * The union rather than one quantity's contents, because a ground surveyed for
- * demand and overheating is one set of runs read twice, not two sets. Carried
- * follows `sampleContentsFor`'s rule and for its reason: `channels` is a
- * precondition `syncReporting` throws on, and a sample is the desk with one
- * control moved, so what travels is the quantities' own requirement rather
- * than the whole engaged set.
- */
-function surveyContents(sv) {
-  const state = channelState(sv.stance, sv.patch);
-  const channels = [...state].filter(([, value]) => value.engaged).map(([id]) => id);
-  const needed = RunContents.union(sv.quantities.map((quantity) => contentsFor(quantity, channels)));
-  const carried = new RunContents({
-    variables: needed.variables,
-    meters: needed.meters,
-    tables: needed.tables,
-    annual: sv.annual,
-    channels: needed.channels,
-    season: sv.annual && touchesSeason(sv.stance.months),
-  });
-  return { needed, carried };
-}
-
 /** Whether every reading the survey carries can be answered on its own desk. */
 function surveyRefusal(sv) {
-  const offers = studyOffers(sv.stance, sv.patch, sv.epw);
-  for (const reading of sv.readings) {
-    const offer = offers.find((candidate) => candidate.quantity.id === reading.quantity.id);
-    if (!offer.available) return `${offer.reason} ${offer.fix}`;
-  }
-  return null;
+  const ids = new Set(sv.readings.map((reading) => reading.id));
+  const refused = surveyReadingOffers(sv.stance, sv.patch, sv.epw)
+    .find((offer) => ids.has(offer.reading.id) && !offer.available);
+  return refused?.reason ?? null;
+}
+
+/** The rest of the desk, excluding both axes — see `deskKey`'s note. */
+function surveyRestShape(sv, p = params, patch = patching()) {
+  return deskKey(p, patch, [sv.x.key, sv.y.key]);
+}
+
+/** What one survey's runs must carry: `sampleContentsFor`, over all its quantities. */
+function surveyContents(sv) {
+  return sampleContentsFor(sv.quantities, sv.stance, sv.patch, sv.annual);
 }
 
 /**
@@ -7727,11 +7708,6 @@ function surveyRefusal(sv) {
  * gestures, so the rows go in through `enqueueAll`, which admits the lot and
  * drains once.
  */
-/** The rest of the desk, excluding both axes — see `deskKey`'s note. */
-function surveyRestShape(sv, p = params, patch = patching()) {
-  return deskKey(p, patch, [sv.x.key, sv.y.key]);
-}
-
 function queueSurvey(sv, { grid }) {
   if (!studyScheduler) return;
   const { needed, carried } = surveyContents(sv);
@@ -7745,7 +7721,7 @@ function queueSurvey(sv, { grid }) {
   // separate readings on this sheet refuse until the lattice is dense.
   if (sv.points.size) {
     const priority = new Map();
-    for (const want of refineOrder(sv, { stance: sv.positionOf(sv.stance) })) {
+    for (const want of refineOrder(sv, { stance: sv.cutAt })) {
       priority.set(want.iy, Math.max(priority.get(want.iy) ?? -Infinity, want.score));
     }
     specs.sort((left, right) => (priority.get(right.iy) ?? -Infinity) - (priority.get(left.iy) ?? -Infinity));
@@ -8030,6 +8006,7 @@ function closeSurvey({ forgetTraverse = false } = {}) {
   surveyStop = null;
   groundCursor = null;
   if (forgetTraverse) traverse.length = 0;
+  renderTraverse();
   renderSurvey();
   updatePermalink();
 }
@@ -8534,13 +8511,15 @@ function extentField(which) {
  * So the chooser is redrawn only when something it draws has actually moved:
  * the selection, or the desk the offers are measured against.
  */
-let chooserDrawn = null;
+let chooserDrawn = null; // { choice, standing } as last drawn
 
 function renderSurveyChoose() {
   const host = $('survey-choose');
-  const signature = JSON.stringify([surveyChoice, shapeKey(params), Boolean(epwText)]);
-  if (chooserDrawn === signature) return;
-  chooserDrawn = signature;
+  // `surveyChoice` is always replaced and never mutated, so identity is the
+  // whole test for it; only the desk needs its key.
+  const standing = `${shapeKey(params)}|${Boolean(epwText)}`;
+  if (chooserDrawn?.choice === surveyChoice && chooserDrawn.standing === standing) return;
+  chooserDrawn = { choice: surveyChoice, standing };
   host.textContent = '';
   const axes = axisOffers();
   const readings = surveyReadingOffers();
@@ -8787,16 +8766,6 @@ function drawGround(sv) {
       y2: GROUND_PAD.top + frame.h,
     }),
   );
-  // The stops carry a bare number and the axis label carries the unit, once,
-  // which is how a survey drawing has always lettered a scale. Lettered on
-  // both, `3.00 m²K/W` at the head of a 44px gutter simply ran off the left of
-  // the frame and printed as `00 m²K/W` — a number that is not the reading and
-  // not anything else either.
-  const stop = (axis, value) => {
-    const said = formatValue(axis.key, value);
-    const unit = axis.control.unit;
-    return unit && said.endsWith(unit) ? said.slice(0, -unit.length).trim() : said;
-  };
   const axisTitle = (axis) => {
     const unit = axis.control.unit;
     return unit ? `${labelFor(axis.key)} · ${unit}` : labelFor(axis.key);
@@ -8811,14 +8780,14 @@ function drawGround(sv) {
         y: GROUND_PAD.top + frame.h + 16,
         'text-anchor': 'start',
       });
-      text.textContent = stop(axis, lo);
+      text.textContent = stopOf(axis, lo);
       const text2 = svg('text', {
         class: 'axis-stop',
         x: GROUND_PAD.left + frame.w,
         y: GROUND_PAD.top + frame.h + 16,
         'text-anchor': 'end',
       });
-      text2.textContent = stop(axis, hi);
+      text2.textContent = stopOf(axis, hi);
       const label = svg('text', {
         class: 'axis-label',
         x: GROUND_PAD.left + frame.w / 2,
@@ -8834,14 +8803,14 @@ function drawGround(sv) {
         y: GROUND_PAD.top + frame.h,
         'text-anchor': 'end',
       });
-      text.textContent = stop(axis, lo);
+      text.textContent = stopOf(axis, lo);
       const text2 = svg('text', {
         class: 'axis-stop',
         x: GROUND_PAD.left - 5,
         y: GROUND_PAD.top + 8,
         'text-anchor': 'end',
       });
-      text2.textContent = stop(axis, hi);
+      text2.textContent = stopOf(axis, hi);
       const label = svg('text', {
         class: 'axis-label',
         x: 11,
@@ -9169,9 +9138,10 @@ function renderGroundKey(sv) {
   const region = improvingRegion(sv, sv.standingAt(params));
   // Which way "improves" is said, per reading, off the same declarations the
   // region is built from — never "better", which is lower for a demand and
-  // higher for the zone's own low.
+  // higher for the zone's own low. Never null here: a region is only ever
+  // non-empty where every reading declares a direction.
   const clause = improvingClause(sv.readings);
-  if (region.spots.length && clause) {
+  if (region.spots.length) {
     const count = region.spots.length;
     entry(
       () => [svg('rect', { class: 'improving', x: 1, y: 1, width: 12, height: 8 })],
@@ -9208,7 +9178,7 @@ function spotSentence(sv, spot) {
   const said = sv.readings
     .map((reading) => {
       const value = reading.valueOf(spot.readings);
-      return `${reading.label} ${value === null ? '—' : value.toFixed(reading.digits)} ${reading.unit}`;
+      return `${reading.label} ${value === null ? '—' : reading.format(value, spot.readings)}`;
     })
     .join(', ');
   return `${labelFor(sv.x.key)} ${formatValue(sv.x.key, spot.x)}, ${labelFor(sv.y.key)} ${formatValue(sv.y.key, spot.y)} — ${said}. Measured.`;
@@ -9258,7 +9228,7 @@ function standOn(sv, spot) {
  */
 function restoreTraverse(stop) {
   if (!stop) return;
-  if (deskKey(stop.params, stop.patch) === shapeKey(params)) return;
+  if (stop.shape === shapeKey(params)) return;
   recordTraverse();
   beginGesture();
   // The patch bay first, because a parameter on a channel that is out reaches
@@ -9307,7 +9277,7 @@ function restoreTraverse(stop) {
 function recordTraverse() {
   const here = shapeKey(params);
   const last = traverse[traverse.length - 1];
-  if (last && deskKey(last.params, last.patch) === here) return;
+  if (last && last.shape === here) return;
   // A design revisited moves to the end of the record rather than being added
   // to it again, keeping the readings it already carries.
   //
@@ -9317,12 +9287,13 @@ function recordTraverse() {
   // answered to "you are here", which is one claim too many, and a reader
   // dragging a slider back and forth would fill the list with a design they
   // never left. The path is redrawn over itself on the plan either way.
-  const at = traverse.findIndex((stop) => deskKey(stop.params, stop.patch) === here);
+  const at = traverse.findIndex((stop) => stop.shape === here);
   const known = at === -1 ? null : traverse.splice(at, 1)[0];
   traverse.push(
     new TraverseStop({
       params: known?.params ?? params,
       patch: known?.patch ?? patching(),
+      shape: here,
       readings: known?.readings ?? null,
       at: traverse.length,
     }),
@@ -9363,13 +9334,13 @@ function landTraverseReadings(snapshot, patch, readings) {
   // stale solve of a desk already left, and inventing a stop for it would put
   // a design on the record that the reader never came to rest on.
   if (!traverse.length) {
-    traverse.push(new TraverseStop({ params: snapshot, patch, readings, at: 0 }));
+    traverse.push(new TraverseStop({ params: snapshot, patch, shape, readings, at: 0 }));
     renderTraverse();
     return;
   }
   for (let at = traverse.length - 1; at >= 0; at -= 1) {
     const stop = traverse[at];
-    if (deskKey(stop.params, stop.patch) !== shape) continue;
+    if (stop.shape !== shape) continue;
     // Already carrying what this run says. Re-solving the same desk — a
     // release after a drag that ended where it began — must not mint a new
     // object and redraw the traverse for nothing.
@@ -9377,6 +9348,7 @@ function landTraverseReadings(snapshot, patch, readings) {
     traverse[at] = new TraverseStop({
       params: stop.params,
       patch: stop.patch,
+      shape: stop.shape,
       readings,
       at: stop.at,
     });
@@ -9402,7 +9374,7 @@ function renderSpots(sv) {
         const value = reading.valueOf(spot.readings);
         // An absence is an em dash and stays out of every total. Zero is a
         // measurement; missing is not one.
-        return value === null ? '—' : `${value.toFixed(reading.digits)} ${reading.unit}`;
+        return value === null ? '—' : reading.format(value, spot.readings);
       }),
     ];
     cells.forEach((text, at) => {
@@ -9452,15 +9424,16 @@ function renderCoverage(sv) {
 /**
  * A quantity along one axis, in that control's own units.
  *
- * Through the control's own `format` rather than `toFixed`, so the digits and
- * the unit are the declaration's — the same rule the margin numbers follow —
+ * At the control's declared digits and in its unit, so the figure is lettered
+ * to the precision the margin number beside it uses —
  * and so a unitless control (a ratio, a fraction) reads as a bare number
  * rather than as a number with a trailing space where a unit was expected.
  */
 function amountOn(axis, value) {
+  // The declaration's `digits` rather than `format` itself, because an amount
+  // of exactly zero is not the control's `zero` label.
   const unit = axis.control.unit;
-  const digits = Math.max(0, Math.ceil(-Math.log10(axis.control.step)) || 0);
-  const said = value.toFixed(Math.min(4, digits));
+  const said = value.toFixed(axis.control.digits);
   return unit ? `${said} ${unit}` : said;
 }
 
@@ -9505,12 +9478,11 @@ function renderSurveyFinding(sv) {
   const here = sv.standingAt(params);
   const region = improvingRegion(sv, here);
   if (region.spots.length) {
-    const said = sv.readings
-      .map((reading) => `a ${reading.better} ${reading.label.toLowerCase()}`)
-      .join(' and ');
+    // The key's own clause, so the finding and the key under the hatching name
+    // the region in one wording.
     parts.push(
       `${region.spots.length} measured ${region.spots.length === 1 ? 'design reads' : 'designs read'} ` +
-        `${said} than the stance. That is a region of the measured ground, not an optimum.`,
+        `${improvingClause(sv.readings)} than the stance. That is a region of the measured ground, not an optimum.`,
     );
   } else if (region.refusal) {
     parts.push(region.refusal);
@@ -9557,7 +9529,7 @@ function renderSurveyFinding(sv) {
         const said = sv.readings.map((entry, at2) => {
           const value = entry.valueOf(worst.readings);
           const change = value - base[at2];
-          return `${change >= 0 ? '+' : ''}${change.toFixed(entry.digits)} ${entry.unit} of ${entry.label.toLowerCase()}`;
+          return `${change >= 0 ? '+' : ''}${entry.format(change, worst.readings)} of ${entry.label.toLowerCase()}`;
         });
         parts.push(
           `${split.length} measured ${split.length === 1 ? 'design trades' : 'designs trade'} one reading ` +
@@ -9589,7 +9561,6 @@ function renderSurveyFinding(sv) {
 
 /* ── the pull ────────────────────────────────────────────────────────────── */
 
-let pullReading = null; // the last ranking, or null
 let pullJobs = new Map(); // job id -> the probe spec it came from
 let pullLanded = new Map(); // job id -> { here, there }
 let pullStance = null;
@@ -9624,20 +9595,14 @@ function readPull() {
   const reading = pullReadingFor(survey.readings[0].id);
   const stance = { ...params };
   const patch = patching();
-  const state = channelState(stance, patch);
-  const engaged = [...state].filter(([, value]) => value.engaged).map(([id]) => id);
   const { needed, carried } = surveyContents(survey);
   const { probes, inert } = pullProbes(stance, patch, {
     quantity: reading.quantity,
-    engaged,
+    engaged: engagedChannels(stance, patch),
     annual: Boolean(epwText),
     epw: epwText ?? null,
     needed,
     carried,
-    // The rest of the desk excluding the probed key, exactly as a study's is:
-    // a probe is a study of two points, and moving the control it probes only
-    // walks along the answer it gave.
-    restShape: null,
   });
   pullStance = { stance, patch, reading, inert, annual: Boolean(epwText) };
   pullJobs = new Map();
@@ -9645,6 +9610,9 @@ function readPull() {
   pullFinished.clear();
   studyScheduler.enqueueAll(
     probes.map((probe) => {
+      // The rest of the desk excluding the probed key, exactly as a study's
+      // is: a probe is a study of two points, and moving the control it
+      // probes only walks along the answer it gave.
       const job = makeStudyJob({ ...probe, restShape: restShapeKey(probe.key, stance, patch) });
       pullJobs.set(job.id, probe);
       return job;
@@ -9664,15 +9632,30 @@ function onPullUpdate(job, event) {
       pullLanded.set(job.id, { here, there });
     }
     if (event !== 'point') pullDone(job.id);
-    renderPull();
+    renderPullSoon();
     return true;
   }
   if (event === 'cancelled') {
     pullDone(job.id);
-    renderPull();
+    renderPullSoon();
     return true;
   }
   return false;
+}
+
+/**
+ * The ranking redrawn once a frame, for the reason `renderSurveySoon` is: a
+ * probe lands twice, cache hits land synchronously inside one drain, and each
+ * landing used to re-rank and rebuild the whole table for a reader who can
+ * only ever see the last.
+ */
+let pullFrame = 0;
+function renderPullSoon() {
+  if (pullFrame) return;
+  pullFrame = requestAnimationFrame(() => {
+    pullFrame = 0;
+    renderPull();
+  });
 }
 
 function pullDone(id) {
@@ -9730,14 +9713,7 @@ function renderPull() {
   // stands now: a station attached while the ranking was landing would have
   // the sentence describe a year the runs never saw.
   const kind = pullStance.annual ? 'annual' : 'design-day';
-  pullReading = measured.length
-    ? new PullReading({
-        kind,
-        reading: pullStance.reading,
-        entries,
-        probed: pullFinished.size,
-      })
-    : null;
+  const pullReading = measured.length ? new PullReading({ kind, reading: pullStance.reading, entries }) : null;
 
   const total = pullFinished.size + pullJobs.size;
   $('pull-scope').textContent = running
@@ -9925,7 +9901,7 @@ function letItFall() {
     );
     return;
   }
-  falling = { visited: new Set([`${at.ix},${at.iy}`]), steps: 0, said: [] };
+  falling = { visited: new Set([pointKey(at.ix, at.iy)]), steps: 0 };
   $('survey-fall').textContent = 'Stop the descent';
   fallOnce();
 }
@@ -9938,15 +9914,14 @@ function fallOnce() {
     stopFalling(next?.stopped ?? 'The descent stopped.');
     return;
   }
-  falling.visited.add(`${next.ix},${next.iy}`);
+  falling.visited.add(pointKey(next.ix, next.iy));
   falling.steps += 1;
   const reading = survey.readings[0];
-  falling.said.push(
+  const said =
     `${formatValue(survey.x.key, next.x)} · ${formatValue(survey.y.key, next.y)} → ` +
-      `${reading.valueOf(next.readings).toFixed(reading.digits)} ${reading.unit}`,
-  );
+    reading.format(reading.valueOf(next.readings), next.readings);
   standOn(survey, next);
-  surveySay(`Step ${falling.steps}: ${falling.said[falling.said.length - 1]}.`);
+  surveySay(`Step ${falling.steps}: ${said}.`);
   // A quarter second per step, and neither of the two obvious alternatives.
   //
   // A loop would move the desk to the hollow with nothing in between ever
@@ -9988,12 +9963,16 @@ function surveySay(sentence) {
 }
 
 /**
- * One stop of an axis, bare of its unit — the same rule the plan follows, and
- * for the same reason: the unit is lettered once on the axis name rather than
- * on both ends, or a long one runs off the corner it is written into.
+ * One stop of an axis, bare of its unit, for the plan and the relief alike.
+ *
+ * The stops carry a bare number and the axis label carries the unit, once,
+ * which is how a survey drawing has always lettered a scale. Lettered on both,
+ * `3.00 m²K/W` at the head of a 44px gutter simply ran off the left of the
+ * frame and printed as `00 m²K/W` — a number that is not the reading and not
+ * anything else either.
  */
-function stopOf(axis, index) {
-  const said = formatValue(axis.key, axis.positions[index]);
+function stopOf(axis, value) {
+  const said = formatValue(axis.key, value);
   const unit = axis.control.unit;
   return unit && said.endsWith(unit) ? said.slice(0, -unit.length).trim() : said;
 }
@@ -10077,8 +10056,8 @@ function drawRelief(sv) {
     arrises: arrisesOf(block),
     stance,
     axes: {
-      x: { label: labelFor(sv.x.key), from: stopOf(sv.x, 0), to: stopOf(sv.x, sv.x.count - 1) },
-      y: { label: labelFor(sv.y.key), from: stopOf(sv.y, 0), to: stopOf(sv.y, sv.y.count - 1) },
+      x: { label: labelFor(sv.x.key), from: stopOf(sv.x, sv.x.positions[0]), to: stopOf(sv.x, sv.x.positions.at(-1)) },
+      y: { label: labelFor(sv.y.key), from: stopOf(sv.y, sv.y.positions[0]), to: stopOf(sv.y, sv.y.positions.at(-1)) },
       // The reading the block stands up, which is the drawing's third axis and
       // had no word on it anywhere. Its figures are the levels the cut is
       // ruled at, lettered exactly as the plan letters its contours, and the
@@ -10189,7 +10168,7 @@ function renderTraverse() {
   // just left, and a session's traverse has no natural ceiling.
   for (const stop of [...traverse].reverse()) {
     const row = el('tr');
-    const standing = deskKey(stop.params, stop.patch) === here;
+    const standing = stop.shape === here;
     if (standing) row.classList.add('here');
 
     const go = el('button', 'traverse-go', shapeLabel(stop.params));
@@ -10237,10 +10216,6 @@ function renderSurvey() {
   const drawing = $('survey-drawing');
   $('survey-fall').hidden = !survey;
   $('survey-clear').hidden = !survey;
-  // Drawn whether or not a ground is cut: the traverse is a record of the desk
-  // rather than of the survey, and a reader who walked somewhere with the
-  // sliders and never opened a survey has still stood on those designs.
-  renderTraverse();
 
   if (!survey) {
     drawing.hidden = true;
@@ -10300,6 +10275,11 @@ function renderSurvey() {
  * re-measuring itself every time the reader uses it.
  */
 function refreshSurvey() {
+  // The traverse is a record of the desk rather than of the survey, so its
+  // "you are here" row moves with every gesture whether or not a ground is
+  // cut. It is redrawn here and where the record itself changes, and not from
+  // `renderSurvey`, which runs on every landed sample and changes neither.
+  renderTraverse();
   if (!survey || !studyScheduler || !autoOn() || linkAttachPending) return;
   const rest = surveyRestShape(survey);
   if (surveyRestShape(survey, survey.stance, survey.patch) === rest) {
