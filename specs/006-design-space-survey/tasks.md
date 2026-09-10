@@ -63,7 +63,7 @@ invalidate the feature's honesty model.
 - [X] T008 Export the axis-eligibility predicate from `src/study.js` so a survey axis and a study subject are refused by one sentence rather than two (FR-003)
 - [X] T009 Implement `rowsFor(survey)` in `src/survey.js`, returning one `makeStudyJob` spec per row with axis Y fixed in `snapshot` and axis X as the swept key, per contracts/survey-module.md
 - [X] T010 Implement `landPoint` and `coverageOf` in `src/survey.js`, asserting `measured + gaps + unsurveyed === wanted` and refusing a `Gap` with an empty reason (FR-016, FR-018i)
-- [ ] T011 Wire survey rows into the existing `studyScheduler` in `src/main.js`, queueing them through `makeStudyJob` and `enqueue` with no new pool and no new cache (FR-011, FR-012, FR-052, FR-053)
+- [X] T011 Wire survey rows into the existing `studyScheduler` in `src/main.js`, queueing them through `makeStudyJob` and `enqueue` with no new pool and no new cache (FR-011, FR-012, FR-052, FR-053)
 - [X] T012 Write `specs/006-design-space-survey/verify/repeatability.mjs` and run it: measure one design at least 20 times spanning a cold pooled instance and one that has already served ten runs, asserting identical readings (SC-005a, FR-026a). **If this fails, stop and revisit research.md section 7 before continuing**
 
 **Checkpoint**: The ground can be measured and its coverage counted, with nothing drawn yet.
@@ -79,28 +79,28 @@ and step onto any measured point so the whole of E-01 becomes that building.
 reading, confirm a relief appears built only of completed runs, and confirm choosing a
 measured point moves the desk to exactly that design.
 
-- [ ] T013 [P] [US1] Implement `latticeOf(survey)` in `src/survey.js`, returning a `Float64Array` of readings and a parallel `Uint8Array` validity mask, as the one representation both drawings consume
-- [ ] T014 [P] [US1] Implement `contoursOf(lattice, levels)` in `src/survey.js` by marching squares, resolving saddle cases 5 and 10 consistently by the cell mean, emitting nothing for a cell whose mask is not fully set
-- [ ] T015 [US1] Implement `meshOf(lattice)` in `src/survey.js`, emitting an indexed triangle cell only where all four corners are measured, so a gap is a hole in the geometry rather than a styled region (FR-016, FR-018h)
+- [X] T013 [P] [US1] Implement `latticeOf(survey)` in `src/survey.js`, returning a `Float64Array` of readings and a parallel `Uint8Array` validity mask, as the one representation both drawings consume
+- [X] T014 [P] [US1] Implement `contoursOf(lattice, levels)` in `src/survey.js` by marching squares, resolving saddle cases 5 and 10 consistently by the cell mean, emitting nothing for a cell whose mask is not fully set
+- [X] T015 [US1] Implement `meshOf(lattice)` in `src/survey.js`, emitting an indexed triangle cell only where all four corners are measured, so a gap is a hole in the geometry rather than a styled region (FR-016, FR-018h)
 - [ ] T016 [US1] Write `specs/006-design-space-survey/verify/survey-invariants.mjs` covering gate 1 of quickstart.md: no figure originates outside a `SpotHeight` over at least 50 points, no triangle touches a gap, coverage sums, and every contour segment lies inside an emitted cell (SC-003)
-- [ ] T017 [US1] Add E-02's markup to `index.html`: the sheet, its title block cell, the plan host, the relief host, the coverage line and the schedule of spot heights
-- [ ] T018 [US1] Add E-02's inline styles to `index.html`, declaring the new layout threshold once as a custom property to be read back by script, considering height as well as width (FR-050)
-- [ ] T019 [US1] Draw the contoured plan as inline SVG in `src/main.js`: axes lettered with the controls' own names and stops, contours with values at their turns, spot heights as tick marks carrying their numbers in the mono face (FR-018a, FR-020)
-- [ ] T020 [US1] Draw unsurveyed ground as bare sheet with no contour carried across it, and gaps with their reasons, distinguished without colour being the only carrier, in `src/main.js` (FR-018, FR-016)
-- [ ] T021 [US1] Letter the coverage and density line beside the drawing in `src/main.js`, wherever the relief is drawn, since a smooth surface does not report its own sample density (FR-018i, FR-042)
-- [ ] T022 [US1] Mark the stance on the plan in `src/main.js` using the armed square idiom in `--redline`, and move it when the desk moves (FR-021)
-- [ ] T023 [US1] Create `src/relief.js` with `createRelief(host, { onPick })` returning `null` where no WebGL2 context can be had, per contracts/relief-module.md
-- [ ] T024 [US1] Write the hand-rolled 4x4 matrix pair (orthographic projection and look-at) in `src/relief.js`, roughly 120 lines, adding no dependency (Principle V)
-- [ ] T025 [US1] Write the vertex and fragment shaders in `src/relief.js`, shading by ink level only and **not** using `--cold` / `--warm`, which are reserved for signed physical quantities
-- [ ] T026 [US1] Implement `relief.draw({ mesh, lattice, coverage, stance, view })` in `src/relief.js` as one indexed draw call, standing a post at every vertex flagged as a real sample (FR-018j)
-- [ ] T027 [US1] Implement the constrained orbit in `src/relief.js`: stepped azimuth, clamped elevation, named viewpoints, no pan, no zoom, no free flight (FR-018d)
-- [ ] T028 [US1] Make `setView` snap rather than animate in `src/relief.js`, so reduced motion loses no view (FR-018f), and add the keyboard and coarse-pointer routes to every camera move (FR-018e)
-- [ ] T029 [US1] Handle `webglcontextlost` in `src/relief.js` and state it in place in `src/main.js` with the reason, keeping every reading on the plan and the schedule, never substituting a still image or an empty frame (FR-024)
-- [ ] T030 [US1] Declare the relief's inference in place on the relief itself as well as on the plan in `src/main.js`, because a continuous surface is read as continuous data wherever it is drawn (FR-019)
-- [ ] T031 [US1] Implement progressive measurement in `src/main.js`: a 5 x 5 coarse pass first, then densification to at most 11 x 11 reusing the coarse samples exactly (FR-009, research.md section 10)
-- [ ] T032 [US1] Implement the refinement priority in `src/survey.js`, preferring steep ground and ground near the reader over ground already flat and well described (FR-010)
-- [ ] T033 [US1] Implement standing on a measured point in `src/main.js`, routing through the same commit path a slider gesture uses so the drawing, quantities, bill, schedule, description, studies and link all follow (FR-032), and refusing any position that was not measured (FR-033)
-- [ ] T034 [US1] Leave the address bar alone during the gesture and update it on release in `src/main.js`, by the rule every gesture on this sheet follows (FR-034)
+- [X] T017 [US1] Add E-02's markup to `index.html`: the sheet, its title block cell, the plan host, the relief host, the coverage line and the schedule of spot heights
+- [X] T018 [US1] Add E-02's inline styles to `index.html`, declaring the new layout threshold once as a custom property to be read back by script, considering height as well as width (FR-050)
+- [X] T019 [US1] Draw the contoured plan as inline SVG in `src/main.js`: axes lettered with the controls' own names and stops, contours with values at their turns, spot heights as tick marks carrying their numbers in the mono face (FR-018a, FR-020)
+- [X] T020 [US1] Draw unsurveyed ground as bare sheet with no contour carried across it, and gaps with their reasons, distinguished without colour being the only carrier, in `src/main.js` (FR-018, FR-016)
+- [X] T021 [US1] Letter the coverage and density line beside the drawing in `src/main.js`, wherever the relief is drawn, since a smooth surface does not report its own sample density (FR-018i, FR-042)
+- [X] T022 [US1] Mark the stance on the plan in `src/main.js` using the armed square idiom in `--redline`, and move it when the desk moves (FR-021)
+- [X] T023 [US1] Create `src/relief.js` with `createRelief(host, { onPick })` returning `null` where no WebGL2 context can be had, per contracts/relief-module.md
+- [X] T024 [US1] Write the hand-rolled 4x4 matrix pair (orthographic projection and look-at) in `src/relief.js`, roughly 120 lines, adding no dependency (Principle V)
+- [X] T025 [US1] Write the vertex and fragment shaders in `src/relief.js`, shading by ink level only and **not** using `--cold` / `--warm`, which are reserved for signed physical quantities
+- [X] T026 [US1] Implement `relief.draw({ mesh, lattice, coverage, stance, view })` in `src/relief.js` as one indexed draw call, standing a post at every vertex flagged as a real sample (FR-018j)
+- [X] T027 [US1] Implement the constrained orbit in `src/relief.js`: stepped azimuth, clamped elevation, named viewpoints, no pan, no zoom, no free flight (FR-018d)
+- [X] T028 [US1] Make `setView` snap rather than animate in `src/relief.js`, so reduced motion loses no view (FR-018f), and add the keyboard and coarse-pointer routes to every camera move (FR-018e)
+- [X] T029 [US1] Handle `webglcontextlost` in `src/relief.js` and state it in place in `src/main.js` with the reason, keeping every reading on the plan and the schedule, never substituting a still image or an empty frame (FR-024)
+- [X] T030 [US1] Declare the relief's inference in place on the relief itself as well as on the plan in `src/main.js`, because a continuous surface is read as continuous data wherever it is drawn (FR-019)
+- [X] T031 [US1] Implement progressive measurement in `src/main.js`: a 5 x 5 coarse pass first, then densification to at most 11 x 11 reusing the coarse samples exactly (FR-009, research.md section 10)
+- [X] T032 [US1] Implement the refinement priority in `src/survey.js`, preferring steep ground and ground near the reader over ground already flat and well described (FR-010)
+- [X] T033 [US1] Implement standing on a measured point in `src/main.js`, routing through the same commit path a slider gesture uses so the drawing, quantities, bill, schedule, description, studies and link all follow (FR-032), and refusing any position that was not measured (FR-033)
+- [X] T034 [US1] Leave the address bar alone during the gesture and update it on release in `src/main.js`, by the rule every gesture on this sheet follows (FR-034)
 - [ ] T035 [US1] Add the survey's entry point and its per-axis offers to the plan-key legends in `src/console.js`, refusing an axis with that wall's or that channel's own sentence rather than a generic one (FR-039, US1 scenario 7)
 - [ ] T036 [US1] Gate survey work on the auto-solve control and on any pending link or station attach in `src/main.js`, saying which it is waiting on (FR-014), and pause on gesture, resuming on release (FR-013)
 - [ ] T037 [US1] Write `specs/006-design-space-survey/verify/survey-ground.mjs` covering gate 2 of quickstart.md: every spot height traces to a run, 20 injected failures each appear as a gap with a reason and none is filled, and an all-failed survey states that it measured nothing (SC-010)

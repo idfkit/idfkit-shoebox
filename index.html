@@ -1142,6 +1142,7 @@
       }
       .schedule .base,
       .bill .base,
+      .survey .base,
       .register .base {
         text-transform: none;
         letter-spacing: 0;
@@ -1150,6 +1151,7 @@
         margin-left: 10px;
       }
       .schedule .base:empty,
+      .survey .base:empty,
       .bill .base:empty,
       .register .base:empty { display: none; }
       /* the schedule changes subject: a firmer rule and a breath of space */
@@ -4165,6 +4167,7 @@
           border-top: 0;
         }
         .qualifications > dt:first-child + dd { padding-top: 4px; }
+
         /* A block on its own line rather than a flex item beside the figure:
            a qualification's `because` is a paragraph, not a cell. */
         .qualifications dd[data-head]::before {
@@ -4172,6 +4175,286 @@
           margin-bottom: 3px;
         }
       }
+      /* ══ E-02: the design space survey ══════════════════════════════════
+
+         A second drawing on the same board, so it takes the sheet's own
+         vocabulary and adds nothing: ink levels only, hairline rules, the
+         armed square for the stance, `--redline` for what is live. The
+         reading is **not** a signed physical quantity — a demand intensity
+         has no direction, only a magnitude — so `--cold` / `--warm` are not
+         used here at all and the ground is graphite. That is the same
+         argument that keeps the bill uncoloured, one drawing along.
+
+         `--survey`, below, is this feature's one layout threshold, declared
+         once here and read back by `renderSurvey`. It answers a different
+         question from `--index` and from the schedules' 620px: not "can the
+         window hold a column" and not "can a table keep its columns", but
+         "can the plan and the relief stand side by side". They are two
+         drawings of one ground, each wanting its own square, so they part
+         company some way above the width at which a table does. ────────── */
+      .survey {
+        --survey: 0;
+        margin-top: 26px;
+        padding-top: 20px;
+        border-top: 1px solid var(--rule-firm);
+      }
+
+      .survey-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+
+      .survey-lede {
+        margin: 6px 0 0;
+        max-width: 68ch;
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--ink-3);
+      }
+
+      .survey-acts {
+        display: flex;
+        gap: 14px;
+        flex: none;
+      }
+
+      /* The chooser. Two axes and one or two readings, each a native
+         disclosure for the reason the desk quantity is one: ninety controls
+         are far too many for a segmented rule, and the closed summary still
+         states what is selected, so the block reads without being opened. */
+      .survey-choose {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 18px;
+        margin-top: 14px;
+        padding: 11px 0 13px;
+        border-top: 1px solid var(--rule-soft);
+        border-bottom: 1px solid var(--rule-soft);
+      }
+
+      .survey-pick { min-width: 0; }
+
+      .survey-pick > summary {
+        cursor: pointer;
+        list-style: none;
+        font: 400 11px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+      }
+
+      .survey-pick > summary::-webkit-details-marker { display: none; }
+
+      .survey-pick > summary b {
+        display: block;
+        font: 500 9.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+
+      .survey-pick[open] > summary { color: var(--redline); }
+
+      .survey-options {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin-top: 7px;
+        max-height: 220px;
+        overflow-y: auto;
+        padding-right: 4px;
+      }
+
+      .survey-option {
+        display: flex;
+        gap: 7px;
+        align-items: baseline;
+        border: 0;
+        background: none;
+        padding: 3px 5px;
+        text-align: left;
+        font: 400 11px/1.35 var(--sans);
+        color: var(--ink-2);
+        border-radius: var(--r);
+        /* The page's own button slab is 168 x 46, which in a list of ninety
+           would be four thousand pixels of column. These are list entries. */
+        min-width: 0;
+        min-height: 0;
+        cursor: pointer;
+      }
+
+      .survey-option:hover { color: var(--redline); }
+      .survey-option[aria-pressed='true'] { color: var(--ink); }
+      .survey-option[aria-pressed='true']::before { content: '·'; }
+      .survey-option[disabled] { color: var(--ink-ghost); cursor: not-allowed; }
+      .survey-option small {
+        display: block;
+        color: var(--ink-ghost);
+        font-size: 10px;
+      }
+
+      .survey-note { margin: 12px 0 0; font-size: 12px; line-height: 1.55; }
+      .survey-note.bad { color: var(--redline); }
+
+      /* Two drawings of one ground, each wanting a square. */
+      .survey-body {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 18px;
+        margin-top: 16px;
+      }
+
+      /* The `[hidden]` twin this block needs, and it is not optional: an
+         author `display` declaration beats the user agent's
+         `[hidden] { display: none }` outright, so `el.hidden = true` on a rule
+         that sets `display` does nothing whatever. Measured here: with no
+         survey cut, two empty framed boxes stood under the chooser where the
+         drawings would go — the same failure `.link[hidden]` and
+         `.bill[hidden]` are each the fix for. Any new class that sets or
+         unsets `display` and is toggled by the attribute needs its own. */
+      .survey-body[hidden] { display: none; }
+
+      .survey-plan,
+      .survey-relief { margin: 0; min-width: 0; }
+
+      .ground,
+      .relief {
+        background: var(--inset);
+        border: 1px solid var(--rule-soft);
+        border-radius: var(--r);
+        aspect-ratio: 1 / 1;
+        width: 100%;
+      }
+
+      .ground svg { display: block; width: 100%; height: 100%; }
+      .relief canvas { display: block; width: 100%; height: 100%; }
+
+      /* The measured ground, the inference over it, and the ground nobody has
+         stood on — told apart three ways, because colour may not be the only
+         carrier and here there is no colour to spend anyway.
+
+           measured   a tick mark and a lettered figure
+           inferred   a hairline contour, no figure anywhere on it
+           unsurveyed bare sheet: no contour is carried across it at all
+
+         The third is the important one and it is drawn by *absence*: an
+         unmeasured cell emits no geometry, so there is nothing to style and
+         nothing that can later be styled into looking measured. */
+      .ground .contour {
+        fill: none;
+        stroke: var(--ink-ghost);
+        stroke-width: 0.75;
+      }
+
+      .ground .contour.major { stroke: var(--ink-3); stroke-width: 1; }
+
+      .ground .level {
+        font: 400 8.5px/1 var(--mono);
+        fill: var(--ink-3);
+        paint-order: stroke;
+        stroke: var(--inset);
+        stroke-width: 3px;
+      }
+
+      .ground .spot { stroke: var(--ink); stroke-width: 1; }
+      .ground .spot-figure {
+        font: 400 8px/1 var(--mono);
+        fill: var(--ink-2);
+        paint-order: stroke;
+        stroke: var(--inset);
+        stroke-width: 2.5px;
+      }
+
+      .ground .gap { stroke: var(--ink-3); stroke-width: 1; }
+      .ground .axis { stroke: var(--rule-firm); stroke-width: 1; }
+      .ground .axis-label {
+        font: 500 8.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        fill: var(--ink-3);
+      }
+      .ground .axis-stop {
+        font: 400 8px/1 var(--mono);
+        fill: var(--ink-3);
+      }
+
+      /* The stance: the desk's armed square, third idiom of three, so that
+         "you are here" is learned once across the patch button, the rail pin
+         and the plate marker. */
+      .ground .stance { fill: var(--redline); stroke: none; }
+      .ground .stance-rule { stroke: var(--redline); stroke-width: 1; }
+
+      /* The traverse: where the desk has stood, joined by a hairline. */
+      .ground .traverse {
+        fill: none;
+        stroke: var(--ink-ghost);
+        stroke-width: 1;
+        stroke-dasharray: 2 2;
+      }
+      .ground .traverse-stop { fill: var(--ink-ghost); }
+
+      /* Where both readings improve on the stance. Hatched rather than
+         tinted: the palette has no hue to spend and a wash would read as a
+         fourth surface. */
+      .ground .improving { fill: url(#survey-hatch); stroke: none; }
+
+      .relief-views {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+
+      .relief-view {
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        background: none;
+        color: var(--ink-2);
+        font: 500 9px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        padding: 5px 8px;
+        min-width: 0;
+        min-height: 0;
+        cursor: pointer;
+      }
+
+      .relief-view[aria-pressed='true'] { background: var(--ink); color: var(--vellum); }
+      .relief-view:hover { border-color: var(--redline); color: var(--redline); }
+      .relief-view[aria-pressed='true']:hover { color: var(--vellum); }
+
+      /* Load bearing, not a caption. The relief is smooth, so unlike a
+         faceted one it does not report its own sample density in its own
+         texture — these two figures are the only thing separating a coarse
+         survey from a convincing picture of one. */
+      .survey-coverage {
+        margin: 14px 0 0;
+        font: 400 11px/1.5 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink-2);
+      }
+
+      .survey-coverage b { color: var(--ink); font-weight: 400; }
+      .survey-coverage .loose { color: var(--ink-ghost); }
+
+      .survey-stamp { margin-top: 20px; }
+      .survey-stamp div:nth-child(4n) { border-right: 0; }
+      .survey-stamp div { border-bottom: 0; }
+
+      /* ── E-02 on a narrower window ──────────────────────────────────────
+         The plan and the relief stop standing side by side well before a
+         table stops keeping its columns, because each of them wants a square
+         and two squares in one measure is two very small squares. Height is
+         asked as well as width, by the rule that caught the console out: two
+         squares and a schedule stacked in a short window is a page of
+         scrolling with nothing on the screen to say where you are. */
+      @media (max-width: 900px), (max-height: 620px) {
+        .survey { --survey: 1; }
+        .survey-body { grid-template-columns: minmax(0, 1fr); }
+      }
+
     </style>
   </head>
   <body>
@@ -4445,6 +4728,73 @@
               </p>
               <table id="shelf-table" hidden></table>
               <p class="register-note" id="shelf-foot"></p>
+            </div>
+          </section>
+
+          <!-- E-02, the design space survey. A second drawing on the same
+               sheet: one chosen reading surveyed over two chosen controls, cut
+               through the desk's current stance. Everything on it is built out
+               of completed EnergyPlus runs; the contours and the relief are
+               inference drawn between them and say so in place, on both, because
+               a continuous surface is read as continuous data wherever it is
+               drawn. Written by `renderSurvey` in main.js. -->
+          <section class="survey" id="survey" aria-labelledby="survey-title" hidden>
+            <header class="survey-head">
+              <div>
+                <p class="eyebrow" id="survey-title">Design space survey<span class="base" id="survey-axes"></span></p>
+                <p class="survey-lede" id="survey-lede"></p>
+              </div>
+              <div class="survey-acts">
+                <button type="button" class="link" id="survey-fall" hidden>Let it fall</button>
+                <button type="button" class="link" id="survey-clear" hidden>Clear the survey</button>
+              </div>
+            </header>
+
+            <!-- The chooser: two axes and one or two readings, every offer
+                 carrying its own refusal where it cannot be taken. -->
+            <div class="survey-choose" id="survey-choose"></div>
+
+            <!-- A refusal stands where the ground would have been, never
+                 beside an empty drawing. -->
+            <p class="survey-note bad" id="survey-refusal" hidden></p>
+
+            <div class="survey-body" id="survey-drawing" hidden>
+              <figure class="survey-plan">
+                <div class="ground" id="survey-ground"></div>
+                <figcaption>
+                  <span class="fig">Fig. 2</span>
+                  <span id="survey-plan-cap"></span>
+                </figcaption>
+              </figure>
+              <figure class="survey-relief">
+                <div class="relief" id="survey-relief" role="img" aria-label="Relief of the surveyed ground"></div>
+                <div class="relief-views" id="survey-views" role="group" aria-label="Viewpoint"></div>
+                <figcaption>
+                  <span class="fig">Fig. 3</span>
+                  <span id="survey-relief-cap"></span>
+                </figcaption>
+              </figure>
+            </div>
+
+            <!-- Load bearing, not decoration. The relief is smooth, so it does
+                 not report its own sample density the way a faceted one would;
+                 these two figures are the only thing separating a coarse survey
+                 from a convincing picture of one. -->
+            <p class="survey-coverage" id="survey-coverage"></p>
+            <p class="finding" id="survey-finding"></p>
+
+            <section class="schedule">
+              <p class="eyebrow">Schedule of spot heights<span class="base" id="survey-spots-scope"></span></p>
+              <table id="survey-spots"></table>
+            </section>
+
+            <!-- E-02's own title-block cells. The sheet below is E-01's and
+                 says what produced the run; this says what produced the ground. -->
+            <div class="titleblock survey-stamp">
+              <div><span>Sheet</span><b>E-02</b><i>Design space survey</i></div>
+              <div><span>Ground</span><b id="s-ground">—</b><i id="s-ground-sub">Positions asked for</i></div>
+              <div><span>Reading</span><b id="s-reading">—</b><i id="s-reading-sub">Surveyed quantity</i></div>
+              <div><span>Runs</span><b id="s-runs">—</b><i id="s-runs-sub">Completed simulations</i></div>
             </div>
           </section>
         </div>
