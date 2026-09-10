@@ -4304,7 +4304,52 @@
         color: var(--ink-ghost);
       }
 
+      /* Each picker is a title-block cell: one hairline round the caption, the
+         count and the value, and the list folds out *inside* it. A bare line
+         of mono under a caption is how this sheet letters a reading, and a
+         reading cannot be pressed, so an unruled summary looked like one more
+         figure. The cell's width is fixed and the list takes it, so opening a
+         picker changes its height and nothing else: sized by its own
+         contents, the summary was as wide as "Choose a control" and the list
+         300px, and opening Axis X shoved Axis Y along the row. 220px is
+         three cells, the flip and a pair of extents on one line of the
+         survey. The list is held to the same measure for the reason it always
+         was: left to size itself it takes the width of its widest refusal,
+         which is a whole sentence. */
+      details.survey-pick {
+        /* The row stretches its items, which was invisible while a picker had
+           no outline and is not now: opening one drew the closed cells beside
+           it 280px tall and empty. Only the cells opt out; the flip and the
+           extents still want the stretch to sit on the row's foot. */
+        align-self: flex-start;
+        width: 220px;
+        max-width: 100%;
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        transition: border-color 0.15s ease;
+      }
+      details.survey-pick:hover,
+      details.survey-pick[open] { border-color: var(--rule-firm); }
+      /* The ring goes round the cell, not the summary inside it, or it would
+         be drawn across the cell's own hairline. */
+      details.survey-pick:has(> summary:focus-visible) {
+        outline: 2px solid var(--rule-focus);
+        outline-offset: 2px;
+      }
+
+      /* Three columns, not two. With two, the count set the width of the
+         column the fold marker shares, and the value's column was what was
+         left: "Choose a control" broke onto two lines and the cell stood
+         59px tall until a control was picked, then 45. Here the count spans
+         the last two columns and the value the first two, so each takes the
+         room the other's row leaves free and only the caption and the marker
+         size a column. */
       .survey-pick > summary {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: baseline;
+        gap: 3px 8px;
+        padding: 6px 9px 7px;
         cursor: pointer;
         list-style: none;
         font: 400 11px/1.3 var(--mono);
@@ -4313,31 +4358,49 @@
       }
 
       .survey-pick > summary::-webkit-details-marker { display: none; }
+      .survey-pick > summary:focus-visible { outline: none; }
 
-      .survey-pick > summary b {
-        display: block;
+      .survey-pick > summary b,
+      .survey-pick-count {
         font: 500 9.5px/1.3 var(--cond);
         text-transform: uppercase;
         letter-spacing: 0.11em;
         color: var(--ink-3);
       }
+      .survey-pick > summary b { grid-column: 1; }
+      .survey-pick-count {
+        grid-column: 2 / 4;
+        justify-self: end;
+        color: var(--ink-ghost);
+        text-align: right;
+      }
 
-      .survey-pick[open] > summary { color: var(--redline); }
+      /* Two readings can stand here at once, so the value wraps rather than
+         ellipsising: a closed cell has to read without being opened. */
+      .survey-pick-value { grid-column: 1 / 3; min-width: 0; overflow-wrap: anywhere; }
+
+      /* The fold marker, silent to a screen reader: `details` already says
+         whether it is expanded, and "plus" read aloud says nothing more. */
+      .survey-pick > summary::after {
+        content: '+' / '';
+        grid-column: 3;
+        align-self: end;
+        color: var(--ink-3);
+      }
+      .survey-pick[open] > summary::after { content: '\2212' / ''; color: var(--redline); }
+
+      .survey-pick[open] > summary {
+        color: var(--redline);
+        border-bottom: 1px solid var(--rule);
+      }
 
       .survey-options {
         display: flex;
         flex-direction: column;
         gap: 2px;
-        margin-top: 7px;
         max-height: 220px;
         overflow-y: auto;
-        padding-right: 4px;
-        /* Held to a readable measure. Without it the list takes the width of
-           its widest entry, which since the chooser began listing refusals is
-           a whole sentence — and the chooser is a wrapping flex row, so one
-           over-wide pick pushes the other two onto lines of their own. */
-        width: 300px;
-        max-width: 100%;
+        padding: 4px 4px 6px 4px;
       }
 
       .survey-option {

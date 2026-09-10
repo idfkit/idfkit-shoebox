@@ -718,6 +718,28 @@ wall that can carry no opening, a control inert at this desk.
 Group headings earn their keep twice over: they let each row drop the prefix it
 was repeating, and they make a long list navigable rather than a wall.
 
+**A picker is a title-block cell.** A caption over a line of mono is how this
+sheet letters a reading, and a reading cannot be pressed, so an unruled summary
+looked like one more figure. The cell is one `1px --rule` hairline at `var(--r)`
+round four things: the caption top left, the count top right in ghost
+condensed caps, the value in `--mono` under the caption, and a `+` fold marker
+under the count, which turns to a `--redline` `−` while open. Hover and open
+firm the hairline to `--rule-firm`; the focus ring goes round the cell rather
+than across it.
+
+- **The list folds out inside the cell**, under a `--rule` line drawn beneath
+  the summary, so it reads as the cell's own contents and the edge a scroll
+  cuts rows off at is ruled.
+- **The width is fixed and the list takes it**, so opening a picker changes
+  its height and nothing else. Sized by its contents the summary was as wide as
+  its value and the list 300px, and opening one picker shoved its neighbours
+  along the row.
+- **The count is what can be chosen here**, `37 of 129 controls` where some
+  are refused. A flat total over a list of mostly disabled rows would be the
+  cell claiming a choice the reader does not have.
+- **The value wraps rather than ellipsising**: two readings can stand in one
+  cell, and a closed cell has to read without being opened.
+
 ### Two boxes for a range
 
 Where a reader sets an interval — the extent a survey is cut over — use a pair

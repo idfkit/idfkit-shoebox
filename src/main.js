@@ -8081,11 +8081,25 @@ function surveyReadingOffers(snapshot = params, patch = patching(), epw = epwTex
   });
 }
 
-/** One disclosure of offers, closed reading what is selected. */
-function pickList({ label, summary, options, selected, onPick, multiple = false }) {
+/**
+ * One disclosure of offers, closed reading what is selected.
+ *
+ * Drawn as a title-block cell: its caption, how many offers it holds, the
+ * value, and the fold marker (the last from CSS). The count is of what can be
+ * chosen *at this desk*, with the whole list beside it where some are
+ * refused — "129 controls" over a list of which 37 can be picked would be the
+ * cell claiming a choice the reader does not have.
+ */
+function pickList({ label, noun, summary, options, selected, onPick, multiple = false }) {
   const details = el('details', 'survey-pick');
   const head = el('summary');
-  head.append(el('b', null, label), document.createTextNode(summary));
+  const open = options.filter((option) => option.available).length;
+  const count = open === options.length ? `${open} ${noun}` : `${open} of ${options.length} ${noun}`;
+  head.append(
+    el('b', null, label),
+    el('span', 'survey-pick-count', count),
+    el('span', 'survey-pick-value', summary),
+  );
   details.append(head);
   const list = el('div', 'survey-options');
   const draw = (option) => {
@@ -8319,6 +8333,7 @@ function renderSurveyChoose() {
   host.append(
     pickList({
       label: 'Axis X',
+      noun: 'controls',
       summary: named(surveyChoice.x),
       options: axisOptions(surveyChoice.y),
       selected: surveyChoice.x,
@@ -8335,6 +8350,7 @@ function renderSurveyChoose() {
     flipButton(),
     pickList({
       label: 'Axis Y',
+      noun: 'controls',
       summary: named(surveyChoice.y),
       options: axisOptions(surveyChoice.x),
       selected: surveyChoice.y,
@@ -8347,6 +8363,7 @@ function renderSurveyChoose() {
     extentField('y'),
     pickList({
       label: 'Reading',
+      noun: 'readings',
       summary: surveyChoice.readings.length
         ? surveyChoice.readings.map((id) => READING_BY_ID[id].label).join(' + ')
         : 'Choose a reading',
