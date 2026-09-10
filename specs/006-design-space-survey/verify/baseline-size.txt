@@ -28,12 +28,12 @@ JavaScript-only measurement would miss entirely.
 After the feature, same script, same brotli settings:
 
                                           raw     brotli
-assets/index-*.js                      561322     161420
+assets/index-*.js                      563011     161829
 index.html                             224821      45910
 ----------------------------------------------------------
-TOTAL                                  786143     207330
+TOTAL                                  787832     207739
 
-**Added transfer: 19,519 bytes** against SC-012's ceiling of 61,440. Inside,
+**Added transfer: 19,928 bytes** against SC-012's ceiling of 61,440. Inside,
 with two thirds of the allowance unspent, and close to research.md section 9's
 estimate of about 15 KB.
 
