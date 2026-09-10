@@ -45,6 +45,8 @@ export default defineConfig({
     __SHEET_REVISION__: JSON.stringify(sheetRevision),
     __IDFKIT_VERSION__: JSON.stringify(toolkitVersion),
   },
-  server: { proxy: { '/onebuilding': onebuilding } },
+  // A preview harness hands the port over in PORT; vite reads no such variable
+  // itself, and left alone it would contend for 5173 with any other dev server.
+  server: { port: Number(process.env.PORT) || undefined, proxy: { '/onebuilding': onebuilding } },
   preview: { proxy: { '/onebuilding': onebuilding } },
 });
