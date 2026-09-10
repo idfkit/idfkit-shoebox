@@ -43,34 +43,50 @@ import { QUANTITY_BY_ID, refusesSweep, sampleOrder } from './study.js';
 /**
  * The coarse pass, and the pass it densifies into.
  *
- * Five and nine, and the second of those is not the eleven the plan estimated
- * against. The requirement is that densifying **reuses the coarse samples
- * exactly**, which is the same property `COARSE_SAMPLES` (11) and
- * `SWEEP_SAMPLES` (21) have in one dimension: the raw positions for n = 11 are
- * `min + (i/10)·span`, which are the even positions of the 21-point grid, so
- * the coarse set is a strict subset and a densify costs only the new runs.
+ * Six and eleven, and both numbers are decided by one requirement: **a
+ * densify must reuse what has already been run**, and so must a survey opened
+ * on ground a study has already covered. That is the same property
+ * `COARSE_SAMPLES` (11) and `SWEEP_SAMPLES` (21) have in one dimension — the
+ * raw positions for n = 11 are `min + (i/10)·span`, which are the even
+ * positions of the 21-point grid — and carrying it to two dimensions is
+ * arithmetic that has to be checked rather than assumed.
  *
- * Carried to two dimensions with 5 and 11 that property is simply false. Five
- * positions sit at `i/4` — 0, 0.25, 0.5, 0.75, 1 — and eleven sit at `i/10`,
- * and 0.25 is not a tenth of anything. Three of every five coarse rows would
- * fall between two fine ones, so a densify would re-run the *whole* fine grid
- * and throw the coarse pass away: 25 runs spent to be discarded, with no
- * symptom anywhere except a survey that takes longer than it should.
+ * The plan estimated against 5 and 11. That pair does not have the property at
+ * all: five positions sit at `i/4` — 0, 0.25, 0.5, 0.75, 1 — and eleven at
+ * `i/10`, and 0.25 is not a tenth of anything, so three of every five coarse
+ * rows fall between two fine ones and a densify re-runs the whole fine grid
+ * and throws the coarse pass away. Twenty-five runs spent to be discarded,
+ * with no symptom anywhere except a survey that takes longer than it should.
  *
- * Nine is the smallest count that keeps both properties. `i/4 = 2i/8`, so the
- * 5-grid is exactly the even positions of the 9-grid; both counts are odd, so
- * each axis carries a sample at its own midpoint; and 81 is inside the plan's
- * "at most 11 x 11" ceiling of 121 with room for the stance row to be a cache
- * hit.
+ * Nine was tried next and is worse than it looks. `i/4 = 2i/8`, so 5 ⊂ 9 and
+ * the densify is honest — but 9 has no relationship at all to the study grid,
+ * and **that is the reuse the reader actually notices**: opening a survey
+ * along a control they have just swept. Measured in the browser, 100 positions
+ * of a 5 → 9 ground cost 94 engine runs against a completed study of one axis.
+ * Six of a hundred free is not the promise.
  *
- * Verified over the declarations rather than over the arithmetic, because
- * snapping is what the subset property actually has to survive: `axisFor` at 5
- * and at 9 was taken over **all 90 sweepable numeric faces** on the desk and
- * every coarse position falls on a fine one, inside each control's own
- * thousandth-of-a-step tolerance. 90 of 90.
+ * Six and eleven have both. `i/5` is every second position of `i/10`, so the
+ * coarse pass is reused exactly; and `i/10` is every second position of
+ * `i/20`, so the fine ground is a **strict subset of a study's own 21-point
+ * grid**. Verified over the declarations rather than over the arithmetic,
+ * because snapping is what the property has to survive: taken over all **90
+ * sweepable numeric faces**, 5 → 9 lands inside a study's grid on 6 of 90
+ * while 6 → 11 lands inside it on **90 of 90**.
+ *
+ * And measured in the browser, which is the only place the reuse itself can
+ * be: sweep Glazing S as an ordinary study, then cut a ground along Glazing S
+ * against wall resistance. 144 positions cost **132 engine runs**, and the
+ * twelve that cost nothing are exactly the survey's own stance row. Under
+ * 5 → 9 the same test spent 94 of 100.
+ *
+ * Both counts are even, which costs the midpoint sample an odd count would
+ * put on each axis — and costs nothing, because `axisFor` forces the stance's
+ * own value into the list regardless, which is what FR-005 actually asks for
+ * and is a better guarantee than a midpoint: the point the reader already
+ * understands is measured, wherever it happens to sit.
  */
-export const COARSE_GRID = 5;
-export const FINE_GRID = 9;
+export const COARSE_GRID = 6;
+export const FINE_GRID = 11;
 
 /* ══ which way is better ═════════════════════════════════════════════════ */
 

@@ -1770,18 +1770,43 @@ is the same call.
   point has to ask a row the right question too, or every row is cancelled on
   every apply — including the applies the survey's own samples cause.
 
-**The coarse pass is 5 and the fine one is 9, not 11.** The requirement is that
-densifying reuses the coarse samples exactly, which is the property
-`COARSE_SAMPLES` (11) and `SWEEP_SAMPLES` (21) have in one dimension. Carried
-to two dimensions with 5 and 11 it is simply false: five positions sit at `i/4`
-and eleven at `i/10`, and 0.25 is not a tenth of anything, so three of every
-five coarse rows fall between two fine ones and a densify would throw the whole
-coarse pass away — 25 runs spent to be discarded, with no symptom but a survey
-that takes longer than it should. `i/4 = 2i/8`, so 9 keeps the subset property
-and keeps both counts odd (each axis carries a sample at its own midpoint).
-Verified over the declarations rather than over the arithmetic, because
-snapping is what the property has to survive: `axisFor` at 5 and at 9 over all
-**90 sweepable numeric faces**, and every coarse position falls on a fine one.
+**The coarse pass is 6 and the fine one is 11, and both numbers are decided by
+one requirement: a densify must reuse what has already been run, and so must a
+survey opened on ground a study has already covered.** That is the property
+`COARSE_SAMPLES` (11) and `SWEEP_SAMPLES` (21) have in one dimension — the raw
+positions for n = 11 are the even positions of the 21-point grid — and carrying
+it to two dimensions is arithmetic that has to be checked rather than assumed.
+
+The plan estimated against 5 and 11, which does not have the property at all:
+five positions sit at `i/4` and eleven at `i/10`, and 0.25 is not a tenth of
+anything, so three of every five coarse rows fall between two fine ones and a
+densify throws the whole coarse pass away. Nine was tried next and is worse
+than it looks — `i/4 = 2i/8`, so the densify is honest, but 9 has no
+relationship to the study grid, and **that is the reuse the reader actually
+notices**. Measured in the browser: 100 positions of a 5 → 9 ground cost 94
+engine runs against a completed study of one axis. Six of a hundred free is not
+the promise SC-011 makes.
+
+Six and eleven have both, because `i/5` is every second position of `i/10` and
+`i/10` is every second position of `i/20`. Verified over the declarations
+rather than over the arithmetic, since snapping is what the property has to
+survive: over all **90 sweepable numeric faces**, 5 → 9 lands inside a study's
+grid on 6 of 90 and 6 → 11 lands inside it on **90 of 90**.
+
+Both counts are even, which costs the midpoint sample an odd count would put on
+each axis — and costs nothing, because `axisFor` forces the stance's own value
+into the list regardless. That is what FR-005 actually asks for and it is a
+better guarantee than a midpoint: the point the reader already understands is
+measured wherever it happens to sit, which is also why a survey asked for six
+positions legitimately holds seven and a fine ground is 12 × 12 rather than
+11 × 11.
+
+Measured in the browser, which is the only place this can be measured: sweep
+Glazing S as an ordinary study, then cut a ground along Glazing S against wall
+resistance. **144 positions cost 132 engine runs.** The twelve that cost
+nothing are exactly the survey's own stance row — every position of the swept
+axis at the stance value of the other, answered from the study's cache. Under
+5 → 9 the same test spent 94 of 100.
 
 **Three states, told apart three ways, and the third is drawn by absence.**
 Measured is a tick with its figure; inferred is a hairline contour carrying its

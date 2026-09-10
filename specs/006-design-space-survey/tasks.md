@@ -260,7 +260,7 @@ drawn as measured.
 - [X] T090 [P] Add the CHANGELOG entry to `CHANGELOG.md`, short and in house voice
 - [X] T091 Run `npm run build` and compare `dist/` against `specs/006-design-space-survey/verify/baseline-size.txt`, confirming the addition is inside SC-012's 60 KB ceiling
 - [X] T092 Run gate 3 of quickstart.md: `specs/006-design-space-survey/verify/idempotence.mjs`, confirming three applications are byte-identical and no await sees the document in overlay state
-- [ ] T093 Run gate 7 of quickstart.md by driving the page: SC-001's 5 s and 30 s, SC-002's 10 percent live cadence with a survey filling, SC-011's zero-run reuse, and a study not starving behind a survey
+- [X] T093 Run gate 7 of quickstart.md by driving the page: SC-001's 5 s and 30 s, SC-002's 10 percent live cadence with a survey filling, SC-011's zero-run reuse, and a study not starving behind a survey
 - [X] T094 Confirm no new `Output:Variable` was added anywhere in `src/model.js`, which is what discharges FR-017 outright
 
 ---

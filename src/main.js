@@ -7811,7 +7811,18 @@ function onSurveyPassDone() {
   if (surveyStop === surveyRestShape(survey)) return;
   // In idle time, by the rule `densifyStudies` follows: the queue has just
   // drained and the reader may be reaching for a control this instant.
-  (window.requestIdleCallback ?? ((fn) => setTimeout(fn, 300)))(() => refineSurvey());
+  //
+  // **With a timeout, which `densifyStudies` does not have and probably
+  // should.** Chrome defers `requestIdleCallback` indefinitely in a
+  // backgrounded tab: measured here, a coarse ground landed and the densify
+  // simply never ran — no error, no symptom, a survey that stayed at 36 of 36
+  // for as long as anybody watched. The timeout is the API's own answer to
+  // that, and a two-second ceiling is far outside the window where the reader
+  // is still reaching for the control this defers around.
+  const later = window.requestIdleCallback
+    ? (fn) => window.requestIdleCallback(fn, { timeout: 2000 })
+    : (fn) => setTimeout(fn, 300);
+  later(() => refineSurvey());
 }
 
 /**
