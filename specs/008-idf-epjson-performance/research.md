@@ -196,6 +196,10 @@ exists to be able to do.
 
 ### And the enums have to be repaired first
 
+*(Fixed upstream while this was being written — see the note at the end of this
+section. Everything below describes `@idfkit/core` 0.3.0-rc.3, which is what
+this page ships.)*
+
 `writeEpJson(doc)` as it stands produces a document that **does not simulate**.
 The IDF reader matches a choice field case-insensitively; the epJSON reader
 matches the JSON Schema enum exactly and reports a severe for anything else:
@@ -222,6 +226,17 @@ station nobody has picked yet can carry a new one. Under IDF that is invisible
 and harmless; under epJSON it is a fatal at boot. Repairing it in the writer, not
 at the call site, would be the fix — the rule is upstream's to state, since the
 schema is where the canonical spelling lives.
+
+**That is what upstream did.** idfkit/idfkit-js#60 canonicalises choice values
+against the schema inside `IdfObject.toJSON()`, which is the writer and not the
+call site, and leaves `writeIdf` alone. Verified here rather than taken on
+trust, because that repository's CI has no EnergyPlus in it: built on the
+branch, all eight positions were written with plain `writeEpJson` and no repair
+and every one of them loaded with **0 severes**, against three severes and a
+fatal on 0.3.0-rc.3. The output is byte-identical to what `normalise-enums.mjs`
+in `verify/` produces, and `writeIdf` is byte-identical to 0.3.0-rc.3 across all
+sixteen files. The harness here keeps its own repair anyway, since it has to run
+against the version this page actually depends on.
 
 ## Two ways this was measured wrong first
 
