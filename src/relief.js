@@ -114,7 +114,7 @@ const AZIMUTH_STEP = 30;
 const ELEVATION_MIN = 15;
 const ELEVATION_MAX = 75;
 
-export const VIEWPOINTS = Object.freeze([
+const VIEWPOINTS = Object.freeze([
   { id: 'oblique', label: 'Oblique', azimuth: 315, elevation: 35 },
   { id: 'stance', label: 'From the stance', azimuth: 225, elevation: 25 },
   { id: 'fall', label: 'Along the fall line', azimuth: 45, elevation: 25 },
@@ -809,11 +809,16 @@ export function createRelief(host, { onLost = null } = {}) {
       held.strata = strata?.length ? lifted(strata) : null;
       held.arrises = arrises?.length ? lifted(arrises) : null;
       if (stance) {
+        // Filled or hollow is the pin's whole claim, so it is asked for rather
+        // than defaulted: a caller that forgot would draw "on a run" by default.
+        if (typeof stance.measured !== 'boolean') {
+          throw new Error('the relief pin needs to be told whether it stands on a measured design');
+        }
         held.stance = {
           ix: stance.ix,
           iy: stance.iy,
           z: normalise(stance.value),
-          measured: stance.measured !== false,
+          measured: stance.measured,
         };
       }
 

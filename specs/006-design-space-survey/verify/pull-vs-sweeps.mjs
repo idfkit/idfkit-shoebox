@@ -124,7 +124,6 @@ for (const desk of DESKS) {
     annual: false,
     needed: contents,
     carried: contents,
-    restShape: 'rest',
   });
 
   // Inert controls cost no run at all, which is the saving FR-027 promises.
@@ -204,7 +203,6 @@ ok(`the ranking agrees with full sweeps on ${DESKS.length} of ${DESKS.length} de
     annual: false,
     needed: contents,
     carried: contents,
-    restShape: 'rest',
   });
   const entries = [...inert, ...probes.map((probe) => entryFrom(probe, { here, there: read({ ...params, [probe.key]: probe.to }, patch), reading }))];
 

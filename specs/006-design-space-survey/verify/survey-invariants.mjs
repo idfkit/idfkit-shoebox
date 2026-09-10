@@ -386,7 +386,7 @@ console.log('survey invariants (gate 1, SC-003)');
 /* ── 10. the improving region names measured points and no optimum ─────── */
 {
   const sv = ground({ count: FINE_GRID, surface: (ix, iy) => 20 + (ix - 5) ** 2 + (iy - 3) ** 2 });
-  const region = improvingRegion(sv);
+  const region = improvingRegion(sv, sv.cutAt);
   ok('the improving region is non-empty on a bowl', region.spots.length > 0);
   ok('and every member of it is a measured spot height', region.spots.every((s) => s instanceof SpotHeight));
   const here = sv.spotAt(sv.cutAt.ix, sv.cutAt.iy);
