@@ -5,7 +5,7 @@
  * so that everything testable is testable without a browser in the room.
  * Everything it draws comes from `latticeOf` and `meshOf`; it invents no
  * geometry of its own, and it letters nothing at all — the figures belong to
- * the plan and the schedule, which read spot heights.
+ * the plan, the readout under it and the schedule, which read spot heights.
  *
  * **WebGL2 as a platform API, not a package.** Principle V restricts runtime
  * dependencies to `@idfkit/*` and explicitly prefers platform APIs to

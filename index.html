@@ -4886,6 +4886,35 @@
       .survey-coverage b { color: var(--ink); font-weight: 400; }
       .survey-coverage .loose { color: var(--ink-ghost); }
 
+      /* The design under the reader, in the mono face every figure on this
+         page is set in, because it is a reading and not a caption — it is what
+         the schedule of spot heights used to letter, one row at a time.
+
+         `min-height` for two lines of it: the sentence carries two axes and up
+         to two readings, so it wraps on a narrow sheet, and a line that
+         changes height as the pointer crosses the plan would walk the coverage
+         figure and the finding up and down the page under the reader. The same
+         rule the run panels keep — a redraw never moves the page. */
+      .spot-readout {
+        margin: 14px 0 0;
+        min-height: 33px;
+        font: 400 11px/1.5 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+      }
+
+      /* Not a measurement: bare ground under the pointer, or no survey cut. */
+      .spot-readout.loose { color: var(--ink-ghost); }
+
+      /* The complete record, shut by default. The summary states its count in
+         view, so what is behind the fold is known without opening it — the
+         condition on folding anything on this sheet. */
+      .schedule-fold { margin-top: 18px; }
+      /* The summary is a flex row with its own gap, so the `.base` margin that
+         separates a count from an eyebrow would be counted twice here. */
+      .schedule-fold > summary .base { margin-left: 0; }
+      .schedule-fold > summary + .schedule { margin-top: 10px; }
+
       /* The traverse list. A schedule, so it folds at 620px with the others
          and every figure keeps the head it stood under. */
       .traverse { margin-top: 18px; }
@@ -5306,6 +5335,27 @@
               </figure>
             </div>
 
+            <!-- The design under the reader, in full, in one line. This is
+                 what the schedule of spot heights used to be: that table
+                 carried every position of the ground, which is 144 rows on a
+                 fine one and — since `.schedule` folds at 620px — some five
+                 hundred lines of table on a phone, under two drawings.
+
+                 It was carrying three real jobs and every one of them is a
+                 question about one design at a time. The plan letters only
+                 every second position on each axis past a ground of seven, so
+                 108 of 144 figures were lettered nowhere else; both drawings
+                 are `role="img"`, so their figures are invisible to assistive
+                 technology and the table was the only route to any of them;
+                 and the relief can refuse to draw. So the line is
+                 `role="status"` — a polite live region, which the cursor's
+                 sentence never had — and it is lettered by pointing at a tick
+                 or by walking the ground with the arrow keys.
+
+                 It is a reading, so it is never folded. Written by
+                 `renderSpotReadout` in main.js. -->
+            <p class="spot-readout" id="survey-spot" role="status"></p>
+
             <!-- Load bearing, not decoration. The relief is smooth, so it does
                  not report its own sample density the way a faceted one would;
                  these two figures are the only thing separating a coarse survey
@@ -5324,10 +5374,36 @@
             </section>
             <p class="finding" id="survey-finding"></p>
 
-            <section class="schedule">
-              <p class="eyebrow">Schedule of spot heights<span class="base" id="survey-spots-scope"></span></p>
-              <table id="survey-spots"></table>
-            </section>
+            <!-- The complete record: every measured design with its own
+                 figures. Shut by default, because open it is 144 rows on a
+                 fine ground and — since `.schedule` folds each row into a
+                 block at 620px — some five hundred lines of table on a phone,
+                 under two drawings.
+
+                 This is the one table of readings on the sheet that sits
+                 behind a disclosure, so the rule it looks like it breaks is
+                 worth stating. "Readings never go in a fold" is about the
+                 reading the page is *for*, and that stands in view: the
+                 readout above letters the design under the reader in full and
+                 always, the coverage line says how much was measured, and the
+                 plan carries its own figures. This holds the record, which is
+                 a different thing — the same shape as the TM59 qualifications
+                 block, where the count stays in view and the entries are one
+                 press down. The summary carries the count for that reason: a
+                 reader who never opens it must still know what it holds.
+
+                 Static markup rather than built by `fold()`, because
+                 `renderSurvey` runs on every landed sample and a rebuilt
+                 `<details>` would slam shut under a reader who had opened it
+                 — the hazard that made `renderSurveyChoose` stop rebuilding
+                 the extent fields. Only the table inside is rewritten, by
+                 `renderSpots` in main.js. -->
+            <details class="fold schedule-fold" data-fold="survey:spots">
+              <summary>Schedule of spot heights<span class="base" id="survey-spots-scope"></span></summary>
+              <section class="schedule">
+                <table id="survey-spots"></table>
+              </section>
+            </details>
 
             <!-- E-02's own title-block cells. The sheet below is E-01's and
                  says what produced the run; this says what produced the ground. -->

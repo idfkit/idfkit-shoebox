@@ -211,7 +211,9 @@ The reader shares the link. The recipient gets the same desk, the same ground, t
 
 ### User Story 8 - Read it with a thumb (Priority: P2)
 
-The sheet is read on a phone on site as often as at a desk. The survey is readable at 390 px wide: the relief is drawn there by default and at full mesh, it is operable with a thumb, every reading it letters is also available as text without hovering anything, and where the device cannot draw a relief at all the sheet says so and gives the same measurements as a schedule of spot heights.
+The sheet is read on a phone on site as often as at a desk. The survey is readable at 390 px wide: the relief is drawn there by default and at full mesh, it is operable with a thumb, every measured design is readable in full as text without hovering anything and without opening anything, and where the device cannot draw a relief at all the sheet says so and gives the same measurements as a schedule of spot heights.
+
+The schedule is folded shut by default, because open it is some five hundred lines of table on a phone under two drawings. What that requires, and what the survey therefore does, is that a design is readable in full **without** opening it: tapping its tick or walking the ground with the arrow keys letters it under the plan. A tap is not a hover — `pointer: coarse` fires `pointerenter` on touch — and the keyboard reaches every position, so no reading sits behind a gesture the device cannot make. The fold's summary carries the count, so a reader who never opens it still knows what it holds.
 
 **Why this priority**: A reading that cannot be read is not a reading, and this is a constitutional requirement rather than a nicety. It is P2 because it constrains the P1 stories rather than standing alone.
 
@@ -292,7 +294,7 @@ The sheet is read on a phone on site as often as at a desk. The survey is readab
 - **FR-021**: The stance MUST be marked on the ground at all times, and MUST move when the desk moves.
 - **FR-022**: The drawing MUST follow the design system: one hue, hairline work, no shadows, the accent reserved for markup, and the cold and warm pair reserved for signed physical quantities.
 - **FR-023**: Any motion (flight over the ground, an animated descent) MUST be suppressed where the reader has asked their system for reduced motion, without losing any reading.
-- **FR-024**: Where the relief cannot be drawn, or its drawing context is lost mid-session, the survey MUST say so in place with the reason and MUST continue to carry every reading on the plan and as a schedule of spot heights. It MUST NOT silently fall back to a still image or an empty frame.
+- **FR-024**: Where the relief cannot be drawn, or its drawing context is lost mid-session, the survey MUST say so in place with the reason and MUST continue to carry every reading on the plan and as a schedule of spot heights. It MUST NOT silently fall back to a still image or an empty frame. The schedule MAY be folded shut, provided a measured design remains readable in full without opening it.
 
 ### Reading the ground
 
