@@ -29,7 +29,8 @@ import {
   monthHours,
   phraseFor,
 } from './controls.js';
-import { mountConsole } from './console.js';
+import { fold, mountConsole } from './console.js';
+import { BUDGETS, withinBudget, words } from './copy.js';
 import { describeDesk } from './describe.js';
 import { quantityField, textField } from './field.js';
 import { mountTour } from './tour.js';
@@ -94,7 +95,6 @@ import {
   worstHour,
 } from './readings.js';
 import {
-  LEFT_ALONE,
   Measure,
   PRESETS,
   PRESET_BY_ID,
@@ -120,6 +120,26 @@ import {
   readCriterionC,
   runningMean,
 } from './tm59.js';
+import { qualificationsSummary } from './tm59.js';
+
+// What each fold on the sheet says while it is shut, declared once and held to
+// the summary budget at load. A summary is how a reader decides whether to open
+// the fold, so one that has grown into a sentence is a paragraph in view again.
+// Declared up here with the imports rather than beside the renderers: the boot
+// awaits run the renderers before the lower half of this module is evaluated,
+// and a `const` in its temporal dead zone throws.
+const FOLD = Object.freeze(
+  Object.fromEntries(
+    Object.entries({
+      method: 'Method',
+      derivation: 'How it was read',
+      criteriaCD: 'Criteria c and d',
+      findingWhy: 'Why this reading',
+      billLede: 'About these figures',
+      sources: 'Sources',
+    }).map(([key, text]) => [key, withinBudget(BUDGETS.SUMMARY, `fold summary ${key}`, text)]),
+  ),
+);
 
 const ENERGYPLUS_VERSION = '26.1.0';
 
@@ -1536,15 +1556,29 @@ function renderBillHead(againstLabel) {
     ? ''
     : tariff.source.id === 'assumed'
       ? ' Priced at the rates assumed on the Tariff strip.'
-      : ` Priced at the ${tariff.source.kind.toLowerCase()} published for ${placeName(tariff.region)}, never a residential one, and factored at its grid carbon intensity.`;
+      : ` Priced at the ${tariff.source.kind.toLowerCase()} published for ${placeName(tariff.region)}.`;
+  const factored = isRate(tariff) && tariff.source.id !== 'assumed'
+    ? 'Never a residential tariff, and factored at its grid carbon intensity.'
+    : '';
   // Three periods, not two. A weather file no longer means a year: months can
   // be taken out of the run, and a bill of ten of them has to say so, because
-  // the reader's next move is to compare the total with a year's.
-  $('bill-lede').textContent = bill.wholeYear
-    ? `Metered across the ${group(bill.hours)}-hour run.${priced}`
+  // the reader's next move is to compare the total with a year's. That much
+  // stays in view, since it decides how every figure below is read; the
+  // pricing and the reasoning fold, one press down.
+  const [view, more] = bill.wholeYear
+    ? [`Metered across the ${group(bill.hours)}-hour run.${priced}`, factored]
     : bill.annual
-      ? `Metered across the ${group(bill.hours)} hours of the run — ${bill.months} of the year's twelve months, so this is a bill for those months and not for a year. Put the missing months back on the Run strip for a year's.${priced}`
-      : `These are the ${group(bill.hours)} hours of the sizing days — two conditions chosen for being extreme. They are a real bill for a real two days, and they are deliberately not multiplied up into a year; attach a weather file for a year's.${priced}`;
+      ? [
+          `Metered across the ${group(bill.hours)} hours of the run: ${bill.months} of the year's twelve months, not a year.`,
+          `Put the missing months back on the Run strip for a year's.${priced} ${factored}`,
+        ]
+      : [
+          `These are the ${group(bill.hours)} hours of the sizing days, not multiplied up into a year; attach a weather file for a year's.`,
+          `Two conditions chosen for being extreme, and a real bill for a real two days.${priced} ${factored}`,
+        ];
+  const lede = $('bill-lede');
+  lede.textContent = view;
+  if (more.trim()) lede.append(' ', fold('bill:lede', FOLD.billLede, {}, elem('span', null, more.trim())));
 }
 
 /**
@@ -1821,24 +1855,30 @@ function renderBillNotes() {
     ? `${absences.map((a) => `${a.what}: ${a.reason}`).join(' ')} Those figures read as an em dash and are left out of every total on this schedule.`
     : '';
 
+  // The citations are one press down, under the schedule they cite for. Each
+  // meter head already carries its source's kind beside its figure, so what
+  // folds is the list of datasets and their vintages, not the fact that a rate
+  // was published by somebody.
   const refs = $('bill-refs');
   refs.textContent = '';
-  refs.append('Rates and factors from ');
+  const list = elem('span');
+  list.append('Rates and factors from ');
   const sources = bill.card.sources;
   for (const [i, source] of sources.entries()) {
-    if (i) refs.append(i === sources.length - 1 ? ' and ' : ', ');
+    if (i) list.append(i === sources.length - 1 ? ' and ' : ', ');
     if (source.url) {
       const a = document.createElement('a');
       a.href = source.url;
       a.target = '_blank';
       a.rel = 'noreferrer';
       a.textContent = cited(source);
-      refs.append(a);
+      list.append(a);
     } else {
-      refs.append(cited(source));
+      list.append(cited(source));
     }
   }
-  refs.append('.');
+  list.append('.');
+  refs.append(fold('bill:sources', FOLD.sources, { label: 'Sources for the rates and factors' }, list));
 }
 
 /* ── pinning a scheme ─────────────────────────────────────────────────────
@@ -4083,7 +4123,7 @@ async function attachFromLink(linked) {
       took = await choose(null, pick, linked.params.sizingPeriods);
     } catch (error) {
       refuseLink(
-        `The linked ${named} could not be attached — ${error.message} — so the whole link was set aside and the sheet is at its defaults.`,
+        `The linked ${named} could not be attached (${error.message}); the link was set aside.`,
       );
       return;
     }
@@ -4093,7 +4133,7 @@ async function attachFromLink(linked) {
     // "could not be attached" tells them only that today is not going well.
     if (typeof took === 'string' && JSON.stringify([params, patching()]) === untouched) {
       refuseLink(
-        `The linked ${named} could not be attached — ${took} — so the whole link was set aside and the sheet is at its defaults.`,
+        `The linked ${named} could not be attached (${took}); the link was set aside.`,
       );
       return;
     }
@@ -4646,12 +4686,15 @@ function applyStandard(preset) {
   const moved = preset.specs.filter((s) => before[s.key] !== s.value).length;
   const patched = preset.engages.length + preset.bypasses.length;
   statusEl.className = 'status';
+  // One sentence, the way every status line is: what moved, and solo coming
+  // off because that changes what is in the path. Which channels a standard
+  // may never touch is the register's own statement, beside the standards,
+  // and listing them here on every press put a paragraph in the status row.
   statusEl.textContent = preset.specs.length
-    ? `${preset.name} laid over the desk — ${moved} control${moved === 1 ? '' : 's'} moved` +
-      `${patched ? ` and ${patched} channel${patched === 1 ? '' : 's'} patched` : ''}. ` +
-      `${LEFT_ALONE.join(', ')} are as you left them.` +
-      (soloWas ? ' Solo came off, so the whole desk is in the path again.' : '')
-    : `${preset.name} sets no control — it states an outcome. Its targets are on the scoreboard.`;
+    ? `${preset.name} laid over the desk: ${moved} control${moved === 1 ? '' : 's'} moved` +
+      `${patched ? ` and ${patched} channel${patched === 1 ? '' : 's'} patched` : ''}.` +
+      (soloWas ? ' Solo came off.' : '')
+    : `${preset.name} sets no control; its targets are on the scoreboard.`;
   syncStandards();
   if (autoOn()) pump();
 }
@@ -5278,7 +5321,10 @@ function tm59CountRow(body, count) {
   const n = (value) => elem('b', null, String(value));
 
   if (count.read === 0) {
-    p.append(`None of the criteria in scope — ${count.scope} — could be read from this run.`);
+    // Every criterion in scope is unread, so the scope already names them and
+    // listing them again below would say the same thing twice.
+    p.append(`None of the criteria in scope — ${count.scope} — could be read from this run; each row says why.`);
+    host.append(p);
   } else {
     // "2 cleared", not "2 cleared their limits" and not "2 of 2". The bare
     // verb is the only form that stays a sentence at every reading: a
@@ -5297,38 +5343,53 @@ function tm59CountRow(body, count) {
   }
 
   // Named one by one rather than counted. A criterion the run could not answer
-  // is not one that failed and is not one that passed, and the only useful
-  // thing to say about it is which one it is and what would fix it.
-  for (const reading of count.unread) {
-    const label = reading.category
-      ? `${reading.criterion.label} · ${reading.category.label}`
-      : reading.criterion.label;
-    p.append(` ${label} could not be read: ${reading.absence}.`);
+  // is not one that failed and is not one that passed, and the useful things
+  // to say about it are which one it is and what would fix it. The fix is
+  // already lettered beside that criterion's own em dash, one row up, so it is
+  // named here and the reason is left to the row rather than said twice.
+  if (count.read > 0 && count.unread.length) {
+    const labels = count.unread.map((reading) =>
+      reading.category ? `${reading.criterion.label} · ${reading.category.label}` : reading.criterion.label,
+    );
+    const list = labels.length < 2 ? labels[0] : `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`;
+    p.append(` ${list} could not be read; each row says why.`);
   }
 
-  p.append(
-    ' Criterion c is read separately and stands outside this count, because which of it and ' +
-      'criterion a governs turns on how much of the occupied period the openings are held shut, ' +
-      'which is a fact about a window model this desk does not carry. Criterion d is not read at ' +
-      'all: this model holds no communal circulation for it to be read over, and the register’s ' +
-      'list of what this sheet cannot judge says so in full.',
-  );
-  p.append(
-    ' This is a count of lines, not a result against the method. TM59 is assessed room by room and ' +
-      'the dwelling is governed by its worst room; this model is one zone, so there is no worst ' +
-      'room to find.',
-  );
-
   host.append(p);
+
+  // Why c and d stand outside the count is the one statement here no
+  // qualification makes, so it keeps its words, one press down. The sentence
+  // that used to close this row ("a count of lines, not a result against the
+  // method … no worst room to find") is gone: the `procedure` and `one-zone`
+  // qualifications say it, nearly word for word, in the fold below.
+  host.append(
+    fold(
+      'tm59:cd',
+      FOLD.criteriaCD,
+      {},
+      elem(
+        'p',
+        'score-count',
+        'Criterion c is read separately and stands outside this count, because which of it and ' +
+          'criterion a governs turns on how much of the occupied period the openings are held shut, ' +
+          'which is a fact about a window model this desk does not carry. Criterion d is not read at ' +
+          'all: this model holds no communal circulation for it to be read over, and the register’s ' +
+          'list of what this sheet cannot judge says so in full.',
+      ),
+    ),
+  );
 }
 
 /**
- * Why these figures are not a TM59 assessment, printed under them.
+ * Why these figures are not a TM59 assessment, stated under them.
  *
  * The deliverable rather than a disclaimer, and it is in place and never on
  * hover: `pointer: coarse` has no hover at all, so a caveat that floats does
  * not exist on the phone where this sheet is most often read and least often
- * checked against the method it names.
+ * checked against the method it names. In place is not the same as always
+ * open, though. The summary states in view how many reasons there are, read
+ * off the declaration, and the reasons themselves are one press down, where
+ * 520 words stood under five rows of figures before.
  *
  * One entry per `Qualification`, `says` over `because`, so that a reader can
  * count the reasons rather than skim a paragraph — SC-005 asks that four
@@ -5341,16 +5402,6 @@ function tm59CountRow(body, count) {
  */
 function tm59QualificationRow(body, qualifications) {
   const host = scoreProse(body);
-  host.append(
-    elem(
-      'p',
-      'score-count',
-      'What these readings do not answer. TM59 is a compliance procedure with a modelling strategy, ' +
-        'a prescribed occupancy, a mandated weather file and a staged sequence behind it; what is ' +
-        'lettered above is the arithmetic of some of its criteria, which is a smaller thing. Each ' +
-        'line below is one specific gap, with what it is measured or read from beside it.',
-    ),
-  );
   const list = elem('dl', 'qualifications');
   for (const q of qualifications) {
     list.append(elem('dt', null, q.says));
@@ -5358,7 +5409,7 @@ function tm59QualificationRow(body, qualifications) {
     because.dataset.head = 'Because';
     list.append(because);
   }
-  host.append(list);
+  host.append(fold('tm59:qualifications', qualificationsSummary(), {}, list));
 }
 
 /**
@@ -5376,6 +5427,8 @@ function renderScore() {
   table.textContent = '';
   table.append(tableHead(['Criterion', 'Asks for', 'Reads', 'Margin', '']));
   const body = document.createElement('tbody');
+  // The qualifying sentences already lettered in view on this board.
+  const qualified = new Set();
   for (const preset of PRESETS) {
     if (!preset.targets.length) continue;
     // The standard's name as a subhead row rather than repeated per line, the
@@ -5437,7 +5490,15 @@ function renderScore() {
       const tr = body.insertRow();
       const label = tr.insertCell();
       label.append(target.label);
-      if (target.note) label.append(elem('i', 'why', target.note));
+      // The method folds under the criterion it explains. Ten notes of up to
+      // ninety-five words stood under a table of figures and buried them; the
+      // reading, the line and the verdict or absence are what the row is for,
+      // and they stay in the cells beside it.
+      if (target.note) {
+        label.append(
+          fold(`target:${target.id}`, FOLD.method, { label: `Method for ${target.label}` }, elem('i', 'why', target.note)),
+        );
+      }
       // What the run added to what the declaration already said: the line the
       // reading was judged against, the days it covered, and what it is a
       // reading of. One block per statement rather than one paragraph, because
@@ -5446,19 +5507,28 @@ function renderScore() {
         const reading = tm59Reading(target);
         const notes = tm59Notes(reading, asDrawn);
         const precis = tm59Precis(reading);
-        // The two sentences that qualify the reading rather than derive it stay
+        // A sentence that qualifies the reading rather than derives it stays
         // outside the fold, because a reader who never opens it must still not
         // take a bedroom criterion for a statement about the room they drew.
-        const qualifying = notes.filter((n) => QUALIFYING_NOTE.test(n));
-        const deriving = notes.filter((n) => !QUALIFYING_NOTE.test(n));
-        if (precis && deriving.length) {
-          const fold = elem('details', 'why-fold');
-          const head = elem('summary', null, precis);
-          fold.append(head);
-          for (const note of deriving) fold.append(elem('i', 'why', note));
-          label.append(fold);
-        } else {
-          for (const note of deriving) label.append(elem('i', 'why', note));
+        // Only while it is the row's one short line, though: a qualifier past
+        // a block's budget is a paragraph, and it joins the derivation.
+        // And only once per board. Categories I and II of one criterion carry
+        // the same qualifier word for word, and the second row's copy said
+        // nothing the first had not; it goes in that row's fold instead.
+        const qualifying = notes.filter(
+          (n) => QUALIFYING_NOTE.test(n) && words(n) <= BUDGETS.BLOCK.words && !qualified.has(n),
+        );
+        for (const n of qualifying) qualified.add(n);
+        const deriving = notes.filter((n) => !qualifying.includes(n));
+        if (deriving.length) {
+          label.append(
+            fold(
+              `target:${target.id}:why`,
+              precis ?? FOLD.derivation,
+              { label: `How ${target.label} was read` },
+              ...deriving.map((note) => elem('i', 'why', note)),
+            ),
+          );
         }
         for (const note of qualifying) label.append(elem('i', 'why', note));
       }
@@ -5525,16 +5595,15 @@ const OFFERS = [
   {
     key: 'system',
     verb: { every: 'asks', some: 'ask' },
-    because:
-      'about a conditioned building, and this zone is free-running — there is no demand to meter and no load to size.',
+    because: 'about a conditioned building; this zone is free-running.',
     label: 'Patch System in',
-    then: 'Patching it in fills the lines a run of this kind can answer.',
+    then: 'Patching it in fills them.',
     // The shelf is asking a different question of the same fact — not "why is
     // this criterion blank" but "what would a scheme kept from here hold" —
     // so it gets its own sentence, the way an environment's `noun` is kept
     // apart from its `label`.
     shelf: (blank) =>
-      `${listOf(blank)} blank while this zone is free-running — nothing to meter and no load to size — so a scheme kept from here would keep the gap.`,
+      `${listOf(blank)} blank while this zone is free-running, so a scheme kept from here would keep the gap.`,
     press() {
       patchChannel('system', false);
       // The board's note is a question about the desk — what is standing in
@@ -5554,7 +5623,7 @@ const OFFERS = [
     verb: { every: 'needs', some: 'need' },
     because: 'a full year behind them, and this run is design days.',
     label: 'Choose a weather location',
-    then: 'The picker is at the head of the sheet.',
+    then: 'The picker heads the sheet.',
     shelf: (blank) =>
       `${listOf(blank)} year figures and this run is design days, so a scheme kept from here would keep the gap.`,
     press() {
@@ -5766,16 +5835,12 @@ function renderChase() {
   // undone by one line of type up beside the drawing. So the chase line says
   // what it is a count of, unconditionally rather than only where a line is
   // missing: the reader who is watching this while dragging a slider is
-  // precisely the reader who never scrolls down to the board.
+  // precisely the reader who never scrolls down to the board. That is why this
+  // clause survives here although the qualifications say the same: it is the
+  // one copy the dragging reader actually sees. What it used to add, a pointer
+  // to the block below and criterion d, is said once, down there.
   if (carriesTm59(preset)) {
-    host.append(
-      elem(
-        'i',
-        'chase-part',
-        ' A count of lines, not a result against the method: criterion d is not read here at all, ' +
-          'and the block under the scoreboard says what else these readings do not answer.',
-      ),
-    );
+    host.append(elem('i', 'chase-part', ' A count of lines, not a result against the method.'));
   }
 
   // The ghost: where this stood when the hand went down. Compared at display
@@ -6132,14 +6197,12 @@ async function solve() {
   // sentence describing a building the chart under it never solved. The
   // document is the one the IDF is about to be written from, so the sentence
   // and the file agree by construction.
-  const described = describeDesk({
-    doc: model,
-    params: snapshot,
-    state: modelState,
-    place: station?.url
-      ? { name: siteName(station), zone: climateZone(station) === '—' ? null : climateZone(station) }
-      : null,
-  });
+  // No `place`. The paragraph used to open "In Denver Intl AP, ASHRAE zone
+  // 5B.", which the title block's Location and the site picker's climate zone
+  // already letter a few centimetres above it, and the description and the
+  // finding together are held to sixty words. The building is what the
+  // paragraph is for; the station is said once, where it is chosen.
+  const described = describeDesk({ doc: model, params: snapshot, state: modelState });
   const live = continuous();
   quiet = live;
 
@@ -6417,10 +6480,10 @@ async function solve() {
   // than its hour count. The run kind decides the sentence, not the width.
   $('fig-cap').textContent = hasOutdoor
     ? nn > 900
-      ? 'Zone mean air temperature against outdoor drybulb over the full run period. Each column spans the hourly range within it; the model at left is drawn from the surface vertices in the IDF and tinted by the zone mean.'
+      ? 'Zone mean air temperature against outdoor drybulb over the full run period; each column spans its hourly range. Geometry drawn from the IDF.'
       : capture.annual
-        ? 'Zone mean air temperature against outdoor drybulb over the months in the run. The model at left is drawn from the surface vertices in the IDF and tinted by the zone mean.'
-        : 'Zone mean air temperature against outdoor drybulb across both Denver design days. The model at left is drawn from the surface vertices in the IDF and tinted by the zone mean.'
+        ? 'Zone mean air temperature against outdoor drybulb over the months in the run. Geometry drawn from the IDF, tinted by the zone mean.'
+        : 'Zone mean air temperature against outdoor drybulb across both Denver design days. Geometry drawn from the IDF, tinted by the zone mean.'
     : 'Zone mean air temperature over the run. No outdoor drybulb was recorded in the ESO.';
 
   const q = (text, hot) =>
@@ -6444,6 +6507,7 @@ async function solve() {
   // a study's redline are one number rather than three that ought to agree.
   const demand = readDemand(eso, floorArea);
   const billedRuns = runs.filter((r) => r.kind === null);
+  let why = null;
 
   if (demand?.tedi != null && demand?.cedi != null) {
     // The redline goes on whichever way this building leans, because that is
@@ -6459,8 +6523,9 @@ async function solve() {
       q(f1(demand.tedi), demand.tedi >= demand.cedi),
       ' kWh/m² of heat into the zone and ',
       q(f1(demand.cedi), demand.cedi > demand.tedi),
-      ' kWh/m² back out of it — the demand the envelope sets, before the plant efficiencies the bill below divides it by.',
+      ' kWh/m² back out of it.',
     );
+    why = 'The demand the envelope sets, before the plant efficiencies the bill below divides it by.';
   } else if (conditioned) {
     // The setpoints are in the description above, so this says what the unit
     // actually held rather than restating them: under an unmet hour the two
@@ -6472,11 +6537,15 @@ async function solve() {
       q(f1(m.z.min)),
       ' °C and ',
       q(f1(m.z.max), true),
-      ` °C over the ${lead.noun}. Demand intensities need a run period to read over — a sizing day is a condition, not a period — so attach a weather file and TEDI and CEDI join the schedule above.`,
+      ` °C over the ${lead.noun}.`,
     );
+    why =
+      'Demand intensities need a run period to read over — a sizing day is a condition, not a period — so attach a weather file and TEDI and CEDI join the schedule above.';
   } else if (Number.isFinite(m.damping)) {
+    // "With no heating or cooling anywhere in this model" used to open this, and
+    // "alone" already says it: the branch is only reached free-running.
     finding.append(
-      'With no heating or cooling anywhere in this model, the envelope alone takes the ',
+      'The envelope alone takes the ',
       lead.noun,
       "'s ",
       q(f1(m.o.swing)),
@@ -6496,6 +6565,11 @@ async function solve() {
       ' °C — held there by nothing but the envelope.',
     );
   }
+  // The reading stays in the paragraph and the reason for it folds, inside the
+  // paragraph rather than beside it: every exit that clears the finding clears
+  // it with `textContent = ''`, so a fold living inside goes with it, and
+  // `.finding:empty` never leaves a summary standing under nothing.
+  if (why) finding.append(fold('finding:why', FOLD.findingWhy, {}, elem('span', null, why)));
 
   statusEl.className = 'status';
   statusEl.textContent = live

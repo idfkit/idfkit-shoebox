@@ -63,6 +63,7 @@ import { AS_DRAWN, DAYS_IN_MONTH, MONTHS } from './controls.js';
 // worse than a loud one. Nothing else is taken from `model.js` and nothing
 // there imports this, so the direction of the dependency stays one way.
 import { OCCUPANCY_SCHEDULE } from './model.js';
+import { BUDGETS, withinBudget } from './copy.js';
 
 /* ══ the calendar this method is written on ══════════════════════════════ */
 
@@ -719,6 +720,29 @@ export const QUALIFICATIONS = Object.freeze([
   }
 }
 
+const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+
+/**
+ * The line that stands in view over the folded qualifications, stating how
+ * many there are. The block used to be printed whole, 520 words under five
+ * rows of figures; what a reader who never opens it must still come away with
+ * is that there are reasons and how many, so the count is the summary. It is
+ * read off the list the block will hold, never typed, so a fifth standing
+ * qualification changes the sentence without anybody remembering to.
+ */
+export function qualificationsSummary(count = QUALIFICATIONS.filter((q) => q.standing).length) {
+  const n = NUMBER_WORDS[count] ?? String(count);
+  const word = n.charAt(0).toUpperCase() + n.slice(1);
+  return `${word} ${count === 1 ? 'reason' : 'reasons'} this is not TM59`;
+}
+
+// Asserted at every count the block can reach, not just the standing four: the
+// run-dependent qualifications add up to four more, and a count spelled as a
+// longer word must not push the summary past what a shut fold may say.
+for (let n = QUALIFICATIONS.filter((q) => q.standing).length; n <= NUMBER_WORDS.length; n++) {
+  withinBudget(BUDGETS.SUMMARY, `qualificationsSummary(${n})`, qualificationsSummary(n));
+}
+
 /* ══ the running mean ════════════════════════════════════════════════════ */
 
 /**
@@ -951,34 +975,35 @@ const OPERATIVE = 'Zone Operative Temperature';
  * this is a year's number" — because an absence that does not say what would
  * fix it is a blank with punctuation.
  */
+// Each reason stands beside an em dash, so it is held to the absence budget of
+// twelve words and says first what would fix it. What each used to go on to
+// argue is kept here, beside the sentence it justifies, rather than in the
+// margin of the board where it outweighed the reading it explained.
 export const ABSENCE = Object.freeze({
-  season:
-    'run some of May to September — this is a summer number, and the assessment period is 1 May to ' +
-    '30 September',
-  occupancy:
-    'patch Gains in — with nobody home there are no occupied hours to be a share of',
+  // The assessment period is 1 May to 30 September.
+  season: 'run some of May to September — the assessment period',
+  occupancy: 'patch Gains in — with nobody home there are no occupied hours',
   // Kept apart from `occupancy` because the two are different failures with
   // different fixes, and one sentence covering both would send a reader to the
   // wrong one. A schedule that sums to nothing is a desk with nobody in it; a
   // series that is not in the run at all is a run that was never asked for it,
   // which is what a lean reporting profile produces and what the denominator
-  // rule (FR-009) refuses to work around by re-evaluating the schedule here.
-  schedule:
-    'patch Gains in — this run carries no hourly Occupancy schedule value series, and the denominator is ' +
-    'the occupancy the engine actually saw rather than the schedule read back in JavaScript',
-  operative:
-    'solve the desk itself — this run carries no hourly operative temperature, and zone air temperature ' +
-    'is a different question by several degrees on a desk with heavy solar gain and a cold slab',
-  weather:
-    'attach a weather file — two design days are not a season, whatever their dates',
+  // rule (FR-009) refuses to work around by re-evaluating the schedule here:
+  // the denominator is the occupancy the engine actually saw rather than the
+  // schedule read back in JavaScript.
+  schedule: 'patch Gains in — this run carries no hourly Occupancy schedule series',
+  // Zone air temperature is a different question by several degrees on a desk
+  // with heavy solar gain and a cold slab, so it is never substituted.
+  operative: 'solve the desk itself — this run carries no hourly operative temperature',
+  // Two design days are not a season, whatever their dates.
+  weather: 'attach a weather file — two design days are not a season',
   // Criterion b alone can have every hour of the period and still have no
-  // reading, because its unit is a night rather than an hour: a run ending at
-  // midnight on 30 September holds all 153 days and not one complete night in
-  // the last of them.
-  night:
-    'run through to the morning of 1 October — a night is the nine hours from 23:00, and this run holds ' +
-    'no complete one opening inside 1 May to 30 September',
+  // reading, because its unit is a night rather than an hour: a night is the
+  // nine hours from 23:00, and a run ending at midnight on 30 September holds
+  // all 153 days and not one complete night opening inside the period.
+  night: 'run to the morning of 1 October for a complete night',
 });
+for (const [key, text] of Object.entries(ABSENCE)) withinBudget(BUDGETS.ABSENCE, `ABSENCE.${key}`, text);
 
 /**
  * Whether an hour counts as occupied, against the floor the applier wrote.

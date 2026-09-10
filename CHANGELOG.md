@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The sheet reads at a glance.** Every reading, verdict, absence and refusal
+  stays in view; method notes, derivations, citations and the TM59
+  qualifications sit one press away in a fold under what they explain. Visible
+  prose falls from about 2,700 words to under 600 on the sheet, and from about
+  2,250 to under 400 with the console open. Each channel and general note now
+  leads with one short line, and a line that grows past its word budget stops
+  the page loading. The model and the link format do not move.
+
 - **The idfkit libraries move to 0.3.0-rc.3.** `@idfkit/core`, `@idfkit/schemas`
   and `@idfkit/weather` are pinned to the exact version that wrote the file, and
   every IDF this page hands out now stamps `@idfkit/core 0.3.0-rc.3` in its
