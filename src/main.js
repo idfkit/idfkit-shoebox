@@ -70,6 +70,9 @@ import {
   meshOf,
   refineOrder,
   rowsFor,
+  arrisesOf,
+  blockOf,
+  strataOf,
   SpotHeight,
   TraverseStop,
 } from './survey.js';
@@ -9728,6 +9731,17 @@ function surveySay(sentence) {
   note.textContent = sentence;
 }
 
+/**
+ * One stop of an axis, bare of its unit — the same rule the plan follows, and
+ * for the same reason: the unit is lettered once on the axis name rather than
+ * on both ends, or a long one runs off the corner it is written into.
+ */
+function stopOf(axis, index) {
+  const said = formatValue(axis.key, axis.positions[index]);
+  const unit = axis.control.unit;
+  return unit && said.endsWith(unit) ? said.slice(0, -unit.length).trim() : said;
+}
+
 /* ── the relief ──────────────────────────────────────────────────────────── */
 
 let relief = null;
@@ -9769,7 +9783,30 @@ function drawRelief(sv) {
 
   const lattice = latticeOf(sv, sv.readings[0]);
   const extent = extentOf(lattice);
-  relief.draw({ mesh: meshOf(lattice), extent });
+  const at = sv.standingAt(params);
+  const under = at && at.on ? sv.spotAt(at.ix, at.iy) : null;
+  const block = blockOf(lattice);
+  relief.draw({
+    mesh: meshOf(lattice),
+    extent,
+    // The block the ground stands in. Derived from the same lattice and the
+    // same mask, so it can add no ground the surface does not already have.
+    block,
+    // The same levels the plan contours, ruled around the cut so the side of
+    // the block is a vertical scale rather than a wash — and the arrises, so
+    // an oblique says which way each corner folds.
+    strata: strataOf(block, levelsFor(lattice)),
+    arrises: arrisesOf(block),
+    // The pin, only where the desk is standing on a design this survey has
+    // actually run. Between two measured points there is no height to stand a
+    // pin at, and interpolating one would be the relief inventing a reading —
+    // the plan's hollow mark carries that state instead.
+    stance: under ? { ix: at.ix, iy: at.iy, value: sv.readings[0].valueOf(under.readings) } : null,
+    axes: {
+      x: { label: labelFor(sv.x.key), from: stopOf(sv.x, 0), to: stopOf(sv.x, sv.x.count - 1) },
+      y: { label: labelFor(sv.y.key), from: stopOf(sv.y, 0), to: stopOf(sv.y, sv.y.count - 1) },
+    },
+  });
 
   // Named viewpoints as real buttons: a coarse-pointer target and a tab stop
   // apiece, so every camera move the pointer can make the keyboard can make
@@ -9805,7 +9842,10 @@ function drawRelief(sv) {
   // declaration on the other figure does not reach a reader looking at this
   // one (FR-019).
   caption.textContent =
-    `The same ground in relief. The surface between the posts is interpolation, not measurement: ` +
+    `The same ground cut as a block. The body under the terrain is not measurement and carries none: ` +
+    `this survey knows the reading on the ground and nothing about what is beneath it, so the cut is ` +
+    `ruled at the plan's own contour levels to serve as the vertical scale and shaded flat otherwise. ` +
+    `A hole in the terrain is a shaft through the block. The surface between the posts is interpolation, not measurement: ` +
     `${coverage.measured} of ${coverage.wanted} positions carry a run, each marked by a post, and no ` +
     `figure anywhere on this sheet is read off the surface between them. Holes are positions that could ` +
     `not be measured. The vertical scale is fixed and the whole measured range fills the box — ` +

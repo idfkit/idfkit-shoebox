@@ -121,6 +121,14 @@ export const VIEWPOINTS = Object.freeze([
   { id: 'plan', label: 'Plan down', azimuth: 270, elevation: 89 },
 ]);
 
+/**
+ * How far the pin stands proud of the ground, in the same normalised units the
+ * terrain is drawn in — about a fifth of the measured range, which is enough
+ * to clear the local relief at every viewpoint the orbit allows without
+ * becoming the tallest thing in the drawing.
+ */
+const PIN_HEIGHT = 0.2;
+
 const clampElevation = (value) => Math.min(ELEVATION_MAX, Math.max(ELEVATION_MIN, value));
 const wrapAzimuth = (value) => ((value % 360) + 360) % 360;
 
@@ -141,6 +149,7 @@ in float aMeasured;
 uniform mat4 uProjection;
 uniform mat4 uView;
 uniform vec3 uScale;
+uniform float uPointSize;
 out float vHeight;
 out float vMeasured;
 void main() {
@@ -152,7 +161,7 @@ void main() {
   vHeight = aPosition.z;
   vMeasured = aMeasured;
   gl_Position = uProjection * uView * vec4(p.x, p.z, -p.y, 1.0);
-  gl_PointSize = 4.0;
+  gl_PointSize = uPointSize;
 }`;
 
 /**
@@ -169,11 +178,46 @@ in float vHeight;
 in float vMeasured;
 uniform vec4 uLow;
 uniform vec4 uHigh;
-uniform float uPoint;
+uniform vec4 uFlat;
+uniform vec4 uAccent;
+uniform vec4 uRule;
+// 0 surface · 1 cut face · 2 base · 3 post · 4 furniture · 5 pin · 6 strata
+uniform int uMode;
 out vec4 outColor;
 void main() {
-  if (uPoint > 0.5) {
+  if (uMode == 5) {
+    // The one accent on this drawing, and it says the same thing here as it
+    // says on the plan, the patch button and the rail: the desk is here.
+    outColor = uAccent;
+    return;
+  }
+  if (uMode == 3) {
     outColor = uHigh;
+    return;
+  }
+  if (uMode == 4) {
+    // The block's own arrises and its axis rules: furniture, drawn in the ink
+    // this page letters labels in.
+    outColor = uRule;
+    return;
+  }
+  if (uMode == 6) {
+    // The levels ruled around the cut. Quieter than the arrises, because there
+    // are eight of them to four and they are a scale rather than a shape.
+    outColor = uLow;
+    return;
+  }
+  if (uMode == 1) {
+    // A cut face is not a reading. It is toned flat, with the faintest lean
+    // down its own depth so the block has a body rather than reading as a
+    // silhouette — never by the height of the ground above it, which would be
+    // the block pretending to know something about what is under the terrain.
+    float d = clamp(vHeight, -1.0, 1.0);
+    outColor = mix(uFlat, uLow, clamp(0.5 + d * 0.25, 0.0, 1.0));
+    return;
+  }
+  if (uMode == 2) {
+    outColor = uFlat;
     return;
   }
   float t = clamp(vHeight, 0.0, 1.0);
@@ -228,6 +272,15 @@ export function createRelief(host, { onLost = null } = {}) {
 
   host.textContent = '';
   host.append(canvas);
+  // Real text over the drawing, because WebGL has no glyphs and this page is
+  // not going to grow an atlas for four labels. Positioned from the same
+  // matrices the GPU is handed, so the words cannot drift off the corners they
+  // name — and being text, it is selectable, it scales with the reader's own
+  // type size, and it is read aloud.
+  const overlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  overlay.setAttribute('class', 'relief-lettering');
+  overlay.setAttribute('aria-hidden', 'true');
+  host.append(overlay);
 
   const program = gl.createProgram();
   try {
@@ -248,13 +301,25 @@ export function createRelief(host, { onLost = null } = {}) {
   const position = gl.createBuffer();
   const measured = gl.createBuffer();
   const elements = gl.createBuffer();
+  // The block the ground stands in, and the furniture drawn on its base: the
+  // axis rules with their tick marks, and the pin that says where the desk is.
+  const blockPosition = gl.createBuffer();
+  const blockElements = gl.createBuffer();
+  const rulePosition = gl.createBuffer();
+  const strataPosition = gl.createBuffer();
+  const arrisPosition = gl.createBuffer();
+  const pinPosition = gl.createBuffer();
   const uniform = {
     projection: gl.getUniformLocation(program, 'uProjection'),
     view: gl.getUniformLocation(program, 'uView'),
     scale: gl.getUniformLocation(program, 'uScale'),
     low: gl.getUniformLocation(program, 'uLow'),
     high: gl.getUniformLocation(program, 'uHigh'),
-    point: gl.getUniformLocation(program, 'uPoint'),
+    flat: gl.getUniformLocation(program, 'uFlat'),
+    accent: gl.getUniformLocation(program, 'uAccent'),
+    rule: gl.getUniformLocation(program, 'uRule'),
+    mode: gl.getUniformLocation(program, 'uMode'),
+    pointSize: gl.getUniformLocation(program, 'uPointSize'),
   };
 
   let view = { ...VIEWPOINTS[0] };
@@ -282,9 +347,64 @@ export function createRelief(host, { onLost = null } = {}) {
     gl.viewport(0, 0, canvas.width, canvas.height);
   }
 
+  /**
+   * World space, matching the vertex shader exactly.
+   *
+   * The shader maps lattice space to a unit box and swaps two axes on the way
+   * — height becomes world Y, and the lattice's Y becomes negative Z — so the
+   * drawing reads as a plan lifted into relief rather than a chart tipped on
+   * its side. Anything drawn *outside* the shader (the axis labels, which are
+   * SVG because WebGL has no text) has to make the same journey, so the
+   * mapping lives here once and both sides call it.
+   */
+  function toWorld([lx, ly, lz], scale) {
+    return [lx / scale[0] - 0.5, lz * scale[2], -(ly / scale[1] - 0.5)];
+  }
+
+  /** A world point to a point on the canvas, for the labels the GPU cannot set. */
+  function project(world, projection, view, width, height) {
+    const clip = [0, 0, 0, 0];
+    for (let r = 0; r < 4; r += 1) {
+      let v = 0;
+      for (let c = 0; c < 3; c += 1) v += view[c * 4 + r] * world[c];
+      clip[r] = v + view[12 + r];
+    }
+    const out = [0, 0, 0, 0];
+    for (let r = 0; r < 4; r += 1) {
+      let v = 0;
+      for (let c = 0; c < 4; c += 1) v += projection[c * 4 + r] * clip[c];
+      out[r] = v;
+    }
+    const w = out[3] || 1;
+    return [((out[0] / w) * 0.5 + 0.5) * width, (1 - (out[1] / w * 0.5 + 0.5)) * height];
+  }
+
+  function resize() {
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const width = Math.max(1, Math.round(host.clientWidth * ratio));
+    const height = Math.max(1, Math.round(host.clientHeight * ratio));
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    overlay.setAttribute('viewBox', `0 0 ${host.clientWidth} ${host.clientHeight}`);
+  }
+
+  /** Bind one buffer of `vec3` positions and draw it. */
+  function drawArray(buffer, data, mode, count, uMode) {
+    const positions = gl.getAttribLocation(program, 'aPosition');
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    if (data) gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(positions);
+    gl.vertexAttribPointer(positions, 3, gl.FLOAT, false, 0, 0);
+    gl.uniform1i(uniform.mode, uMode);
+    gl.drawArrays(mode, 0, count);
+  }
+
   function paint() {
     if (lost || !held) return;
-    const { mesh, extent } = held;
+    const { mesh, extent, block } = held;
     resize();
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -299,22 +419,55 @@ export function createRelief(host, { onLost = null } = {}) {
       radius * Math.sin(elevation),
       radius * Math.cos(elevation) * Math.sin(azimuth),
     ];
-    // A half-extent of 0.8 frames a unit square turned any way it can be
-    // turned, so the drawing never crops and never breathes as the camera
-    // steps round — the same reason E-01's axonometric fixes its viewBox.
-    const half = 0.8;
-    gl.uniformMatrix4fv(
-      uniform.projection,
-      false,
-      orthographic({ left: -half, right: half, bottom: -half, top: half, near: -10, far: 10 }),
-    );
-    gl.uniformMatrix4fv(uniform.view, false, lookAt(eye, [0, 0, 0], [0, 1, 0]));
-    gl.uniform3f(uniform.scale, mesh.nx - 1 || 1, mesh.ny - 1 || 1, 0.45);
+    // A fixed half-extent, so the drawing never crops and never breathes as
+    // the camera steps round — the same reason E-01's axonometric fixes its
+    // viewBox. It has to hold a unit footprint turned any way the orbit
+    // allows, the body hanging under the terrain, the pin standing over it,
+    // and the axis lettering outside the base's own corners.
+    const half = 1.05;
+    const projection = orthographic({
+      left: -half, right: half, bottom: -half, top: half, near: -10, far: 10,
+    });
+    const viewMatrix = lookAt(eye, [0, 0.05, 0], [0, 1, 0]);
+    gl.uniformMatrix4fv(uniform.projection, false, projection);
+    gl.uniformMatrix4fv(uniform.view, false, viewMatrix);
+    const scale = [mesh.nx - 1 || 1, mesh.ny - 1 || 1, 0.45];
+    gl.uniform3f(uniform.scale, scale[0], scale[1], scale[2]);
     gl.uniform4fv(uniform.low, inkOf(host, '--ink-ghost', '#b9b3a6'));
     gl.uniform4fv(uniform.high, inkOf(host, '--ink', '#23262b'));
+    // The cut faces and the base take the trough's own tone, which is what
+    // every inset on this page is drawn in. It reads as the block the ground
+    // sits in rather than as more ground.
+    gl.uniform4fv(uniform.flat, inkOf(host, '--inset', '#efebe2'));
+    gl.uniform4fv(uniform.accent, inkOf(host, '--redline', '#a6392b'));
+    gl.uniform4fv(uniform.rule, inkOf(host, '--ink-3', '#6f7480'));
+    gl.uniform1f(uniform.pointSize, 4);
 
     const positions = gl.getAttribLocation(program, 'aPosition');
     const flags = gl.getAttribLocation(program, 'aMeasured');
+
+    /* ── the block, first, so the terrain sits on it ────────────────────── */
+    if (block && block.indices.length) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, blockPosition);
+      gl.enableVertexAttribArray(positions);
+      gl.vertexAttribPointer(positions, 3, gl.FLOAT, false, 0, 0);
+      gl.disableVertexAttribArray(flags);
+      gl.vertexAttrib1f(flags, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, blockElements);
+      // The cut faces and the underside are toned apart, because a section
+      // through the block and the bottom of it are different surfaces.
+      gl.uniform1i(uniform.mode, 1);
+      gl.drawElements(gl.TRIANGLES, block.baseStart, gl.UNSIGNED_INT, 0);
+      gl.uniform1i(uniform.mode, 2);
+      gl.drawElements(
+        gl.TRIANGLES,
+        block.indices.length - block.baseStart,
+        gl.UNSIGNED_INT,
+        block.baseStart * 4,
+      );
+    }
+
+    /* ── the measured surface ───────────────────────────────────────────── */
     gl.bindBuffer(gl.ARRAY_BUFFER, position);
     gl.enableVertexAttribArray(positions);
     gl.vertexAttribPointer(positions, 3, gl.FLOAT, false, 0, 0);
@@ -324,15 +477,144 @@ export function createRelief(host, { onLost = null } = {}) {
 
     // One indexed draw call for the whole surface. The holes are in the index
     // buffer rather than in a style, so a gap cannot be drawn over.
-    gl.uniform1f(uniform.point, 0);
+    gl.uniform1i(uniform.mode, 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, elements);
     gl.drawElements(gl.TRIANGLES, held.count, gl.UNSIGNED_INT, 0);
 
     // A post on every real sample, so a measured point stays individually
     // identifiable at any viewpoint on a surface that is otherwise smooth.
-    gl.uniform1f(uniform.point, 1);
+    gl.uniform1i(uniform.mode, 3);
     gl.drawArrays(gl.POINTS, 0, mesh.positions.length / 3);
+    gl.disableVertexAttribArray(flags);
+    gl.vertexAttrib1f(flags, 0);
+
+    /* ── the cut, ruled ─────────────────────────────────────────────────── */
+    //
+    // Levels first, then arrises over them: the horizontals give the cut a
+    // scale a reader can count bands up, and the verticals give it a shape.
+    // Without the second, a block turned to an oblique reads as two flat
+    // washes meeting at a seam that does not say which way the corner folds.
+    if (held.strata?.length) {
+      drawArray(strataPosition, held.strata, gl.LINES, held.strata.length / 3, 6);
+    }
+    if (held.arrises?.length) {
+      drawArray(arrisPosition, held.arrises, gl.LINES, held.arrises.length / 3, 4);
+    }
+
+    /* ── the axis rules on the base, and their ticks ────────────────────── */
+    const rules = axisRules(mesh, block);
+    if (rules.length) drawArray(rulePosition, new Float32Array(rules), gl.LINES, rules.length / 3, 4);
+
+    /* ── the pin ────────────────────────────────────────────────────────── */
+    //
+    // A vertical from the base to the terrain at the desk's own position, with
+    // the armed square at its head — the fourth appearance of one idiom, so
+    // "the desk is here" is learned once and read on every drawing that has
+    // somewhere to put it.
+    const pin = held.stance;
+    if (pin) {
+      // **Above** the terrain, not down through it. Run from the base to the
+      // surface — which is what a pin through a solid ought to be — the shaft
+      // is inside the block at every viewpoint and the depth test hides all of
+      // it, so the mark reduces to a single dot on the terrain and the reader
+      // is handed a pin with no pin in it. Standing proud of the ground it is
+      // occluded by nothing, and it is the shape the word already means: a
+      // survey pin driven in where you are standing.
+      const stand = PIN_HEIGHT;
+      const shaft = new Float32Array([pin.ix, pin.iy, pin.z, pin.ix, pin.iy, pin.z + stand]);
+      drawArray(pinPosition, shaft, gl.LINES, 2, 5);
+      gl.uniform1f(uniform.pointSize, 7);
+      drawArray(pinPosition, new Float32Array([pin.ix, pin.iy, pin.z + stand]), gl.POINTS, 1, 5);
+      gl.uniform1f(uniform.pointSize, 4);
+    }
+
+    letterAxes(mesh, block, projection, viewMatrix, scale);
     void extent;
+  }
+
+  /**
+   * The three bottom edges of the block, with a tick at every measured
+   * position — the axis furniture, drawn on the base because that is the one
+   * plane in the drawing that is flat, known and not carrying a reading.
+   */
+  function axisRules(mesh, block) {
+    if (!block) return [];
+    const z = -block.depth;
+    const nx = mesh.nx - 1;
+    const ny = mesh.ny - 1;
+    const out = [];
+    const line = (a, b) => out.push(a[0], a[1], z, b[0], b[1], z);
+    line([0, 0], [nx, 0]);
+    line([0, 0], [0, ny]);
+    line([nx, 0], [nx, ny]);
+    line([0, ny], [nx, ny]);
+    // A tick per measured position, outward from the frame, so the reader can
+    // count columns against the plan beside it.
+    const tick = Math.max(nx, ny) * 0.022;
+    for (let ix = 0; ix <= nx; ix += 1) out.push(ix, 0, z, ix, -tick, z);
+    for (let iy = 0; iy <= ny; iy += 1) out.push(0, iy, z, -tick, iy, z);
+    return out;
+  }
+
+  /**
+   * The lettering, in SVG over the canvas.
+   *
+   * WebGL has no text and this page is not going to grow a glyph atlas for
+   * four labels. The overlay is positioned from the same matrices the GPU is
+   * handed, through `project`, so the words cannot drift off the corners they
+   * name — and it is real text, so it is selectable, scales with the reader's
+   * own type size, and is read aloud.
+   */
+  function letterAxes(mesh, block, projection, viewMatrix, scale) {
+    overlay.textContent = '';
+    if (!block || !held.axes) return;
+    const w = host.clientWidth;
+    const h = host.clientHeight;
+    const z = -block.depth;
+    const nx = mesh.nx - 1;
+    const ny = mesh.ny - 1;
+    const place = (lattice) => project(toWorld(lattice, scale), projection, viewMatrix, w, h);
+
+    const label = (at, text, cls) => {
+      const node = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      node.setAttribute('x', at[0]);
+      node.setAttribute('y', at[1]);
+      node.setAttribute('class', cls);
+      node.setAttribute('text-anchor', 'middle');
+      node.textContent = text;
+      overlay.append(node);
+    };
+
+    const { x, y } = held.axes;
+    // Pushed clear of the block in **screen** space, not only in lattice
+    // space. Which way is "outside" depends on where the camera is standing —
+    // an offset that clears the silhouette from one viewpoint lies across it
+    // from the next, and the orbit has twelve. So each label is projected
+    // where it belongs on the base, then shoved directly away from the
+    // drawing's own centre, which is outward from every angle.
+    const middle = place([nx / 2, ny / 2, z]);
+    const clear = (lattice, by = 20) => {
+      const at = place(lattice);
+      const dx = at[0] - middle[0];
+      const dy = at[1] - middle[1];
+      const len = Math.hypot(dx, dy) || 1;
+      return [at[0] + (dx / len) * by, at[1] + (dy / len) * by];
+    };
+
+    // The stops at the ends of each bottom edge, and the axis name at its
+    // middle — the same three things the plan letters, in the same words.
+    //
+    // Both axes start at the same corner of the base, so their two opening
+    // stops would land on each other lettered at it. Each is anchored a little
+    // way out along **its own** edge's outward side instead, which separates
+    // them before the radial push and keeps each stop beside the edge it
+    // belongs to rather than beside the corner they share.
+    label(clear([0, -ny * 0.1, z]), x.from, 'relief-stop');
+    label(clear([nx, -ny * 0.1, z]), x.to, 'relief-stop');
+    label(clear([nx / 2, -ny * 0.1, z], 26), x.label, 'relief-axis');
+    label(clear([-nx * 0.1, 0, z]), y.from, 'relief-stop');
+    label(clear([-nx * 0.1, ny, z]), y.to, 'relief-stop');
+    label(clear([-nx * 0.1, ny / 2, z], 26), y.label, 'relief-axis');
   }
 
   return {
@@ -374,23 +656,52 @@ export function createRelief(host, { onLost = null } = {}) {
      * reader is never handed a surface that appears to know less than
      * somebody else's.
      */
-    draw({ mesh, extent }) {
+    draw({ mesh, extent, block = null, stance = null, axes = null, strata = null, arrises = null }) {
       if (lost) return;
-      held = { mesh, extent, count: mesh.indices.length };
       // Heights normalised into 0..1 against the measured extent, so the
       // surface fills its own box whatever the reading's units are — and the
       // vertical scale is therefore stated by the caption rather than felt.
-      const scaled = new Float32Array(mesh.positions);
       const span = extent && extent.hi > extent.lo ? extent.hi - extent.lo : 1;
-      for (let i = 2; i < scaled.length; i += 3) {
-        scaled[i] = extent ? (scaled[i] - extent.lo) / span : 0;
+      const normalise = (v) => (extent ? (v - extent.lo) / span : 0);
+
+      held = { mesh, extent, block, axes, count: mesh.indices.length, stance: null };
+      // The ruling arrives in the reading's own units and in lattice space; it
+      // is normalised here with everything else, so one rule governs how a
+      // height becomes a position in the box.
+      const rule = (flat) => {
+        if (!flat?.length) return null;
+        const out = new Float32Array(flat);
+        for (let i = 2; i < out.length; i += 3) out[i] = normalise(out[i]);
+        return out;
+      };
+      held.strata = rule(strata);
+      held.arrises = rule(arrises);
+      if (stance) {
+        held.stance = { ix: stance.ix, iy: stance.iy, z: normalise(stance.value) };
       }
+
+      const scaled = new Float32Array(mesh.positions);
+      for (let i = 2; i < scaled.length; i += 3) scaled[i] = normalise(scaled[i]);
       gl.bindBuffer(gl.ARRAY_BUFFER, position);
       gl.bufferData(gl.ARRAY_BUFFER, scaled, gl.STATIC_DRAW);
       gl.bindBuffer(gl.ARRAY_BUFFER, measured);
       gl.bufferData(gl.ARRAY_BUFFER, Float32Array.from(mesh.measuredFlags), gl.STATIC_DRAW);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, elements);
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STATIC_DRAW);
+
+      if (block) {
+        // The block's own top edge follows the terrain, so its heights are
+        // normalised too — but its base is already in normalised units below
+        // zero and must be left where `blockOf` put it.
+        // Every height the block carries is a reading, base included, so the
+        // whole array normalises in one pass with nothing to exempt.
+        const body = new Float32Array(block.positions);
+        for (let i = 2; i < body.length; i += 3) body[i] = normalise(body[i]);
+        gl.bindBuffer(gl.ARRAY_BUFFER, blockPosition);
+        gl.bufferData(gl.ARRAY_BUFFER, body, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, blockElements);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, block.indices, gl.STATIC_DRAW);
+      }
       paint();
     },
 
@@ -400,6 +711,9 @@ export function createRelief(host, { onLost = null } = {}) {
       held = null;
       host.textContent = '';
     },
+
+    /** Where a click on the canvas lands, for the caller to hit-test. */
+    canvas,
 
     // Held so the caller can offer the same picks the keyboard reaches.
     viewpoints: VIEWPOINTS,

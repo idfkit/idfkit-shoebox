@@ -2028,7 +2028,60 @@ itself uses so a restyled mark cannot disagree with its own key. The hatched
 region in particular was being read as "not yet computed" — it is the opposite,
 measured designs that read better than the one the desk is on.
 
-**Transfer:** 23,932 bytes of brotli added against SC-012's 60 KB ceiling.
+**The relief is a block, not a floating sheet.** A surface drawn alone has
+nothing to say which way is down, no silhouette to judge a slope against, and
+nowhere to letter an axis. `blockOf` cuts the ground away beneath the terrain —
+the cut faces down every silhouette edge, and the base those cells laid flat.
+
+- **None of it is measurement, and the drawing keeps saying so.** The sides are
+  a section through nothing: this survey knows the reading *on* the ground and
+  nothing whatever about what is under it. So the block is derived from the
+  same lattice and the same mask and can add no ground the surface does not
+  already have — every skirt quad hangs off an edge of an emitted cell, and a
+  hole in the surface is a **shaft through the block** rather than something
+  quietly filled in. The cut and the base take `--inset`, the tone every trough
+  on this page is drawn in, so they read as the block rather than as more
+  ground.
+- **The levels are ruled around the cut, clipped to it.** `strataOf` turns the
+  side into the vertical scale — the terrain's own surface is foreshortened
+  from every viewpoint the orbit allows and cannot be measured with a ruler,
+  where a ruled cut can be counted in bands. Each cut face is a quad with a
+  sloping top, so a level above both ends of its edge has no face to sit on and
+  one between them crosses part of it; drawn straight across regardless the
+  rules float above the terrain at exactly the corners where the ground is
+  highest, which is a line claiming a height the block does not reach.
+- **`arrisesOf` rules the vertical corners.** Without them an oblique reads as
+  two flat washes meeting at a seam that does not say which way the corner
+  folds. A corner is where the silhouette *turns*, not one of four: on a plain
+  footprint that gives four, and around a hole it gives that hole its own,
+  which is right, because a shaft is as much an edge of the solid as the
+  outside is.
+- **The base carries the axis furniture**, because it is the one plane in the
+  drawing that is flat, known, and carrying no reading.
+- **The pin stands proud of the terrain rather than down through it.** Run from
+  the base to the surface — which is what a pin through a solid ought to be —
+  the shaft is inside the block at every viewpoint, the depth test hides all of
+  it, and the mark reduces to a single dot with no pin in it.
+
+**Two bugs the block found, both of the kind that look like a maths error and
+are not.** The base was carried in the drawing's normalised units and therefore
+had to be exempted from the normalising pass, which meant recognising it,
+which meant comparing floats: the positions are a `Float32Array`, `-0.35` does
+not survive the narrowing, the equality never held, the base was normalised
+along with everything else and the block ran four times its own height off the
+bottom of the frame. It is carried in reading units now, where there is nothing
+to exempt and nothing to compare. And the lettering has to be pushed clear of
+the block in **screen** space, not lattice space: which way is "outside"
+depends on where the camera is standing, and an offset that clears the
+silhouette from one viewpoint lies across it from the next.
+
+**WebGL has no text**, so the axis names and stops are real SVG over the
+canvas, positioned through the same matrices the GPU is handed. `toWorld` is
+the one copy of the shader's own mapping — the vertex shader swaps two axes on
+the way into world space, and anything lettered outside the shader has to make
+the same journey or the words drift off the corners they name.
+
+**Transfer:** 26,367 bytes of brotli added against SC-012's 60 KB ceiling.
 `src/model.js` is untouched and no new `Output:Variable` is requested anywhere,
 which discharges the output-budget requirement outright.
 

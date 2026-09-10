@@ -610,6 +610,42 @@ A second reading at the same point is lettered **under** the first, in
 reading against the other, and there is no published weighting on this sheet to
 rank them with.
 
+### A block diagram, not a floating surface
+
+A relief drawn as a bare surface floats: nothing says which way is down, there
+is no silhouette to judge a slope against, and there is nowhere to letter an
+axis. Cut the ground away beneath it and draw the solid.
+
+- **The body is not data, and it has to keep saying so.** It takes the trough
+  tone — the surface every inset on this page uses — never the ink the reading
+  is shaded in, and it is shaded flat rather than by the height of the terrain
+  above it. A body toned by the reading would be the block claiming to know
+  what is under the ground.
+- **A hole in the surface is a shaft through the block.** The alternative is a
+  solid body where nothing was measured, which is the drawing filling in a gap
+  it was built to leave open.
+- **Rule the levels around the cut, clipped to the face.** This is what turns
+  the side from a wash into the vertical scale: a terrain surface is
+  foreshortened from every viewpoint and cannot be measured with a ruler, but
+  a ruled cut can be counted in bands. Clip each rule to the sloping top of its
+  own face, or the lines float above the terrain at exactly the corners where
+  the ground is highest.
+- **Rule the vertical arrises.** Without them an oblique is two flat washes
+  meeting at a seam that does not say which way the corner folds. A corner is
+  wherever the silhouette turns, which around a hole is more than four.
+- **Letter on the base.** It is the one plane in the drawing that is flat,
+  known, and carrying no reading.
+- **A pin stands proud of the ground, not down through it.** A pin run from the
+  base to the surface is inside the solid at every viewpoint and the depth test
+  hides all of it, leaving a mark with no pin in it.
+
+**Lettering over a 3D drawing is text over the canvas, not glyphs in it** — real
+SVG positioned through the same matrices the drawing is handed, so it is
+selectable, scales with the reader's own type size, and is read aloud. Push it
+clear of the drawing in **screen** space: which way is "outside" depends on
+where the camera is standing, and an offset that clears the silhouette from one
+viewpoint lies across it from the next.
+
 ### A drawing that carries several marks carries a key
 
 Five marks stood on the surveyed ground — a measured design, a contour, the

@@ -888,6 +888,199 @@ export function meshOf(lattice) {
   };
 }
 
+/**
+ * The block the ground sits on: the cut faces down each side, and the base.
+ *
+ * A surface drawn alone floats, and a floating surface is hard to read — there
+ * is nothing to say which way is down, no silhouette to judge a slope against,
+ * and nothing for an axis to be lettered on. A block diagram is the drawing
+ * this has always been: the terrain on top, the ground it stands in cut away
+ * beneath it.
+ *
+ * **None of it is measurement, and the drawing has to keep saying so.** The
+ * sides are a section through nothing — this survey knows what the reading is
+ * *on* the ground and nothing whatever about what is under it. So the block is
+ * derived here, from the same lattice and the same mask, and it can add no
+ * ground the surface does not already have: every skirt quad hangs off an edge
+ * of an emitted cell, and the base is those same cells laid flat. A hole in
+ * the surface is a shaft through the block, because the alternative is a solid
+ * body where nothing was measured.
+ *
+ * `depth` is a fraction of the measured range, and the base it implies is
+ * returned **in the reading's own units** rather than in the normalised ones
+ * the drawing works in. That is not fussiness: the caller normalises every
+ * height it is handed, and a base carried in normalised units has to be
+ * exempted from that pass — which means recognising it, which means comparing
+ * floats. Written that way it failed exactly as you would expect and not at
+ * all where you would look: the positions are a `Float32Array`, `-0.35` does
+ * not survive the narrowing unchanged, the equality never held, the base was
+ * normalised along with everything else and the block ran four times its own
+ * height off the bottom of the frame. In reading units there is nothing to
+ * exempt and nothing to compare.
+ */
+export function blockOf(lattice, { depth = 0.18 } = {}) {
+  const { values, mask, nx, ny } = lattice;
+  const extent = extentOf(lattice);
+  const span = extent && extent.hi > extent.lo ? extent.hi - extent.lo : 1;
+  const base = (extent ? extent.lo : 0) - depth * span;
+  const at = (ix, iy) => ix + iy * nx;
+  const filled = (cx, cy) =>
+    cx >= 0 &&
+    cy >= 0 &&
+    cx < nx - 1 &&
+    cy < ny - 1 &&
+    mask[at(cx, cy)] &&
+    mask[at(cx + 1, cy)] &&
+    mask[at(cx, cy + 1)] &&
+    mask[at(cx + 1, cy + 1)];
+
+  const positions = [];
+  const indices = [];
+  const push = (ix, iy, z) => {
+    positions.push(ix, iy, z);
+    return positions.length / 3 - 1;
+  };
+  const quad = (a, b, c, d) => indices.push(a, b, c, a, c, d);
+
+  /* ── the cut faces ───────────────────────────────────────────────────── */
+  //
+  // An edge belongs to the silhouette exactly when one of the two cells it
+  // divides is emitted and the other is not. That one test covers the outside
+  // of the block and the walls of every hole in it, which is what makes a gap
+  // a shaft rather than something the block quietly fills in.
+  const edges = [];
+  const edge = (ax, ay, bx, by) => {
+    const za = values[at(ax, ay)];
+    const zb = values[at(bx, by)];
+    const top = [push(ax, ay, za), push(bx, by, zb)];
+    const foot = [push(ax, ay, base), push(bx, by, base)];
+    quad(top[0], top[1], foot[1], foot[0]);
+    // Kept so the levels can be ruled along the cut, which is what turns the
+    // side of the block from a silhouette into the vertical scale.
+    edges.push({ ax, ay, za, bx, by, zb });
+  };
+  for (let cy = 0; cy < ny - 1; cy += 1) {
+    for (let cx = 0; cx < nx - 1; cx += 1) {
+      if (!filled(cx, cy)) continue;
+      if (!filled(cx, cy - 1)) edge(cx, cy, cx + 1, cy);
+      if (!filled(cx, cy + 1)) edge(cx + 1, cy + 1, cx, cy + 1);
+      if (!filled(cx - 1, cy)) edge(cx, cy + 1, cx, cy);
+      if (!filled(cx + 1, cy)) edge(cx + 1, cy, cx + 1, cy + 1);
+    }
+  }
+
+  /* ── the base ────────────────────────────────────────────────────────── */
+  const baseStart = indices.length;
+  for (let cy = 0; cy < ny - 1; cy += 1) {
+    for (let cx = 0; cx < nx - 1; cx += 1) {
+      if (!filled(cx, cy)) continue;
+      const a = push(cx, cy, base);
+      const b = push(cx + 1, cy, base);
+      const c = push(cx + 1, cy + 1, base);
+      const d = push(cx, cy + 1, base);
+      quad(a, d, c, b);
+    }
+  }
+
+  return {
+    positions: new Float32Array(positions),
+    indices: new Uint32Array(indices),
+    // Where the base's triangles start, so the two can be toned apart: a cut
+    // face and the underside of the block are different surfaces.
+    baseStart,
+    edges,
+    // The depth as a fraction of the measured range, for the drawing's own
+    // normalised space, and the base as a reading — the same number said the
+    // two ways its two readers need it.
+    depth,
+    base,
+    nx,
+    ny,
+  };
+}
+
+/**
+ * The contour levels, ruled around the cut faces of the block.
+ *
+ * A block diagram's side is the one place a reader can read a height directly
+ * — the terrain's own surface is foreshortened from every viewpoint the orbit
+ * allows, and no drawing of it can be measured with a ruler. Ruled at the same
+ * levels the plan contours, the cut becomes the vertical scale: a silhouette
+ * you can count bands up.
+ *
+ * **A rule is drawn only where the face actually is.** Each cut face is a quad
+ * with a sloping top — the terrain at one end of the edge and at the other —
+ * so a level above both ends has no face to be drawn on, and a level between
+ * them crosses part of the edge only. Drawn straight across regardless, the
+ * rules would float above the terrain at exactly the corners where the ground
+ * is highest, which is a line claiming a height the block does not reach. So
+ * each is clipped to its own edge, which costs one interpolation and is the
+ * whole difference between a scale and a decoration.
+ */
+export function strataOf(block, levels) {
+  const out = [];
+  const base = block.base;
+  for (const level of levels) {
+    for (const { ax, ay, za, bx, by, zb } of block.edges) {
+      const lo = Math.min(za, zb);
+      const hi = Math.max(za, zb);
+      if (level <= base || level >= hi) continue;
+      if (level <= lo) {
+        out.push(ax, ay, level, bx, by, level);
+        continue;
+      }
+      // Between the two ends: the rule runs from the lower end to the point
+      // where the sloping top crosses it.
+      const t = (level - za) / (zb - za);
+      const cx = ax + (bx - ax) * t;
+      const cy = ay + (by - ay) * t;
+      if (za < zb) out.push(ax, ay, level, cx, cy, level);
+      else out.push(cx, cy, level, bx, by, level);
+    }
+  }
+  return out;
+}
+
+/**
+ * The vertical arrises: a hairline at every corner of the block, base to
+ * terrain.
+ *
+ * The horizontals give the cut a scale; the verticals give it a shape. Without
+ * them a block turned to an oblique reads as two flat washes meeting at an
+ * ambiguous seam — which way the corner folds is exactly the thing an
+ * axonometric has to state, and the reason a drafted solid has always been
+ * ruled at its arrises.
+ *
+ * **A corner is where the silhouette turns**, not one of four. On a plain
+ * rectangular footprint that gives the four you would draw by hand; around a
+ * hole in the ground it gives that hole its own corners, which is right,
+ * because a shaft through the block is as much an edge of the solid as its
+ * outside is. Every boundary edge is axis-aligned in lattice space, so a
+ * vertex turns exactly when it carries both a horizontal and a vertical edge.
+ */
+export function arrisesOf(block) {
+  const base = block.base;
+  const seen = new Map();
+  const key = (x, y) => `${x},${y}`;
+  const note = (x, y, z, horizontal) => {
+    const at = key(x, y);
+    const held = seen.get(at) ?? { x, y, z, horizontal: false, vertical: false };
+    held[horizontal ? 'horizontal' : 'vertical'] = true;
+    seen.set(at, held);
+  };
+  for (const { ax, ay, za, bx, by, zb } of block.edges) {
+    const horizontal = ay === by;
+    note(ax, ay, za, horizontal);
+    note(bx, by, zb, horizontal);
+  }
+  const out = [];
+  for (const corner of seen.values()) {
+    if (!corner.horizontal || !corner.vertical) continue;
+    out.push(corner.x, corner.y, base, corner.x, corner.y, corner.z);
+  }
+  return out;
+}
+
 /* ══ readings taken against the stance ═══════════════════════════════════ */
 
 /**

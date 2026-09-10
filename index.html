@@ -4445,7 +4445,40 @@
       }
 
       .ground svg { display: block; width: 100%; height: 100%; }
+
+      /* The relief is a canvas with its lettering over it: WebGL has no text,
+         so the axis names and stops are real SVG positioned from the same
+         matrices the GPU is handed. */
+      .relief { position: relative; }
       .relief canvas { display: block; width: 100%; height: 100%; }
+      .relief-lettering {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        overflow: visible;
+      }
+      /* Haloed against the sheet, the way the plan's own spot figures are.
+         The orbit puts one corner of the base behind the terrain at every
+         viewpoint, so a stop lettered there lands on the drawing however far
+         it is pushed out — and a stop that cannot be read is not a stop. */
+      .relief-lettering text {
+        paint-order: stroke;
+        stroke: var(--sheet);
+        stroke-width: 3px;
+        stroke-linejoin: round;
+      }
+      .relief-lettering .relief-stop {
+        font: 400 8px/1 var(--mono);
+        fill: var(--ink-3);
+      }
+      .relief-lettering .relief-axis {
+        font: 500 8.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        fill: var(--ink-3);
+      }
 
       /* The measured ground, the inference over it, and the ground nobody has
          stood on — told apart three ways, because colour may not be the only
