@@ -102,16 +102,22 @@ export class PullEntry {
  * forgets to print.
  */
 export class PullReading {
-  constructor({ kind, reading, entries, probed, cached }) {
+  constructor({ kind, reading, entries, probed }) {
     if (kind !== 'annual' && kind !== 'design-day') {
       throw new Error(`a pull was read at "${kind}", which is not a run kind`);
     }
     this.kind = kind;
     this.reading = reading;
     this.entries = Object.freeze([...entries]);
-    /** Runs actually spent, and positions answered from the sample cache. */
+    /**
+     * Controls probed. Deliberately **not** a count of cache hits beside it:
+     * the scheduler reports a landed sample and says nothing about whether it
+     * cost an engine run, so a `cached` field here could only ever be zero —
+     * a figure that is a claim rather than a measurement, which is the one
+     * thing this sheet exists not to print. The desk's own solve counter is
+     * where the reader can see what a pull actually spent.
+     */
     this.probed = probed;
-    this.cached = cached;
     Object.freeze(this);
   }
 

@@ -9010,7 +9010,6 @@ function renderPull() {
         reading: pullStance.reading,
         entries,
         probed: pullFinished.size,
-        cached: 0,
       })
     : null;
 
