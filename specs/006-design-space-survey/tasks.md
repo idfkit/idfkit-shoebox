@@ -255,13 +255,13 @@ drawn as measured.
 - [X] T085 State a consistent, stated effect for "Set studies aside" and "Clear all studies" on the survey in `src/main.js`, and make the counts the head letters include whatever they claim to include (FR-054)
 - [X] T086 Update `NOTES` in `src/tour.js` and the `tour?.note(...)` call sites in `src/main.js` wherever the survey changes what a step teaches (FR-055)
 - [X] T087 Bump the general-notes storage key in `src/tour.js` from `shoebox-general-notes-v2`, so a returning reader gets the new sheet rather than stale ticks (FR-055)
-- [ ] T088 [P] Record the survey's component patterns, any new token and the new layout threshold in `.interface-design/system.md`, in this same change (FR-056)
-- [ ] T089 [P] Add the architecture section for the survey to `CLAUDE.md`, in house voice, recording the measurements and the failure modes that cost debugging (FR-056)
-- [ ] T090 [P] Add the CHANGELOG entry to `CHANGELOG.md`, short and in house voice
-- [ ] T091 Run `npm run build` and compare `dist/` against `specs/006-design-space-survey/verify/baseline-size.txt`, confirming the addition is inside SC-012's 60 KB ceiling
-- [ ] T092 Run gate 3 of quickstart.md: `specs/006-design-space-survey/verify/idempotence.mjs`, confirming three applications are byte-identical and no await sees the document in overlay state
+- [X] T088 [P] Record the survey's component patterns, any new token and the new layout threshold in `.interface-design/system.md`, in this same change (FR-056)
+- [X] T089 [P] Add the architecture section for the survey to `CLAUDE.md`, in house voice, recording the measurements and the failure modes that cost debugging (FR-056)
+- [X] T090 [P] Add the CHANGELOG entry to `CHANGELOG.md`, short and in house voice
+- [X] T091 Run `npm run build` and compare `dist/` against `specs/006-design-space-survey/verify/baseline-size.txt`, confirming the addition is inside SC-012's 60 KB ceiling
+- [X] T092 Run gate 3 of quickstart.md: `specs/006-design-space-survey/verify/idempotence.mjs`, confirming three applications are byte-identical and no await sees the document in overlay state
 - [ ] T093 Run gate 7 of quickstart.md by driving the page: SC-001's 5 s and 30 s, SC-002's 10 percent live cadence with a survey filling, SC-011's zero-run reuse, and a study not starving behind a survey
-- [ ] T094 Confirm no new `Output:Variable` was added anywhere in `src/model.js`, which is what discharges FR-017 outright
+- [X] T094 Confirm no new `Output:Variable` was added anywhere in `src/model.js`, which is what discharges FR-017 outright
 
 ---
 

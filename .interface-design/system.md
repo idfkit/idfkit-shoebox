@@ -575,6 +575,71 @@ uses for a rate, one level up.
   reason for each. A panel showing only the questions it happens to be able to
   answer reads as a certification.
 
+### A surveyed ground: measured, inferred, and not yet visited
+
+Three states on one drawing, and the palette has no colour to spend on any of
+them — the reading is a magnitude with no direction, so `--cold` / `--warm` are
+not available, which is why the survey is graphite. They are told apart three
+ways instead:
+
+| State | Drawn as | Carries a figure |
+| --- | --- | --- |
+| **Measured** | a tick mark, `--ink` | yes, in the mono face |
+| **Inferred** | a hairline contour, `--ink-ghost`, every fifth `--ink-3` | its level only, at a turn |
+| **Unsurveyed** | bare sheet, nothing at all | no |
+
+The third is the important one and it is drawn by **absence**: no contour is
+carried across ground nobody has stood on, and no triangle spans it in the
+relief. That is structural rather than styled — the geometry is never generated
+— so there is no `fillStyle` between an honest drawing and a dishonest one. A
+failed run is a hole with its reason on the mark, never a region in a different
+shade.
+
+Two rules that follow from it:
+
+- **A figure may only ever come off a measured point.** Contours are inference
+  and the caption says so, on the plan *and* on the relief, because a
+  continuous surface is read as continuous data wherever it is drawn.
+- **A smooth surface does not report its own density**, so the coverage and
+  the lattice size are lettered wherever the relief is drawn and are load
+  bearing rather than a caption. They are the only thing separating a coarse
+  survey from a convincing picture of one.
+
+A second reading at the same point is lettered **under** the first, in
+`--ink-ghost`, never beside it and never as a size or a hue: a size ranks one
+reading against the other, and there is no published weighting on this sheet to
+rank them with.
+
+### The armed square, a fourth time, and a ring beside it
+
+The stance on a surveyed ground carries the same `--redline` square the patch
+button, the rail pin and the plate marker use, with a crosshair through it. One
+idiom, four places, so "you are here" is learned once.
+
+Where a drawing takes the keyboard as well as the pointer, the keyboard's own
+position is a **dashed `--redline` ring**, not a second square: the square
+already means "the desk is here", and the two part company at the first arrow
+key. The ground takes **one** tab stop and the arrow keys rove the ring across
+it, rather than a tab stop per position — the same argument that keeps the
+landmark marks unpressable, since eighty-one focusable points would be worse
+than the two hundred that rule was written about.
+
+### Layout thresholds, and asking a different question
+
+`--survey` is the third threshold on this page and it answers a question
+neither of the others does. `--index` asks whether the window can hold the desk
+as a column; the schedules' 620px asks whether a table can keep its columns;
+`--survey` asks whether a plan and a relief can stand side by side. Each of them
+wants a square, and two squares in one measure is two very small squares, so
+they part company some way above the width at which a table does — 900px, and
+620px of height, since two squares and a schedule stacked in a short window is
+a page of scrolling with nothing on the screen to say where you are.
+
+Declare each one once, in its own media query, as a custom property the module
+reads back. Do not derive a new threshold from an existing one because the
+numbers happen to be close: they are different questions and they will move
+apart.
+
 ### Folding a table to stacked rows
 
 The table equivalent of the index sheet. Where a schedule has more columns than

@@ -1725,6 +1725,183 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   held, exactly as `reprice` does for a tariff. It is `pinnedHour`, not
   `pinned` — the bill has held a pinned *scheme* since long before this.
 
+### E-02, the design space survey (src/survey.js, src/pull.js, src/relief.js)
+
+A second drawing on the same sheet: one chosen reading surveyed over two chosen
+controls, cut through the desk's current stance. The ground is built only out of
+completed runs; the contours and the relief are inference drawn between them and
+say so in place on **both**, because a continuous surface is read as continuous
+data wherever it is drawn.
+
+**A survey row is already a study, and that is the whole design.**
+`buildSample(job, value)` applies `{ ...job.snapshot, [job.key]: value }`, and
+`job.snapshot` is a whole desk — so a row at a fixed value of axis Y is a job
+whose snapshot carries that Y and whose swept key is axis X. Two dimensions are
+reachable with no change to `buildSample` and none to the sample cache, which
+makes three requirements properties of the arrangement rather than features: a
+study of axis X at the stance is byte-identical in cache identity to the
+survey's own stance row and costs no run; rows and studies are literally in one
+queue, so there is no second pool for one to starve the other from; and
+`clearAll` on a station change takes the ground down with the curves because it
+is the same call.
+
+- **A job's identity is not its swept key.** `makeStudyJob` gained an `id`
+  defaulting to `key`. A study is one curve of one control so the two are the
+  same thing, but a survey enqueues nine rows that all sweep the same control,
+  and under `key` the scheduler's `byKey` would treat each as superseding the
+  last: eight of nine cancelled as 'moved' before a single sample dispatched,
+  leaving a ground one row deep with nothing anywhere saying why.
+- **`takeNext` is round-robin, and it had to be.** Measured against the old
+  job-order walk with eleven survey rows and one study, five samples each, a
+  pool of two: the study's first sample was **dispatch 55 of 60** and its last
+  was 59 — the study begins only once the whole survey has finished, which
+  reads to the reader as a hang. Round-robin puts its first sample at dispatch
+  11. `specs/006-design-space-survey/verify/scheduler-fairness.mjs` is the
+  gate, and it drives the queue against a fake pool.
+- **The rows go in in one breath.** `enqueue` drains on the way out, so
+  enqueuing nine rows one at a time fills the pool from row 0 before row 1 is
+  in the list, and the coarse pass lands as one finished row over eight empty
+  ones. `paused()` is held true across the loop.
+- **A survey's rest shape omits *both* axes**, where a study's omits only its
+  swept key. Standing on a measured point is the whole point of the drawing,
+  and a rest shape that omitted only X would cancel the ground the first time
+  somebody stepped along Y and re-measure eighty-one designs it had already
+  measured. `deskKey` therefore takes a key or a list. `applyGeometry`'s cancel
+  point has to ask a row the right question too, or every row is cancelled on
+  every apply — including the applies the survey's own samples cause.
+
+**The coarse pass is 5 and the fine one is 9, not 11.** The requirement is that
+densifying reuses the coarse samples exactly, which is the property
+`COARSE_SAMPLES` (11) and `SWEEP_SAMPLES` (21) have in one dimension. Carried
+to two dimensions with 5 and 11 it is simply false: five positions sit at `i/4`
+and eleven at `i/10`, and 0.25 is not a tenth of anything, so three of every
+five coarse rows fall between two fine ones and a densify would throw the whole
+coarse pass away — 25 runs spent to be discarded, with no symptom but a survey
+that takes longer than it should. `i/4 = 2i/8`, so 9 keeps the subset property
+and keeps both counts odd (each axis carries a sample at its own midpoint).
+Verified over the declarations rather than over the arithmetic, because
+snapping is what the property has to survive: `axisFor` at 5 and at 9 over all
+**90 sweepable numeric faces**, and every coarse position falls on a fine one.
+
+**Three states, told apart three ways, and the third is drawn by absence.**
+Measured is a tick with its figure; inferred is a hairline contour carrying its
+level and no figure read off it anywhere; unsurveyed is bare sheet with no
+contour carried across it. That last is structural rather than styled:
+`contoursOf` emits nothing for a cell whose mask is not full and `meshOf` emits
+no triangle touching one, so a gap cannot be filled from a neighbour because
+the geometry that would have covered it is never generated. Styling it instead
+would leave one `fillStyle` between an honest drawing and a dishonest one.
+
+**Coverage is load bearing, not a caption.** The relief is smooth by decision,
+and unlike a faceted one it does not report its own sample density in its own
+texture — so the density and the coverage figures are the only thing separating
+a coarse survey from a convincing picture of one. `Coverage` asserts
+`measured + gaps + unsurveyed === wanted` in its constructor, because a relief
+and a schedule of spot heights must never be able to disagree about how much
+was measured. This must not later be softened as cosmetic.
+
+**Which way is better is declared, not assumed.** Ten of the thirteen readings
+are compliance metrics or costs where less is the definition. The zone's own
+high and low are a comfort judgement nobody publishes as a target, so they are
+declared as conventions and say so — the same `CONVENTION` prefix the landmarks
+use, and for the same reason. A reading with no declared direction is one the
+survey will not let fall and will not name an improving region for; it draws
+the ground and refuses the two readings that need a direction, with the reason.
+
+**The free exchange refuses on two grounds, and the second replaced a worse
+one.** Comparing the second-order term against the first-order one is not well
+founded: along a level line the first-order change is exactly zero by
+construction, which is the whole point of it, so there is nothing for the
+curvature to be large *against*. What actually goes wrong on a shoulder is
+visible in the answer itself — measured on a coarse ground over a `tanh`
+shoulder, one step of glazing "bought" 24.6 m²K/W of wall resistance across an
+axis running 0.2 to 10. So the gates are: the 3 × 3 must span no more than a
+third of each extent, and the level-line step must land on the ground it was
+read off.
+
+**The relief is WebGL2 written here.** One vertex and one fragment shader, a
+hand-rolled orthographic and look-at pair, an indexed triangle mesh, one draw
+call. Principle V restricts *packages* and prefers platform APIs; gl-matrix,
+three.js and d3-contour are packages and none is needed for a constrained orbit
+over a height field. Orthographic because parallel projection is what makes two
+viewpoints comparable, the same reason E-01's axonometric is one. **No vertical
+exaggeration control**, because a reader who can dial the drama of a result up
+and down can argue from the picture. **One hue, ink levels only** — the reading
+is a magnitude with no direction, so `--cold` / `--warm` are not spent on it,
+which is why the survey is grey. `createRelief` returns `null` where no context
+can be had and the caller states the loss in place; every reading is on the
+plan and in the schedule already, so what is lost is the shape and nothing else.
+
+**Things that cost real debugging:**
+
+- **`.survey-body` sets `display: grid`, which beats `[hidden]`.** An author
+  `display` declaration beats the user agent's `[hidden] { display: none }`
+  outright, so `el.hidden = true` did nothing and two empty framed boxes stood
+  under the chooser with no survey cut. `.survey-body[hidden]` is the twin, and
+  it is the same fix `.link[hidden]` and `.bill[hidden]` each are.
+- **`dataset` is a getter-only property.** `Object.assign(cell, { dataset: {…} })`
+  throws — and from inside a scheduler callback it took down the drain, leaving
+  the pull reading `0 of 37` for ever while the runs quietly completed behind
+  it. Write `cell.dataset.head` instead.
+- **`URLSearchParams` escapes every punctuation mark but `*`, `.`, `-` and
+  `_`.** A tilde separator came back as `sv=wwrS%7EwallR%7Ehigh`, giving up
+  exactly the legibility the delta encoding is arranged around — the same
+  failure `at=year%408-3T13` had before the pin's `@` became a full stop. Of
+  the four survivors `-` cannot separate an extent (a bound may be negative)
+  and `.` is spent on the decimal point, which leaves `*` between fields and
+  `_` inside an extent: `sv=wwrS*wallR*high*0_0.9*0.2_10`.
+- **A contour label tested only against other contour labels overprints the
+  measured figures**, which hides a measurement behind an inference. The
+  clearance test is seeded with where the spot figures will stand, and a level
+  simply goes unlettered where nothing clears — the schedule carries every
+  figure regardless.
+- **Lettering the unit on both stops of an axis runs it off the frame.**
+  `3.00 m²K/W` at the head of a 44 px gutter printed as `00 m²K/W`. The stops
+  carry bare numbers and the axis label carries the unit once, which is how a
+  survey drawing has always lettered a scale.
+- **`choose` is wrapped rather than flagged inline.** The attach has half a
+  dozen refusal exits, and a flag cleared at five of them is a flag eventually
+  left set at the sixth — which would gate the descent shut for the rest of the
+  session with nothing saying why.
+
+**The `sv` key, and the trap this codebase has now met three times.**
+`readValue`'s numeric regex runs *before* its per-kind switch, so a branch
+written inside that switch is unreachable and every survey link would be
+refused as "is not a number for sv" — a true sentence about the wrong thing, on
+a link that was perfectly good. `sv` is a **reserved** key, so it is read in
+`decodeState` beside `at` and `sty`, above everything `readValue` does, and the
+reserved skip keeps it from ever reaching that function. It re-serialises what
+it read, for the reason the holiday list and the hourly pattern both do. The
+link carries axes, readings and extents and nothing else: not the measured
+values, since the recipient re-measures to identical numbers, and not the
+camera, by the chase pin's rule that how a thing is being looked at is not what
+it is. `LINK_VERSION` stays `v1` and `MIGRATIONS` stays empty.
+
+**The pull costs one run per control, and the run kind is stated.** 18 channels,
+144 control keys, 9 priced, **90 sweepable numeric faces** — counted, and
+re-counted by the harness against the declarations. One-sided differences,
+because the stance's own run is already in hand: 90 runs at most, not 180. On
+the default desk only 37 are probed and **53 reach no object at all and cost no
+run**; they are listed with their reasons rather than omitted or drawn as zero,
+because "the Gains channel is out of the path" is often exactly the answer to
+why nothing the reader tries moves the reading. `direction` is `'none'` only
+where the effect is *exactly* zero: there is no noise floor, because the engine
+is repeatable on one input.
+
+**The determinism gate has two halves and Node can only run one.** Twenty runs
+of one design agree exactly, measured. *Instance reuse* cannot be reached from
+Node at all: `main` cannot be called twice in one process — on the same
+instance it throws a raw number (a C++ exception pointer, EnergyPlus aborting
+because its globals are already initialized) **before doing any work**, leaving
+the previous run's ESO in `/output`, so a reuse harness would read run one's
+output twenty times and report perfect agreement. That trap is closed by
+asserting the refusal outright. The harnesses therefore run **one EnergyPlus
+per process**, about 1.8 s each; the reuse half is a browser gate.
+
+**Transfer:** 19,519 bytes of brotli added against SC-012's 60 KB ceiling.
+`src/model.js` is untouched and no new `Output:Variable` is requested anywhere,
+which discharges the output-budget requirement outright.
+
 ## Invariants that fail quietly
 
 - **`Building.north_axis` is ignored** because `GlobalGeometryRules` declares

@@ -23,3 +23,21 @@ come in under is a post-feature brotli total of 187811 + 61440 = **249251 bytes*
 Re-measure with the same script rather than with `ls`: `index.html` carries the
 whole stylesheet inline, so a style-only change moves a number that a
 JavaScript-only measurement would miss entirely.
+
+────────────────────────────────────────────────────────────────────────────
+After the feature, same script, same brotli settings:
+
+                                          raw     brotli
+assets/index-*.js                      561322     161420
+index.html                             224821      45910
+----------------------------------------------------------
+TOTAL                                  786143     207330
+
+**Added transfer: 19,519 bytes** against SC-012's ceiling of 61,440. Inside,
+with two thirds of the allowance unspent, and close to research.md section 9's
+estimate of about 15 KB.
+
+No asset, font or binary was added, and `public/energyplus/`, `public/schemas/`
+and `public/weather/` are byte-identical before and after — this feature asks
+the document no new question and requests no new output variable, so the
+engine's own payload is untouched.
