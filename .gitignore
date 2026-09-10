@@ -27,3 +27,12 @@ harness/
 
 # Feature worktrees, each its own checkout of this repository.
 .claude/worktrees/
+
+# The assess extension and its drafts are local tooling, installed per checkout
+# rather than shared: `.specify/extensions.yml` records what is installed here,
+# and an assessment is a working note about a feature that has not been shaped
+# yet. Neither belongs in a feature's pull request.
+.claude/skills/speckit-assess-*/
+.specify/extensions.yml
+.specify/extensions/
+.specify/assessments/
