@@ -1,0 +1,25 @@
+Pre-feature transfer baseline for SC-012.
+
+Taken on the feature branch's parent commit, 7cc252a, with
+`npm run build`. Every figure is of `dist/` **excluding** the three staged
+directories `energyplus/`, `schemas/` and `weather/`: those are engine assets,
+not this feature's code, they are identical before and after, and at ~50 MB they
+would swamp a 60 KB delta in the noise of their own brotli settings.
+
+Brotli is applied here the way `scripts/deploy.mjs` applies it — quality 9 above
+4 MiB and quality 11 below — because SC-012 is stated as transfer on a cold
+visit and the deploy script's own settings are what decide that figure, not the
+raw byte count vite writes.
+
+                                          raw     brotli
+assets/index-*.js                      506759     145468
+index.html                             205345      42343
+----------------------------------------------------------
+TOTAL                                  712104     187811
+
+SC-012's ceiling is 60 KB of **added transfer**, so the figure this feature must
+come in under is a post-feature brotli total of 187811 + 61440 = **249251 bytes**.
+
+Re-measure with the same script rather than with `ls`: `index.html` carries the
+whole stylesheet inline, so a style-only change moves a number that a
+JavaScript-only measurement would miss entirely.

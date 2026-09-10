@@ -80,6 +80,34 @@ export function sampleOrder(points, current) {
 }
 
 /**
+ * Whether a control has a face to sample along at all, as one sentence.
+ *
+ * Exported because a survey axis and a study subject are the same question
+ * asked twice, and a second copy of the answer is how the two surfaces come to
+ * refuse the same control for two different reasons — or, worse, how one of
+ * them stops refusing it. `samplePoints` throws with this sentence, `axisFor`
+ * in `survey.js` throws with this sentence, and the console greys an axis
+ * offer with this sentence.
+ *
+ * A refusal rather than a boolean, for the reason every refusal on this sheet
+ * is: Principle IV asks what would fix it, and "this is a `Pattern` and
+ * carries no min" is a thing the reader can act on where `false` is not. Null
+ * where the control can be swept, which is the same shape `refuses` in
+ * `controls.js` already uses.
+ */
+export function refusesSweep(control) {
+  for (const name of ['min', 'max', 'step']) {
+    if (!Number.isFinite(control[name])) {
+      return (
+        `${control.key} is a ${control.kind} and carries no ${name}, so it has no face to ` +
+        'sweep along. Only a control declaring min, max and step can be a study subject'
+      );
+    }
+  }
+  return null;
+}
+
+/**
  * Where to sample a control between its own min and max.
  *
  * Snapped to the step grid, because those are the only values the control can
@@ -106,15 +134,9 @@ export function sampleOrder(points, current) {
  * here to interpolate between.
  */
 export function samplePoints(control, current, n = SWEEP_SAMPLES) {
+  const refusal = refusesSweep(control);
+  if (refusal) throw new Error(`samplePoints: ${refusal}`);
   const { min, max, step } = control;
-  for (const [name, value] of [['min', min], ['max', max], ['step', step]]) {
-    if (!Number.isFinite(value)) {
-      throw new Error(
-        `samplePoints: ${control.key} is a ${control.kind} and carries no ${name}, so it has no face to ` +
-          'sweep along. Only a control declaring min, max and step can be a study subject',
-      );
-    }
-  }
   const grid = (v) => Math.min(max, Math.max(min, min + Math.round((v - min) / step) * step));
 
   const points = [];
