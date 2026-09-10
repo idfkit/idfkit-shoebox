@@ -7857,7 +7857,19 @@ function refineSurvey() {
     const ix = refined.x.indexOf(x);
     const iy = refined.y.indexOf(y);
     if (ix === -1 || iy === -1) continue;
-    refined.points.set(`${ix},${iy}`, Object.assign(Object.create(Object.getPrototypeOf(point)), point, { ix, iy }));
+    // Rebuilt through the constructors rather than cloned off the prototype.
+    // A clone would carry the same readings under a different pair of indices
+    // and would not be frozen, which is a `SpotHeight` in every respect except
+    // the invariant that makes it one — and the whole argument for that class
+    // is that there is no path to an instance of it except a completed run.
+    landPoint(refined, {
+      ix,
+      iy,
+      sample: point.readings ? { readings: point.readings } : null,
+      reason: point.reason ?? null,
+      floorArea: point.floorArea ?? null,
+      cacheKey: point.cacheKey ?? null,
+    });
   }
   survey = refined;
   queueSurvey(survey, { grid: FINE_GRID });
