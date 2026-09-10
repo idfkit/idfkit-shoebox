@@ -1591,7 +1591,7 @@ export function refuses(control, value) {
     return control.options.some((o) => o.value === value) ? null : 'is not one of its options';
   }
   // Non-numeric kinds are named here, above the numeric gate, for the reason
-  // CLAUDE.md gives for the same ordering in `readValue`: a branch added below
+  // docs/design-notes.md gives for the same ordering in `readValue`: a branch added below
   // it is unreachable, and every value of that kind is refused as "not a
   // number" — a true sentence about the wrong thing. A month mask and a day
   // list are both strings, both belong to the Run channel, and Run is
@@ -3225,7 +3225,7 @@ const SINGLE_SETPOINT = Object.freeze(new Set(['HeatingOnly', 'CoolingOnly']));
  * counted, a constant can. Each keeps the fix. What the long forms used to add
  * (every surface adiabatic, a network with one hole has nowhere for the air to
  * go, the adaptive rules asking what occupants will accept) is the argument in
- * CLAUDE.md, "Two air models", and not a message a blocked strip needs.
+ * docs/design-notes.md, "Two air models", and not a message a blocked strip needs.
  */
 const AIR_REASONS = Object.freeze({
   noOutside: 'The pressure network needs a surface with an outside; every surface here is adiabatic.',
@@ -4431,7 +4431,7 @@ export const CHANNELS = Object.freeze([
       // also the one nothing counted. The numbers are not lost: both faces are
       // on this strip, lettered and a thumb apart, which is how the reader got
       // here. What a blocked strip owes is the block and the fix; the argument
-      // is in the comment above and in CLAUDE.md, under the thermostat
+      // is in the comment above and in docs/design-notes.md, under the thermostat
       // invariant. Heat only and Cool only never read it.
       reason: 'The heating setpoint is above the cooling one: bring them level or apart.',
     },
