@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   axes, the readings and the extents; the recipient re-measures to identical
   numbers.
 
+  Each axis can be narrowed to the range worth looking at, and the ground is
+  re-cut over it — the runs already inside the new extent are reused. Every
+  design the desk has stood on this session is listed with the readings taken
+  at it and can be restored exactly, whether it was reached from the survey or
+  with the sliders.
+
 - **Studies can plot the quantity you choose.** Every open parameter study now
   shares one quantity selected from its card. Temperature draws its high and
   low together, thermal demand draws TEDI and CEDI together, and nine further

@@ -3302,6 +3302,9 @@ function patchChannel(id, off) {
     desk.solo = null;
   }
   applyGeometry();
+  // A channel patched out is a different design, and a design the desk stood
+  // on. `commit` files the parameter moves; this path never goes through it.
+  recordTraverse();
   endGesture();
   desk.settle();
   if (autoOn()) pump();
@@ -4151,7 +4154,9 @@ let linkedStudiesRestored = false;
 function restoreLinkedSurvey(state) {
   if (!state?.survey) return;
   const { x, y, readings, extents } = state.survey;
-  surveyChoice = { x, y, readings: [...readings] };
+  // The link's extents come back into the chooser too, or the boxes would
+  // letter the control's full range over a ground cut narrower than that.
+  surveyChoice = { x, y, readings: [...readings], extents: { ...extents } };
   syncSurveyAxes();
   openSurvey({ xKey: x, yKey: y, readingIds: readings, extents });
 }
@@ -6667,6 +6672,19 @@ async function solve() {
     ? `${nn.toLocaleString('en-US')} hours solved locally in ${seconds.toFixed(2)} s · auto-solve`
     : `${nn.toLocaleString('en-US')} hours solved locally in ${seconds.toFixed(2)} s · ${warnings} warning${warnings === 1 ? '' : 's'}`;
 
+  // The readings this run took, onto the traverse stop they describe. Off the
+  // snapshot the run was written from rather than off live `params`, for the
+  // reason the description is captured before the await: a slider turned
+  // during a 0.7 s annual run would put this building's numbers on another
+  // building's stop.
+  landTraverseReadings(snapshot, patching(), {
+    high: m.z.max,
+    low: m.z.min,
+    mean: m.z.mean,
+    hours: nn,
+    annual: weather,
+  });
+
   // Only a run that produced readable results fills the first square — the
   // early returns above are exactly the runs the note must not claim.
   tour?.note('solve');
@@ -7979,35 +7997,6 @@ function closeSurvey({ forgetTraverse = false } = {}) {
 
 /* ── E-02, drawn ─────────────────────────────────────────────────────────── */
 
-/**
- * Which layout E-02 got, asked of the stylesheet rather than restated here.
- *
- * `--survey` is declared once, in the media query, and read back — the same
- * arrangement `--index` and `--fold` already use, and for the reason Principle
- * VII gives: a media query and a `matchMedia` string that disagree is a bug
- * that exists at exactly one window size, which is the size nobody tests at.
- */
-const surveyStacked = () =>
-  getComputedStyle($('survey')).getPropertyValue('--survey').trim() === '1';
-
-/**
- * How E-02 behaves in the layout it got — asked once, and asked of the
- * stylesheet.
- *
- * `surveyStacked()` above reads `--survey` back rather than restating the
- * media query as a `matchMedia` string, because a query and a string that
- * disagree is a bug that exists at exactly one window size, which is the size
- * nobody tests at (Principle VII).
- *
- * **What it does not decide is the relief.** The mesh is never coarsened by
- * viewport and the drawing is never withheld on a narrow one (FR-018k): a
- * phone draws what a desk draws, so no reader is handed a surface that appears
- * to know less than somebody else's. What the flag decides is where the two
- * drawings stand — side by side, or one under the other — and nothing about
- * what either of them contains.
- */
-const surveyLayout = () => (surveyStacked() ? 'stacked' : 'side by side');
-
 /** Every control a ground may be cut along, with its refusal where it has one. */
 function axisOffers(snapshot = params, patch = patching()) {
   const state = channelState(snapshot, patch);
@@ -8016,23 +8005,43 @@ function axisOffers(snapshot = params, patch = patching()) {
     if (channel.prices) continue; // nothing it owns reaches the IDF
     const engaged = state.get(channel.id)?.engaged;
     for (const control of channel.controls) {
-      if (refusesSweep(control)) continue; // no numeric face; there is no offer to grey
       const sides = control.kind === 'facade' ? control.sides : [null];
+      // A control with no numeric face is listed and greyed with the sentence
+      // the studies refuse it with, rather than omitted (FR-003).
+      //
+      // The studies omit it, and that is right there: `buildPattern` and
+      // `buildDays` register no row, so no Study button is drawn at all —
+      // there is no offer to grey and no legend line to grey it with. A
+      // chooser is a different surface. It is an explicit list of what a
+      // ground may be cut along, and a control absent from that list reads as
+      // one the desk does not have, where a greyed one with its reason reads
+      // as what it is. `refusesSweep` is the same predicate `samplePoints`
+      // throws with, so the sentence a reader meets here is the sentence the
+      // model would give them.
+      const faceless = refusesSweep(control);
       for (const side of sides) {
         const key = side ? side.key : control.key;
-        const reason = !engaged
-          ? `Patch ${channel.name} in; with it out of the path this control reaches no object.`
-          : control.inert?.(snapshot)
-            ? control.note
-            : side && !side.reaches(snapshot)
-              ? side.reasonFor(snapshot)
-              : null;
+        // Not sentence-cased: `refusesSweep` opens with the control's own key,
+        // and `northAxis` capitalised is `NorthAxis`, which is not the name of
+        // anything. The sentence is the studies' verbatim.
+        const reason = faceless
+          ? `${faceless}.`
+          : !engaged
+            ? `Patch ${channel.name} in; with it out of the path this control reaches no object.`
+            : control.inert?.(snapshot)
+              ? control.note
+              : side && !side.reaches(snapshot)
+                ? side.reasonFor(snapshot)
+                : null;
         offers.push({
           key,
           channel,
           control,
           side,
-          label: labelFor(key),
+          // A faceless control owns its key under a kind `controlFor` resolves
+          // but `labelFor` may name oddly, so the declaration's own label is
+          // the fallback.
+          label: faceless ? (control.label ?? key) : labelFor(key),
           available: !reason,
           reason,
         });
@@ -8084,10 +8093,109 @@ function pickList({ label, summary, options, selected, onPick, multiple = false 
 }
 
 /** What the chooser is currently holding, so a half-made survey survives a redraw. */
-let surveyChoice = { x: null, y: null, readings: [] };
+let surveyChoice = { x: null, y: null, readings: [], extents: {} };
+
+/** The chooser's extents with one axis's entry dropped, when that axis changes. */
+const withoutExtent = (choice, which) => {
+  const key = choice[which];
+  if (!key) return choice.extents ?? {};
+  const { [key]: gone, ...rest } = choice.extents ?? {};
+  void gone;
+  return rest;
+};
+
+/**
+ * The two boxes that narrow one axis (FR-006).
+ *
+ * `axisFor`, `openSurvey` and the `sv` codec have carried `from` and `to`
+ * since the ground was first cut; until now nothing on the page set them, so
+ * an extent could only be narrowed by editing a link by hand.
+ *
+ * Two `quantityField`s rather than a second pair of sliders, and for the
+ * reason the sheet's dimensions grew one: an extent is an exact figure a
+ * reader arrives with — *survey the glazing between a fifth and a half* — and
+ * a slider across two hundred pixels cannot say a fifth. The parsing, the
+ * clamping to the control's own stops and the snapping to its step are
+ * `Ruled.parse`'s, so the boxes accept exactly what the control can hold and
+ * refuse the rest whole, the way a bad link is refused.
+ *
+ * Narrowing is a re-cut, not a filter: the ground is measured over the extent
+ * it was asked for, so the samples inside the old extent are reused from the
+ * cache and only the new positions cost a run.
+ */
+function extentField(which) {
+  const key = surveyChoice[which];
+  const wrap = el('div', 'survey-pick survey-extent');
+  if (!key) return wrap;
+  const { control } = controlFor(key);
+  const held = surveyChoice.extents?.[key] ?? {};
+  const from = held.from ?? control.min;
+  const to = held.to ?? control.max;
+
+  const set = (edge, value) => {
+    const next = { from, to, [edge]: value };
+    // An extent that is not an extent is refused where it is typed rather than
+    // thrown from `axisFor` a moment later, because the box is where the reader
+    // can see what they did. The old value comes back, as it does for anything
+    // else the field cannot hold.
+    if (!(next.to > next.from)) {
+      surveySay(
+        `An extent runs from a lower figure to a higher one, and ${formatValue(key, next.from)} to ` +
+          `${formatValue(key, next.to)} does not.`,
+      );
+      renderSurveyChoose();
+      return;
+    }
+    surveyChoice = {
+      ...surveyChoice,
+      extents: { ...(surveyChoice.extents ?? {}), [key]: { from: next.from, to: next.to } },
+    };
+    cutFromChoice();
+  };
+
+  const head = el('b', null, `Extent · ${labelFor(key)}`);
+  const line = el('div', 'survey-extent-pair');
+  for (const [edge, value] of [['from', from], ['to', to]]) {
+    const field = quantityField({
+      control,
+      name: `${labelFor(key)} ${edge}`,
+      read: () => value,
+      write: (v) => set(edge, v),
+    });
+    // Lettered on the way in. `quantityField` writes nothing until something
+    // asks it to — every other caller on this sheet calls `show()` from its own
+    // redraw — so a field built and appended alone stands empty, which is what
+    // these two did.
+    field.show();
+    line.append(field.node);
+    if (edge === 'from') line.append(el('span', 'survey-extent-rule', 'to'));
+  }
+  wrap.append(head, line);
+  return wrap;
+}
+
+/**
+ * What the chooser was last drawn against, so it is not rebuilt for nothing.
+ *
+ * `renderSurvey` runs on every landed sample — a hundred and forty-four times
+ * over one ground — and the chooser is 129 offers and four fields. Rebuilt
+ * each time, the cost is the smaller half of the problem: `host.textContent =
+ * ''` **destroys the node the reader is typing into**, so an extent typed
+ * while the ground fills loses its focus, its `took` value and therefore the
+ * keystrokes, and the box silently commits nothing. `field.js` guards its own
+ * `show()` against a redraw writing over a field; nothing can guard a field
+ * against being deleted.
+ *
+ * So the chooser is redrawn only when something it draws has actually moved:
+ * the selection, or the desk the offers are measured against.
+ */
+let chooserDrawn = null;
 
 function renderSurveyChoose() {
   const host = $('survey-choose');
+  const signature = JSON.stringify([surveyChoice, shapeKey(params), Boolean(epwText)]);
+  if (chooserDrawn === signature) return;
+  chooserDrawn = signature;
   host.textContent = '';
   const axes = axisOffers();
   const readings = surveyReadingOffers();
@@ -8113,22 +8221,27 @@ function renderSurveyChoose() {
       options: axisOptions(surveyChoice.y),
       selected: surveyChoice.x,
       onPick: (key) => {
-        surveyChoice = { ...surveyChoice, x: key };
+        // A different control brings a different range with it, so the extent
+        // the reader set on the old one cannot be carried across: 0.2 to 0.9
+        // means nothing on an axis running 4 to 40.
+        surveyChoice = { ...surveyChoice, x: key, extents: withoutExtent(surveyChoice, 'x') };
         syncSurveyAxes();
         cutFromChoice();
       },
     }),
+    extentField('x'),
     pickList({
       label: 'Axis Y',
       summary: named(surveyChoice.y),
       options: axisOptions(surveyChoice.x),
       selected: surveyChoice.y,
       onPick: (key) => {
-        surveyChoice = { ...surveyChoice, y: key };
+        surveyChoice = { ...surveyChoice, y: key, extents: withoutExtent(surveyChoice, 'y') };
         syncSurveyAxes();
         cutFromChoice();
       },
     }),
+    extentField('y'),
     pickList({
       label: 'Reading',
       summary: surveyChoice.readings.length
@@ -8172,14 +8285,16 @@ function renderSurveyChoose() {
  */
 function nameSurveyAxis(key) {
   const { x, y } = surveyChoice;
-  if (x === key) surveyChoice = { ...surveyChoice, x: null };
-  else if (y === key) surveyChoice = { ...surveyChoice, y: null };
+  // An axis leaving takes its extent with it: a range is a fact about one
+  // control's face and means nothing on another's.
+  if (x === key) surveyChoice = { ...surveyChoice, x: null, extents: withoutExtent(surveyChoice, 'x') };
+  else if (y === key) surveyChoice = { ...surveyChoice, y: null, extents: withoutExtent(surveyChoice, 'y') };
   else if (!x) surveyChoice = { ...surveyChoice, x: key };
   else if (!y) surveyChoice = { ...surveyChoice, y: key };
   // Both taken: the newest press replaces the older axis, which is the same
   // rule the reading chooser follows. Refusing here would be the interface
   // arguing with a gesture it understood perfectly well.
-  else surveyChoice = { ...surveyChoice, x: y, y: key };
+  else surveyChoice = { ...surveyChoice, x: y, y: key, extents: withoutExtent(surveyChoice, 'x') };
   syncSurveyAxes();
   cutFromChoice();
   if (surveyChoice.x && surveyChoice.y && !surveyChoice.readings.length) {
@@ -8195,12 +8310,12 @@ const syncSurveyAxes = () =>
 
 /** Cut a ground the moment the chooser holds enough to cut one. */
 function cutFromChoice() {
-  const { x, y, readings } = surveyChoice;
+  const { x, y, readings, extents } = surveyChoice;
   if (!x || !y || !readings.length) {
     renderSurvey();
     return;
   }
-  openSurvey({ xKey: x, yKey: y, readingIds: readings });
+  openSurvey({ xKey: x, yKey: y, readingIds: readings, extents: extents ?? {} });
 }
 
 /* The plan. Inline SVG, so every contour and every tick is a real node the
@@ -8650,18 +8765,131 @@ function standOn(sv, spot) {
  */
 function restoreTraverse(stop) {
   if (!stop) return;
-  const keys = Object.keys(stop.params).filter((key) => params[key] !== stop.params[key]);
-  if (!keys.length) return;
+  if (deskKey(stop.params, stop.patch) === shapeKey(params)) return;
   recordTraverse();
+  beginGesture();
+  // The patch bay first, because a parameter on a channel that is out reaches
+  // no object: committing the parameters against the wrong patch state would
+  // write half of them into a document that cannot hold them, and the second
+  // half would then be applied to a different building from the first.
+  //
+  // Solo is dropped rather than reconstructed. `patching()` collapses solo into
+  // a full bypass map, so a stop cannot tell "Fabric soloed" from "everything
+  // but Fabric patched out" — and those are the same *document*, which is what
+  // a restored design is. Leaving solo on would make the two disagree.
+  let patched = false;
+  for (const channel of CHANNELS) {
+    if (!channel.bypassable) continue;
+    const want = Boolean(stop.patch[channel.id]);
+    if (bypass[channel.id] === want && !solo) continue;
+    bypass[channel.id] = want;
+    patched = true;
+  }
+  if (solo) {
+    solo = null;
+    desk.solo = null;
+    patched = true;
+  }
+  // No console call is needed: `bypass` is the same object the console was
+  // mounted with, and `applyGeometry` re-letters the strips from the model
+  // state it computes — which is exactly the path `patchChannel` takes.
+  if (patched) applyGeometry();
+
+  const keys = Object.keys(stop.params).filter((key) => params[key] !== stop.params[key]);
+  if (!keys.length) {
+    // The patch bay was the whole difference. It still has to be committed as
+    // a gesture, or the address bar keeps the scheme it arrived with and no
+    // solve follows.
+    if (patched) {
+      endGesture();
+      desk?.settle();
+      if (autoOn()) pump();
+    }
+    return;
+  }
   keys.forEach((key, at) => commit(key, stop.params[key], at === keys.length - 1));
 }
 
 /** One stop on the traverse, recorded where the desk actually moves (FR-038). */
 function recordTraverse() {
-  const last = traverse[traverse.length - 1];
   const here = shapeKey(params);
-  if (last && shapeKey(last.params) === here) return;
-  traverse.push(new TraverseStop({ params, patch: patching(), readings: null, at: traverse.length }));
+  const last = traverse[traverse.length - 1];
+  if (last && deskKey(last.params, last.patch) === here) return;
+  // A design revisited moves to the end of the record rather than being added
+  // to it again, keeping the readings it already carries.
+  //
+  // A traverse is a path and a path may double back, so a duplicate is not
+  // *wrong* — but the record exists to be restored from, and a second row for
+  // one design offers nothing the first does not. Two of them also both
+  // answered to "you are here", which is one claim too many, and a reader
+  // dragging a slider back and forth would fill the list with a design they
+  // never left. The path is redrawn over itself on the plan either way.
+  const at = traverse.findIndex((stop) => deskKey(stop.params, stop.patch) === here);
+  const known = at === -1 ? null : traverse.splice(at, 1)[0];
+  traverse.push(
+    new TraverseStop({
+      params: known?.params ?? params,
+      patch: known?.patch ?? patching(),
+      readings: known?.readings ?? null,
+      at: traverse.length,
+    }),
+  );
+  // Redrawn here, because this is the only place the record changes. It had
+  // no redraw of its own at first and rode on `renderSurvey`, which meant the
+  // list was only ever refreshed when a solve happened to fill a stop's
+  // readings — so walking back to a design already measured moved the record
+  // and drew nothing, and the row marked "you are here" was the one the desk
+  // had left two gestures ago.
+  renderTraverse();
+}
+
+/**
+ * Attach the readings a run produced to the stop it describes (FR-038).
+ *
+ * A stop is recorded at the end of the gesture that reached it, which is
+ * *before* the desk has been solved — so the readings cannot be handed to the
+ * constructor and the field cannot be filled where it is created. It is filled
+ * here instead, from the solve, by matching the run's own snapshot against the
+ * stop's shape rather than against the live desk: an annual run takes the best
+ * part of a second and the reader may have moved on twice while it was in
+ * flight, and a stop that took whichever readings landed next would carry
+ * another building's numbers under its own name.
+ *
+ * `TraverseStop` is frozen, so the entry is replaced rather than mutated. That
+ * is the point of the freeze: a stop's readings are settled once and cannot
+ * drift afterwards.
+ */
+function landTraverseReadings(snapshot, patch, readings) {
+  const shape = deskKey(snapshot, patch);
+  // The desk the sheet opened on. `recordTraverse` is called from `commit`,
+  // which is a *move*, so the design the reader arrived at has no stop until
+  // they leave it — and the boot solve, which is the one run that describes it,
+  // lands before any stop exists. Left alone the first row of the traverse
+  // read as three em dashes for a design that had in fact been measured.
+  // Seeded only from an empty traverse: a later run that matches no stop is a
+  // stale solve of a desk already left, and inventing a stop for it would put
+  // a design on the record that the reader never came to rest on.
+  if (!traverse.length) {
+    traverse.push(new TraverseStop({ params: snapshot, patch, readings, at: 0 }));
+    renderTraverse();
+    return;
+  }
+  for (let at = traverse.length - 1; at >= 0; at -= 1) {
+    const stop = traverse[at];
+    if (deskKey(stop.params, stop.patch) !== shape) continue;
+    // Already carrying what this run says. Re-solving the same desk — a
+    // release after a drag that ended where it began — must not mint a new
+    // object and redraw the traverse for nothing.
+    if (stop.readings) return;
+    traverse[at] = new TraverseStop({
+      params: stop.params,
+      patch: stop.patch,
+      readings,
+      at: stop.at,
+    });
+    renderTraverse();
+    return;
+  }
 }
 
 /** The schedule of spot heights: every measured design, with its own figures. */
@@ -8868,6 +9096,10 @@ let pullJobs = new Map(); // job id -> the probe spec it came from
 let pullLanded = new Map(); // job id -> { here, there }
 let pullStance = null;
 const pullFinished = new Map(); // job id -> its probe spec, once landed
+// Where the ranking opens. Not a cap: `pullShowAll` reaches the rest, because
+// a control missing from the table reads as one that was never probed.
+const PULL_ROWS = 20;
+let pullShowAll = false;
 
 /**
  * Read the pull: one run per sweepable control, ranked at the stance.
@@ -9027,6 +9259,13 @@ function renderPull() {
   const table = $('pull-table');
   table.textContent = '';
   const heads = ['Control', 'Moves the reading', 'Per unit', 'Effect', 'Room left'];
+  // The whole ranking is reachable, not the top twenty of thirty-seven
+  // (FR-025). Twenty is where it opens because that is a screen and the tail
+  // of a ranking is by definition the part that moves the reading least — but
+  // a reader who wants a particular control's pull has to be able to find it,
+  // and a control that is missing from the table reads as one that was never
+  // probed. The rest is one press away and the press says how many.
+  const shown = pullShowAll ? measured.length : Math.min(PULL_ROWS, measured.length);
   const thead = el('thead');
   const headRow = el('tr');
   heads.forEach((head, at) => {
@@ -9036,7 +9275,7 @@ function renderPull() {
   thead.append(headRow);
   const tbody = el('tbody');
   const widest = Math.max(...measured.map((entry) => entry.pull), 0) || 1;
-  for (const entry of measured.slice(0, 20)) {
+  for (const entry of measured.slice(0, shown)) {
     const row = el('tr');
     if ([surveyChoice.x, surveyChoice.y].includes(entry.key)) row.classList.add('chosen');
     // The control's name is the way to cut a ground along it (FR-028): choosing
@@ -9044,7 +9283,7 @@ function renderPull() {
     const pick = el('button', 'pull-pick', entry.label);
     pick.type = 'button';
     pick.title = `Make ${entry.label} an axis of the survey`;
-    pick.addEventListener('click', () => nameSurveyAxis(entry.key));
+    pick.addEventListener('click', () => cutFromPull(entry.key));
     const name = el('td');
     name.append(pick);
 
@@ -9096,6 +9335,14 @@ function renderPull() {
   table.append(thead, tbody);
   keepTableSemantics(table);
 
+  const more = $('pull-more');
+  more.hidden = measured.length <= PULL_ROWS;
+  if (!more.hidden) {
+    more.textContent = pullShowAll
+      ? `Show the top ${PULL_ROWS}`
+      : `Show all ${measured.length} controls`;
+  }
+
   // Inert controls are listed rather than omitted or drawn as zero: "this
   // reaches nothing here" is often exactly the answer to "why does nothing I
   // try move this reading" (FR-027).
@@ -9104,6 +9351,35 @@ function renderPull() {
       `${inert.slice(0, 4).map((entry) => `${entry.label} — ${entry.inert.toLowerCase()}`).join('; ')}` +
       `${inert.length > 4 ? `; and ${inert.length - 4} more.` : ''}`
     : '';
+}
+
+/**
+ * Name an axis from the ranking, and cut the ground once two are named
+ * (FR-028).
+ *
+ * The pair goes through `axesFrom` rather than straight to `openSurvey`,
+ * which is what that function is for: it refuses two entries that are the same
+ * control, and refuses an inert one **with that entry's own reason**. Neither
+ * refusal is hypothetical from here — the ranking lists inert controls
+ * deliberately, so a reader can press one — and "the Gains channel is out of
+ * the path" is a far better answer than the sentence `axisFor` would throw a
+ * moment later about a control reaching no object.
+ */
+function cutFromPull(key) {
+  const entries = pullEntries();
+  nameSurveyAxis(key);
+  const { x, y } = surveyChoice;
+  if (!x || !y) return;
+  try {
+    axesFrom(entries, x, y);
+  } catch (failure) {
+    // Refused whole, with the reason where the reader pressed. The axis is put
+    // back so the chooser does not hold a pairing the survey has just refused.
+    surveyChoice = { ...surveyChoice, [x === key ? 'x' : 'y']: null };
+    syncSurveyAxes();
+    surveySay(failure.message.replace(/^axesFrom: /, ''));
+    renderSurvey();
+  }
 }
 
 /** One effect, per unit of the control's own travel and in the reading's units. */
@@ -9300,6 +9576,80 @@ function drawRelief(sv) {
     `down can argue from the picture.`;
 }
 
+/**
+ * Every design the desk has stood on this session, in order and restorable
+ * (FR-038), with a keyboard route to each (FR-049).
+ *
+ * The plan draws the traverse too, as a chain of ghost marks — but it can only
+ * draw the stops whose values fall inside the extent the ground was cut over,
+ * and it draws nothing at all with no survey open. A design the reader walked
+ * to with the sliders and then narrowed the extent past would simply vanish
+ * from the record, which is not what "every design the desk has stood on" can
+ * mean. So the list is the complete statement and the marks on the plan are
+ * the shortcut for the ones that happen to be under the drawing — the same
+ * arrangement the boundary key already keeps against the axonometric, where
+ * three of six surfaces can be clicked and the key carries all six.
+ *
+ * It is also where the keyboard reaches them. A mark on an SVG would need a
+ * tab stop apiece; a table row already has one.
+ */
+function renderTraverse() {
+  const section = $('traverse');
+  if (!section) return;
+  // One stop is where the desk started and is not a traverse. The record
+  // begins when the reader has actually moved.
+  section.hidden = traverse.length < 2;
+  if (section.hidden) return;
+
+  const here = shapeKey(params);
+  $('traverse-count').textContent = `${traverse.length} stops`;
+  const table = $('traverse-table');
+  table.textContent = '';
+  const heads = ['Design', 'High', 'Low', 'Hours'];
+  const thead = el('thead');
+  const headRow = el('tr');
+  heads.forEach((head, at) => headRow.append(el('th', at > 0 ? 'num' : null, head)));
+  thead.append(headRow);
+
+  const tbody = el('tbody');
+  // Most recent first: the stop a reader wants back is usually the one they
+  // just left, and a session's traverse has no natural ceiling.
+  for (const stop of [...traverse].reverse()) {
+    const row = el('tr');
+    const standing = deskKey(stop.params, stop.patch) === here;
+    if (standing) row.classList.add('here');
+
+    const go = el('button', 'traverse-go', shapeLabel(stop.params));
+    go.type = 'button';
+    if (standing) {
+      go.disabled = true;
+      go.title = 'The desk is standing on this design.';
+    } else {
+      go.title = `Put the desk back on this design: ${shapeLabel(stop.params)}`;
+      go.addEventListener('click', () => restoreTraverse(stop));
+    }
+    const name = el('td');
+    name.append(go);
+
+    // The readings taken at it, or an em dash where the run that would have
+    // filled them never landed — a stop reached and immediately left again,
+    // or one whose solve was overtaken. Absence is not zero.
+    const cells = [
+      name,
+      el('td', 'num', stop.readings ? `${stop.readings.high.toFixed(1)} °C` : '—'),
+      el('td', 'num', stop.readings ? `${stop.readings.low.toFixed(1)} °C` : '—'),
+      el('td', 'num', stop.readings ? stop.readings.hours.toLocaleString('en-US') : '—'),
+    ];
+    cells.forEach((cell, at) => {
+      cell.dataset.head = heads[at];
+      row.append(cell);
+    });
+    tbody.append(row);
+  }
+  table.append(thead, tbody);
+  keepTableSemantics(table);
+}
+
 /** Everything E-02 letters, from the ground in hand. */
 function renderSurvey() {
   const section = $('survey');
@@ -9314,6 +9664,10 @@ function renderSurvey() {
   const drawing = $('survey-drawing');
   $('survey-fall').hidden = !survey;
   $('survey-clear').hidden = !survey;
+  // Drawn whether or not a ground is cut: the traverse is a record of the desk
+  // rather than of the survey, and a reader who walked somewhere with the
+  // sliders and never opened a survey has still stood on those designs.
+  renderTraverse();
 
   if (!survey) {
     drawing.hidden = true;
@@ -9395,13 +9749,17 @@ function refreshSurvey() {
 
 $('survey-fall').addEventListener('click', () => letItFall());
 $('pull-read').addEventListener('click', () => readPull());
+$('pull-more').addEventListener('click', () => {
+  pullShowAll = !pullShowAll;
+  renderPull();
+});
 // Clearing the survey takes the drawing down and touches neither `params` nor
 // the document, so no solve follows — the same difference `clearAllStudies`
 // keeps from Revert all beside it. The sample cache is deliberately kept: those
 // runs are still true of the desks they were solved for, so re-cutting the same
 // ground costs nothing.
 $('survey-clear').addEventListener('click', () => {
-  surveyChoice = { x: null, y: null, readings: [] };
+  surveyChoice = { x: null, y: null, readings: [], extents: {} };
   surveyRefused = null;
   syncSurveyAxes();
   closeSurvey();

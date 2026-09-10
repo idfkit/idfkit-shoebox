@@ -610,6 +610,51 @@ A second reading at the same point is lettered **under** the first, in
 reading against the other, and there is no published weighting on this sheet to
 rank them with.
 
+### A record of where a desk has been
+
+A list of designs the desk has stood on is a **schedule**, not a breadcrumb
+trail: it folds at the schedules' own breakpoint, every figure keeps the head
+it stood under, and the design's own name is the button that restores it. Most
+recent first, because the stop a reader wants back is usually the one they just
+left and a session has no natural ceiling.
+
+- **The current row carries the armed square**, so "you are here" is the same
+  mark as the stance on the ground, the patch button and the rail pin. Exactly
+  one row may carry it: a design revisited moves to the front of the record
+  rather than appearing twice, or two rows make the same claim.
+- **A stop with no readings behind it shows em dashes**, not zeros. A design
+  reached and left again before its run landed was genuinely never measured.
+- **Where a drawing can only show part of a record, the list is the record.**
+  A plan can only mark the stops inside the extent it was cut over. Draw the
+  marks as the shortcut for what is under the drawing and let the list be
+  complete — the same split the boundary key keeps against the axonometric,
+  where three of six surfaces are clickable and the key carries all six. It is
+  also how the keyboard reaches them without a tab stop per mark.
+
+### Two boxes for a range
+
+Where a reader sets an interval — the extent a survey is cut over — use a pair
+of `quantityField`s with the word *to* between them, not a second pair of
+sliders. An interval is an exact figure somebody arrives with (*between a fifth
+and a half*), and a slider across two hundred pixels cannot say a fifth. The
+parsing, the clamping to the control's own stops and the snapping to its step
+come from the control's own declaration, so the boxes accept exactly what the
+control can hold.
+
+Two things the pair must do that a single field does not:
+
+- **Refuse a reversed interval where it is typed**, with both figures in the
+  sentence, rather than letting it throw somewhere downstream. The box is where
+  the reader can see what they did.
+- **Set its own face.** `.num-field` is `font: inherit` by design — it takes
+  the lettering of whatever it replaced — so a pair that replaces nothing has
+  to say what it is, or it comes out at the section's body size.
+
+**And a field is destroyed by any redraw that empties its host.** A panel that
+rebuilds itself on every incoming event cannot hold a text field: the reader's
+focus, the value the field took at focus, and therefore their keystrokes all go
+with the node. Redraw such a panel only when something it draws has moved.
+
 ### The armed square, a fourth time, and a ring beside it
 
 The stance on a surveyed ground carries the same `--redline` square the patch

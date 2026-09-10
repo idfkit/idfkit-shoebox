@@ -29,6 +29,16 @@
  * `--warm` are not used here. They are reserved for signed quantities, and
  * spending them on a magnitude would leave the page with no encoding for
  * direction at all. That is why the survey is grey.
+ *
+ * **And it carries no gesture at all.** The contract sketched an `onPick` here,
+ * mirrored by an equivalent route on the plan. It is not implemented and the
+ * parameter is gone rather than left accepted and ignored, because the plan is
+ * already the authoritative surface (FR-018a): it carries every figure, a
+ * coarse-pointer target on every spot height, and a roving keyboard cursor
+ * across the whole lattice. A pick here would have to be un-projected from a
+ * click through the camera, would be pointer-only unless mirrored, and would
+ * add a second way to reach designs the plan already reaches better. What the
+ * relief carries is the shape and the posts.
  */
 
 /* ══ the 4x4 pair ════════════════════════════════════════════════════════ */
@@ -211,7 +221,7 @@ function inkOf(host, name, fallback) {
  * picture would be a drawing claiming to be of this ground while being of
  * nothing.
  */
-export function createRelief(host, { onPick = null, onLost = null } = {}) {
+export function createRelief(host, { onLost = null } = {}) {
   const canvas = document.createElement('canvas');
   const gl = canvas.getContext('webgl2', { antialias: true, alpha: true });
   if (!gl) return null;
@@ -393,6 +403,5 @@ export function createRelief(host, { onPick = null, onLost = null } = {}) {
 
     // Held so the caller can offer the same picks the keyboard reaches.
     viewpoints: VIEWPOINTS,
-    onPick,
   };
 }

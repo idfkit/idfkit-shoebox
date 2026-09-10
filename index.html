@@ -3996,17 +3996,20 @@
       @media (max-width: 620px) {
         .schedule thead,
         .bill thead,
-        #pull-table thead { display: none; }
+        #pull-table thead,
+        #traverse-table thead { display: none; }
 
         .schedule tbody,
         .bill tbody,
-        #pull-table tbody { display: block; }
+        #pull-table tbody,
+        #traverse-table tbody { display: block; }
 
         /* Two tracks: the figures down the first, whatever qualifies them —
            a change against the scheme, a unit — down the second. */
         .schedule tr,
         .bill tr,
-        #pull-table tr {
+        #pull-table tr,
+        #traverse-table tr {
           display: grid;
           grid-template-columns: minmax(0, 1fr) auto;
           align-items: baseline;
@@ -4039,6 +4042,7 @@
         /* A figure and the head it stood under, on one line. */
         .schedule td[data-head],
         #pull-table td[data-head],
+        #traverse-table td[data-head],
         .bill td[data-head] {
           display: flex;
           flex-direction: column;
@@ -4052,7 +4056,8 @@
         }
         .schedule td[data-head] { grid-column: 1; }
         .schedule td[data-head],
-        #pull-table td[data-head] {
+        #pull-table td[data-head],
+        #traverse-table td[data-head] {
           flex-direction: row;
           align-items: baseline;
           justify-content: space-between;
@@ -4062,7 +4067,8 @@
            control's name and every cell after it a figure about that control,
            so a second track would put the effect beside the name it belongs to
            rather than under it. */
-        #pull-table td[data-head] { grid-column: 1 / -1; }
+        #pull-table td[data-head],
+        #traverse-table td[data-head] { grid-column: 1 / -1; }
         #pull-table td.num { text-align: right; }
         /* The bar keeps its width in a folded row, or it collapses to nothing
            in a flex line beside its own head. */
@@ -4074,6 +4080,7 @@
            two rules underneath set. */
         .schedule td[data-head]::before,
         #pull-table td[data-head]::before,
+        #traverse-table td[data-head]::before,
         .bill td[data-head]::before,
         .qualifications dd[data-head]::before {
           content: attr(data-head);
@@ -4200,13 +4207,22 @@
          used here at all and the ground is graphite. That is the same
          argument that keeps the bill uncoloured, one drawing along.
 
-         `--survey`, below, is this feature's one layout threshold, declared
-         once here and read back by `renderSurvey`. It answers a different
-         question from `--index` and from the schedules' 620px: not "can the
-         window hold a column" and not "can a table keep its columns", but
-         "can the plan and the relief stand side by side". They are two
+         `--survey`, below, is this feature's one layout threshold. It answers
+         a different question from `--index` and from the schedules' 620px: not
+         "can the window hold a column" and not "can a table keep its columns",
+         but "can the plan and the relief stand side by side". They are two
          drawings of one ground, each wanting its own square, so they part
-         company some way above the width at which a table does. ────────── */
+         company some way above the width at which a table does.
+
+         Unlike `--index` and `--fold` it is **not** read back by script, and
+         that is the honest state rather than an omission: nothing in E-02
+         behaves differently by layout. The relief draws at full mesh on every
+         device by decision (FR-018k), the plan's own drawing is a fixed viewBox
+         that scales, and the schedules fold on their own breakpoint. A
+         read-back with no consumer is the second source of truth the
+         declare-once rule exists to prevent, inverted — so there is none, and
+         no `matchMedia` string either. Give it one the day a module actually
+         needs to ask. ────────────────────────────────────────────────────── */
       .survey {
         --survey: 0;
         margin-top: 26px;
@@ -4251,6 +4267,34 @@
       }
 
       .survey-pick { min-width: 0; }
+
+      /* The extent boxes sit beside the axis they narrow, taking the chooser's
+         own head style so the pair reads as one control: which control, and
+         over what range. Not a disclosure — there is nothing to open. */
+      .survey-extent { display: flex; flex-direction: column; gap: 6px; }
+      .survey-extent b {
+        font: 500 9.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+      /* `.num-field` is `font: inherit` by design — it takes the lettering of
+         whatever it replaced, which on a strip is the control's own readout.
+         Here it replaces nothing, so the pair has to set the face itself or
+         the boxes come out at the section's body size, twice the mono the
+         chooser's summaries are lettered in. */
+      .survey-extent-pair {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        font: 400 11px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+      }
+      .survey-extent-rule {
+        font: 400 10.5px/1.3 var(--sans);
+        color: var(--ink-ghost);
+      }
 
       .survey-pick > summary {
         cursor: pointer;
@@ -4569,6 +4613,44 @@
 
       .survey-coverage b { color: var(--ink); font-weight: 400; }
       .survey-coverage .loose { color: var(--ink-ghost); }
+
+      /* The traverse list. A schedule, so it folds at 620px with the others
+         and every figure keeps the head it stood under. */
+      .traverse { margin-top: 18px; }
+      .traverse[hidden] { display: none; }
+
+      #traverse-table { width: 100%; border-collapse: collapse; }
+      #traverse-table td,
+      #traverse-table th { padding: 5px 8px 5px 0; text-align: left; vertical-align: baseline; }
+      #traverse-table td + td,
+      #traverse-table th + th { padding-left: 14px; }
+      #traverse-table tbody tr { border-bottom: 1px solid var(--rule-soft); }
+
+      #traverse-table td.num,
+      #traverse-table th.num {
+        font: 400 11px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+      }
+
+      /* The stop the desk is standing on now carries the armed square, the
+         same idiom as the stance mark on the plan and the patch button. */
+      #traverse-table tbody tr.here td { color: var(--ink); }
+      #traverse-table tbody tr.here .traverse-go::before { content: '▪ '; color: var(--redline); }
+
+      .traverse-go {
+        border: 0;
+        background: none;
+        padding: 0;
+        min-width: 0;
+        min-height: 0;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .traverse-go:hover { color: var(--redline); }
+      .traverse-go[disabled] { cursor: default; }
 
       .survey-stamp { margin-top: 20px; }
       .survey-stamp div:nth-child(4n) { border-right: 0; }
@@ -4897,6 +4979,7 @@
               </div>
               <p class="pull-lede" id="pull-lede"></p>
               <table id="pull-table"></table>
+              <button type="button" class="link" id="pull-more" hidden></button>
               <p class="survey-note" id="pull-inert"></p>
             </section>
 
@@ -4927,6 +5010,17 @@
                  these two figures are the only thing separating a coarse survey
                  from a convincing picture of one. -->
             <p class="survey-coverage" id="survey-coverage"></p>
+
+            <!-- The traverse: every design the desk has stood on this session,
+                 in order, each one restorable. It is drawn on the plan as a
+                 chain of ghost marks, but the plan can only show the stops that
+                 fall inside the current extent — so the list is where the rest
+                 of them live, and it is where the keyboard reaches all of them.
+                 Written by `renderTraverse` in main.js. -->
+            <section class="traverse" id="traverse" hidden>
+              <p class="eyebrow">Where this desk has stood<span class="base" id="traverse-count"></span></p>
+              <table id="traverse-table"></table>
+            </section>
             <p class="finding" id="survey-finding"></p>
 
             <section class="schedule">

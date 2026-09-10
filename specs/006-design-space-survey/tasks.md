@@ -342,3 +342,23 @@ Task: "Implement contoursOf by marching squares in src/survey.js"   # T014
 - Every checkpoint is a place the work can stop and still be worth having
 - The repository has no linter and no test runner: the harnesses are the gate, and the
   constitution treats several of them as mandatory
+
+---
+
+## Phase 12: Convergence
+
+Remaining work found by assessing the code against `spec.md`, `plan.md` and this file.
+No constitution MUST principle is violated. Nothing above this line was changed.
+
+- [X] T095 Carry the readings taken at each traverse stop into `TraverseStop` in `src/main.js`'s `recordTraverse`, which passes `readings: null` on every call, so a restored stop arrives with the figures that were read at it per FR-038 (partial)
+- [X] T096 Make every design the desk has stood on restorable, not only the stops whose values fall inside the current extent with a survey open, and give the traverse a keyboard route to match its pointer one, in `src/main.js` per FR-038 and FR-049 (partial)
+- [X] T097 Add the control that narrows an axis extent in `index.html` and `src/main.js`: `axisFor`, `openSurvey` and the `sv` codec all carry `from` and `to` already, so an extent is currently reachable only by hand-editing a link, per FR-006 (partial)
+- [X] T098 Let the reader reach the whole ranking rather than the top twenty of thirty-seven in `renderPull`'s `measured.slice(0, 20)` in `src/main.js` per FR-025 (partial)
+- [X] T099 Score the ground that separates two very different readings in `refineOrder` in `src/survey.js`, which today ranks steepness against `survey.readings[0]` alone, per FR-010 (partial)
+- [X] T100 List a control with no numeric face in the axis chooser, greyed with `refusesSweep`'s own sentence, rather than omitting it from `axisOffers` in `src/main.js`, so the refusal a reader meets is the one the studies give, per FR-003 (partial)
+- [ ] T101 Run gate 8 of quickstart.md by hand in a foreground browser at 390 x 640, in both themes, in monochrome and under forced colours, confirming measured, inferred and unsurveyed ground stay distinguishable, per SC-007, SC-009 and FR-048 (missing). Automation cannot reach this: the browser tool reports a successful resize while the viewport stays at 1440, and monochrome and forced colours are OS settings
+- [ ] T102 Take SC-001's 5 s and 30 s and SC-002's 10 percent live cadence in a **foreground** tab per SC-001, SC-002 and Constitution VI (missing). Every figure taken so far landed within 10 ms of a whole second, because Chrome clamps background-tab timers to 1 Hz, so those numbers measure the throttle rather than the survey
+- [ ] T103 Run the instance-reuse half of SC-005a in the browser — cold boot a link and read it, then solve the same link as a warm session's tenth run, and compare — per SC-005a and FR-026a (partial). `repeatability.mjs` proves determinism over 20 runs and asserts that Node refuses reuse outright, which is why this half cannot be run there
+- [X] T104 Wire or drop `createRelief`'s `onPick` in `src/relief.js`, which is accepted, stored and never called, and which no caller passes, per contracts/relief-module.md (unrequested)
+- [X] T105 Use or drop `axesFrom` in `src/pull.js`, exported and imported into `src/main.js` but never called, since `nameSurveyAxis` does the work directly, per contracts/pull-module.md and FR-028 (unrequested)
+- [X] T106 Give `surveyStacked()`'s read-back of `--survey` a consumer or remove it with `surveyLayout()` in `src/main.js`, since nothing asks which layout E-02 got, per FR-050 (unrequested)

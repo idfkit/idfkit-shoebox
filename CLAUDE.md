@@ -1857,6 +1857,51 @@ which is why the survey is grey. `createRelief` returns `null` where no context
 can be had and the caller states the loss in place; every reading is on the
 plan and in the schedule already, so what is lost is the shape and nothing else.
 
+**The traverse is a record of the desk, not of the survey.** It is written by
+`commit` at the end of every gesture and by `patchChannel`, so a design reached
+with the sliders is on it whether or not a ground is cut, and clearing the
+survey does not clear it — only a station change does, because then every
+reading at every stop is of another city's weather. Three things about it are
+not obvious:
+
+- **A stop's readings cannot be handed to its constructor.** A stop is recorded
+  at the end of the gesture that reached it, which is *before* the desk has
+  been solved. `landTraverseReadings` fills them from the solve, matching on
+  the run's own snapshot rather than on live `params`: an annual run takes the
+  best part of a second and the reader may have moved on twice, so a stop
+  taking whichever readings landed next would carry another building's numbers.
+  `TraverseStop` is frozen, so the entry is replaced rather than mutated.
+- **The desk the sheet opened on has no stop until the reader leaves it**,
+  because `recordTraverse` is called on a *move* — and the boot solve, the one
+  run that describes it, lands before any stop exists. The traverse is seeded
+  from that run instead, and only from an empty traverse: a later run matching
+  no stop is a stale solve of a desk already left.
+- **A design revisited moves to the end rather than being added again.** A
+  traverse is a path and a path may double back, but the record exists to be
+  restored from and a second row for one design offers nothing the first does
+  not — and both of them answered to "you are here", which is one claim too
+  many.
+
+**The list is the complete statement; the marks on the plan are the shortcut.**
+The plan can only draw the stops whose values fall inside the extent the ground
+was cut over, and draws nothing at all with no survey open, so a design walked
+to and then narrowed past would vanish from the record. Same arrangement the
+boundary key keeps against the axonometric: three of six surfaces are
+clickable there and the key carries all six. It is also where the keyboard
+reaches them, because a table row already has a tab stop and a mark on an SVG
+would need one apiece.
+
+**The extent boxes are `quantityField`s and they exposed two things.** A field
+built and appended alone stands empty — every other caller on this sheet calls
+`show()` from its own redraw — and, more seriously, `renderSurveyChoose` rebuilt
+the whole chooser on **every landed sample**, a hundred and forty-four times
+over one ground. `host.textContent = ''` destroys the node the reader is typing
+into, so an extent typed while the ground filled lost its focus, its `took`
+value and therefore the keystrokes, and committed nothing silently.
+`field.js` guards its own `show()` against a redraw writing over a field;
+nothing can guard a field against being deleted. The chooser is now redrawn
+only when its own signature moves.
+
 **Things that cost real debugging:**
 
 - **`.survey-body` sets `display: grid`, which beats `[hidden]`.** An author
@@ -1935,7 +1980,7 @@ output twenty times and report perfect agreement. That trap is closed by
 asserting the refusal outright. The harnesses therefore run **one EnergyPlus
 per process**, about 1.8 s each; the reuse half is a browser gate.
 
-**Transfer:** 19,519 bytes of brotli added against SC-012's 60 KB ceiling.
+**Transfer:** 21,837 bytes of brotli added against SC-012's 60 KB ceiling.
 `src/model.js` is untouched and no new `Output:Variable` is requested anywhere,
 which discharges the output-budget requirement outright.
 

@@ -1077,26 +1077,44 @@ export function fallStep(survey, from, { visited = null, reading = survey.readin
 /**
  * The order to fill the fine ground in, steepest and nearest first (FR-010).
  *
- * Two terms, and the argument for each is about what the reader is looking at
- * rather than about information theory. **Steepness first**, because flat
- * ground is already described by the points around it — a run there confirms
- * what the contours already say, where a run on a slope is a run that can move
- * a contour. **Proximity to the stance second**, because the reader is
- * standing there and every relative reading on this sheet — the pull, the free
- * exchange, the region where both readings improve — is taken against it, and
- * three of those refuse outright until the ground around the stance is dense.
+ * Three terms, and the argument for each is about what the reader is looking
+ * at rather than about information theory.
+ *
+ * **Steepness first**, because flat ground is already described by the points
+ * around it — a run there confirms what the contours already say, where a run
+ * on a slope is a run that can move a contour.
+ *
+ * **Disagreement second, on a ground carrying two readings.** Where one
+ * reading is rising and the other falling, the ground between two measured
+ * points holds a trade the survey has not yet found, and that is the most
+ * interesting position on the whole lattice — it is the thing US4 exists to
+ * name. Scored on the first reading alone (which is what this did at first)
+ * that ground is invisible: a position can be perfectly flat in demand and
+ * steep in overheating, and the refinement would rank it last. The two terms
+ * are each normalised by their own reading's range before being multiplied,
+ * because the readings are in different units and neither may be ranked
+ * against the other.
+ *
+ * **Proximity to the stance third**, because the reader is standing there and
+ * every relative reading on this sheet — the pull, the free exchange, the
+ * region where both readings improve — is taken against it, and two of those
+ * refuse outright until the ground around the stance is dense.
  *
  * The weighting is a heuristic and is the one number in this feature no
- * measurement supports. It is written as a ratio of two normalised terms
- * rather than as a magic constant precisely so that it can be argued with:
- * steepness is scaled by the measured range of the ground, so it is unitless
- * whatever the reading, and distance is scaled by the diagonal of the lattice.
+ * measurement supports. It is written as a sum of normalised terms rather than
+ * as magic constants precisely so that it can be argued with.
  */
 export function refineOrder(survey, { reading = survey.readings[0], stance = survey.stanceAt } = {}) {
-  const lattice = latticeOf(survey, reading);
-  const extent = extentOf(lattice);
-  const span = extent && extent.hi > extent.lo ? extent.hi - extent.lo : 1;
-  const { nx, ny } = lattice;
+  // Every reading the ground carries, not only the one the relief is drawn
+  // from: the second is what makes a trade visible, and a trade is the most
+  // interesting thing on a two-reading ground.
+  const carried = survey.readings.includes(reading) ? survey.readings : [reading, ...survey.readings];
+  const grids = carried.map((entry) => {
+    const lattice = latticeOf(survey, entry);
+    const extent = extentOf(lattice);
+    return { entry, span: extent && extent.hi > extent.lo ? extent.hi - extent.lo : 1 };
+  });
+  const { nx, ny } = latticeOf(survey, reading);
   const diagonal = Math.hypot(nx, ny) || 1;
 
   const wanted = [];
@@ -1104,28 +1122,41 @@ export function refineOrder(survey, { reading = survey.readings[0], stance = sur
     for (let ix = 0; ix < nx; ix += 1) {
       if (survey.at(ix, iy)) continue; // measured, or a gap that is not retried on sight
       // The steepest measured difference across this position's neighbourhood,
-      // which is the best statement available about ground nobody has stood on.
-      let steep = 0;
+      // per reading, which is the best statement available about ground nobody
+      // has stood on. Signed, so that two readings pulling opposite ways can
+      // be told from two pulling together.
+      const slopes = grids.map(() => 0);
       let near = 0;
       for (let dy = -1; dy <= 1; dy += 1) {
         for (let dx = -1; dx <= 1; dx += 1) {
           const a = survey.spotAt(ix + dx, iy + dy);
           const b = survey.spotAt(ix - dx, iy - dy);
           if (a) near += 1;
-          if (!a || !b) continue;
-          const va = reading.valueOf(a.readings);
-          const vb = reading.valueOf(b.readings);
-          if (va === null || vb === null) continue;
-          steep = Math.max(steep, Math.abs(va - vb) / span);
+          if (!a || !b || (!dx && !dy)) continue;
+          grids.forEach(({ entry, span }, at) => {
+            const va = entry.valueOf(a.readings);
+            const vb = entry.valueOf(b.readings);
+            if (va === null || vb === null) return;
+            const slope = (va - vb) / span;
+            if (Math.abs(slope) > Math.abs(slopes[at])) slopes[at] = slope;
+          });
         }
       }
+      const steep = Math.abs(slopes[0]);
+      // Two readings moving opposite ways across this position. Zero on a
+      // one-reading ground, and zero where both move together, so this term
+      // only ever adds where there is a trade to find.
+      const splits =
+        slopes.length > 1 && slopes[0] * slopes[1] < 0
+          ? Math.min(Math.abs(slopes[0]), Math.abs(slopes[1]))
+          : 0;
       const distance = stance ? Math.hypot(ix - stance.ix, iy - stance.iy) / diagonal : 0.5;
       // A position with no measured neighbour at all cannot be scored on
       // steepness and would otherwise sort last for ever, which on a ground
       // whose coarse pass failed would leave the whole survey unmeasured. The
       // proximity term carries it.
-      const score = steep * 2 + (1 - distance) + (near ? 0 : -0.25);
-      wanted.push({ ix, iy, score, steep, distance });
+      const score = steep * 2 + splits * 2 + (1 - distance) + (near ? 0 : -0.25);
+      wanted.push({ ix, iy, score, steep, splits, distance });
     }
   }
   wanted.sort((left, right) => right.score - left.score || left.iy - right.iy || left.ix - right.ix);
