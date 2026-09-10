@@ -4591,6 +4591,19 @@
         letter-spacing: 0.11em;
         fill: var(--ink-3);
       }
+      /* The unit on the height's name, set apart from the capitals round it:
+         kWh/m² uppercased reads as a different unit. */
+      .relief-lettering .relief-unit {
+        font: 400 8px/1 var(--mono);
+        text-transform: none;
+        letter-spacing: 0;
+      }
+      /* The height scale's rule and ticks, in the ink the base's own axis
+         rules are drawn in. */
+      .relief-lettering line {
+        stroke: var(--ink-3);
+        stroke-width: 0.75;
+      }
 
       /* The measured ground, the inference over it, and the ground nobody has
          stood on — told apart three ways, because colour may not be the only

@@ -575,13 +575,25 @@ export function createRelief(host, { onLost = null } = {}) {
     const ny = mesh.ny - 1;
     const place = (lattice) => project(toWorld(lattice, scale), projection, viewMatrix, w, h);
 
-    const label = (at, text, cls) => {
+    // Where every figure already stands, so the height scale's own figures
+    // can give way to the base's. The scale stands off the corner the two
+    // base axes meet at from some viewpoints, and measured on the oblique its
+    // lowest figure printed straight over the glazing axis's far stop.
+    const taken = [];
+    const label = (at, text, cls, anchor = 'middle') => {
+      taken.push(at);
       const node = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       node.setAttribute('x', at[0]);
       node.setAttribute('y', at[1]);
       node.setAttribute('class', cls);
-      node.setAttribute('text-anchor', 'middle');
+      node.setAttribute('text-anchor', anchor);
       node.textContent = text;
+      overlay.append(node);
+      return node;
+    };
+    const stroke = (x1, y1, x2, y2) => {
+      const node = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      Object.entries({ x1, y1, x2, y2 }).forEach(([name, value]) => node.setAttribute(name, value));
       overlay.append(node);
     };
 
@@ -615,6 +627,96 @@ export function createRelief(host, { onLost = null } = {}) {
     label(clear([-nx * 0.1, 0, z]), y.from, 'relief-stop');
     label(clear([-nx * 0.1, ny, z]), y.to, 'relief-stop');
     label(clear([-nx * 0.1, ny / 2, z], 26), y.label, 'relief-axis');
+
+    // The height, which had no scale at all. The levels ruled round the cut
+    // were the only vertical measure and none of them said what it measured,
+    // so the block stood a reading up with no word for the reading and no
+    // figure at any level. The scale is drawn here, in the overlay, rather
+    // than as a rule on the block: it stands *beside* the solid, and the
+    // overlay is the one layer nothing in the drawing can occlude.
+    //
+    // It stands on the tallest corner of the block the reader can see: of
+    // the corners the orbit does not put behind the solid, the one the
+    // terrain rises highest at. That is the longest staff the block offers,
+    // and a corner makes the scale an edge of the thing it measures rather
+    // than a ruler held up beside it. It runs from the lowest reading
+    // measured to the highest, the span the terrain's heights are normalised
+    // over, ticked at the levels the cut is ruled at. Above a corner lower
+    // than the highest reading it carries on as a bare staff, because a scale
+    // that stopped at the corner would leave the top levels unread.
+    const height = held.axes.z;
+    // Each corner vertical with the reading the terrain stands at there. A
+    // corner with no measurement has no ground to stand a staff on.
+    const corners = [[0, 0], [nx, 0], [0, ny], [nx, ny]].map(([cx, cy]) => {
+      const at = cx + cy * mesh.nx;
+      const value = mesh.measuredFlags[at] ? mesh.positions[at * 3 + 2] : null;
+      return { cx, cy, value, base: place([cx, cy, 0]) };
+    });
+    // Seen from above in parallel projection, the further a point on one
+    // level the higher it lands on screen, so the corner out of sight is
+    // simply the highest — and both of them where the orbit looks square at a
+    // face and two corners stand behind it.
+    const back = Math.min(...corners.map((corner) => corner.base[1]));
+    const staff = corners
+      .filter((corner) => corner.base[1] > back + 0.5 && corner.value !== null)
+      .reduce((best, corner) => (!best || corner.value > best.value ? corner : best), null);
+    if (height && held.extent && staff) {
+      const { lo, hi } = held.extent;
+      const span = hi > lo ? hi - lo : 1;
+      const up = (value) => (value - lo) / span;
+      const { cx, cy } = staff;
+      const foot = place([cx, cy, 0]);
+      const top = place([cx, cy, 1]);
+      // Straight down the staff foreshortens to nothing, and a scale with no
+      // length measures nothing, so plan down draws none.
+      if (foot[1] - top[1] >= 24) {
+        // Figures on the side of the corner facing away from the drawing's
+        // centre, so they stand off the block rather than across its faces.
+        const side = foot[0] < middle[0] ? -1 : 1;
+        const anchor = side < 0 ? 'end' : 'start';
+        const sx = foot[0];
+        stroke(sx, foot[1], sx, top[1]);
+        // Both ends capped, so it reads as a measured span, lowest to
+        // highest, rather than as a line that happens to stop.
+        stroke(sx - 3, foot[1], sx + 3, foot[1]);
+        stroke(sx - 3, top[1], sx + 3, top[1]);
+        // A tick at every level, and a figure only where it clears both the
+        // figure below it and every stop already lettered on the base — the
+        // plan's own rule for its contour figures, which give way to the
+        // spot heights. The tick stands regardless, so a level whose figure
+        // gave way is still counted.
+        const room = (at) =>
+          taken.every((prior) => Math.abs(prior[1] - at[1]) > 10 || Math.abs(prior[0] - at[0]) > 36);
+        //
+        // One tick per contour on Fig. 2: the ticks are the plan's own
+        // `levels`, so the two drawings count the same interval, and each
+        // meets the level ruled round the cut at the corner it stands on.
+        // Every fifth is longer, the way the plan draws every fifth contour
+        // heavier, so the staff can be counted in fives without a figure. At
+        // three pixels the ticks were there and could not be seen, and the
+        // staff read as though it counted every other contour — only the
+        // figures that had cleared were visible.
+        const interval = height.ticks.length > 1 ? height.ticks[1].value - height.ticks[0].value : 1;
+        for (const tick of height.ticks) {
+          const at = up(tick.value);
+          if (at <= 0 || at >= 1) continue;
+          const ty = place([cx, cy, at])[1];
+          const major = Math.round(tick.value / interval) % 5 === 0;
+          stroke(sx, ty, sx + side * (major ? 8 : 5), ty);
+          const figure = [sx + side * 11, ty + 3];
+          if (room(figure)) label(figure, tick.text, 'relief-stop', anchor);
+        }
+        const name = label([sx + side * 6, top[1] - 9], height.label, 'relief-axis', anchor);
+        // The unit in its own run, because the name is set in capitals and
+        // kWh/m² in capitals is a different unit.
+        if (height.unit) {
+          const unit = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+          unit.setAttribute('class', 'relief-unit');
+          unit.textContent = ` ${height.unit}`;
+          name.append(unit);
+        }
+      }
+    }
   }
 
   return {

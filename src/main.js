@@ -10011,8 +10011,10 @@ function drawRelief(sv) {
     return;
   }
 
-  const lattice = latticeOf(sv, sv.readings[0]);
+  const reading = sv.readings[0];
+  const lattice = latticeOf(sv, reading);
   const extent = extentOf(lattice);
+  const levels = levelsFor(lattice);
   const at = sv.standingAt(params);
   const under = at && at.on ? sv.spotAt(at.ix, at.iy) : null;
   const block = blockOf(lattice);
@@ -10025,7 +10027,7 @@ function drawRelief(sv) {
     // The same levels the plan contours, ruled around the cut so the side of
     // the block is a vertical scale rather than a wash — and the arrises, so
     // an oblique says which way each corner folds.
-    strata: strataOf(block, levelsFor(lattice)),
+    strata: strataOf(block, levels),
     arrises: arrisesOf(block),
     // The pin, only where the desk is standing on a design this survey has
     // actually run. Between two measured points there is no height to stand a
@@ -10035,6 +10037,15 @@ function drawRelief(sv) {
     axes: {
       x: { label: labelFor(sv.x.key), from: stopOf(sv.x, 0), to: stopOf(sv.x, sv.x.count - 1) },
       y: { label: labelFor(sv.y.key), from: stopOf(sv.y, 0), to: stopOf(sv.y, sv.y.count - 1) },
+      // The reading the block stands up, which is the drawing's third axis and
+      // had no word on it anywhere. Its figures are the levels the cut is
+      // ruled at, lettered exactly as the plan letters its contours, and the
+      // unit rides the name once — the rule `stopOf` keeps for the other two.
+      z: {
+        label: reading.label,
+        unit: reading.unit,
+        ticks: levels.map((level) => ({ value: level, text: level.toFixed(reading.digits) })),
+      },
     },
   });
 

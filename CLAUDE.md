@@ -2058,6 +2058,19 @@ the cut faces down every silhouette edge, and the base those cells laid flat.
   outside is.
 - **The base carries the axis furniture**, because it is the one plane in the
   drawing that is flat, known, and carrying no reading.
+- **The height has a scale of its own**, which it went without for a while:
+  the ruled levels were the only vertical measure and nothing said what they
+  measured. It is SVG in the overlay, standing on the tallest corner of the
+  block the reader can see: of the corners the orbit does not hide, the one
+  the terrain is highest at. The hidden corner needs no camera maths — in
+  parallel projection from above, the back corner of the base is the one
+  highest on screen (both of them when a face is seen square). The staff runs
+  from the lowest measured reading to the highest, carrying on above a lower
+  corner so the top levels are not left unread, ticked at the ruled levels
+  and lettered as the plan letters its contours, with its figures on the side
+  facing away from the block and giving way to the base's stops. Plan down
+  draws none, because a vertical seen from above has no length. The unit is its own `tspan`, since
+  the axis names are set in capitals and kWh/m² in capitals is another unit.
 - **The pin stands proud of the terrain rather than down through it.** Run from
   the base to the surface — which is what a pin through a solid ought to be —
   the shaft is inside the block at every viewpoint, the depth test hides all of
