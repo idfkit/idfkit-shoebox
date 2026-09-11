@@ -86,8 +86,9 @@ import { PullReading, axesFrom, entryFrom, pullProbes, pullReadingFor, rankPull 
 import { createEnginePool, poolLimit } from './pool.js';
 import { createStudyScheduler, makeStudyJob } from './scheduler.js';
 import { runBundle } from './bundle.js';
-import { REVISION, revisionHref } from './version.js';
+import { ENERGYPLUS_VERSION, REVISION, revisionHref } from './version.js';
 import { readSignature, writeSignature } from './sign.js';
+import { errors, provide, trail } from './report.js';
 import { END_USES, GROUPS, computeBill, meterTotal } from './bill.js';
 import { assume, isRate, placeName, resolveRates } from './rates.js';
 import {
@@ -174,8 +175,6 @@ const FOLD = Object.freeze(
     }).map(([key, text]) => [key, withinBudget(BUDGETS.SUMMARY, `fold summary ${key}`, text)]),
   ),
 );
-
-const ENERGYPLUS_VERSION = '26.1.0';
 
 const $ = (id) => document.getElementById(id);
 
@@ -1461,6 +1460,14 @@ let lastRun = null; // { eso, environments, hours, annual }
  */
 let lastBundle = null;
 
+/**
+ * The last attempt's severe and fatal errors, as the engine parsed them, for a
+ * report. Kept beside `lastBundle` rather than on it, so the bundle's manifest
+ * is untouched, and read from the parsed entries rather than by matching the
+ * console's `** Severe  **` markers, whose spacing is EnergyPlus's to change.
+ */
+let lastEngineErrors = [];
+
 /** The published card with the Tariff strip's assumptions written over it. */
 const rateCard = () => assume(resolveRates(station), params);
 
@@ -2397,6 +2404,9 @@ function commit(key, value, done = false) {
     const priced = PRICED_KEYS.has(key);
     beginGesture({ priced });
     params[key] = value;
+    // Lettered by the declaration, so the trail names a control exactly as
+    // the desk does; keyed, so a drag collapses to where it came to rest.
+    trail.push('control', `${labelFor(key)} ${formatValue(key, value)}`, { key });
     syncSlider[key]?.();
     desk?.sync(key);
     // What this control's value settles besides itself, asked of the
@@ -3347,6 +3357,7 @@ function patchChannel(id, off) {
   tour?.note('patch');
   beginGesture();
   bypass[id] = off;
+  trail.push('patch', `${CHANNELS.find((c) => c.id === id).name} patched ${off ? 'out' : 'in'}`);
   // Taking a channel in by hand is an answer to the solo question too.
   if (solo && solo !== id) {
     solo = null;
@@ -3872,6 +3883,7 @@ async function choose(row, pick, sizing = 'No') {
 
 async function attach(row, pick, sizing) {
   const picked = pick.station;
+  trail.push('station', `${siteName(picked)}, ${siteRegion(picked)}, WMO ${picked.wmo ?? '—'}`);
   const studyContext = desk?.captureStudyContext();
   inflight?.abort();
   inflight = new AbortController();
@@ -3889,6 +3901,8 @@ async function attach(row, pick, sizing) {
   // which is the one it is still lettered with.
   const refuse = (what, reason) => {
     const message = `${siteName(picked)} ${what}: ${reason}`;
+    trail.push('refusal', `Station refused: ${message}`);
+    lastStationRefusal = message;
     site.classList.remove('picked');
     $('site-main').textContent = 'Choose a weather location';
     $('site-sub').textContent = 'Any of 17,292 TMYx stations, for a full 8,760-hour year';
@@ -4175,7 +4189,11 @@ function updatePermalink() {
  * happened to the link.
  */
 let refusalNote = null;
+// The last station refusal's sentence, so a report can say a station was
+// refused while that sentence is still the one standing in the status line.
+let lastStationRefusal = null;
 function refuseLink(message) {
+  trail.push('refusal', message);
   linkAttachPending = false;
   syncSweepGate();
   stopAuto();
@@ -6252,6 +6270,29 @@ mountChangelog($('changelog-body'), CHANGELOG_SOURCE);
 // — impossible to read at all.
 let quiet = false;
 
+/**
+ * State a boot load that failed, and stop the boot.
+ *
+ * Until this existed, a missing engine or schema bundle stopped the module at
+ * a top-level await with nothing on the sheet but the last progress line, so
+ * a reader saw "Compiling engine" for ever and a report had nothing to say.
+ * The refusal goes in the status line where every other one does, is recorded
+ * once for the report, and is marked `reported` so the error trap in
+ * `report-sheet.js` does not list the same failure a second time when the
+ * rejection surfaces.
+ */
+function bootFailure(what, error) {
+  statusEl.className = 'status bad';
+  statusEl.textContent = `The ${what} could not be loaded: ${error?.message ?? error}`;
+  errors.record({ source: 'boot', message: statusEl.textContent });
+  const reported = error instanceof Error ? error : new Error(String(error));
+  reported.reported = true;
+  return reported;
+}
+
+// The handler is attached as the promise is made rather than where it is
+// awaited further down: rejected before anything awaits it, it would surface
+// as an unhandled rejection first and be recorded twice.
 const enginePromise = createEnergyPlus({
   // `BASE_URL` rather than a leading slash: a PR preview is built with
   // `--base=/<pr>/` and served from that subdirectory, and an absolute path
@@ -6263,14 +6304,18 @@ const enginePromise = createEnergyPlus({
     setPhase(phase);
     statusEl.textContent = message;
   },
+}).catch((error) => {
+  throw bootFailure('engine', error);
 });
 
 // `predev`/`prebuild` stage the bundle into `public/schemas/`; `httpSource`
 // resolves the path against the document and inflates the `.gz` files, or not,
 // depending on what the host has already done to them.
-const schema = await new SchemaBundle(httpSource(`${import.meta.env.BASE_URL}schemas/`)).load(
-  ENERGYPLUS_VERSION,
-);
+const schema = await new SchemaBundle(httpSource(`${import.meta.env.BASE_URL}schemas/`))
+  .load(ENERGYPLUS_VERSION)
+  .catch((error) => {
+    throw bootFailure('schema bundle', error);
+  });
 const model = buildModel(schema);
 
 // Everything the drawing asserts is now read back off the model, so the sheet
@@ -6285,9 +6330,13 @@ DATUMS = designDayDatums(model);
 // stand and be read.
 let linked = null;
 let linkError = null;
+// The link exactly as it arrived, kept before the decode: a refusal clears
+// the address bar, and a report of a refused link has to carry the link.
+const arrivedHash = location.hash.slice(1);
 if (location.hash.length > 1) {
   try {
     linked = decodeState(location.hash.slice(1));
+    trail.push('link', 'Opened on a scheme link');
     Object.assign(params, linked.params);
     Object.assign(bypass, linked.bypass);
     studyQuantity = linked.quantity ?? null;
@@ -6386,6 +6435,7 @@ async function solve() {
   const described = describeDesk({ doc: model, params: snapshot, state: modelState });
   const live = continuous();
   quiet = live;
+  trail.push('run', epwText ? 'annual solve started' : 'design-day solve started', { key: 'run' });
 
   clearLog();
   // Every solve leaves the previous result standing until the new one lands —
@@ -6444,6 +6494,7 @@ async function solve() {
     // Nothing reached the engine, so nothing on the sheet is going to be
     // replaced: the previous run's readings and its title block both come
     // down, leaving the reason standing alone.
+    lastEngineErrors = [];
     clearResults();
     statusEl.className = 'status bad';
     statusEl.textContent = `The run could not be attempted: ${error.message}`;
@@ -6468,6 +6519,9 @@ async function solve() {
   const errs = result.err?.entries ?? [];
   const severe = errs.filter((e) => e.severity === 'severe' || e.severity === 'fatal').length;
   const warnings = errs.filter((e) => e.severity === 'warning').length;
+  lastEngineErrors = errs
+    .filter((e) => e.severity === 'severe' || e.severity === 'fatal')
+    .map((e) => `[${e.severity}] ${String(e.message).replace(/\s+/g, ' ').trim()}`);
   set('t-exit', String(result.exitCode), result.exitCode === 0 ? '' : 'flag');
   set('t-err', `${severe} / ${warnings}`, severe ? 'flag' : '');
 
@@ -10630,3 +10684,98 @@ if (linkError) {
   restoreLinkedStudies(linked);
   restoreLinkedSurvey(linked);
 }
+
+/* ══ what a report reads off this sheet ══════════════════════════════════ */
+
+/** A filesystem-safe word or two, for the names of the files a report saves. */
+const slug = (text) =>
+  String(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40) || 'sheet';
+
+/**
+ * The facts only this module holds, handed to the report sheet each time it
+ * opens (`src/report.js`, the registry): the link, what the sheet is showing,
+ * and the last attempt's errors. Everything is read from the state the sheet
+ * already letters from, never from a second copy of it.
+ *
+ * Registered here, at the foot of the module, because it reads state declared
+ * all the way down: registered any earlier, a report opened on a boot that
+ * stopped half way would reach a `let` still in its temporal dead zone and
+ * throw. Until this line runs, the report says the sheet had not finished
+ * starting, which is then the truth.
+ */
+function describeScreen() {
+  const failed = statusEl.classList.contains('bad');
+  const status = statusEl.textContent.trim() || '—';
+  const stale = Boolean(solvedShape) && solvedShape !== shapeKey(params);
+  const readings = lastBundle ? `from ${lastBundle.annual ? 'an annual' : 'a design-day'} run` : 'none yet';
+  const standing = pumping ? 'run in flight' : !lastBundle ? null : stale ? 'stale, from an earlier desk' : 'current';
+
+  const inView = [];
+  if (refusalNote) inView.push(`Link refused: ${refusalNote}`);
+  if (lastStationRefusal && statusEl.textContent === lastStationRefusal) inView.push(`Station refused: ${lastStationRefusal}`);
+  // In view means drawn: a strip inside a closed console has no client rects,
+  // and a blocking note nobody could see is not what the reader was looking at.
+  for (const strip of document.querySelectorAll('.strip.blocked')) {
+    if (!strip.getClientRects().length) continue;
+    const name = strip.querySelector('.strip-name')?.textContent.trim() || '—';
+    inView.push(`${name} blocked: ${strip.querySelector('.strip-blocked')?.textContent.trim() || '—'}`);
+  }
+
+  const progress = studyScheduler?.progress();
+  const studies = !progress ? '—' : progress.jobs ? `${progress.done} of ${progress.total} samples solved` : 'none running';
+  const coverage = survey ? coverageOf(survey) : null;
+  const surveyed = coverage ? `${coverage.measured} of ${coverage.wanted} measured, ${coverage.unsurveyed} unsurveyed` : 'none running';
+
+  const hash = schemeHash();
+  const warnings = (n) => (n == null ? '— warnings' : `${n} warning${n === 1 ? '' : 's'}`);
+  return {
+    stem: `${slug($('t-location').textContent)}-${lastBundle?.annual ? 'annual' : 'design-days'}`,
+    // After a refusal the desk is back at its defaults, so its link would
+    // report a building the reader never asked for; the link they did ask for
+    // is carried instead, as typed, with the reason the sheet gave.
+    desk:
+      refusalNote && arrivedHash
+        ? [`- Refused link: \`${arrivedHash}\``, `- Reason given: ${refusalNote}`]
+        : [`- Link: ${schemeUrl()}`],
+    deskSummary:
+      refusalNote && arrivedHash
+        ? 'A refused link'
+        : hash
+          ? `${hash.split('&').length - 1} settings off the defaults`
+          : 'The default desk',
+    screen: [
+      `- Status: ${status} (${failed ? 'failure' : 'normal'})`,
+      `- Readings: ${readings}${standing ? `; ${standing}` : ''}`,
+      inView.length ? '- In view:' : '- In view: nothing refused or blocked',
+      ...inView.map((line) => `  - ${line}`),
+      `- Studies: ${studies}`,
+      `- Survey: ${surveyed}`,
+    ],
+    screenSummary: failed ? status : readings,
+    log: lastBundle
+      ? [
+          `- Last run: ${lastBundle.severe ?? '—'} severe, ${warnings(lastBundle.warnings)}, exit ${lastBundle.exitCode ?? '—'}`,
+          `- Failure: ${lastBundle.failure ?? '—'}`,
+        ]
+      : ['No run has been made.'],
+    fence: lastBundle && lastEngineErrors.length ? lastEngineErrors : null,
+    logSummary: lastBundle ? `${lastBundle.severe ?? '—'} severe, ${warnings(lastBundle.warnings)}` : 'No run yet',
+  };
+}
+
+provide('screen', describeScreen);
+provide('refusedLink', () => (refusalNote && arrivedHash ? { raw: arrivedHash, reason: refusalNote } : null));
+
+// The run bundle the Download button already makes, offered from the report
+// signed or unsigned. The signature is the reader's own (`sign.js` keeps it off
+// the link for exactly this reason), so it reaches a public report only when
+// they choose the signed files.
+provide('runFiles', () => ({
+  available: Boolean(lastBundle),
+  signed: Boolean(signature),
+  build: (withSignature) => runBundle({ ...lastBundle, author: withSignature ? signature : null }),
+}));

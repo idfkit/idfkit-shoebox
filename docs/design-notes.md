@@ -2259,6 +2259,83 @@ the same journey or the words drift off the corners they name.
 `src/model.js` is untouched and no new `Output:Variable` is requested anywhere,
 which discharges the output-budget requirement outright.
 
+### Feedback reports and triage (src/report.js, src/report-sheet.js, .github/workflows/triage.yml)
+
+A reader reports from the sheet, and the report carries what they were looking
+at. The link and the build reproduce the desk exactly, so the report does not
+ship the model; what it adds is what only the reader's machine saw: the engine's
+severe and fatal lines, the status line and every refusal or blocking reason in
+view, the browser and layout, the errors the page caught, and the last twenty
+actions. Specification and research are in `specs/009-feedback-reports/`.
+
+**The report leaves the machine at one press.** GitHub's prefill carries the
+title and body in the new-issue address, so the tracker receives the text when
+the tab opens, before the reader submits. The button says so where it is
+pressed, and the page itself makes no request. That is the reading of
+Principle I the spec recorded: sharing, like copying the scheme link.
+
+Measured and documented limits the hand-off is built around:
+
+- **No `labels=` in the address.** GitHub documents that the parameter needs
+  permission to label and that without it the address answers 404. A reader is
+  almost never a collaborator. Triage labels afterwards.
+- **5,500 characters, trimmed from the oldest log line.** GitHub publishes no
+  limit. Measured anonymously against `github.com/cli/cli/issues/new`: a
+  redirect to sign-in up to about 6,050 characters, 500 at 7,051, 414 from
+  9,051. The trim is stated in the body and the saved report file has every
+  line.
+- **Copied at the same press.** With the GitHub mobile app installed, a
+  prefilled link opens with every field blank (acknowledged by GitHub staff,
+  unfixed), so the phone path is one paste.
+- **`window.open` without `noopener`.** With it, the call answers null whether
+  or not the tab opened, and a blocked tab could not be told apart. The opener
+  is cut at once instead.
+- **Screen capture is desktop only.** `getDisplayMedia` exists in desktop
+  Chrome, Edge, Firefox and Safari and in no mobile browser; the picture offer
+  says so rather than failing on a press. `ImageCapture.grabFrame` is missing
+  from Firefox, so one frame is drawn from a `<video>`.
+
+**Why the sheet is its own module entry.** The engine and schema loads are
+top-level awaits in `main.js`, and until this feature a failure there stopped the
+module with nothing on the sheet but the last progress line. `report-sheet.js`
+loads first from its own script tag, traps `error` and `unhandledrejection`, and
+wires the Report button, so the report stands when the sheet does not. In the
+production build Vite folds both entries into one chunk, and the trap's code
+precedes the engine load in it. `main.js` hands the report its facts through a
+registry at the very foot of the module: registered earlier, a report opened on
+a boot that stopped half way would reach a `let` in its temporal dead zone. The
+boot loads now carry a handler, attached as each promise is made so a rejection
+is not recorded twice, that states the failure in the status line.
+
+**The trail coalesces within four entries, not only back to back.** A drag with
+auto-solve on is control, run, control, run; collapsing only consecutive
+repeats left twenty entries of one slider.
+
+**Triage is two steps, and the split is the security boundary.** The step that
+reads the issue runs Claude through `anthropics/claude-code-action` with no
+tools, a read-only `GITHUB_TOKEN` and a JSON schema; the idfkit-bot token is
+minted after it ends, and `.github/scripts/triage-apply.cjs` checks every field
+against the repository before labelling. Findings that shaped the workflow:
+
+- **`--disallowedTools "*"`, not `--tools ""`.** The action's argument parser
+  treats an empty next argument as no value, so the second arrives at the CLI as
+  a bare flag.
+- **App tokens trigger further runs**, unlike `GITHUB_TOKEN`, and the action
+  rejects bot actors. The job is gated on the sender not ending in `[bot]`, or
+  idfkit-bot's own `enhancement` label would start the starter path on every
+  feature request.
+- **`steps.claude.outcome`, not the action's conclusion.** With
+  `continue-on-error`, a failed step reports its conclusion as success; the
+  apply step would have read a failure as a verdict.
+- **Principle V's name contains `@idfkit`**, which would mention the
+  organisation from a starter comment; model text and principle names are both
+  escaped before posting.
+- **`issues` events run the default branch's workflow**, so a change to triage
+  is tested from its branch with `workflow_dispatch`.
+
+The subscription token (`CLAUDE_CODE_OAUTH_TOKEN`, from `claude setup-token`)
+lasts a year and is tied to the maintainer who made it.
+
 ## Invariants that fail quietly
 
 - **`Building.north_axis` is ignored** because `GlobalGeometryRules` declares

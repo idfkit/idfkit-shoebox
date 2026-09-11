@@ -1,0 +1,152 @@
+# Sort every new issue without a maintainer: one bucket or "needs a person",
+# the areas it concerns, likely duplicates named, and for a feature request a
+# folded starter paragraph for /speckit-specify. See specs/009-feedback-reports.
+#
+# Two steps, and the split is the security boundary. The step that reads the
+# issue runs Claude with no tools, a read-only GITHUB_TOKEN and nothing else it
+# could write with; its only product is a JSON verdict. The idfkit-bot token is
+# minted after that step has ended, and the apply script checks every field of
+# the verdict against the repository before it labels or comments. On a public
+# repository anyone can write an issue, including one written to steer this
+# job; the worst such an issue can do is mislabel itself.
+#
+# Paid for by a Claude subscription, not metered credits: CLAUDE_CODE_OAUTH_TOKEN
+# is a one-year token from `claude setup-token`, tied to the maintainer who made
+# it, so it is a repository secret rather than an organisation one.
+#
+# `issues` events run the default branch's copy of this file, so a change to it
+# is tested before merge with workflow_dispatch from the branch:
+#   gh workflow run triage.yml --ref <branch> -f issue=<n> -f mode=triage
+name: Triage
+
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number
+        required: true
+        type: number
+      mode:
+        description: triage sorts the issue; starter drafts only the starter paragraph
+        required: true
+        default: triage
+        type: choice
+        options: [triage, starter]
+
+# One run per issue at a time and none cancelled: an issue opened with a label
+# already on it raises both events, and the second must see what the first did.
+concurrency:
+  group: triage-${{ github.event.issue.number || inputs.issue }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  triage:
+    # Never on a bot's event. Labels and comments made with an app token start
+    # further runs, unlike GITHUB_TOKEN's, so without this idfkit-bot's own
+    # `enhancement` label would trigger the starter path on every feature
+    # request, and the action refuses bot actors in any case. A human's
+    # `enhancement` label is the starter path; any other label is not triage's.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (!endsWith(github.event.sender.login, '[bot]') &&
+       (github.event.action == 'opened' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'enhancement')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue }}
+      MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.action == 'labeled' && 'starter' || 'triage') }}
+    steps:
+      # Only what the prompt is built from: the constitution, the guide, the
+      # spec index, the control declaration and the three modules it imports.
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            .specify/memory/constitution.md
+            CLAUDE.md
+            specs
+            src/controls.js
+            src/aperture.js
+            src/tm59.data.js
+            src/copy.js
+            scripts/triage-context.mjs
+            .github
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # The issue reaches the script through the event file and the API, never
+      # through an interpolated `run:` string.
+      - name: Build the prompt
+        id: context
+        run: node scripts/triage-context.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # `--disallowedTools "*"` rather than `--tools ""`: the action's argument
+      # parser drops an empty value, so the second would reach the CLI as a bare
+      # flag. Three turns rather than one, because a verdict that misses the
+      # schema is re-asked for, and whether that costs a turn is undocumented.
+      # `allowed_non_write_users` lets a stranger's issue be read at all; it
+      # needs `github_token`, and this job's token can only read.
+      - name: Read the issue
+        id: claude
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          prompt: ${{ steps.context.outputs.prompt }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_non_write_users: '*'
+          claude_args: >-
+            --model claude-opus-5
+            --max-turns 3
+            --disallowedTools "*"
+            --json-schema '${{ steps.context.outputs.schema }}'
+
+      # Minted only now, after the model has finished, and scoped to issues.
+      - name: Mint app token
+        id: app-token
+        if: always()
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-issues: write
+
+      # Always, so a failed read still ends with the issue marked for a person.
+      # `outcome` rather than the action's own conclusion: with
+      # continue-on-error, a failed step reports its conclusion as success.
+      # The verdict arrives through `env:` and is read from the environment.
+      - name: Apply the verdict
+        if: always() && steps.app-token.outcome == 'success'
+        uses: actions/github-script@v7
+        env:
+          CONCLUSION: ${{ steps.claude.outcome }}
+          OUTPUT: ${{ steps.claude.outputs.structured_output }}
+          FACTS: ${{ steps.context.outputs.facts }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const apply = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/triage-apply.cjs`);
+            await apply.run({
+              github,
+              context,
+              core,
+              mode: process.env.MODE,
+              conclusion: process.env.CONCLUSION,
+              output: process.env.OUTPUT,
+              factsPath: process.env.FACTS,
+              runUrl: process.env.RUN_URL,
+              number: Number(process.env.ISSUE_NUMBER),
+            });
