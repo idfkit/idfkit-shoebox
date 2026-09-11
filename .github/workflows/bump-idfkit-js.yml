@@ -52,6 +52,7 @@ concurrency:
 
 env:
   CONSUMER: idfkit-shoebox
+  LIBRARY: javascript
   GOVERNANCE_LEVEL: governance-2026.18
 
 jobs:
@@ -149,9 +150,42 @@ jobs:
                exit 2 ;;
           esac
 
+      # T119, FR-023: an adoption closes the register's lag only when it reaches the library's current
+      # level, the newest release of any kind. A bump to anything older, a manual dispatch of an earlier
+      # release say, moves the consumer forward and leaves it behind all the same, so the lag stays open.
+      # This step is identical in every consumer's bump workflow; change it everywhere or nowhere.
+      - name: Read whether the adopted level is the library's current level
+        id: current
+        env:
+          ADOPTED: ${{ steps.ver.outputs.version }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, re, urllib.request
+
+          def norm(v):
+              v = v.strip().lower().removeprefix("v")
+              return re.sub(r"[.-]?(alpha|beta|a|b|rc|dev|post)[.-]?(\d*)", lambda m: {"alpha": "a", "beta": "b"}.get(m[1], m[1]) + m[2], v)
+
+          def key(v):
+              base, _, pre = norm(v).partition("rc")
+              nums = [int(x) for x in re.findall(r"\d+", re.split(r"[a-z]", base, maxsplit=1)[0])]
+              return (*nums, 0 if pre else 1, int(pre) if pre.isdigit() else 0)
+
+          if os.environ["LIBRARY"] == "python":
+              data = json.load(urllib.request.urlopen("https://pypi.org/pypi/idfkit/json", timeout=30))
+              versions = [v for v, files in data["releases"].items() if files]
+          else:
+              data = json.load(urllib.request.urlopen("https://registry.npmjs.org/@idfkit%2Fcore", timeout=30))
+              versions = list(data["versions"])
+          current = max(versions, key=key)
+          print(f"current={current}")
+          print(f"is_current={'true' if norm(current) == norm(os.environ['ADOPTED']) else 'false'}")
+          PY
       - name: Read what the register holds for the shoebox
         id: register
         if: inputs.decline_reason == ''
+        env:
+          IS_CURRENT: ${{ steps.current.outputs.is_current }}
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import os, sys
@@ -160,7 +194,9 @@ jobs:
           from consumers import Register
           resolution = Register.load(Path("governance/governance/consumers.toml")).consumer(os.environ["CONSUMER"]).resolution("javascript")
           lag = resolution.lag if resolution else None
-          print(f"lag={lag.kind if lag else ''}")
+          current = os.environ["IS_CURRENT"] == "true"
+          print(f"lag={lag.kind if lag and current else ''}")
+          print(f"held={lag.kind if lag and not current else ''}")
           print(f"issue={(lag.issue or '') if lag else ''}")
           PY
 
@@ -173,6 +209,8 @@ jobs:
           SURFACED: ${{ steps.statements.outputs.surfaced }}
           LAG: ${{ steps.register.outputs.lag }}
           ISSUE: ${{ steps.register.outputs.issue }}
+          HELD: ${{ steps.register.outputs.held }}
+          CURRENT: ${{ steps.current.outputs.current }}
           HAS_TOKEN: ${{ secrets.CONFORMANCE_DISPATCH_TOKEN != '' }}
         run: |
           {
@@ -204,6 +242,12 @@ jobs:
                 echo "gh workflow run record-adoption.yml -R idfkit/idfkit-conformance -f consumer=$CONSUMER -f library=javascript -f outcome=close-lag"
                 echo '```'
               fi
+              echo
+            fi
+            if [ -n "$HELD" ]; then
+              echo "## The register"
+              echo
+              echo "The consumer register records a \`$HELD\` lag for \`$CONSUMER\` ($ISSUE), and this adoption does not close it: \`$VERSION\` is not the library's current level, \`$CURRENT\`. The consumer moves forward and is still behind, so the lag stays open (FR-023)."
               echo
             fi
             echo "Opened automatically by idfkit-js's notify-downstream.yml. It never merges itself."
