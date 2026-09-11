@@ -335,6 +335,32 @@ built out of panes.
   `Number('')` is 0, which would have printed a U-factor of zero over every
   frameless window. The reader treats an empty cell and a lone hyphen as
   absent.
+- **The ratio is the rough opening, and the frame is inside it.** It used to be
+  the glass alone, with `WindowProperty:FrameAndDivider` laid round it
+  afterwards, and a ratio near 0.9 under a frame near 0.2 handed the engine a
+  window bigger than its wall: `Window Surface="ZN001:WALL001:WIN001" area
+  (with frame) is too large to fit on the surface`, then a get-input fatal.
+  The engine's test is **area and nothing else**: the wall less its glass
+  against the ring `(w + 2f)(h + 2f) − wh`. The sill has no part in it, and a
+  frame standing 0.15 m past the head of its wall runs clean. So `sizeOpening`
+  in `src/aperture.js` sizes the rough opening to the ratio and the glass to
+  what is left inside the frame, which makes the fatal unreachable at any ratio
+  below 1. That also makes the ratio what its own `Code limit` mark means,
+  since ASHRAE 90.1 measures fenestration over the rough opening, frame
+  included. An unframed desk is byte-identical to the old rule; a framed one
+  has less glass for the same ratio. `geometryFacts` reads the ratio back as
+  glass plus the engine's own frame ring, and `glazing` stays the glass alone.
+- **A small ratio under a wide frame is refused on the wall.** A 0.10 ribbon on
+  a 3 m wall is a 0.30 m band, and 0.2 m of frame top and bottom leaves no
+  glass. The old rule reported that desk as 0.10 while building 0.23. Now the
+  wall's `Side` greys it and prints the two sides of the opening and the frame
+  width, and `apertureOn` writes no window there. Both ask the one predicate,
+  `openingFor(params, face, ratio).glazes`, asked of the desk rather than of
+  the drawn wall, because a turned wall's length differs from `width` by an
+  ulp and the two could otherwise disagree at the ratio where the answer
+  changes. `opens()` in `controls.js` is the "is there glass on this wall"
+  question for everything downstream: `glazed`, the shading and openable keys,
+  and the Air strip's opening count.
 
 ### Skylights (channel 04)
 
@@ -846,7 +872,7 @@ quantities the sheet letters in its mono face) that `solve` appends ahead of
 the finding's own clauses.
 
 - **What to say is decided by difference.** Ninety-odd controls, and room for
-  three, so the moves are ranked by how far each sits from its own default —
+  two, so the moves are ranked by how far each sits from its own default —
   the same identity diff `encodeState` takes to decide what a permalink must
   carry, for the same reason: what the reader changed is what the reader
   designed. `moved()` scores a scalar by its own travel (`Control.fraction`),
@@ -856,7 +882,7 @@ the finding's own clauses.
   flips outranked it the paragraph described the glass of a building whose
   ideal unit it never mentioned.
 - **Ranking chooses; declaration order reads.** `READING_ORDER` re-sorts the
-  three that won, because "which three" and "in what order" are different
+  two that won, because "which two" and "in what order" are different
   questions — left in rank order the clauses composed by luck, and a site
   clause, a mechanism and a caveat about the whole run do not join in any
   order you please.
@@ -904,6 +930,12 @@ the finding's own clauses.
 - The module is DOM-free and free of the network — the station arrives as
   `place: { name, zone }`, already read — so the Node harness can assert the
   sentences over documents it builds itself.
+- **Two moves and no station, to fit sixty words.** The description and the
+  finding share one paragraph held to sixty words together (`DESCRIPTION` in
+  `src/copy.js`). At three moves it ran seventy to ninety, so `MOVES` is two;
+  and `main.js` no longer passes `place`, because the title block's Location
+  and the site picker's climate zone already letter the station a few
+  centimetres above. `describeDesk` still accepts it.
 
 **A plan key's four walls are four subjects, not one.** The `Facade` controls —
 window-to-wall ratio and overhang projection — own a key per wall, so each wall
@@ -1001,7 +1033,7 @@ next visit, and setting it aside folds it to a one-line row that still reads.
   than none — treat updating the general notes as part of any feature's
   definition of done, and check them whenever a modification to the
   onboarding itself is requested.
-- **Bump the storage key** (`shoebox-general-notes-v2`) whenever the steps
+- **Bump the storage key** (`shoebox-general-notes-v4`) whenever the steps
   change meaning, so a returning reader gets the new sheet rather than stale
   ticks against notes they never read.
 - Completion only ever comes from the genuine event: the solve note from the
@@ -1136,6 +1168,11 @@ the conformance by itself, because there was never a flag to go stale.
   distinguishable when they are read aloud; both halves flip together when it is
   armed, since "Stop chasing … : hold its worst line up beside the drawing"
   describes the state being left rather than the one the press reaches.
+  Printed is not the same as always open. The lede keeps one sentence of at
+  most twenty words in view, saying what a press does and how to undo it, and
+  the ghost and the argument for it sit in a fold under that sentence. An
+  in-view summary plus a fold that opens where it stands meets "in place": a
+  press is not a hover.
 - **The worst line is ranked by ratio, not by difference.** LETI's energy line
   is 55 kWh/m²·yr and Passivhaus's heating line is 15, so 3 over means something
   different against each while 20 % over means the same against both.
@@ -1387,6 +1424,11 @@ silently fall below what it states. It is printed in place and never on hover,
 by the rule that put what *Chase* means above the scoreboard: `pointer: coarse`
 has no hover, so a caveat that floats does not exist on the phone where this
 sheet is most often read and least often checked against the method it names.
+In place does not mean always open. The block used to stand whole under the
+board, 520 words under five rows of figures; now the fold's summary states in
+view how many reasons there are, read off the list by `qualificationsSummary`
+rather than typed, and the entries are one press down. The count is what a
+reader who never opens it must still come away with.
 The weather qualification letters what the attached file declares about itself
 against what WFR:2026 requires (the DSY1 file for the site, 2050s, RCP8.5, 50th
 percentile, CIBSE's 28-zone system, labelled
@@ -1622,7 +1664,9 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   half a watt, which is where `watts()` itself stops distinguishing (−0.2 W
   already letters as `-0 W`) and is the rail's own threshold for a term worth
   drawing. The head also says what the `±` is — one side of the balance, not a
-  net — which nothing did.
+  net — which nothing did. Both halves fit one sentence of twenty-five words,
+  and that is what stays in view: this is the one explanation on the console
+  that is never folded, because the sign is the rail's whole argument.
 - **Two of the five readings are not the variable they are named after, and
   both now say so on the strip.** `Meter.note` is where a transformation is
   declared, the way Glazing's transmitted-solar meter already says where its
@@ -1746,6 +1790,472 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   `params` (anything there starts a run) and re-letters from the ESO already
   held, exactly as `reprice` does for a tariff. It is `pinnedHour`, not
   `pinned` — the bill has held a pinned *scheme* since long before this.
+
+### E-02, the design space survey (src/survey.js, src/pull.js, src/relief.js)
+
+A second drawing on the same sheet: one chosen reading surveyed over two chosen
+controls, cut through the desk's current stance. The ground is built only out of
+completed runs; the contours and the relief are inference drawn between them and
+say so in place on **both**, because a continuous surface is read as continuous
+data wherever it is drawn.
+
+**A survey row is already a study, and that is the whole design.**
+`buildSample(job, value)` applies `{ ...job.snapshot, [job.key]: value }`, and
+`job.snapshot` is a whole desk — so a row at a fixed value of axis Y is a job
+whose snapshot carries that Y and whose swept key is axis X. Two dimensions are
+reachable with no change to `buildSample` and none to the sample cache, which
+makes three requirements properties of the arrangement rather than features: a
+study of axis X at the stance is byte-identical in cache identity to the
+survey's own stance row and costs no run; rows and studies are literally in one
+queue, so there is no second pool for one to starve the other from; and
+`clearAll` on a station change takes the ground down with the curves because it
+is the same call.
+
+- **A job's identity is not its swept key.** `makeStudyJob` gained an `id`
+  defaulting to `key`. A study is one curve of one control so the two are the
+  same thing, but a survey enqueues nine rows that all sweep the same control,
+  and under `key` the scheduler's `byKey` would treat each as superseding the
+  last: eight of nine cancelled as 'moved' before a single sample dispatched,
+  leaving a ground one row deep with nothing anywhere saying why.
+- **`takeNext` is round-robin, and it had to be.** Measured against the old
+  job-order walk with eleven survey rows and one study, five samples each, a
+  pool of two: the study's first sample was **dispatch 55 of 60** and its last
+  was 59 — the study begins only once the whole survey has finished, which
+  reads to the reader as a hang. Round-robin puts its first sample at dispatch
+  11. `specs/006-design-space-survey/verify/scheduler-fairness.mjs` is the
+  gate, and it drives the queue against a fake pool.
+- **The rows go in in one breath.** `enqueue` drains on the way out, so
+  enqueuing nine rows one at a time fills the pool from row 0 before row 1 is
+  in the list, and the coarse pass lands as one finished row over eight empty
+  ones. The scheduler's `enqueueAll` admits them together and drains once;
+  it replaced a module flag that held `paused()` true across the caller's own
+  loop, which made the pause mean two things and had been copied to the pull
+  under the survey's name.
+- **A survey's rest shape omits *both* axes**, where a study's omits only its
+  swept key. Standing on a measured point is the whole point of the drawing,
+  and a rest shape that omitted only X would cancel the ground the first time
+  somebody stepped along Y and re-measure eighty-one designs it had already
+  measured. `deskKey` therefore takes a key or a list. `applyGeometry`'s cancel
+  point has to ask a row the right question too, or every row is cancelled on
+  every apply — including the applies the survey's own samples cause.
+
+**The coarse pass is 6 and the fine one is 11, and both numbers are decided by
+one requirement: a densify must reuse what has already been run, and so must a
+survey opened on ground a study has already covered.** That is the property
+`COARSE_SAMPLES` (11) and `SWEEP_SAMPLES` (21) have in one dimension — the raw
+positions for n = 11 are the even positions of the 21-point grid — and carrying
+it to two dimensions is arithmetic that has to be checked rather than assumed.
+
+The plan estimated against 5 and 11, which does not have the property at all:
+five positions sit at `i/4` and eleven at `i/10`, and 0.25 is not a tenth of
+anything, so three of every five coarse rows fall between two fine ones and a
+densify throws the whole coarse pass away. Nine was tried next and is worse
+than it looks — `i/4 = 2i/8`, so the densify is honest, but 9 has no
+relationship to the study grid, and **that is the reuse the reader actually
+notices**. Measured in the browser: 100 positions of a 5 → 9 ground cost 94
+engine runs against a completed study of one axis. Six of a hundred free is not
+the promise SC-011 makes.
+
+Six and eleven have both, because `i/5` is every second position of `i/10` and
+`i/10` is every second position of `i/20`. Verified over the declarations
+rather than over the arithmetic, since snapping is what the property has to
+survive: over all **90 sweepable numeric faces**, 5 → 9 lands inside a study's
+grid on 6 of 90 and 6 → 11 lands inside it on **90 of 90**.
+
+Both counts are even, which costs the midpoint sample an odd count would put on
+each axis — and costs nothing, because `axisFor` forces the stance's own value
+into the list regardless. That is what FR-005 actually asks for and it is a
+better guarantee than a midpoint: the point the reader already understands is
+measured wherever it happens to sit, which is also why a survey asked for six
+positions legitimately holds seven and a fine ground is 12 × 12 rather than
+11 × 11.
+
+Measured in the browser, which is the only place this can be measured: sweep
+Glazing S as an ordinary study, then cut a ground along Glazing S against wall
+resistance. **144 positions cost 132 engine runs.** The twelve that cost
+nothing are exactly the survey's own stance row — every position of the swept
+axis at the stance value of the other, answered from the study's cache. Under
+5 → 9 the same test spent 94 of 100.
+
+**Three states, told apart three ways, and the third is drawn by absence.**
+Measured is a tick with its figure; inferred is a hairline contour carrying its
+level and no figure read off it anywhere; unsurveyed is bare sheet with no
+contour carried across it. That last is structural rather than styled:
+`contoursOf` emits nothing for a cell whose mask is not full and `meshOf` emits
+no triangle touching one, so a gap cannot be filled from a neighbour because
+the geometry that would have covered it is never generated. Styling it instead
+would leave one `fillStyle` between an honest drawing and a dishonest one.
+
+**Coverage is load bearing, not a caption.** The relief is smooth by decision,
+and unlike a faceted one it does not report its own sample density in its own
+texture — so the density and the coverage figures are the only thing separating
+a coarse survey from a convincing picture of one. `Coverage` asserts
+`measured + gaps + unsurveyed === wanted` in its constructor, because a relief
+and the count of what was measured must never be able to disagree. This must
+not later be softened as cosmetic.
+
+**Which way is better is declared, not assumed.** Ten of the thirteen readings
+are compliance metrics or costs where less is the definition. The zone's own
+high and low are a comfort judgement nobody publishes as a target, so they are
+declared as conventions and say so — the same `CONVENTION` prefix the landmarks
+use, and for the same reason. A reading with no declared direction is one the
+survey will not let fall and will not name an improving region for; it draws
+the ground and refuses the two readings that need a direction, with the reason.
+
+**The free exchange refuses on two grounds, and the second replaced a worse
+one.** Comparing the second-order term against the first-order one is not well
+founded: along a level line the first-order change is exactly zero by
+construction, which is the whole point of it, so there is nothing for the
+curvature to be large *against*. What actually goes wrong on a shoulder is
+visible in the answer itself — measured on a coarse ground over a `tanh`
+shoulder, one step of glazing "bought" 24.6 m²K/W of wall resistance across an
+axis running 0.2 to 10. So the gates are: the 3 × 3 must span no more than a
+third of each extent, and the level-line step must land on the ground it was
+read off.
+
+**The relief is WebGL2 written here.** One vertex and one fragment shader, a
+hand-rolled orthographic and look-at pair, an indexed triangle mesh, one draw
+call. Principle V restricts *packages* and prefers platform APIs; gl-matrix,
+three.js and d3-contour are packages and none is needed for a constrained orbit
+over a height field. Orthographic because parallel projection is what makes two
+viewpoints comparable, the same reason E-01's axonometric is one. **No vertical
+exaggeration control**, because a reader who can dial the drama of a result up
+and down can argue from the picture. **One hue, ink levels only** — the reading
+is a magnitude with no direction, so `--cold` / `--warm` are not spent on it,
+which is why the survey is grey. `createRelief` returns `null` where no context
+can be had and the caller states the loss in place; every reading is on the
+plan and under the reader's own pointer already, so what is lost is the shape
+and nothing else.
+
+**The reading stands in view and the record is folded under it.** The schedule
+of spot heights carries every position of the ground — 144 rows on a fine one,
+and because `.schedule` folds each row into a block at 620px, some five hundred
+lines of table on a phone under two drawings. It is shut by default now, and
+`renderSpotReadout` letters in view the thing a reader actually wants from it:
+the design under their own pointer, in full, lettered by pointing at a tick or
+by walking the ground with the arrow keys.
+
+That split is the point. The schedule's three jobs are all questions about
+**one** design at a time, which is how a survey is read; the table answered
+them by printing all 144 answers at once. So the readout answers them where
+they are asked, and the table stays as the complete record for the reader who
+wants to compare rows or scan a column.
+
+**This is the one table of readings on the sheet behind a disclosure, and the
+rule it looks like it breaks is worth stating.** *Readings never go in a fold*
+is about the reading the page is **for**, and that is in view: the readout, the
+coverage line, and the plan's own figures. The fold holds the *record*, which
+is a different thing — the same shape as the TM59 qualifications block, where
+the count stays in view and the entries are one press down. The summary carries
+the count for exactly that reason: a reader who never opens it must still come
+away with what it holds.
+
+The `<details>` is **static markup** and only its table is rebuilt, because
+`renderSurvey` runs on every landed sample — a fold rebuilt 144 times over one
+ground would slam itself shut under a reader who had opened it, which is the
+hazard that made `renderSurveyChoose` stop rebuilding the extent fields.
+
+The three jobs, and why a line in view answers each of them better than a table
+one press away:
+
+- **108 of a fine ground's 144 figures are lettered nowhere on the plan.**
+  `figureAt` thins the plan's figures to every second position on each axis
+  once either axis passes seven, because a figure at every position is
+  illegible. Measured on a 12 × 12 ground with 49 positions landed: 49 ticks
+  drawn and **4** figures on the plan. Pointing at any tick letters it.
+- **A shut table is no route to a figure at all for assistive technology, and
+  neither was an open one.** Both drawings are `role="img"`, which makes the
+  whole subtree presentational, so every `<text>` on the plan is invisible and
+  `surveyAriaLabel` carries the axes and the coverage and no reading. The
+  readout is `role="status"` — a polite live region, which is what the cursor's
+  sentence never had: `surveySay` writes into the refusal paragraph and a
+  refusal is not announced. The sentence is now spoken by being written, and
+  the refusal paragraph is back to carrying only refusals, which is the
+  conflation that fixed itself on the way past.
+- **The relief can refuse to draw** (FR-024), and the plan plus this line are
+  then the survey without anything needing to be opened.
+
+Three things follow that are worth keeping straight. A hover **does not move
+the keyboard cursor** — the ring is where the keyboard is standing and a hover
+is not a move — and it re-renders nothing, so sweeping a pointer across 144
+ticks costs a string apiece rather than 144 redraws of the ground. A gap's
+reason is now lettered rather than living only in a `<title>`, which
+`pointer: coarse` never shows; before, a cross on a phone said only that
+something had failed.
+
+And **`pointerleave` is honoured only for a mouse**, which is the subtlest of
+the three. A touch pointer does not hover: it comes into existence on contact
+and is destroyed on release, so `pointerleave` fires at the end of *every* tap.
+Left symmetrical with `pointerenter`, a tap lettered a design and took it away
+again in the same gesture — the reading flashed and reverted before it could be
+read, which is the whole of this line's usefulness on a phone. So a finger
+leaves the reading standing until another tick is touched, and a mouse restores
+the desk's own design as it always did. `event.pointerType` is the honest test,
+the same shape as the stylesheet's `pointer: coarse`: it names no device, it
+says what kind of pointer this is.
+
+The line is a reading, so it is never folded. It carries `min-height` for two
+lines, because a sentence that changes height as the pointer crosses the plan
+would walk the coverage figure and the finding up and down the page under the
+reader — the same rule `resultPanels` keeps. Measured at 340px: two lines
+typically, three for the worst case this desk can compose (two axes with long
+labels and both TM59 readings).
+
+**It costs transfer rather than saving it**, and that is the honest figure:
+brotli went from 223,136 to 224,556 bytes, **+1,420** — the readout, the fold
+and the prose these decisions are recorded in, with no table code removed to
+pay for them. What was bought is the length of the page, not its size: shut,
+the schedule is **17px** of summary against the **3,875px** it stands at open
+on a 12 × 12 ground.
+
+**The traverse is a record of the desk, not of the survey.** It is written by
+`commit` at the end of every gesture and by `patchChannel`, so a design reached
+with the sliders is on it whether or not a ground is cut, and clearing the
+survey does not clear it — only a station change does, because then every
+reading at every stop is of another city's weather. Three things about it are
+not obvious:
+
+- **A stop's readings cannot be handed to its constructor.** A stop is recorded
+  at the end of the gesture that reached it, which is *before* the desk has
+  been solved. `landTraverseReadings` fills them from the solve, matching on
+  the run's own snapshot rather than on live `params`: an annual run takes the
+  best part of a second and the reader may have moved on twice, so a stop
+  taking whichever readings landed next would carry another building's numbers.
+  `TraverseStop` is frozen, so the entry is replaced rather than mutated.
+- **The desk the sheet opened on has no stop until the reader leaves it**,
+  because `recordTraverse` is called on a *move* — and the boot solve, the one
+  run that describes it, lands before any stop exists. The traverse is seeded
+  from that run instead, and only from an empty traverse: a later run matching
+  no stop is a stale solve of a desk already left.
+- **A design revisited moves to the end rather than being added again.** A
+  traverse is a path and a path may double back, but the record exists to be
+  restored from and a second row for one design offers nothing the first does
+  not — and both of them answered to "you are here", which is one claim too
+  many.
+
+**The list is the complete statement; the marks on the plan are the shortcut.**
+The plan can only draw the stops whose values fall inside the extent the ground
+was cut over, and draws nothing at all with no survey open, so a design walked
+to and then narrowed past would vanish from the record. Same arrangement the
+boundary key keeps against the axonometric: three of six surfaces are
+clickable there and the key carries all six. It is also where the keyboard
+reaches them, because a table row already has a tab stop and a mark on an SVG
+would need one apiece.
+
+**The extent boxes are `quantityField`s and they exposed two things.** A field
+built and appended alone stands empty — every other caller on this sheet calls
+`show()` from its own redraw — and, more seriously, `renderSurveyChoose` rebuilt
+the whole chooser on **every landed sample**, a hundred and forty-four times
+over one ground. `host.textContent = ''` destroys the node the reader is typing
+into, so an extent typed while the ground filled lost its focus, its `took`
+value and therefore the keystrokes, and committed nothing silently.
+`field.js` guards its own `show()` against a redraw writing over a field;
+nothing can guard a field against being deleted. The chooser is now redrawn
+only when its own signature moves.
+
+**Things that cost real debugging:**
+
+- **`.survey-body` sets `display: grid`, which beats `[hidden]`.** An author
+  `display` declaration beats the user agent's `[hidden] { display: none }`
+  outright, so `el.hidden = true` did nothing and two empty framed boxes stood
+  under the chooser with no survey cut. `.survey-body[hidden]` is the twin, and
+  it is the same fix `.link[hidden]` and `.bill[hidden]` each are.
+- **`dataset` is a getter-only property.** `Object.assign(cell, { dataset: {…} })`
+  throws — and from inside a scheduler callback it took down the drain, leaving
+  the pull reading `0 of 37` for ever while the runs quietly completed behind
+  it. Write `cell.dataset.head` instead.
+- **`URLSearchParams` escapes every punctuation mark but `*`, `.`, `-` and
+  `_`.** A tilde separator came back as `sv=wwrS%7EwallR%7Ehigh`, giving up
+  exactly the legibility the delta encoding is arranged around — the same
+  failure `at=year%408-3T13` had before the pin's `@` became a full stop. Of
+  the four survivors `-` cannot separate an extent (a bound may be negative)
+  and `.` is spent on the decimal point, which leaves `*` between fields and
+  `_` inside an extent: `sv=wwrS*wallR*high*0_0.9*0.2_10`.
+- **A contour label tested only against other contour labels overprints the
+  measured figures**, which hides a measurement behind an inference. The
+  clearance test is seeded with where the spot figures will stand, and a level
+  simply goes unlettered where nothing clears — pointing at the tick letters it
+  regardless.
+- **Lettering the unit on both stops of an axis runs it off the frame.**
+  `3.00 m²K/W` at the head of a 44 px gutter printed as `00 m²K/W`. The stops
+  carry bare numbers and the axis label carries the unit once, which is how a
+  survey drawing has always lettered a scale.
+- **`choose` is wrapped rather than flagged inline.** The attach has half a
+  dozen refusal exits, and a flag cleared at five of them is a flag eventually
+  left set at the sixth — which would gate the descent shut for the rest of the
+  session with nothing saying why.
+
+**The `sv` key, and the trap this codebase has now met three times.**
+`readValue`'s numeric regex runs *before* its per-kind switch, so a branch
+written inside that switch is unreachable and every survey link would be
+refused as "is not a number for sv" — a true sentence about the wrong thing, on
+a link that was perfectly good. `sv` is a **reserved** key, so it is read in
+`decodeState` beside `at` and `sty`, above everything `readValue` does, and the
+reserved skip keeps it from ever reaching that function. It re-serialises what
+it read, for the reason the holiday list and the hourly pattern both do. The
+link carries axes, readings and extents and nothing else: not the measured
+values, since the recipient re-measures to identical numbers, and not the
+camera, by the chase pin's rule that how a thing is being looked at is not what
+it is. `LINK_VERSION` stays `v1` and `MIGRATIONS` stays empty.
+
+**The pull costs one run per control, and the run kind is stated.** 18 channels,
+144 control keys, 9 priced, **90 sweepable numeric faces** — counted, and
+re-counted by the harness against the declarations. One-sided differences,
+because the stance's own run is already in hand: 90 runs at most, not 180. On
+the default desk only 37 are probed and **53 reach no object at all and cost no
+run**; they are listed with their reasons rather than omitted or drawn as zero,
+because "the Gains channel is out of the path" is often exactly the answer to
+why nothing the reader tries moves the reading. `direction` is `'none'` only
+where the effect is *exactly* zero: there is no noise floor, because the engine
+is repeatable on one input.
+
+The ranking agrees with independent full sweeps on **10 desks of 10**, no
+tolerance — including the three that exist to reach the failure modes: a
+control at its stop, a channel patched out (Fabric out leaves 18 probed and 72
+inert), and a wall carrying no opening. The comparison is one a sweep can
+honestly make, which took a rewrite to get right: a probe steps a twentieth of
+the face and `samplePoints` lays its positions on the control's own step grid,
+so the probe's landing position is generally not one of them — measured,
+`groundReflect` probes 0.20 to 0.25 against a sweep that never visits 0.25.
+What is checked instead is the stance reading **exactly**, the sign of the
+sweep's own slope across the pair bracketing the stance, and the order of the
+top three.
+
+**The determinism gate has two halves and Node can only run one.** Twenty runs
+of one design agree exactly, measured. *Instance reuse* cannot be reached from
+Node at all: `main` cannot be called twice in one process — on the same
+instance it throws a raw number (a C++ exception pointer, EnergyPlus aborting
+because its globals are already initialized) **before doing any work**, leaving
+the previous run's ESO in `/output`, so a reuse harness would read run one's
+output twenty times and report perfect agreement. That trap is closed by
+asserting the refusal outright. The harnesses therefore run **one EnergyPlus
+per process**, about 1.8 s each; the reuse half is a browser gate.
+
+**The axis chooser is a list of 129 offers, and it broke twice.** A column flex
+container with a `max-height` gives its children the default `flex-shrink: 1`,
+so all 129 shared 220px: every option computed to **6px** tall while its wrapped
+sentence painted over the four rows below it. `flex: none` on the item, a capped
+width on the list. And a refusal true of a whole channel was written on every
+control the channel owns — 53 rows repeating one paragraph. The channel is a
+group heading now and states it once, which leaves **three** per-entry reasons,
+the ones that genuinely differ within a group.
+
+**Flipping the axes costs no engine runs**, and that is a property of the
+arrangement rather than an optimisation worth being pleased about. A sample's
+cache identity is the whole desk, so the design at glazing 0.3 against wall
+resistance 5 is the same design whichever of the two the rows are cut along:
+every point of a flipped ground is the same desk transposed and comes back out
+of the cache. Measured, a flipped 12 x 12 spends **0 runs of 144**. It is also
+why the flip re-cuts at the density the ground already had rather than at the
+coarse pass — `surveyGrid` carries that — since dropping a measured 12 x 12 to
+7 x 7 and climbing back out would be free in runs and expensive in what the
+reader is looking at, for no reason but a default argument.
+
+**The stance moved with the ground, not with the desk, and that was a bug in
+six places at once.** `Survey.stance` is the frozen desk the ground was *cut*
+through, and it has to be: `rowsFor` builds every row's snapshot from it, so a
+desk that moves mid-measurement must not change what the remaining rows are
+measuring. But a getter called `stanceAt` read that snapshot, and six things
+read the getter — the crosshair, the keyboard cursor's start, the improving
+region, the free exchange, the refinement priority and **both halves of the
+descent**. So standing on a measured point moved the desk and moved none of
+them, and *Let it fall* fell from wherever the reader had been when they cut
+the ground. FR-021 says in so many words that the mark must move when the desk
+moves.
+
+The two questions are now named apart: `cutAt` is where the ground was cut and
+does not move; `standingAt(desk)` is a question about a desk and therefore
+takes one. It also answers the case the single `null` was hiding — a desk
+**between** two measured designs after a slider nudge, which is much the
+commoner state and was being told it was outside the extent entirely, with a
+fix ("widen the extent") that would not have helped. The mark draws at the
+desk's true position between two columns and goes hollow there, because it is
+not standing on a run.
+
+**Nothing on the drawing said what any mark was.** Five marks and every
+explanation in a `<title>`, which `pointer: coarse` never shows. `renderGroundKey`
+prints the key under the plan, drawing each mark from the classes the ground
+itself uses so a restyled mark cannot disagree with its own key. The hatched
+region in particular was being read as "not yet computed" — it is the opposite,
+measured designs that read better than the one the desk is on.
+
+**The relief is a block, not a floating sheet.** A surface drawn alone has
+nothing to say which way is down, no silhouette to judge a slope against, and
+nowhere to letter an axis. `blockOf` cuts the ground away beneath the terrain —
+the cut faces down every silhouette edge, and the base those cells laid flat.
+
+- **None of it is measurement, and the drawing keeps saying so.** The sides are
+  a section through nothing: this survey knows the reading *on* the ground and
+  nothing whatever about what is under it. So the block is derived from the
+  same lattice and the same mask and can add no ground the surface does not
+  already have — every skirt quad hangs off an edge of an emitted cell, and a
+  hole in the surface is a **shaft through the block** rather than something
+  quietly filled in. The cut and the base take `--inset`, the tone every trough
+  on this page is drawn in, so they read as the block rather than as more
+  ground.
+- **The levels are ruled around the cut, clipped to it.** `strataOf` turns the
+  side into the vertical scale — the terrain's own surface is foreshortened
+  from every viewpoint the orbit allows and cannot be measured with a ruler,
+  where a ruled cut can be counted in bands. Each cut face is a quad with a
+  sloping top, so a level above both ends of its edge has no face to sit on and
+  one between them crosses part of it; drawn straight across regardless the
+  rules float above the terrain at exactly the corners where the ground is
+  highest, which is a line claiming a height the block does not reach.
+- **`arrisesOf` rules the vertical corners.** Without them an oblique reads as
+  two flat washes meeting at a seam that does not say which way the corner
+  folds. A corner is where the silhouette *turns*, not one of four: on a plain
+  footprint that gives four, and around a hole it gives that hole its own,
+  which is right, because a shaft is as much an edge of the solid as the
+  outside is.
+- **The base carries the axis furniture**, because it is the one plane in the
+  drawing that is flat, known, and carrying no reading.
+- **The height has a scale of its own**, which it went without for a while:
+  the ruled levels were the only vertical measure and nothing said what they
+  measured. It is SVG in the overlay, standing on the tallest corner of the
+  block the reader can see: of the corners the orbit does not hide, the one
+  the terrain is highest at. The hidden corner needs no camera maths — in
+  parallel projection from above, the back corner of the base is the one
+  highest on screen (both of them when a face is seen square). The staff runs
+  from the lowest measured reading to the highest, carrying on above a lower
+  corner so the top levels are not left unread, ticked at the ruled levels
+  and lettered as the plan letters its contours, with its figures on the side
+  facing away from the block and giving way to the base's stops. Plan down
+  draws none, because a vertical seen from above has no length. The unit is its own `tspan`, since
+  the axis names are set in capitals and kWh/m² in capitals is another unit.
+- **The pin stands proud of the terrain rather than down through it.** Run from
+  the base to the surface — which is what a pin through a solid ought to be —
+  the shaft is inside the block at every viewpoint, the depth test hides all of
+  it, and the mark reduces to a single dot with no pin in it.
+- **Between two measured designs the pin stands hollow, not nowhere.** It was
+  dropped there, so typing a figure between two positions took away the one
+  mark saying where the desk was. It now stands at the desk's true fractional
+  position on the surface the relief draws (`surfaceAt` reads the same two
+  triangles `meshOf` emits, so it sits on the drawing rather than a hair off
+  it), with the armed square hollow, which is the plan's own mark for that
+  state. No figure is lettered off it. Over an unmeasured cell there is no
+  surface and no pin.
+
+**Two bugs the block found, both of the kind that look like a maths error and
+are not.** The base was carried in the drawing's normalised units and therefore
+had to be exempted from the normalising pass, which meant recognising it,
+which meant comparing floats: the positions are a `Float32Array`, `-0.35` does
+not survive the narrowing, the equality never held, the base was normalised
+along with everything else and the block ran four times its own height off the
+bottom of the frame. It is carried in reading units now, where there is nothing
+to exempt and nothing to compare. And the lettering has to be pushed clear of
+the block in **screen** space, not lattice space: which way is "outside"
+depends on where the camera is standing, and an offset that clears the
+silhouette from one viewpoint lies across it from the next.
+
+**WebGL has no text**, so the axis names and stops are real SVG over the
+canvas, positioned through the same matrices the GPU is handed. `toWorld` is
+the one copy of the shader's own mapping — the vertex shader swaps two axes on
+the way into world space, and anything lettered outside the shader has to make
+the same journey or the words drift off the corners they name.
+
+**Transfer:** 26,367 bytes of brotli added against SC-012's 60 KB ceiling.
+`src/model.js` is untouched and no new `Output:Variable` is requested anywhere,
+which discharges the output-budget requirement outright.
 
 ## Invariants that fail quietly
 
@@ -1873,24 +2383,59 @@ balance and therefore sum. Non-obvious facts, each of which cost real debugging:
   sliders can pass each other, and the dual thermostat then stops the run with
   `DualSetPointWithDeadBand: Effective heating set-point higher than effective
   cooling set-point`. It took about one design in ten of an 800-point Latin
-  hypercube over the System-in desk. The System channel's `requires` blocks
-  with both numbers in the sentence; neither slider is clamped to the other.
+  hypercube over the System-in desk. The System channel's `requires` blocks,
+  with one constant sentence rather than the two setpoints read back — both
+  faces are on the strip a thumb apart, and a function of the parameters cannot
+  be held to the `STANDING` copy budget at load, which made the longest
+  always-visible sentence on the desk the one nothing counted. Neither slider is
+  clamped to the other.
   The engine's test is strict and the gate matches it: equal setpoints run with
   the default desk's warning count, 0.5 K crossed fatals. It does not fire at
   "Heat only" or "Cool only", where one setpoint reaches no object, and a link
   carrying a crossed pair decodes to the blocked desk rather than being refused,
   because the desk can reach it. A study sweeping either setpoint past the
   other **refuses** those positions rather than solving them with System out:
-  `sampleRefusal` in `model.js` refuses any sample where the swept control takes
+  `sampleRefusal` in `model.js` refuses any sample where a swept control takes
   its *own* channel out of the path, so a curve never joins a conditioned zone
   to a free-running one. Another channel going out under the overlay (Blinds
   losing its window as a wall's ratio reaches zero) is still a position and
   still runs. A refused position is never built or cached, draws as a gap, and
   the card says which sentence refused it.
+  - **It is asked of every swept key, which is `job.omits` and not `job.key`.**
+    A study sweeps one control and a survey row sweeps two — its own axis along
+    the row, and the other axis fixed into the snapshot that made the row — and
+    both have to be asked, so `sampleRefusal` takes one channel id or several,
+    the same shape and for the same reason `deskKey`'s `omit` does. Asked only
+    about the row's own axis, a ground cut across the heating setpoint would
+    refuse nothing and draw every row above the cooling setpoint as the
+    free-running building: eighty-one designs of which a band is a different
+    model, arriving by the one route that does not look like a study.
+  - **A refused position is not a failed run, at all three surfaces that land
+    one.** The scheduler keeps `refused` apart from a reading it never got,
+    because a failure is the engine's and says nothing about the design where a
+    refusal is a fact about the design and has a sentence for it. So
+    `absorbSurveyRow` passes that sentence to `landPoint` rather than letting it
+    fall back to "The run did not complete" over a position no run was started
+    for, and a refused pull probe is an **inert** entry under the refusal rather
+    than an unmeasured one — a step that takes its own channel out would
+    otherwise measure the channel leaving instead of the control moving, which
+    is the largest effect on the board and about nothing.
 - **An economizer requires a cooling flow limit**, or EnergyPlus raises a severe
   error. Nothing here is autosized, so the limit is computed from zone volume.
 - **A shading device cannot be hung on `WindowMaterial:SimpleGlazingSystem`**,
   which is why the Blinds channel requires the layered glazing model.
+- **EnergyPlus merges two vertices closer than 0.01 m and deletes the surface
+  left behind.** `** Severe ** GetSurfaceData: There are 2 degenerate
+  surfaces`, then a completed run, so the only symptom is a shade in the
+  document the engine never simulated. The first stop off zero on the fin, the
+  overhang and the curb is exactly 0.01 m. An edge of exactly 0.01 survives,
+  so a 1 cm fin is kept on a building squared to the compass and deleted at
+  45°, where a rotation hands back 0.00999…. A 1 cm curb is deleted on every
+  bearing, since its edge is the difference of two heights. `COINCIDENT` and
+  `builds()` in `src/aperture.js` are the one statement of it: the appliers
+  write no shade that does not build, the fin and curb controls go idle on it,
+  and the Shading key's wall says why. Linear rooflights can come out thinner
+  than this at the Skylights strip's first stop and are not yet refused.
 - **Per-surface output variables are ruinously expensive.** Requesting them with
   key `*` took the ESO from 15 series to 173 and the annual run from 681 ms to
   2,984 ms, almost all of it after the simulation finished. Keep new output
@@ -1929,6 +2474,21 @@ because zero is a measurement and missing is not one.
 **Comments explain why, not what.** The house style is prose, often several
 sentences, recording the reasoning and frequently the measurement or the error
 message that forced a decision. Match it.
+
+**Copy budgets and folds.** The sheet used to print every explanation it had,
+always: about 2,700 words of prose on the first screen and 2,300 more with the
+console open. What stays in view now is the reading, its verdict or absence,
+and at most one short line; the method, the derivation and the citation sit in
+a fold (`fold()` in `console.js`, one `.fold` rule in `index.html`, the pattern
+in `.interface-design/system.md`) attached to what it explains. Two rules keep
+it that way. Readings, verdicts, absence reasons, blocking reasons and refusals
+never go in a fold. And every always-visible string a declaration carries (a
+channel's `line`, a `requires.reason`, a general note's `step`, a fold's
+summary) is asserted at load against its budget in `src/copy.js`, so a line
+that grows past twelve words stops the page naming itself. Text composed at
+render time from the run is measured rather than asserted, because a throw
+mid-render would turn a copy defect into a broken sheet. New long text goes in
+the declaration's folded field (`blurb`, `note`, `body`), not in its glance.
 
 **Interface work** follows `.interface-design/system.md`: four surfaces on one
 hue, hairline borders and no shadows, one accent (`--redline`) plus a cold/warm

@@ -14,7 +14,9 @@
 // `scripts/build-tm59.mjs`. Imported rather than restated so the Room type
 // selector and the profile library cannot name different spaces; see
 // `TM59_SPACES` below for what happened the one time they did.
+import { COINCIDENT, builds, openingFor, shadeBuilds } from './aperture.js';
 import { LIGHTING_PATTERN, PROFILE_IDS, profileFor } from './tm59.data.js';
+import { BUDGETS, withinBudget } from './copy.js';
 
 /* ══ controls ════════════════════════════════════════════════════════════ */
 
@@ -1735,13 +1737,20 @@ export class Readout {
  */
 export class Channel {
   constructor({
-    id, index, name, term, blurb, controls,
+    id, index, name, term, line, blurb, controls,
     meter = null, readout = null, bypassable = true, bypassed = false, requires = null, prices = false,
   }) {
     this.id = id;
     this.index = index;
     this.name = name;
     this.term = term; // its symbol in the heat balance, set in the header
+    // What the strip says in view, in one line: the glance. The blurb is the
+    // long form and folds under it, so the strip reads as name, line, controls
+    // and meter, and the reader who wants the why opens it. Required, because
+    // a strip with no line would fall back to printing its blurb, which is the
+    // paragraph this field exists to take out of view.
+    if (!line) throw new Error(`Channel ${id} carries no line`);
+    this.line = line;
     this.blurb = blurb;
     this.controls = Object.freeze(controls);
     this.meter = meter;
@@ -2763,12 +2772,49 @@ export const OPENABLE_KEYS = Object.freeze(
 const noOutside = (wall) =>
   `The ${wall} wall is adiabatic, so there is nothing outside it to open onto.`;
 
-const ORIENTATIONS = WALL_FACES.map(({ face, label, wwr }) => ({
-  key: wwr,
-  side: face,
-  label,
-  needs: (p) => opensOut(p, face),
-  unreached: noOutside(face),
+/**
+ * Whether the frame leaves any glass in the opening this wall's ratio asks for.
+ *
+ * The ratio is the rough opening, glass and frame together (see
+ * `sizeOpening`), so a small ratio under a wide frame is an opening the frame
+ * closes. The applier asks `openingFor` the same question and writes no window
+ * where the answer is no; a solid wall is not a refusal, so zero passes.
+ */
+const frameFits = (p, { face, wwr }) => !(p[wwr] > 0) || Boolean(openingFor(p, face, p[wwr])?.glazes);
+
+/**
+ * The frame's refusal, with the arithmetic in it, because the reader can redo
+ * it: the rough opening's two sides less twice the frame each.
+ */
+const frameCloses = (p, { face, wwr }) => {
+  const o = openingFor(p, face, p[wwr]);
+  return `The ${face} wall's opening is ${o.width.toFixed(2)} × ${o.height.toFixed(2)} m, and a ${p.frameWidth.toFixed(3)} m frame all round it leaves no glass for the engine to build.`;
+};
+
+/**
+ * Whether this wall carries an opening, as the applier decides it: an outside
+ * to open onto, a ratio off zero, and glass left inside the frame. Every
+ * question on this desk about "the glass on this wall" asks this one, or it
+ * would engage something on a wall the document holds no window in.
+ */
+const opens = (p, wall) => opensOut(p, wall.face) && p[wall.wwr] > 0 && frameFits(p, wall);
+
+/**
+ * Why a wall that ought to have glass has none, in the order the causes bite,
+ * or `whenSolid` for the one cause that is a setting rather than a refusal.
+ */
+const noGlass = (p, wall, whenSolid) => {
+  if (!opensOut(p, wall.face)) return noOutside(wall.face);
+  if (!(p[wall.wwr] > 0)) return whenSolid;
+  return frameCloses(p, wall);
+};
+
+const ORIENTATIONS = WALL_FACES.map((wall) => ({
+  key: wall.wwr,
+  side: wall.face,
+  label: wall.label,
+  needs: (p) => opensOut(p, wall.face) && frameFits(p, wall),
+  unreached: (p) => (opensOut(p, wall.face) ? frameCloses(p, wall) : noOutside(wall.face)),
 }));
 
 /**
@@ -2782,15 +2828,26 @@ const ORIENTATIONS = WALL_FACES.map(({ face, label, wwr }) => ({
 const noOpening = (wall) =>
   `The ${wall} wall has no opening, so an overhang there hangs on nothing.`;
 
-const SHADE_SIDES = WALL_FACES.map(({ face, label, wwr, overhang }) => ({
-  key: overhang,
-  side: face,
-  label,
-  // Two ways for this one to reach nothing, and the note has to say which:
-  // the wall can be solid, or it can have no outside for an opening to be in.
-  // Hence a function here where the ratios above carry a sentence.
-  needs: (p) => opensOut(p, face) && p[wwr] > 0,
-  unreached: (p) => (opensOut(p, face) ? noOpening(face) : noOutside(face)),
+/**
+ * An overhang too shallow for the engine to keep. Its short edges are its
+ * depth, and EnergyPlus merges two vertices closer than `COINCIDENT` and deletes
+ * the surface left with two sides — a severe, a completed run, and a shade in
+ * the document the engine never simulated. See `COINCIDENT` in `aperture.js`.
+ */
+const tooShallow = (wall, depth) =>
+  `EnergyPlus reads two vertices closer than ${COINCIDENT} m as one, so a ${depth.toFixed(2)} m overhang on the ${wall} wall would be deleted rather than built.`;
+
+const SHADE_SIDES = WALL_FACES.map((wall) => ({
+  key: wall.overhang,
+  side: wall.face,
+  label: wall.label,
+  // Four ways for this one to reach nothing, and the note has to say which:
+  // no outside for an opening to be in, a solid wall, a frame that closes the
+  // opening, or a projection too shallow to be a surface. Hence a function
+  // here where a single cause could carry a sentence.
+  needs: (p) => opens(p, wall) && shadeBuilds(p[wall.overhang]),
+  unreached: (p) =>
+    opens(p, wall) ? tooShallow(wall.face, p[wall.overhang]) : noGlass(p, wall, noOpening(wall.face)),
 }));
 
 /**
@@ -2809,19 +2866,19 @@ const noneToOpen = (wall) =>
  * opening it sits in, so a wall with no glass has nothing to open, and a wall
  * with no outside has nowhere to open onto.
  */
-const OPENABLE_SIDES = WALL_FACES.map(({ face, label, wwr, openable }) => ({
-  key: openable,
-  side: face,
-  label,
-  needs: (p) => opensOut(p, face) && p[wwr] > 0,
-  unreached: (p) => (opensOut(p, face) ? noneToOpen(face) : noOutside(face)),
+const OPENABLE_SIDES = WALL_FACES.map((wall) => ({
+  key: wall.openable,
+  side: wall.face,
+  label: wall.label,
+  needs: (p) => opens(p, wall),
+  unreached: (p) => noGlass(p, wall, noneToOpen(wall.face)),
 }));
 
-// An opening exists where the ratio is off zero *and* the wall it would be cut
-// into has an outside — the applier writes exactly that set, so every
-// precondition asking "is there any glass" has to ask the same question or it
-// will engage a channel that has nothing to work on.
-const glazed = (p) => WALL_FACES.some(({ face, wwr }) => opensOut(p, face) && p[wwr] > 0);
+// An opening exists where the ratio is off zero, the wall it would be cut into
+// has an outside, and the frame leaves glass in it — the applier writes exactly
+// that set, so every precondition asking "is there any glass" has to ask the
+// same question or it will engage a channel that has nothing to work on.
+const glazed = (p) => WALL_FACES.some((wall) => opens(p, wall));
 const layered = (p) => p.glazingModel === 'Layered';
 // Roof glazing is deliberately a separate question from wall glazing: the two
 // channels own different holes in different surfaces, and everything that
@@ -2972,8 +3029,7 @@ export function gainsForRoom(id) {
 const NO_ROOM = Object.freeze({});
 
 /** Whether any wall has an area to open at all, asked of the parameters. */
-const anyOpenable = (p) =>
-  WALL_FACES.some(({ face, wwr, openable }) => opensOut(p, face) && p[wwr] > 0 && p[openable] > 0);
+const anyOpenable = (p) => WALL_FACES.some((wall) => opens(p, wall) && p[wall.openable] > 0);
 
 /**
  * How many ways through the envelope a pressure network would have, counted the
@@ -2999,8 +3055,7 @@ const anyOpenable = (p) =>
  */
 const networkPaths = (p) =>
   (p.envLeak > 0 ? WEATHER_FACES.filter((face) => opensOut(p, face)).length : 0) +
-  WALL_FACES.filter(({ face, wwr, openable }) => opensOut(p, face) && p[wwr] > 0 && p[openable] > 0)
-    .length;
+  WALL_FACES.filter((wall) => opens(p, wall) && p[wall.openable] > 0).length;
 
 /**
  * The venting rules that will not run without a setpoint schedule.
@@ -3076,6 +3131,35 @@ const assertHideable = () => {
   }
 };
 
+/**
+ * Every always-visible string this file declares, against its budget.
+ *
+ * The strip's line is the glance and a blocking reason is a standing message,
+ * so both stay in view whatever the strip is doing, and both used to grow into
+ * paragraphs because nothing said stop. This is the thing that says stop, at
+ * load, naming the declaration: a line written next month at fourteen words
+ * fails the page the moment it is saved rather than the day somebody counts.
+ * The blurbs and the control notes are not here, because they fold and a
+ * fold's long form has no budget.
+ */
+const assertCopy = () => {
+  for (const channel of CHANNELS) {
+    withinBudget(BUDGETS.STRIP_LINE, `channel ${channel.id} line`, channel.line);
+    const reason = channel.requires?.reason;
+    if (typeof reason === 'string') withinBudget(BUDGETS.STANDING, `channel ${channel.id} reason`, reason);
+    for (const [key, text] of Object.entries(channel.requires?.reasons ?? {})) {
+      withinBudget(BUDGETS.STANDING, `channel ${channel.id} reason ${key}`, text);
+    }
+  }
+  // The three sentences a plan key's wall can say when it reaches nothing,
+  // measured at every wall they are written for.
+  for (const { face } of WALL_FACES) {
+    withinBudget(BUDGETS.STANDING, `${face} wall unreached (no outside)`, noOutside(face));
+    withinBudget(BUDGETS.STANDING, `${face} wall unreached (no opening)`, noOpening(face));
+    withinBudget(BUDGETS.STANDING, `${face} wall unreached (none to open)`, noneToOpen(face));
+  }
+};
+
 const assertSetpointModes = () => {
   const offered = new Set(
     CHANNEL_BY_ID.air.controls.find((c) => c.key === 'openRule').options.map((o) => o.value),
@@ -3098,13 +3182,30 @@ const assertSetpointModes = () => {
  */
 const SINGLE_SETPOINT = Object.freeze(new Set(['HeatingOnly', 'CoolingOnly']));
 
+/**
+ * The three ways the Air channel's pressure network can be blocked, one
+ * sentence each. Written out rather than composed inside `requires.reason`
+ * so that the standing budget can measure them at load: a function cannot be
+ * counted, a constant can. Each keeps the fix. What the long forms used to add
+ * (every surface adiabatic, a network with one hole has nowhere for the air to
+ * go, the adaptive rules asking what occupants will accept) is the argument in
+ * CLAUDE.md, "Two air models", and not a message a blocked strip needs.
+ */
+const AIR_REASONS = Object.freeze({
+  noOutside: 'The pressure network needs a surface with an outside; every surface here is adiabatic.',
+  onePath: 'The network needs two or more ways through: add leakage, or open a second wall.',
+  nobodyHome: 'Adaptive rules need somebody in the room: patch Gains in, or choose another rule.',
+});
+
 export const CHANNELS = Object.freeze([
   new Channel({
     id: 'massing',
     index: '00',
     name: 'Massing',
     term: 'A∕V',
-    blurb: 'The box itself. Every channel below is measured against the envelope this makes.',
+    line: 'The box itself.',
+    blurb:
+      'Every channel below is measured against the envelope this makes.',
     bypassable: false,
     meter: new Meter({ label: 'Envelope ÷ volume', terms: [], derived: true }),
     controls: [
@@ -3134,8 +3235,11 @@ export const CHANNELS = Object.freeze([
     index: '01',
     name: 'Site',
     term: 'Q☼',
+    line: 'Where the box stands and which way it faces.',
     blurb:
-      'Where the box stands and which way it faces. North turns the building under the sun — the vertices themselves turn, so the drawing holds the box square to the page and turns its north point instead.',
+      'North turns the building under the sun — the vertices themselves turn, so ' +
+      'the drawing holds the box square to the page and turns its north point ' +
+      'instead.',
     bypassable: false,
     controls: [
       new Bearing({
@@ -3198,8 +3302,10 @@ export const CHANNELS = Object.freeze([
     index: '02',
     name: 'Context',
     term: 'Q☼∅',
+    line: 'The neighbours.',
     blurb:
-      'The neighbours. One obstructing slab at a bearing and a distance, which is all it takes to find out whose shadow the south elevation you designed is standing in.',
+      'One obstructing slab at a bearing and a distance, which is all it takes to ' +
+      'find out whose shadow the south elevation you designed is standing in.',
     bypassed: true,
     meter: new Meter({ label: 'Obstruction altitude', terms: [], derived: true }),
     controls: [
@@ -3215,8 +3321,10 @@ export const CHANNELS = Object.freeze([
     index: '03',
     name: 'Glazing',
     term: 'Q☼→',
+    line: 'The openings, wall by wall.',
     blurb:
-      'The openings, wall by wall. Punched lights keep their proportion at any ratio; a ribbon spends the same area on width instead.',
+      'Punched lights keep their proportion at any ratio; a ribbon spends the ' +
+      'same area on width instead.',
     requires: {
       // A window is cut into a wall, so it needs a wall with an outside to be
       // cut into. Both ways of losing them all are asked here: every wall set
@@ -3358,7 +3466,7 @@ export const CHANNELS = Object.freeze([
         zero: 'None',
         landmarks: FRAME_WIDTH,
         needs: glazed,
-        note: 'Adds a framed perimeter outside the glass, with its own conductance.',
+        note: 'A framed perimeter with its own conductance, counted inside the window-to-wall ratio the way ASHRAE 90.1 counts it: the ratio is the rough opening, so a wider frame means less glass rather than a bigger hole.',
       }),
       new Scale({
         key: 'frameCond',
@@ -3380,8 +3488,12 @@ export const CHANNELS = Object.freeze([
     index: '04',
     name: 'Skylights',
     term: 'Q☼↧',
+    line: 'The other way in.',
     blurb:
-      'The other way in. A rooflight faces the one part of the sky that is never behind a neighbour and never off to one side, so it collects hardest exactly when the building least wants it — and a curb is the only overhang it will ever have.',
+      'A rooflight faces the one part of the sky that is never behind a neighbour ' +
+      'and never off to one side, so it collects hardest exactly when the ' +
+      'building least wants it — and a curb is the only overhang it will ever ' +
+      'have.',
     bypassed: true,
     requires: {
       // The same precondition as Glazing, asked of the one surface this
@@ -3453,8 +3565,10 @@ export const CHANNELS = Object.freeze([
         unit: 'm',
         zero: 'Flush',
         landmarks: SKY_CURB,
-        needs: skylit,
-        note: 'The upstand a rooflight is bedded on, standing all the way round. It is the roof\'s overhang, and the only shade a horizontal opening gets.',
+        // Refused at its first stop off zero, where every face it writes is one
+        // the engine deletes (see `COINCIDENT`).
+        needs: (p) => skylit(p) && shadeBuilds(p.skyCurb),
+        note: `The upstand a rooflight is bedded on, standing all the way round. It is the roof's overhang, and the only shade a horizontal opening gets. EnergyPlus reads two vertices closer than ${COINCIDENT} m as one, so a curb has to stand taller than that or the engine deletes it.`,
       }),
       new Selector({
         key: 'skyGlass',
@@ -3512,8 +3626,11 @@ export const CHANNELS = Object.freeze([
     index: '05',
     name: 'Shading',
     term: 'Q☼↓',
+    line: 'How far the overhangs reach over each opening.',
     blurb:
-      'Overhangs run the width of their opening, so what you set is the one thing that matters on a sunny elevation: how far they reach. Fins stand at both jambs.',
+      'Overhangs run the width of their opening, so what you set is the one thing ' +
+      'that matters on a sunny elevation: how far they reach. Fins stand at both ' +
+      'jambs.',
     meter: new Meter({ label: 'Shade area', terms: [], derived: true }),
     controls: [
       new Facade({
@@ -3534,14 +3651,16 @@ export const CHANNELS = Object.freeze([
         key: 'fin',
         label: 'Side fins',
         value: 0, min: 0, max: 3, step: 0.01, unit: 'm', zero: 'None',
-        needs: glazed,
-        note: 'Stood at both jambs of every opening there is.',
+        // The first stop off zero is refused as well as a wall with no glass:
+        // at 0.01 m the fin is a surface the engine deletes (see `COINCIDENT`).
+        needs: (p) => glazed(p) && shadeBuilds(p.fin),
+        note: `Stood at both jambs of every opening there is. EnergyPlus reads two vertices closer than ${COINCIDENT} m as one, so a fin has to stand out further than that or the engine deletes it.`,
       }),
       new Scale({
         key: 'finOffset',
         label: 'Fin offset from jamb',
         value: 0, min: 0, max: 1.5, step: 0.01, unit: 'm', zero: 'At jamb',
-        needs: (p) => p.fin > 0,
+        needs: (p) => builds(p.fin),
       }),
     ],
   }),
@@ -3551,8 +3670,10 @@ export const CHANNELS = Object.freeze([
     index: '06',
     name: 'Blinds',
     term: 'Q☼⇅',
+    line: 'Shading that answers the weather instead of standing still.',
     blurb:
-      'Shading that answers the weather instead of standing still. The control decides when it deploys, and the slat angle decides what gets through when it does.',
+      'The control decides when it deploys, and the slat angle decides what gets ' +
+      'through when it does.',
     bypassed: true,
     requires: {
       // The rooflights count as openings a blind can hang on only when they
@@ -3622,8 +3743,12 @@ export const CHANNELS = Object.freeze([
     index: '07',
     name: 'Fabric',
     term: 'Q↔',
+    line: 'The opaque envelope, and which of the six surfaces are in it.',
     blurb:
-      'The opaque envelope, and which of the six surfaces are in it. Bypassed, every surface goes adiabatic and the box becomes a flask — the cleanest way there is to see what the other channels are worth. Glazing, Skylights and Shading come out with it, and say so: an opening needs a surface with an outside to be cut into.',
+      'Bypassed, every surface goes adiabatic and the box becomes a flask — the ' +
+      'cleanest way there is to see what the other channels are worth. Glazing, ' +
+      'Skylights and Shading come out with it, and say so: an opening needs a ' +
+      'surface with an outside to be cut into.',
     meter: new Meter({
       label: 'Surface convection to air',
       rail: true,
@@ -3690,8 +3815,10 @@ export const CHANNELS = Object.freeze([
     index: '08',
     name: 'Mass',
     term: 'Qsto',
+    line: 'What the building remembers.',
     blurb:
-      'What the building remembers. Bypassed, the slab is swapped for a massless layer of the same resistance, so the only thing that changes is storage.',
+      'Bypassed, the slab is swapped for a massless layer of the same resistance, ' +
+      'so the only thing that changes is storage.',
     meter: new Meter({
       // Lettered as a *release* rather than as storage, which is the name the
       // variable carries, because the sign is turned over on the way in and a
@@ -3752,8 +3879,11 @@ export const CHANNELS = Object.freeze([
     index: '09',
     name: 'Air',
     term: 'Qinf',
+    line: 'Leakage and ventilation, by a stated rate or a pressure network.',
     blurb:
-      'Leakage you did not ask for, and ventilation you did, by one of two models: a rate you state and the weather only gates, or a pressure network that computes the flow from wind and stack effect each timestep.',
+      'Leakage you did not ask for, and ventilation you did, by one of two ' +
+      'models: a rate you state and the weather only gates, or a pressure network ' +
+      'that computes the flow from wind and stack effect each timestep.',
     bypassed: true,
     requires: {
       // A pressure network needs something to leak through. With Fabric patched
@@ -3792,12 +3922,16 @@ export const CHANNELS = Object.freeze([
       // Handed the same three readers `test` is, so the sentence can tell the
       // causes apart — and one of them, Fabric patched out, is a state no
       // parameter records at all.
+      // The sentences are declared rather than composed, so each can be held
+      // to the standing budget at load; the function still decides which of
+      // them applies, and returns it by identity.
+      reasons: AIR_REASONS,
       reason: (p, on, off) =>
         off('fabric') || !WEATHER_FACES.some((face) => opensOut(p, face))
-          ? 'The pressure network needs a surface with an outside to leak through — every surface of this box is adiabatic.'
+          ? AIR_REASONS.noOutside
           : networkPaths(p) < 2
-            ? 'A pressure network needs at least two ways through the envelope, and this box has fewer — give it some leakiness, or open a second wall.'
-            : 'The adaptive comfort rules ask what the occupants will accept, so the engine needs somebody in the room — patch Gains in, or choose another rule for the openings.',
+            ? AIR_REASONS.onePath
+            : AIR_REASONS.nobodyHome,
     },
     readout: new Readout({
       label: 'As run',
@@ -4004,8 +4138,11 @@ export const CHANNELS = Object.freeze([
     index: '10',
     name: 'Gains',
     term: 'Qint',
+    line: 'People, light and equipment.',
     blurb:
-      'People, light and equipment. As drawn they share one occupancy profile; named as a TM59 space they take three profiles of their own and absolute levels. Bypassed, the zone holds nothing that gives off heat; these are the first gains that land.',
+      'As drawn they share one occupancy profile; named as a TM59 space they take ' +
+      'three profiles of their own and absolute levels. Bypassed, the zone holds ' +
+      'nothing that gives off heat; these are the first gains that land.',
     bypassed: true,
     meter: new Meter({
       label: 'Internal convective gain',
@@ -4167,8 +4304,10 @@ export const CHANNELS = Object.freeze([
     index: '11',
     name: 'Daylight',
     term: 'Qlux',
+    line: 'The channel that closes the loop.',
     blurb:
-      'The channel that closes the loop. A sensor in the room dims the lights against the daylight the windows let in, so a bigger opening buys back some of the load it costs.',
+      'A sensor in the room dims the lights against the daylight the windows let ' +
+      'in, so a bigger opening buys back some of the load it costs.',
     bypassed: true,
     requires: {
       // Either kind of opening will do, but it has to be one the document
@@ -4176,7 +4315,7 @@ export const CHANNELS = Object.freeze([
       // removed, and a daylight sensor in a room with none is a control the
       // engine warns about and the sheet would letter as if it worked.
       test: (p, on) => (glazed(p) && on('glazing')) || (skylit(p) && on('skylights')),
-      reason: 'Needs at least one opening — a window or a rooflight — to see daylight through.',
+      reason: 'Needs at least one opening, a window or a rooflight, to see daylight through.',
     },
     meter: new Meter({
       label: 'Lighting power',
@@ -4218,8 +4357,11 @@ export const CHANNELS = Object.freeze([
     index: '12',
     name: 'System',
     term: 'Qsys',
+    line: 'The master bus.',
     blurb:
-      'The master bus. Bypassed, this is the free-running zone the sheet was built on and the plate reads a float. Engaged, an ideal unit holds the setpoints and the plate reads what that costs.',
+      'Bypassed, this is the free-running zone the sheet was built on and the ' +
+      'plate reads a float. Engaged, an ideal unit holds the setpoints and the ' +
+      'plate reads what that costs.',
     bypassed: true,
     requires: {
       // The two setpoint faces overlap, 18 to 26 °C, and nothing about either
@@ -4246,8 +4388,16 @@ export const CHANNELS = Object.freeze([
       // setback cannot cross them either, since it lowers heating and raises
       // cooling and so only ever widens the occupied band's gap.
       test: (p) => SINGLE_SETPOINT.has(p.availability) || p.heatSet <= p.coolSet,
-      reason: (p) =>
-        `The heating setpoint, ${p.heatSet.toFixed(1)} °C, is above the cooling setpoint, ${p.coolSet.toFixed(1)} °C, so the unit would be asked to heat and cool the same air at once — bring them level or apart, or make it heat only or cool only.`,
+      // One string rather than a function of the two setpoints, which is what
+      // this was first written as. Interpolated, it read both numbers back at
+      // the reader at 41 words, and a function cannot be held to the standing
+      // budget at load — so the longest always-visible sentence on the desk was
+      // also the one nothing counted. The numbers are not lost: both faces are
+      // on this strip, lettered and a thumb apart, which is how the reader got
+      // here. What a blocked strip owes is the block and the fix; the argument
+      // is in the comment above and in CLAUDE.md, under the thermostat
+      // invariant. Heat only and Cool only never read it.
+      reason: 'The heating setpoint is above the cooling one: bring them level or apart.',
     },
     meter: new Meter({
       label: 'System air transfer',
@@ -4320,8 +4470,12 @@ export const CHANNELS = Object.freeze([
     index: '13',
     name: 'Grounds',
     term: '☾',
+    line: 'The site after dark.',
     blurb:
-      'The site after dark. The stock example hangs 5.25 kW of car-park lighting off this model — 23 MWh a year against the building\'s 18 — which is why the bill sections it under Site, outside the building intensity, and why it starts bypassed: a load that size belongs on a strip, not buried in the baseline.',
+      'The stock example hangs 5.25 kW of car-park lighting off this model — 23 ' +
+      'MWh a year against the building\'s 18 — which is why the bill sections it ' +
+      'under Site, outside the building intensity, and why it starts bypassed: a ' +
+      'load that size belongs on a strip, not buried in the baseline.',
     bypassed: true,
     meter: new Meter({ label: 'Site electricity', terms: [], derived: true }),
     controls: [
@@ -4348,8 +4502,11 @@ export const CHANNELS = Object.freeze([
     term: 'η',
     prices: true,
     bypassable: false,
+    line: 'What would have to supply the heat.',
     blurb:
-      'What would have to supply the heat. The ideal unit above delivers it at 100 % efficiency and no efficiency is simulated anywhere in this model, so the plant is applied to the meter reading instead — and the bill prints the division rather than burying it.',
+      'The ideal unit above delivers it at 100 % efficiency and no efficiency is ' +
+      'simulated anywhere in this model, so the plant is applied to the meter ' +
+      'reading instead — and the bill prints the division rather than burying it.',
     requires: {
       test: (p, on) => on('system'),
       reason: 'Needs the System channel in the path before there is any heat to supply.',
@@ -4392,8 +4549,11 @@ export const CHANNELS = Object.freeze([
     term: '¤',
     prices: true,
     bypassable: false,
+    line: 'The published rate, and what happens if it is wrong.',
     blurb:
-      'The published rate, and what happens if it is wrong. Left alone the bill uses the tariff and grid factor published for this place; taken to Assumed, it uses what you set — which is how a grid that has not decarbonised yet gets tested against one that has.',
+      'Left alone the bill uses the tariff and grid factor published for this ' +
+      'place; taken to Assumed, it uses what you set — which is how a grid that ' +
+      'has not decarbonised yet gets tested against one that has.',
     meter: new Meter({ label: 'Electricity rate', terms: [], derived: true }),
     controls: [
       new Selector({
@@ -4431,8 +4591,10 @@ export const CHANNELS = Object.freeze([
     index: '16',
     name: 'Solver',
     term: 'Δt',
+    line: 'The engine room.',
     blurb:
-      'The engine room. Nothing here changes the building; everything here changes how carefully, and how slowly, the building is worked out.',
+      'Nothing here changes the building; everything here changes how carefully, ' +
+      'and how slowly, the building is worked out.',
     bypassable: false,
     meter: new Meter({ label: 'Timesteps per run', terms: [], derived: true }),
     controls: [
@@ -4495,8 +4657,10 @@ export const CHANNELS = Object.freeze([
     index: '17',
     name: 'Run',
     term: '∑h',
+    line: 'What gets simulated.',
     blurb:
-      'What gets simulated. Narrowing the run period is the cheapest speed control on the desk, and the only one that costs you nothing but months you were not reading.',
+      'Narrowing the run period is the cheapest speed control on the desk, and ' +
+      'the only one that costs you nothing but months you were not reading.',
     bypassable: false,
     meter: new Meter({ label: 'Hours to solve', terms: [], derived: true }),
     controls: [
@@ -4683,6 +4847,7 @@ export const CHANNEL_BY_ID = Object.freeze(Object.fromEntries(CHANNELS.map((c) =
 
 assertHideable();
 assertSetpointModes();
+assertCopy();
 
 /** Every parameter key, in strip order. Used to key a solve. */
 export const ALL_KEYS = Object.freeze([...CHANNELS.flatMap((c) => c.keys()), 'occFrom', 'occTo'].filter(

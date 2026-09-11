@@ -80,6 +80,34 @@ export function sampleOrder(points, current) {
 }
 
 /**
+ * Whether a control has a face to sample along at all, as one sentence.
+ *
+ * Exported because a survey axis and a study subject are the same question
+ * asked twice, and a second copy of the answer is how the two surfaces come to
+ * refuse the same control for two different reasons — or, worse, how one of
+ * them stops refusing it. `samplePoints` throws with this sentence, `axisFor`
+ * in `survey.js` throws with this sentence, and the console greys an axis
+ * offer with this sentence.
+ *
+ * A refusal rather than a boolean, for the reason every refusal on this sheet
+ * is: Principle IV asks what would fix it, and "this is a `Pattern` and
+ * carries no min" is a thing the reader can act on where `false` is not. Null
+ * where the control can be swept, which is the same shape `refuses` in
+ * `controls.js` already uses.
+ */
+export function refusesSweep(control) {
+  for (const name of ['min', 'max', 'step']) {
+    if (!Number.isFinite(control[name])) {
+      return (
+        `${control.key} is a ${control.kind} and carries no ${name}, so it has no face to ` +
+        'sweep along. Only a control declaring min, max and step can be a study subject'
+      );
+    }
+  }
+  return null;
+}
+
+/**
  * Where to sample a control between its own min and max.
  *
  * Snapped to the step grid, because those are the only values the control can
@@ -105,21 +133,21 @@ export function sampleOrder(points, current) {
  * hourly fractions are a shape rather than a position, and there is nothing
  * here to interpolate between.
  */
-export function samplePoints(control, current, n = SWEEP_SAMPLES) {
+export function samplePoints(control, current, n = SWEEP_SAMPLES, { from = control.min, to = control.max } = {}) {
+  const refusal = refusesSweep(control);
+  if (refusal) throw new Error(`samplePoints: ${refusal}`);
   const { min, max, step } = control;
-  for (const [name, value] of [['min', min], ['max', max], ['step', step]]) {
-    if (!Number.isFinite(value)) {
-      throw new Error(
-        `samplePoints: ${control.key} is a ${control.kind} and carries no ${name}, so it has no face to ` +
-          'sweep along. Only a control declaring min, max and step can be a study subject',
-      );
-    }
-  }
+  // Snapped to the control's own grid, anchored at its own minimum even when
+  // the span is narrower: a survey axis cut over part of a face has to land on
+  // exactly the positions a study of the whole face does, or a densify and a
+  // study stop sharing cache keys with nothing to say so.
   const grid = (v) => Math.min(max, Math.max(min, min + Math.round((v - min) / step) * step));
 
   const points = [];
-  for (let i = 0; i < n; i += 1) points.push(grid(min + (i / (n - 1)) * (max - min)));
-  points.push(current);
+  for (let i = 0; i < n; i += 1) points.push(grid(from + (i / (n - 1)) * (to - from)));
+  // A null `current` is a stance outside the span: a caller who narrowed the
+  // span past it has said so, and forcing it back in would widen the span.
+  if (current !== null) points.push(current);
   points.sort((a, b) => a - b);
 
   // Snapping goes through floating point, so "the same position" can arrive as
@@ -432,9 +460,11 @@ export const QUANTITIES = Object.freeze([
 export const QUANTITY_BY_ID = Object.freeze(Object.fromEntries(QUANTITIES.map((quantity) => [quantity.id, quantity])));
 
 export const OPENING_QUANTITY_BASIS = Object.freeze({
-  demand: 'A weather year and System are both in the path, so the opening question is thermal demand.',
-  tm59a: 'The desk is chasing TM59 and its seasonal occupied run can answer criterion a.',
-  extremes: 'Without an annual system or a TM59 chase, the opening question is the zone temperature range.',
+  // Lettered after "Opened here:" on the study card, so each is held to a
+  // standing message's fifteen words with that prefix counted.
+  demand: 'A weather year with System in, so the opening question is thermal demand.',
+  tm59a: 'Chasing TM59, and this run can answer criterion a.',
+  extremes: 'No annual system or TM59 chase, so the question is zone temperature range.',
 });
 
 /** The legacy inference retained once as an opening guess, never as live state. */

@@ -657,8 +657,16 @@ function moves(doc, params, facts, state) {
 
 /* ══ the paragraph ═══════════════════════════════════════════════════════ */
 
-/** How much of the desk the moves sentence will carry. */
-const MOVES = 3;
+/**
+ * How much of the desk the moves sentence will carry.
+ *
+ * Two moves, not three. The description and the finding share one paragraph
+ * under the plate, held to sixty words together, and at three moves it ran
+ * seventy to ninety. Ranking is untouched, so the two said are the two highest
+ * of the three it used to say. `MOVE_WORDS` bounds the sentence, not the count:
+ * lowering it would truncate whichever move won rather than choose fewer.
+ */
+const MOVES = 2;
 const MOVE_WORDS = 36;
 
 /**

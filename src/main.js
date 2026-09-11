@@ -26,11 +26,14 @@ import {
   DEFAULT_PARAMETERS,
   SHEET_KEYS,
   controlFor,
+  formatValue,
   isWholeYear,
+  labelFor,
   monthHours,
   phraseFor,
 } from './controls.js';
-import { mountConsole } from './console.js';
+import { fold, mountConsole } from './console.js';
+import { BUDGETS, withinBudget, words } from './copy.js';
 import { describeDesk } from './describe.js';
 import { quantityField, textField } from './field.js';
 import { mountTour } from './tour.js';
@@ -46,9 +49,40 @@ import {
   contentsFor,
   offersFor as studyOffersFor,
   openingQuantity,
+  refusesSweep,
   samplePoints,
   sampleOrder,
 } from './study.js';
+import {
+  COARSE_GRID,
+  FINE_GRID,
+  READINGS as SURVEY_READINGS,
+  READING_BY_ID,
+  axisFor,
+  contoursOf,
+  coverageOf,
+  extentOf,
+  fallStep,
+  freeExchange,
+  improvingRegion,
+  landPoint,
+  latticeOf,
+  levelsFor,
+  surfaceAt,
+  improvingClause,
+  makeSurvey,
+  pointKey,
+  meshOf,
+  refineOrder,
+  rowsFor,
+  arrisesOf,
+  blockOf,
+  strataOf,
+  SpotHeight,
+  TraverseStop,
+} from './survey.js';
+import { createRelief } from './relief.js';
+import { PullReading, axesFrom, entryFrom, pullProbes, pullReadingFor, rankPull } from './pull.js';
 import { createEnginePool, poolLimit } from './pool.js';
 import { createStudyScheduler, makeStudyJob } from './scheduler.js';
 import { runBundle } from './bundle.js';
@@ -95,7 +129,6 @@ import {
   worstHour,
 } from './readings.js';
 import {
-  LEFT_ALONE,
   Measure,
   PRESETS,
   PRESET_BY_ID,
@@ -121,6 +154,26 @@ import {
   readCriterionC,
   runningMean,
 } from './tm59.js';
+import { qualificationsSummary } from './tm59.js';
+
+// What each fold on the sheet says while it is shut, declared once and held to
+// the summary budget at load. A summary is how a reader decides whether to open
+// the fold, so one that has grown into a sentence is a paragraph in view again.
+// Declared up here with the imports rather than beside the renderers: the boot
+// awaits run the renderers before the lower half of this module is evaluated,
+// and a `const` in its temporal dead zone throws.
+const FOLD = Object.freeze(
+  Object.fromEntries(
+    Object.entries({
+      method: 'Method',
+      derivation: 'How it was read',
+      criteriaCD: 'Criteria c and d',
+      findingWhy: 'Why this reading',
+      billLede: 'About these figures',
+      sources: 'Sources',
+    }).map(([key, text]) => [key, withinBudget(BUDGETS.SUMMARY, `fold summary ${key}`, text)]),
+  ),
+);
 
 const ENERGYPLUS_VERSION = '26.1.0';
 
@@ -1537,15 +1590,29 @@ function renderBillHead(againstLabel) {
     ? ''
     : tariff.source.id === 'assumed'
       ? ' Priced at the rates assumed on the Tariff strip.'
-      : ` Priced at the ${tariff.source.kind.toLowerCase()} published for ${placeName(tariff.region)}, never a residential one, and factored at its grid carbon intensity.`;
+      : ` Priced at the ${tariff.source.kind.toLowerCase()} published for ${placeName(tariff.region)}.`;
+  const factored = isRate(tariff) && tariff.source.id !== 'assumed'
+    ? 'Never a residential tariff, and factored at its grid carbon intensity.'
+    : '';
   // Three periods, not two. A weather file no longer means a year: months can
   // be taken out of the run, and a bill of ten of them has to say so, because
-  // the reader's next move is to compare the total with a year's.
-  $('bill-lede').textContent = bill.wholeYear
-    ? `Metered across the ${group(bill.hours)}-hour run.${priced}`
+  // the reader's next move is to compare the total with a year's. That much
+  // stays in view, since it decides how every figure below is read; the
+  // pricing and the reasoning fold, one press down.
+  const [view, more] = bill.wholeYear
+    ? [`Metered across the ${group(bill.hours)}-hour run.${priced}`, factored]
     : bill.annual
-      ? `Metered across the ${group(bill.hours)} hours of the run — ${bill.months} of the year's twelve months, so this is a bill for those months and not for a year. Put the missing months back on the Run strip for a year's.${priced}`
-      : `These are the ${group(bill.hours)} hours of the sizing days — two conditions chosen for being extreme. They are a real bill for a real two days, and they are deliberately not multiplied up into a year; attach a weather file for a year's.${priced}`;
+      ? [
+          `Metered across the ${group(bill.hours)} hours of the run: ${bill.months} of the year's twelve months, not a year.`,
+          `Put the missing months back on the Run strip for a year's.${priced} ${factored}`,
+        ]
+      : [
+          `These are the ${group(bill.hours)} hours of the sizing days, not multiplied up into a year; attach a weather file for a year's.`,
+          `Two conditions chosen for being extreme, and a real bill for a real two days.${priced} ${factored}`,
+        ];
+  const lede = $('bill-lede');
+  lede.textContent = view;
+  if (more.trim()) lede.append(' ', fold('bill:lede', FOLD.billLede, {}, elem('span', null, more.trim())));
 }
 
 /**
@@ -1822,24 +1889,30 @@ function renderBillNotes() {
     ? `${absences.map((a) => `${a.what}: ${a.reason}`).join(' ')} Those figures read as an em dash and are left out of every total on this schedule.`
     : '';
 
+  // The citations are one press down, under the schedule they cite for. Each
+  // meter head already carries its source's kind beside its figure, so what
+  // folds is the list of datasets and their vintages, not the fact that a rate
+  // was published by somebody.
   const refs = $('bill-refs');
   refs.textContent = '';
-  refs.append('Rates and factors from ');
+  const list = elem('span');
+  list.append('Rates and factors from ');
   const sources = bill.card.sources;
   for (const [i, source] of sources.entries()) {
-    if (i) refs.append(i === sources.length - 1 ? ' and ' : ', ');
+    if (i) list.append(i === sources.length - 1 ? ' and ' : ', ');
     if (source.url) {
       const a = document.createElement('a');
       a.href = source.url;
       a.target = '_blank';
       a.rel = 'noreferrer';
       a.textContent = cited(source);
-      refs.append(a);
+      list.append(a);
     } else {
-      refs.append(cited(source));
+      list.append(cited(source));
     }
   }
-  refs.append('.');
+  list.append('.');
+  refs.append(fold('bill:sources', FOLD.sources, { label: 'Sources for the rates and factors' }, list));
 }
 
 /* ── pinning a scheme ─────────────────────────────────────────────────────
@@ -2078,6 +2151,42 @@ const studyStops = new Map(); // key -> the rest-shape the Stop was issued under
 const studiesStopBtn = $('studies-stop');
 const studiesClearBtn = $('desk-clear-studies');
 
+// E-02's state, declared up here with the studies' and for the same reason
+// spelled out above: `applyGeometry` reads `survey` to decide which jobs a
+// desk move reaches, and `applyGeometry` runs during boot — long before the
+// survey section at the foot of this module has been evaluated. A `let` in its
+// temporal dead zone has no `?.` spelling available and simply throws.
+let survey = null; // the ground under measurement, or null
+// Job id -> the row index it measures. The scheduler knows nothing about rows
+// and should not; this is the one map back.
+const surveyRows = new Map();
+// Which pass is in the queue, so a landed ground knows whether it has a
+// densify still owing. Null when nothing is queued.
+let surveyPass = null;
+// A survey set aside is suppressed the way a stopped study is: until the rest
+// of the desk moves, so an idle refine does not quietly restart work the
+// reader just shed.
+let surveyStop = null;
+// The count the current ground was asked for, so a re-cut that is not meant to
+// lose detail — flipping the axes — can come back at the density it had rather
+// than dropping to the coarse pass and climbing out of it again.
+let surveyGrid = COARSE_GRID;
+// Why the last survey could not be cut, standing in place of the ground.
+let surveyRefused = null;
+// Where the keyboard is standing on the ground, as lattice indices.
+//
+// One roving cursor rather than a tab stop per position, which is the house
+// rule the landmark marks already keep: "a row of tappable pips under sixty
+// faces would be two hundred new tab stops". Eighty-one focusable spot heights
+// would be worse. The ground takes one tab stop, the arrow keys walk this
+// cursor across it, and Enter stands on the design under it — so the keyboard
+// reaches every design the pointer can reach (FR-049), which is the promise,
+// rather than every design having a stop of its own, which is not.
+let groundCursor = null;
+// The designs the desk has stood on this session, in order (FR-038). A
+// session, not a history: cleared where the sample cache is cleared.
+const traverse = [];
+
 /**
  * Solo, as the desk applies it: one channel in, every other bypassable one out.
  *
@@ -2108,13 +2217,22 @@ const PRICED_KEYS = new Set(CHANNELS.filter((c) => c.prices).flatMap((c) => c.ke
 // One builder for both keys below, because they must stay byte-compatible:
 // staleness is a string comparison, and two hand-kept copies of "the shape
 // that reaches the IDF" would drift the first time either gained a component.
-const deskKey = (p, patch, omit = null) =>
-  JSON.stringify([
+// `omit` takes one key or several. A study omits its own swept key, so that
+// walking the redline tick along a finished curve does not invalidate it; a
+// survey omits both of its axes, so that standing on one of its own measured
+// points — which is the whole point of the drawing — does not cancel the
+// ground the reader is standing on and re-measure eighty-one designs it has
+// already measured.
+const deskKey = (p, patch, omit = null) => {
+  const dropped = omit === null ? EMPTY_OMIT : new Set(Array.isArray(omit) ? omit : [omit]);
+  return JSON.stringify([
     Object.fromEntries(
-      Object.entries(p).filter(([key]) => !PRICED_KEYS.has(key) && key !== omit),
+      Object.entries(p).filter(([key]) => !PRICED_KEYS.has(key) && !dropped.has(key)),
     ),
     patch,
   ]);
+};
+const EMPTY_OMIT = new Set();
 
 const shapeKey = (p) => deskKey(p, patching());
 
@@ -2192,7 +2310,22 @@ function applyGeometry() {
   // own swept key, so a tariff turned mid-study, or the swept control nudged
   // along its own curve, costs nothing. Samples already on an engine cannot
   // be stopped; they land into the cancelled job and are dropped.
-  studyScheduler?.cancelWhere((job) => job.restShape !== restShapeKey(job.key), 'moved');
+  //
+  // Each job says which keys its rest shape leaves out (`omits`): a study its
+  // swept key, a survey row both axes. Compared against the swept key alone, a
+  // row would never match and would be cancelled on every single apply,
+  // including the applies the survey's own samples cause.
+  //
+  // Each shape is taken once per apply rather than once per job: the
+  // predicate runs for every queued row and probe, a pull alone is up to
+  // ninety of them, and every shape is a serialisation of the whole desk.
+  const shapes = new Map();
+  const shapeOmitting = (omits) => {
+    const id = String(omits);
+    if (!shapes.has(id)) shapes.set(id, deskKey(params, patching(), omits));
+    return shapes.get(id);
+  };
+  studyScheduler?.cancelWhere((job) => job.restShape !== shapeOmitting(job.omits), 'moved');
   modelState = applyModel(model, params, patching());
   SURFACES = surfaceGeometry(model);
   WINDOWS = windowGeometry(model);
@@ -2285,6 +2418,15 @@ function commit(key, value, done = false) {
     else if (continuous()) pump();
   }
   if (done) {
+    // One stop on the traverse per design the desk actually came to rest on
+    // (FR-038), and **at the end of the gesture rather than inside it**.
+    // Standing on a measured point is two commits, one per axis, and recording
+    // each would put the half-moved desk between them on the traverse — a
+    // design nobody chose and, on a plan key, one that is not even on the
+    // ground. Recorded in the one funnel every control comes through rather
+    // than at the survey's own gestures, because the reader walks the design
+    // space with the sliders as often as with the drawing.
+    if (!PRICED_KEYS.has(key)) recordTraverse();
     endGesture();
     desk?.settle();
     if (autoOn()) pump();
@@ -3211,6 +3353,9 @@ function patchChannel(id, off) {
     desk.solo = null;
   }
   applyGeometry();
+  // A channel patched out is a different design, and a design the desk stood
+  // on. `commit` files the parameter moves; this path never goes through it.
+  recordTraverse();
   endGesture();
   desk.settle();
   if (autoOn()) pump();
@@ -3245,6 +3390,7 @@ desk = mountConsole({
   onReset: () => revert(),
   onStudy: (key) => studyRun(key),
   onStudyQuantity: (id) => chooseStudyQuantity(id),
+  onSurvey: (key) => nameSurveyAxis(key),
   onStudyClear(key) {
     studies.delete(key);
     openStudies.delete(key);
@@ -3335,6 +3481,11 @@ const endGesture = () => {
   // is also when every study the gesture left behind re-queues itself.
   studyScheduler?.drain();
   refreshStudies();
+  // The ground follows the same switch, and mostly does nothing: a survey's
+  // rest shape omits both of its axes, so moving along either — which is what
+  // standing on a measured point is — leaves the ground standing and only
+  // walks the stance mark across it.
+  refreshSurvey?.();
 };
 
 /* ══ controls ════════════════════════════════════════════════════════════ */
@@ -3470,6 +3621,12 @@ let cursor = -1; // which row Enter would take
 let take; // what taking it does — a place, or a file of that place
 let queryToken = 0; // latest-wins, exactly like the solver
 let inflight; // the download in progress, if any
+// Whether a station is being attached right now. `inflight` cannot answer
+// this: its controller is only ever aborted by the *next* choose, so after a
+// successful attach `signal.aborted` stays false for ever and anything gated
+// on it would be gated shut permanently. This is set and cleared around the
+// whole attach, which is what a caller actually wants to know.
+let stationAttaching = false;
 
 const say = (text, bad = false) => {
   note.hidden = !text;
@@ -3700,6 +3857,20 @@ $('site-near').addEventListener('click', async () => {
  * two disagreed, and sized the design days at the wrong pressure.
  */
 async function choose(row, pick, sizing = 'No') {
+  // Wrapped rather than flagged inline: `attach` below has half a dozen
+  // refusal exits — no DDY, an aborted download, a design day the schema
+  // types wrong — and a flag cleared at five of them is a flag that is
+  // eventually left set at the sixth, which would gate the descent shut for
+  // the rest of the session with nothing anywhere saying why.
+  stationAttaching = true;
+  try {
+    return await attach(row, pick, sizing);
+  } finally {
+    stationAttaching = false;
+  }
+}
+
+async function attach(row, pick, sizing) {
   const picked = pick.station;
   const studyContext = desk?.captureStudyContext();
   inflight?.abort();
@@ -3782,6 +3953,15 @@ async function choose(row, pick, sizing = 'No') {
   // decisions about desks swept under the departed weather.
   studyScheduler?.clearAll();
   studyStops.clear();
+  // The ground goes with them, and it has to go rather than be re-measured
+  // in place: every spot height on it is a run against the outgoing climate,
+  // and a relief holding Denver's readings under Munich's title block would be
+  // the exact mismatch the design-conditions refusal two screens up exists to
+  // prevent, in a third column. The traverse goes too — a list of designs
+  // whose readings are no longer true of anything is not a history worth
+  // keeping (FR-052). The chooser's own selection stays: which two controls
+  // the reader is interested in is not a property of the weather.
+  closeSurvey({ forgetTraverse: true });
   // The comfort line goes with them, and for the same reason: it is 365 daily
   // means of one city's year, and Bavaria's May is not Denver's. Cleared here
   // rather than left to fall out of the identity check in `runningMeanFor`,
@@ -3926,6 +4106,23 @@ const schemeHash = (p = params) =>
     pin: pinnedHour,
     quantity: studyQuantity,
     studies: openStudies,
+    // The survey's declaration — its axes, its readings and each axis's
+    // extent — and nothing else. The stance is the desk and the desk is
+    // already what the pairs above encode; the measured values stay off it
+    // because the recipient re-measures to identical numbers (FR-044); and
+    // the relief's viewpoint stays off it by the chase pin's rule, that how
+    // the ground is being looked at is not what it is (FR-044a).
+    survey: survey
+      ? {
+          x: survey.x.key,
+          y: survey.y.key,
+          readings: survey.readings.map((reading) => reading.id),
+          extents: {
+            [survey.x.key]: { from: survey.x.from, to: survey.x.to },
+            [survey.y.key]: { from: survey.y.from, to: survey.y.to },
+          },
+        }
+      : null,
   });
 
 /** The absolute form, for the clipboard and the run bundle's manifest. */
@@ -3995,6 +4192,26 @@ function refuseLink(message) {
 }
 
 let linkedStudiesRestored = false;
+/**
+ * Cut the ground a link arrived carrying.
+ *
+ * After the studies rather than beside them, and after the station has landed
+ * where there is one, because a survey queues thirty-six runs and a sample
+ * built during a link attach would fatal on zero environments. The declaration
+ * has already been validated whole by `decodeSurvey` — a link naming an axis,
+ * a reading or an extent that cannot be honoured was refused before anything
+ * was loaded — so what is left here is to name it and let the ground fill.
+ */
+function restoreLinkedSurvey(state) {
+  if (!state?.survey) return;
+  const { x, y, readings, extents } = state.survey;
+  // The link's extents come back into the chooser too, or the boxes would
+  // letter the control's full range over a ground cut narrower than that.
+  surveyChoice = { x, y, readings: [...readings], extents: { ...extents } };
+  syncSurveyAxes();
+  openSurvey({ xKey: x, yKey: y, readingIds: readings, extents });
+}
+
 function restoreLinkedStudies(state) {
   if (linkedStudiesRestored || !state?.quantity) return;
   linkedStudiesRestored = true;
@@ -4084,7 +4301,7 @@ async function attachFromLink(linked) {
       took = await choose(null, pick, linked.params.sizingPeriods);
     } catch (error) {
       refuseLink(
-        `The linked ${named} could not be attached — ${error.message} — so the whole link was set aside and the sheet is at its defaults.`,
+        `The linked ${named} could not be attached (${error.message}); the link was set aside.`,
       );
       return;
     }
@@ -4094,7 +4311,7 @@ async function attachFromLink(linked) {
     // "could not be attached" tells them only that today is not going well.
     if (typeof took === 'string' && JSON.stringify([params, patching()]) === untouched) {
       refuseLink(
-        `The linked ${named} could not be attached — ${took} — so the whole link was set aside and the sheet is at its defaults.`,
+        `The linked ${named} could not be attached (${took}); the link was set aside.`,
       );
       return;
     }
@@ -4103,6 +4320,9 @@ async function attachFromLink(linked) {
     syncSweepGate();
   }
   restoreLinkedStudies(linked);
+  // The ground last, and only now: it queues thirty-six runs, and a sample
+  // built before the station landed would fatal on zero environments.
+  restoreLinkedSurvey(linked);
   // The attach held the address still; now that the station is real, one
   // rewrite brings the bar back to lettering the desk.
   updatePermalink();
@@ -4647,12 +4867,15 @@ function applyStandard(preset) {
   const moved = preset.specs.filter((s) => before[s.key] !== s.value).length;
   const patched = preset.engages.length + preset.bypasses.length;
   statusEl.className = 'status';
+  // One sentence, the way every status line is: what moved, and solo coming
+  // off because that changes what is in the path. Which channels a standard
+  // may never touch is the register's own statement, beside the standards,
+  // and listing them here on every press put a paragraph in the status row.
   statusEl.textContent = preset.specs.length
-    ? `${preset.name} laid over the desk — ${moved} control${moved === 1 ? '' : 's'} moved` +
-      `${patched ? ` and ${patched} channel${patched === 1 ? '' : 's'} patched` : ''}. ` +
-      `${LEFT_ALONE.join(', ')} are as you left them.` +
-      (soloWas ? ' Solo came off, so the whole desk is in the path again.' : '')
-    : `${preset.name} sets no control — it states an outcome. Its targets are on the scoreboard.`;
+    ? `${preset.name} laid over the desk: ${moved} control${moved === 1 ? '' : 's'} moved` +
+      `${patched ? ` and ${patched} channel${patched === 1 ? '' : 's'} patched` : ''}.` +
+      (soloWas ? ' Solo came off.' : '')
+    : `${preset.name} sets no control; its targets are on the scoreboard.`;
   syncStandards();
   if (autoOn()) pump();
 }
@@ -5279,7 +5502,10 @@ function tm59CountRow(body, count) {
   const n = (value) => elem('b', null, String(value));
 
   if (count.read === 0) {
-    p.append(`None of the criteria in scope — ${count.scope} — could be read from this run.`);
+    // Every criterion in scope is unread, so the scope already names them and
+    // listing them again below would say the same thing twice.
+    p.append(`None of the criteria in scope — ${count.scope} — could be read from this run; each row says why.`);
+    host.append(p);
   } else {
     // "2 cleared", not "2 cleared their limits" and not "2 of 2". The bare
     // verb is the only form that stays a sentence at every reading: a
@@ -5298,38 +5524,53 @@ function tm59CountRow(body, count) {
   }
 
   // Named one by one rather than counted. A criterion the run could not answer
-  // is not one that failed and is not one that passed, and the only useful
-  // thing to say about it is which one it is and what would fix it.
-  for (const reading of count.unread) {
-    const label = reading.category
-      ? `${reading.criterion.label} · ${reading.category.label}`
-      : reading.criterion.label;
-    p.append(` ${label} could not be read: ${reading.absence}.`);
+  // is not one that failed and is not one that passed, and the useful things
+  // to say about it are which one it is and what would fix it. The fix is
+  // already lettered beside that criterion's own em dash, one row up, so it is
+  // named here and the reason is left to the row rather than said twice.
+  if (count.read > 0 && count.unread.length) {
+    const labels = count.unread.map((reading) =>
+      reading.category ? `${reading.criterion.label} · ${reading.category.label}` : reading.criterion.label,
+    );
+    const list = labels.length < 2 ? labels[0] : `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`;
+    p.append(` ${list} could not be read; each row says why.`);
   }
 
-  p.append(
-    ' Criterion c is read separately and stands outside this count, because which of it and ' +
-      'criterion a governs turns on how much of the occupied period the openings are held shut, ' +
-      'which is a fact about a window model this desk does not carry. Criterion d is not read at ' +
-      'all: this model holds no communal circulation for it to be read over, and the register’s ' +
-      'list of what this sheet cannot judge says so in full.',
-  );
-  p.append(
-    ' This is a count of lines, not a result against the method. TM59 is assessed room by room and ' +
-      'the dwelling is governed by its worst room; this model is one zone, so there is no worst ' +
-      'room to find.',
-  );
-
   host.append(p);
+
+  // Why c and d stand outside the count is the one statement here no
+  // qualification makes, so it keeps its words, one press down. The sentence
+  // that used to close this row ("a count of lines, not a result against the
+  // method … no worst room to find") is gone: the `procedure` and `one-zone`
+  // qualifications say it, nearly word for word, in the fold below.
+  host.append(
+    fold(
+      'tm59:cd',
+      FOLD.criteriaCD,
+      {},
+      elem(
+        'p',
+        'score-count',
+        'Criterion c is read separately and stands outside this count, because which of it and ' +
+          'criterion a governs turns on how much of the occupied period the openings are held shut, ' +
+          'which is a fact about a window model this desk does not carry. Criterion d is not read at ' +
+          'all: this model holds no communal circulation for it to be read over, and the register’s ' +
+          'list of what this sheet cannot judge says so in full.',
+      ),
+    ),
+  );
 }
 
 /**
- * Why these figures are not a TM59 assessment, printed under them.
+ * Why these figures are not a TM59 assessment, stated under them.
  *
  * The deliverable rather than a disclaimer, and it is in place and never on
  * hover: `pointer: coarse` has no hover at all, so a caveat that floats does
  * not exist on the phone where this sheet is most often read and least often
- * checked against the method it names.
+ * checked against the method it names. In place is not the same as always
+ * open, though. The summary states in view how many reasons there are, read
+ * off the declaration, and the reasons themselves are one press down, where
+ * 520 words stood under five rows of figures before.
  *
  * One entry per `Qualification`, `says` over `because`, so that a reader can
  * count the reasons rather than skim a paragraph — SC-005 asks that four
@@ -5342,16 +5583,6 @@ function tm59CountRow(body, count) {
  */
 function tm59QualificationRow(body, qualifications) {
   const host = scoreProse(body);
-  host.append(
-    elem(
-      'p',
-      'score-count',
-      'What these readings do not answer. TM59 is a compliance procedure with a modelling strategy, ' +
-        'a prescribed occupancy, a mandated weather file and a staged sequence behind it; what is ' +
-        'lettered above is the arithmetic of some of its criteria, which is a smaller thing. Each ' +
-        'line below is one specific gap, with what it is measured or read from beside it.',
-    ),
-  );
   const list = elem('dl', 'qualifications');
   for (const q of qualifications) {
     list.append(elem('dt', null, q.says));
@@ -5359,7 +5590,7 @@ function tm59QualificationRow(body, qualifications) {
     because.dataset.head = 'Because';
     list.append(because);
   }
-  host.append(list);
+  host.append(fold('tm59:qualifications', qualificationsSummary(), {}, list));
 }
 
 /**
@@ -5377,6 +5608,8 @@ function renderScore() {
   table.textContent = '';
   table.append(tableHead(['Criterion', 'Asks for', 'Reads', 'Margin', '']));
   const body = document.createElement('tbody');
+  // The qualifying sentences already lettered in view on this board.
+  const qualified = new Set();
   for (const preset of PRESETS) {
     if (!preset.targets.length) continue;
     // The standard's name as a subhead row rather than repeated per line, the
@@ -5438,7 +5671,15 @@ function renderScore() {
       const tr = body.insertRow();
       const label = tr.insertCell();
       label.append(target.label);
-      if (target.note) label.append(elem('i', 'why', target.note));
+      // The method folds under the criterion it explains. Ten notes of up to
+      // ninety-five words stood under a table of figures and buried them; the
+      // reading, the line and the verdict or absence are what the row is for,
+      // and they stay in the cells beside it.
+      if (target.note) {
+        label.append(
+          fold(`target:${target.id}`, FOLD.method, { label: `Method for ${target.label}` }, elem('i', 'why', target.note)),
+        );
+      }
       // What the run added to what the declaration already said: the line the
       // reading was judged against, the days it covered, and what it is a
       // reading of. One block per statement rather than one paragraph, because
@@ -5447,19 +5688,28 @@ function renderScore() {
         const reading = tm59Reading(target);
         const notes = tm59Notes(reading, asDrawn);
         const precis = tm59Precis(reading);
-        // The two sentences that qualify the reading rather than derive it stay
+        // A sentence that qualifies the reading rather than derives it stays
         // outside the fold, because a reader who never opens it must still not
         // take a bedroom criterion for a statement about the room they drew.
-        const qualifying = notes.filter((n) => QUALIFYING_NOTE.test(n));
-        const deriving = notes.filter((n) => !QUALIFYING_NOTE.test(n));
-        if (precis && deriving.length) {
-          const fold = elem('details', 'why-fold');
-          const head = elem('summary', null, precis);
-          fold.append(head);
-          for (const note of deriving) fold.append(elem('i', 'why', note));
-          label.append(fold);
-        } else {
-          for (const note of deriving) label.append(elem('i', 'why', note));
+        // Only while it is the row's one short line, though: a qualifier past
+        // a block's budget is a paragraph, and it joins the derivation.
+        // And only once per board. Categories I and II of one criterion carry
+        // the same qualifier word for word, and the second row's copy said
+        // nothing the first had not; it goes in that row's fold instead.
+        const qualifying = notes.filter(
+          (n) => QUALIFYING_NOTE.test(n) && words(n) <= BUDGETS.BLOCK.words && !qualified.has(n),
+        );
+        for (const n of qualifying) qualified.add(n);
+        const deriving = notes.filter((n) => !qualifying.includes(n));
+        if (deriving.length) {
+          label.append(
+            fold(
+              `target:${target.id}:why`,
+              precis ?? FOLD.derivation,
+              { label: `How ${target.label} was read` },
+              ...deriving.map((note) => elem('i', 'why', note)),
+            ),
+          );
         }
         for (const note of qualifying) label.append(elem('i', 'why', note));
       }
@@ -5526,16 +5776,15 @@ const OFFERS = [
   {
     key: 'system',
     verb: { every: 'asks', some: 'ask' },
-    because:
-      'about a conditioned building, and this zone is free-running — there is no demand to meter and no load to size.',
+    because: 'about a conditioned building; this zone is free-running.',
     label: 'Patch System in',
-    then: 'Patching it in fills the lines a run of this kind can answer.',
+    then: 'Patching it in fills them.',
     // The shelf is asking a different question of the same fact — not "why is
     // this criterion blank" but "what would a scheme kept from here hold" —
     // so it gets its own sentence, the way an environment's `noun` is kept
     // apart from its `label`.
     shelf: (blank) =>
-      `${listOf(blank)} blank while this zone is free-running — nothing to meter and no load to size — so a scheme kept from here would keep the gap.`,
+      `${listOf(blank)} blank while this zone is free-running, so a scheme kept from here would keep the gap.`,
     press() {
       patchChannel('system', false);
       // The board's note is a question about the desk — what is standing in
@@ -5555,7 +5804,7 @@ const OFFERS = [
     verb: { every: 'needs', some: 'need' },
     because: 'a full year behind them, and this run is design days.',
     label: 'Choose a weather location',
-    then: 'The picker is at the head of the sheet.',
+    then: 'The picker heads the sheet.',
     shelf: (blank) =>
       `${listOf(blank)} year figures and this run is design days, so a scheme kept from here would keep the gap.`,
     press() {
@@ -5767,16 +6016,12 @@ function renderChase() {
   // undone by one line of type up beside the drawing. So the chase line says
   // what it is a count of, unconditionally rather than only where a line is
   // missing: the reader who is watching this while dragging a slider is
-  // precisely the reader who never scrolls down to the board.
+  // precisely the reader who never scrolls down to the board. That is why this
+  // clause survives here although the qualifications say the same: it is the
+  // one copy the dragging reader actually sees. What it used to add, a pointer
+  // to the block below and criterion d, is said once, down there.
   if (carriesTm59(preset)) {
-    host.append(
-      elem(
-        'i',
-        'chase-part',
-        ' A count of lines, not a result against the method: criterion d is not read here at all, ' +
-          'and the block under the scoreboard says what else these readings do not answer.',
-      ),
-    );
+    host.append(elem('i', 'chase-part', ' A count of lines, not a result against the method.'));
   }
 
   // The ghost: where this stood when the hand went down. Compared at display
@@ -6133,14 +6378,12 @@ async function solve() {
   // sentence describing a building the chart under it never solved. The
   // document is the one the IDF is about to be written from, so the sentence
   // and the file agree by construction.
-  const described = describeDesk({
-    doc: model,
-    params: snapshot,
-    state: modelState,
-    place: station?.url
-      ? { name: siteName(station), zone: climateZone(station) === '—' ? null : climateZone(station) }
-      : null,
-  });
+  // No `place`. The paragraph used to open "In Denver Intl AP, ASHRAE zone
+  // 5B.", which the title block's Location and the site picker's climate zone
+  // already letter a few centimetres above it, and the description and the
+  // finding together are held to sixty words. The building is what the
+  // paragraph is for; the station is said once, where it is chosen.
+  const described = describeDesk({ doc: model, params: snapshot, state: modelState });
   const live = continuous();
   quiet = live;
 
@@ -6418,10 +6661,10 @@ async function solve() {
   // than its hour count. The run kind decides the sentence, not the width.
   $('fig-cap').textContent = hasOutdoor
     ? nn > 900
-      ? 'Zone mean air temperature against outdoor drybulb over the full run period. Each column spans the hourly range within it; the model at left is drawn from the surface vertices in the IDF and tinted by the zone mean.'
+      ? 'Zone mean air temperature against outdoor drybulb over the full run period; each column spans its hourly range. Geometry drawn from the IDF.'
       : capture.annual
-        ? 'Zone mean air temperature against outdoor drybulb over the months in the run. The model at left is drawn from the surface vertices in the IDF and tinted by the zone mean.'
-        : 'Zone mean air temperature against outdoor drybulb across both Denver design days. The model at left is drawn from the surface vertices in the IDF and tinted by the zone mean.'
+        ? 'Zone mean air temperature against outdoor drybulb over the months in the run. Geometry drawn from the IDF, tinted by the zone mean.'
+        : 'Zone mean air temperature against outdoor drybulb across both Denver design days. Geometry drawn from the IDF, tinted by the zone mean.'
     : 'Zone mean air temperature over the run. No outdoor drybulb was recorded in the ESO.';
 
   const q = (text, hot) =>
@@ -6445,6 +6688,7 @@ async function solve() {
   // a study's redline are one number rather than three that ought to agree.
   const demand = readDemand(eso, floorArea);
   const billedRuns = runs.filter((r) => r.kind === null);
+  let why = null;
 
   if (demand?.tedi != null && demand?.cedi != null) {
     // The redline goes on whichever way this building leans, because that is
@@ -6460,8 +6704,9 @@ async function solve() {
       q(f1(demand.tedi), demand.tedi >= demand.cedi),
       ' kWh/m² of heat into the zone and ',
       q(f1(demand.cedi), demand.cedi > demand.tedi),
-      ' kWh/m² back out of it — the demand the envelope sets, before the plant efficiencies the bill below divides it by.',
+      ' kWh/m² back out of it.',
     );
+    why = 'The demand the envelope sets, before the plant efficiencies the bill below divides it by.';
   } else if (conditioned) {
     // The setpoints are in the description above, so this says what the unit
     // actually held rather than restating them: under an unmet hour the two
@@ -6473,11 +6718,15 @@ async function solve() {
       q(f1(m.z.min)),
       ' °C and ',
       q(f1(m.z.max), true),
-      ` °C over the ${lead.noun}. Demand intensities need a run period to read over — a sizing day is a condition, not a period — so attach a weather file and TEDI and CEDI join the schedule above.`,
+      ` °C over the ${lead.noun}.`,
     );
+    why =
+      'Demand intensities need a run period to read over — a sizing day is a condition, not a period — so attach a weather file and TEDI and CEDI join the schedule above.';
   } else if (Number.isFinite(m.damping)) {
+    // "With no heating or cooling anywhere in this model" used to open this, and
+    // "alone" already says it: the branch is only reached free-running.
     finding.append(
-      'With no heating or cooling anywhere in this model, the envelope alone takes the ',
+      'The envelope alone takes the ',
       lead.noun,
       "'s ",
       q(f1(m.o.swing)),
@@ -6497,11 +6746,29 @@ async function solve() {
       ' °C — held there by nothing but the envelope.',
     );
   }
+  // The reading stays in the paragraph and the reason for it folds, inside the
+  // paragraph rather than beside it: every exit that clears the finding clears
+  // it with `textContent = ''`, so a fold living inside goes with it, and
+  // `.finding:empty` never leaves a summary standing under nothing.
+  if (why) finding.append(fold('finding:why', FOLD.findingWhy, {}, elem('span', null, why)));
 
   statusEl.className = 'status';
   statusEl.textContent = live
     ? `${nn.toLocaleString('en-US')} hours solved locally in ${seconds.toFixed(2)} s · auto-solve`
     : `${nn.toLocaleString('en-US')} hours solved locally in ${seconds.toFixed(2)} s · ${warnings} warning${warnings === 1 ? '' : 's'}`;
+
+  // The readings this run took, onto the traverse stop they describe. Off the
+  // snapshot the run was written from rather than off live `params`, for the
+  // reason the description is captured before the await: a slider turned
+  // during a 0.7 s annual run would put this building's numbers on another
+  // building's stop.
+  landTraverseReadings(snapshot, patching(), {
+    high: m.z.max,
+    low: m.z.min,
+    mean: m.z.mean,
+    hours: nn,
+    annual: weather,
+  });
 
   // Only a run that produced readable results fills the first square — the
   // early returns above are exactly the runs the note must not claim.
@@ -6720,9 +6987,13 @@ function landedFrom(eso, job, built) {
   };
 }
 
+/** The ids of the channels a desk has in the path. */
+function engagedChannels(snapshot, patch) {
+  return [...channelState(snapshot, patch)].filter(([, value]) => value.engaged).map(([id]) => id);
+}
+
 function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? null) {
-  const state = channelState(snapshot, patch);
-  const channels = [...state].filter(([, value]) => value.engaged).map(([id]) => id);
+  const channels = engagedChannels(snapshot, patch);
   const engaged = new Set(channels);
   const card = assume(resolveRates(station), snapshot);
   const uses = END_USES.filter((use) => !use.needs || engaged.has(use.needs));
@@ -6780,18 +7051,20 @@ function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? nul
  * cooling one blocks System, and solved anyway those positions would be the
  * free-running building drawn on the conditioned building's curve. See
  * `sampleRefusal`.
+ *
+ * A list of quantities, because a ground surveyed for demand and overheating is
+ * one set of runs read twice, not two sets: the needs are their union.
  */
-function sampleContentsFor(quantity, snapshot, patch, epw) {
-  const state = channelState(snapshot, patch);
-  const channels = [...state].filter(([, value]) => value.engaged).map(([id]) => id);
-  const needed = contentsFor(quantity, channels);
+function sampleContentsFor(quantities, snapshot, patch, annual) {
+  const channels = engagedChannels(snapshot, patch);
+  const needed = RunContents.union(quantities.map((quantity) => contentsFor(quantity, channels)));
   const carried = new RunContents({
     variables: needed.variables,
     meters: needed.meters,
     tables: needed.tables,
-    annual: Boolean(epw),
+    annual,
     channels: needed.channels,
-    season: Boolean(epw) && touchesSeason(snapshot.months),
+    season: annual && touchesSeason(snapshot.months),
   });
   return { needed, carried };
 }
@@ -6838,23 +7111,58 @@ function buildSample(job, value) {
   }
 }
 
+/**
+ * The cache identity of one sample: the sample's whole desk — the overlay's
+ * shape key — plus the run kind and the canonical carried contents, so a lean
+ * design-day sample can never answer for an annual one. The station is
+ * deliberately absent, which is why a station change clears the cache.
+ *
+ * A named function rather than an inline one because the survey names it too:
+ * a `SpotHeight` carries the `exact` identity of the run behind it, which is
+ * what makes "every figure traces to a run" a thing a harness can check
+ * instead of a thing the module promises. Two copies of this would be two
+ * answers to "which run was that", and the second one would be wrong.
+ */
+function sampleIdentity(job, value, carried) {
+  const bucket = JSON.stringify([
+    deskKey({ ...job.snapshot, [job.key]: value }, job.patch),
+    job.annual ? 'year' : 'design-day',
+  ]);
+  return { bucket, exact: JSON.stringify([bucket, carried.serialize()]) };
+}
+
+/**
+ * The channels a job's swept keys belong to, in the order the keys are given.
+ *
+ * Deduped, because a survey may cut two axes of one channel — two setpoints, a
+ * pane count against a coating — and one channel asked twice would letter the
+ * same sentence twice over. `controlFor` resolves a wall's own key to the
+ * `Facade` that owns it, so a ground cut across two walls is one channel here.
+ */
+const sweptChannels = (omits) => [
+  ...new Set((Array.isArray(omits) ? omits : [omits]).map((key) => controlFor(key).channel.id)),
+];
+
 studyScheduler = createStudyScheduler({
   // The cache key is the sample's whole desk — the overlay's shape key —
   // plus the run kind and canonical carried contents, so a lean design-day
   // sample can never answer for an annual one. The station is
   // deliberately absent, which is why a station change clears the cache.
-  keyOf: (job, value, carried) => {
-    const bucket = JSON.stringify([
-      deskKey({ ...job.snapshot, [job.key]: value }, job.patch),
-      job.annual ? 'year' : 'design-day',
-    ]);
-    return { bucket, exact: JSON.stringify([bucket, carried.serialize()]) };
-  },
+  keyOf: sampleIdentity,
   buildSample,
-  // Asked of the control's own channel only; see `sampleRefusal` for why
+  // Asked of the swept controls' own channels only; see `sampleRefusal` for why
   // another channel going out under the overlay is still a position.
+  //
+  // `job.omits` rather than `job.key`, because it is the set of keys this job
+  // sweeps: a study's own control, and a survey row's two axes — the one it
+  // steps along and the one the row stands at. `makeStudyJob` defaults it to
+  // the key, so a study asks exactly what it asked before.
   refuses: (job, value) =>
-    sampleRefusal({ ...job.snapshot, [job.key]: value }, job.patch, controlFor(job.key).channel.id),
+    sampleRefusal(
+      { ...job.snapshot, [job.key]: value },
+      job.patch,
+      sweptChannels(job.omits),
+    ),
   runSample: async ({ idf, epw }) => {
     const result = await studyPool.run({ idf, epw });
     // The counter counts engine runs, so cache hits — honestly — do not turn it.
@@ -6938,6 +7246,8 @@ studyScheduler = createStudyScheduler({
     runningMean: runningMeanFor(job.epw),
     occupiedFloor: occupiedFloor(job.snapshot),
   }),
+  // Shut during a gesture. A survey's rows go in together through
+  // `enqueueAll`, which admits the lot and drains once.
   paused: () => gesture,
   capacity: () => studyCapacity,
   onUpdate: onStudyUpdate,
@@ -7065,7 +7375,7 @@ function jobForStudy(key, { origin = 'refresh', n = SWEEP_SAMPLES, openingBasis 
   const epw = epwText ?? null;
   if (!studyQuantity) throw new Error(`the study of ${key} was queued before the desk quantity was initialized`);
   const quantity = quantityOf(studyQuantity);
-  const { needed, carried } = sampleContentsFor(quantity, snapshot, patch, epw);
+  const { needed, carried } = sampleContentsFor([quantity], snapshot, patch, Boolean(epw));
   const points = samplePoints(control, snapshot[key], n);
   return makeStudyJob({
     key,
@@ -7270,10 +7580,25 @@ function syncStudyStatus(finalLine = null, { quietly = false } = {}) {
 // so the next idle pass does not quietly restart the work; the next desk
 // move lapses the suppression and the studies refresh as usual.
 studiesStopBtn.addEventListener('click', () => {
+  // Everything in the queue, which since E-02 is three kinds of work rather
+  // than one: studies, the survey's rows and the pull's probes all ride this
+  // scheduler, so one press sheds all three. Saying "studies" over that would
+  // be a count that does not include what it claims to include (FR-054), so
+  // the sentence names what actually went.
+  const shedding = [];
+  if ((studyScheduler?.progress().jobs ?? 0) > 0) {
+    if (desk?.studyCount()) shedding.push('studies');
+    if (surveyRows.size) shedding.push('the survey');
+    if (pullJobs.size) shedding.push('the pull');
+  }
   studyScheduler?.cancelWhere(() => true, 'shed');
   if (!pumping) {
     statusEl.className = 'status';
-    statusEl.textContent = 'Studies set aside — they refresh when the desk next moves.';
+    statusEl.textContent = shedding.length
+      ? `${shedding.join(', ').replace(/, ([^,]*)$/, ' and $1')} set aside — they resume when the desk next moves.`
+      : 'Nothing queued to set aside.';
+    // Sentence case, whichever of the three came first.
+    statusEl.textContent = statusEl.textContent.charAt(0).toUpperCase() + statusEl.textContent.slice(1);
   }
 });
 
@@ -7298,6 +7623,11 @@ function syncStudyControls() {
   studiesStopBtn.hidden = (studyScheduler?.progress().jobs ?? 0) === 0;
   const n = desk?.studyCount() ?? 0;
   studiesClearBtn.hidden = n === 0;
+  // The count says studies and means studies: E-02 has its own Clear, on E-02,
+  // beside the drawing it takes down. A single count spanning both would be a
+  // number that cannot be checked against anything the reader can see, and a
+  // button that cleared a drawing on another part of the sheet without saying
+  // so is the silent effect FR-054 exists to forbid.
   if (n > 0) studiesClearBtn.textContent = `Clear ${n} ${n === 1 ? 'study' : 'studies'}`;
 }
 
@@ -7329,7 +7659,12 @@ function syncStudyControls() {
  * it was wrong.
  */
 function clearAllStudies() {
-  studyScheduler?.cancelWhere(() => true, 'cleared');
+  // Only the studies' own jobs, by name. `cancelWhere(() => true)` would take
+  // the survey's rows and the pull's probes with them — work the reader did
+  // not ask to clear, from a button that says nothing about either, which is
+  // the silent effect FR-054 forbids. E-02 has its own Clear beside its own
+  // drawing.
+  studyScheduler?.cancelWhere((job) => job.origin !== 'survey' && job.origin !== 'pull', 'cleared');
   studies.clear();
   openStudies.clear();
   studyStops.clear();
@@ -7342,11 +7677,16 @@ function clearAllStudies() {
 }
 
 function onStudyUpdate(job, event) {
+  // A survey row and a pull probe both carry a real control key, so without
+  // these gates every one of them would draw a study card under that control
+  // and the last to land would win.
+  if (onSurveyUpdate(job, event)) return;
+  if (onPullUpdate(job, event)) return;
   if (event === 'idle') {
     syncStudyStatus();
     // Densify in idle time, not now: the queue just drained, and the reader
     // may be reaching for a control this instant.
-    (window.requestIdleCallback ?? ((fn) => setTimeout(fn, 300)))(() => densifyStudies());
+    whenIdle(() => densifyStudies());
     return;
   }
   const key = job.key;
@@ -7429,10 +7769,2830 @@ function onStudyUpdate(job, event) {
   }
 }
 
+/* ══ E-02: the survey ════════════════════════════════════════════════════ */
+
+/**
+ * The ground, wired to the queue the studies already use.
+ *
+ * There is no second scheduler, no second pool and no second cache, and that
+ * is the whole design rather than an economy. A survey row *is* a study job —
+ * `buildSample` overlays one key onto a whole-desk snapshot, so a row at a
+ * fixed value of axis Y is a job whose snapshot carries that Y — which makes
+ * three requirements properties of the arrangement instead of features:
+ *
+ *   - **FR-011.** A study of axis X taken at the stance is byte-identical in
+ *     cache identity to the survey's own stance row, so it is a cache hit and
+ *     costs no engine run. Opening a survey on an axis already swept spends
+ *     nothing on the positions the sweep covered.
+ *   - **FR-053.** Rows and studies are literally in one queue, so there is no
+ *     pool for one to hold against the other. The round-robin in `takeNext` is
+ *     what makes that fair rather than merely shared.
+ *   - **FR-052.** `clearAll` on a station change cancels the rows with the
+ *     studies and clears the cache under both, because it is the same call.
+ */
+
+const SURVEY_ID = 'survey';
+
+/** Whether every reading the survey carries can be answered on its own desk. */
+function surveyRefusal(sv) {
+  const ids = new Set(sv.readings.map((reading) => reading.id));
+  const refused = surveyReadingOffers(sv.stance, sv.patch, sv.epw)
+    .find((offer) => ids.has(offer.reading.id) && !offer.available);
+  return refused?.reason ?? null;
+}
+
+/** The rest of the desk, excluding both axes — see `deskKey`'s note. */
+function surveyRestShape(sv, p = params, patch = patching()) {
+  return deskKey(p, patch, [sv.x.key, sv.y.key]);
+}
+
+/** What one survey's runs must carry: `sampleContentsFor`, over all its quantities. */
+function surveyContents(sv) {
+  return sampleContentsFor(sv.quantities, sv.stance, sv.patch, sv.annual);
+}
+
+/**
+ * Put one pass of the ground into the queue.
+ *
+ * Rows go in **in one breath** and then the queue drains, which is what the
+ * round-robin needs to be able to interleave them: enqueued one at a time with
+ * a drain on each, the first row would fill the pool before the second was in
+ * the list, and the coarse pass would land as one finished row over eight
+ * empty ones. `paused()` is already true during a gesture, so the natural
+ * place for that breath is a gesture — but a survey is opened between
+ * gestures, so the rows go in through `enqueueAll`, which admits the lot and
+ * drains once.
+ */
+function queueSurvey(sv, { grid }) {
+  if (!studyScheduler) return;
+  const { needed, carried } = surveyContents(sv);
+  const restShape = surveyRestShape(sv, sv.stance, sv.patch);
+  const specs = rowsFor(sv, { needed, carried, restShape, id: SURVEY_ID });
+  // Enqueue order is where the round-robin starts, so it is what decides which
+  // ground is measured first (FR-010). On the coarse pass there is nothing to
+  // rank — no reading exists yet — so rows go in as declared. On the densify
+  // every row is scored by the best of the positions it would fill: steepest
+  // ground first, then ground nearest the stance, which is where three
+  // separate readings on this sheet refuse until the lattice is dense.
+  if (sv.points.size) {
+    const priority = new Map();
+    for (const want of refineOrder(sv, { stance: sv.cutAt })) {
+      priority.set(want.iy, Math.max(priority.get(want.iy) ?? -Infinity, want.score));
+    }
+    specs.sort((left, right) => (priority.get(right.iy) ?? -Infinity) - (priority.get(left.iy) ?? -Infinity));
+  }
+  surveyRows.clear();
+  const jobs = specs.map((spec) => {
+    const job = makeStudyJob(spec);
+    surveyRows.set(job.id, spec.iy);
+    return job;
+  });
+  // Set before the drain, as it always was: a row answered wholly from the
+  // cache can finish inside it, and the pass it finishes has to be known.
+  surveyPass = grid;
+  studyScheduler.enqueueAll(jobs);
+}
+
+/**
+ * Take every landed sample of one row onto the ground.
+ *
+ * Walked rather than indexed, because `onUpdate('point')` says a point landed
+ * and not which one, and a row is nine entries. Positions already carrying a
+ * spot height are left alone; a gap is re-landed, so a densify that finally
+ * reaches a position the coarse pass failed on records the run rather than the
+ * old refusal.
+ */
+function absorbSurveyRow(job) {
+  const iy = surveyRows.get(job.id);
+  if (survey === null || iy === undefined) return;
+  for (let ix = 0; ix < job.curve.length; ix += 1) {
+    const point = job.curve[ix];
+    if (!point) continue;
+    // A position already carrying a run is left alone; a gap is re-landed, so
+    // a densify that finally reaches a position the coarse pass failed on
+    // records the run rather than the old refusal.
+    const already = survey.at(ix, iy);
+    if (already instanceof SpotHeight) continue;
+    landPoint(survey, {
+      ix,
+      iy,
+      sample: point.sample ?? null,
+      // A refused position is a gap like a failed run, and `landPoint`'s own
+      // fallback would call it one — "The run did not complete" over a position
+      // where no run was ever started. The distinction is the same one the
+      // scheduler draws when it lands the point: a failure is the engine's and
+      // says nothing about the design, where a refusal is a fact about the
+      // design and has a sentence for it.
+      reason: point.refused ?? null,
+      // The run this figure came from, by the scheduler's own identity, so a
+      // spot height can be traced to it rather than merely believed.
+      cacheKey: point.sample
+        ? sampleIdentity(job, job.points[ix], point.sample.carried).exact
+        : null,
+      floorArea: point.sample?.meterBasis?.floorArea ?? null,
+    });
+  }
+}
+
+/**
+ * A survey row landing, and what the desk does about it.
+ *
+ * Returns true where the event was a survey's, so `onStudyUpdate` can leave
+ * every study path below it untouched — a survey row must never draw a study
+ * card, and `job.key` is a real control key, so without this gate every row
+ * would put a curve under axis X's control and the last row to land would win.
+ */
+function onSurveyUpdate(job, event) {
+  if (job?.origin !== 'survey') return false;
+  if (event === 'point') {
+    absorbSurveyRow(job);
+    // Off the real event and nothing else: the marker fills when a ground has
+    // actually measured a design, not when a chooser was opened or a button
+    // pressed. There is no Next button on this sheet and this step does not
+    // get one — that would be the onboarding taking the reader's word for it,
+    // which is the one thing this page never does.
+    if (survey && coverageOf(survey).measured > 0) tour?.note('survey');
+    renderSurveySoon();
+    return true;
+  }
+  if (event === 'done' || event === 'failed') {
+    absorbSurveyRow(job);
+    surveyRows.delete(job.id);
+    if (!surveyRows.size) onSurveyPassDone();
+    renderSurveySoon();
+    return true;
+  }
+  if (event === 'cancelled') {
+    surveyRows.delete(job.id);
+    // A global Set-aside suppresses the ground the way a per-study Stop does,
+    // or the next idle refine would quietly restart the work just shed. Only
+    // where there is still a ground to suppress: a cancel that arrives after
+    // `closeSurvey` has nothing to take a rest shape of.
+    if (job.cancelled === 'shed' && survey) surveyStop = surveyRestShape(survey);
+    if (!surveyRows.size) surveyPass = null;
+    renderSurveySoon();
+    return true;
+  }
+  return false;
+}
+
+/**
+ * The coarse pass has landed. Refine, once, and then stop.
+ *
+ * Two passes and no more, because the coarse grid is a strict subset of the
+ * fine one and a third would have no such relationship to either: the reuse
+ * that makes a densify cost only its new runs is a property of 5 against 9,
+ * not of refinement in general.
+ */
+function onSurveyPassDone() {
+  const wasCoarse = surveyPass === COARSE_GRID;
+  surveyPass = null;
+  if (!survey || !wasCoarse) return;
+  if (!autoOn() || linkAttachPending) return;
+  if (surveyStop === surveyRestShape(survey)) return;
+  // In idle time, by the rule `densifyStudies` follows: the queue has just
+  // drained and the reader may be reaching for a control this instant.
+  whenIdle(() => refineSurvey());
+}
+
+/**
+ * Run `fn` in idle time, but not never.
+ *
+ * Chrome defers `requestIdleCallback` indefinitely in a backgrounded tab:
+ * measured here, a coarse ground landed and the densify simply never ran — no
+ * error, no symptom, a survey that stayed at 36 of 36 for as long as anybody
+ * watched. The timeout is the API's own answer to that, and a two-second
+ * ceiling is far outside the window where the reader is still reaching for
+ * the control a deferral is for. One helper, because the fix was first made
+ * at one of the three sites that needed it and only noted as owing at another.
+ */
+function whenIdle(fn, { timeout = 2000, fallback = 300 } = {}) {
+  if (window.requestIdleCallback) window.requestIdleCallback(fn, { timeout });
+  else setTimeout(fn, fallback);
+}
+
+/**
+ * Letter E-02 once per frame, however many samples land in it.
+ *
+ * `renderSurvey` rebuilds the plan, the schedules, the key and the relief's
+ * mesh, and a pool of six on design days lands several samples a frame. Each
+ * one used to rebuild the lot, and the reader can only ever see the last.
+ */
+let surveyFrame = 0;
+function renderSurveySoon() {
+  if (surveyFrame) return;
+  surveyFrame = requestAnimationFrame(() => {
+    surveyFrame = 0;
+    renderSurvey();
+  });
+}
+
+/**
+ * Densify the ground from the coarse pass to the fine one.
+ *
+ * The coarse positions come back from the sample cache, so this costs only the
+ * new runs — 56 of the 81, the other 25 having been solved already. The order
+ * they go in is `refineOrder`'s, steepest and nearest the stance first, so the
+ * ground that can still move a contour is measured before the ground that
+ * cannot.
+ */
+function refineSurvey() {
+  if (!survey || !studyScheduler || !autoOn() || gesture || linkAttachPending) return;
+  if (surveyPass !== null) return;
+  if (surveyStop === surveyRestShape(survey)) return;
+  const refined = makeSurvey({
+    x: axisFor(survey.x.key, { from: survey.x.from, to: survey.x.to, count: FINE_GRID, stance: survey.stance }),
+    y: axisFor(survey.y.key, { from: survey.y.from, to: survey.y.to, count: FINE_GRID, stance: survey.stance }),
+    readings: survey.readings,
+    stance: survey.stance,
+    patch: survey.patch,
+    annual: survey.annual,
+    epw: survey.epw,
+  });
+  // Carry every coarse reading across by position rather than by index: the
+  // fine grid holds the coarse one, so each coarse position has a fine index,
+  // and re-landing them here is what keeps the drawing standing through the
+  // densify instead of blanking and rebuilding under the reader.
+  for (const point of survey.points.values()) {
+    const x = survey.x.positions[point.ix];
+    const y = survey.y.positions[point.iy];
+    const ix = refined.x.indexOf(x);
+    const iy = refined.y.indexOf(y);
+    if (ix === -1 || iy === -1) continue;
+    // Rebuilt through the constructors rather than cloned off the prototype.
+    // A clone would carry the same readings under a different pair of indices
+    // and would not be frozen, which is a `SpotHeight` in every respect except
+    // the invariant that makes it one — and the whole argument for that class
+    // is that there is no path to an instance of it except a completed run.
+    landPoint(refined, {
+      ix,
+      iy,
+      sample: point.readings ? { readings: point.readings } : null,
+      reason: point.reason ?? null,
+      floorArea: point.floorArea ?? null,
+      cacheKey: point.cacheKey ?? null,
+    });
+  }
+  survey = refined;
+  surveyGrid = FINE_GRID;
+  queueSurvey(survey, { grid: FINE_GRID });
+  renderSurvey();
+}
+
+/**
+ * Cut a fresh ground through the desk as it stands.
+ *
+ * Refused whole rather than half opened, by the rule every refusal here
+ * follows: an axis that cannot be swept, a channel that prices rather than
+ * shapes, a reading this desk cannot answer. `axisFor` and `makeSurvey` throw
+ * for the first two and the offer roster answers the third.
+ */
+function openSurvey({ xKey, yKey, readingIds, extents = {}, count = COARSE_GRID }) {
+  if (!studyScheduler) return;
+  const stance = { ...params };
+  const patch = patching();
+  const readings = readingIds.map((id) => {
+    const reading = READING_BY_ID[id];
+    if (!reading) throw new Error(`no survey reading is declared as "${id}"`);
+    return reading;
+  });
+  const cut = makeSurvey({
+    x: axisFor(xKey, { ...(extents[xKey] ?? {}), count, stance }),
+    y: axisFor(yKey, { ...(extents[yKey] ?? {}), count, stance }),
+    readings,
+    stance,
+    patch,
+    annual: Boolean(epwText),
+    epw: epwText ?? null,
+  });
+  const refusal = surveyRefusal(cut);
+  if (refusal) {
+    closeSurvey();
+    surveyRefused = refusal;
+    renderSurvey();
+    return;
+  }
+  surveyRefused = null;
+  surveyStop = null;
+  cancelSurveyJobs('moved');
+  survey = cut;
+  renderSurvey();
+  // Gated on the same switch the studies are, and it says which of the three
+  // it is waiting on rather than standing there apparently inert (FR-014). A
+  // sample built during a link attach would fatal on zero environments, and
+  // the button gate does not cover this path.
+  const waiting = !autoOn()
+    ? 'Auto-solve is off, so nothing is measured yet. Turn it on, or run the sheet by hand.'
+    : linkAttachPending
+      ? 'A link is still attaching. The ground is measured as soon as its station lands.'
+      : stationAttaching
+        ? 'A station is still attaching. The ground is measured against the new climate once it lands.'
+        : null;
+  if (waiting) surveySay(waiting);
+  else {
+    surveyGrid = count;
+    queueSurvey(survey, { grid: count });
+  }
+  updatePermalink();
+}
+
+function cancelSurveyJobs(reason) {
+  if (!studyScheduler) return;
+  for (const id of [...surveyRows.keys()]) studyScheduler.cancel(id, reason);
+  surveyRows.clear();
+  surveyPass = null;
+}
+
+/**
+ * Take the ground down. Touches no parameter: a survey never moved one.
+ *
+ * **The traverse is kept unless the caller says otherwise**, and the
+ * distinction is the same one `clearAllStudies` draws from Revert all. Taking
+ * a drawing down is not a claim that the designs the reader stood on were
+ * wrong, and the traverse is a record of the desk rather than of the survey —
+ * it is written by `commit`, from every control on the sheet. Only a station
+ * change invalidates it, because then every reading taken at every stop is of
+ * another city's weather (FR-052).
+ *
+ * The pull goes with the ground either way: its ranking is taken at a stance
+ * against a reading the ground was cut for, and it is drawn inside E-02.
+ */
+function closeSurvey({ forgetTraverse = false } = {}) {
+  cancelSurveyJobs('cleared');
+  for (const id of [...pullJobs.keys()]) studyScheduler?.cancel(id, 'cleared');
+  pullJobs.clear();
+  pullLanded.clear();
+  pullFinished.clear();
+  pullStance = null;
+  survey = null;
+  surveyStop = null;
+  groundCursor = null;
+  if (forgetTraverse) traverse.length = 0;
+  renderTraverse();
+  renderSurvey();
+  updatePermalink();
+}
+
+/* ── E-02, drawn ─────────────────────────────────────────────────────────── */
+
+/** Every control a ground may be cut along, with its refusal where it has one. */
+function axisOffers(snapshot = params, patch = patching()) {
+  const state = channelState(snapshot, patch);
+  const offers = [];
+  for (const channel of CHANNELS) {
+    if (channel.prices) continue; // nothing it owns reaches the IDF
+    const engaged = state.get(channel.id)?.engaged;
+    for (const control of channel.controls) {
+      const sides = control.kind === 'facade' ? control.sides : [null];
+      // A control with no numeric face is listed and greyed with the sentence
+      // the studies refuse it with, rather than omitted (FR-003).
+      //
+      // The studies omit it, and that is right there: `buildPattern` and
+      // `buildDays` register no row, so no Study button is drawn at all —
+      // there is no offer to grey and no legend line to grey it with. A
+      // chooser is a different surface. It is an explicit list of what a
+      // ground may be cut along, and a control absent from that list reads as
+      // one the desk does not have, where a greyed one with its reason reads
+      // as what it is. `refusesSweep` is the same predicate `samplePoints`
+      // throws with, so the sentence a reader meets here is the sentence the
+      // model would give them.
+      const faceless = refusesSweep(control);
+      for (const side of sides) {
+        const key = side ? side.key : control.key;
+        const channelOut = !faceless && !engaged;
+        const reason = faceless
+          ? null
+          : !engaged
+            ? `Patch ${channel.name} in; with it out of the path this control reaches no object.`
+            : control.inert?.(snapshot)
+              ? control.note
+              : side && !side.reaches(snapshot)
+                ? side.reasonFor(snapshot)
+                : null;
+        offers.push({
+          key,
+          channel,
+          control,
+          side,
+          // A faceless control owns its key under a kind `controlFor` resolves
+          // but `labelFor` may name oddly, so the declaration's own label is
+          // the fallback.
+          label: faceless ? (control.label ?? key) : labelFor(key),
+          available: !faceless && !reason,
+          reason,
+          // True where the whole channel is out of the path, so the sentence
+          // is one channel's rather than one control's.
+          channelOut,
+          // Refused because the control has no numeric face at all, rather
+          // than because of anything about this desk. Carried as a flag rather
+          // than as a sentence: the sentence is the same for all thirty-nine
+          // of them and is printed once over the group.
+          faceless: Boolean(faceless),
+        });
+      }
+    }
+  }
+  return offers;
+}
+
+/** Every reading a ground may be surveyed for, against this desk's own offers. */
+function surveyReadingOffers(snapshot = params, patch = patching(), epw = epwText ?? null) {
+  const offers = studyOffers(snapshot, patch, epw);
+  return SURVEY_READINGS.map((reading) => {
+    const offer = offers.find((candidate) => candidate.quantity.id === reading.quantity.id);
+    return {
+      reading,
+      available: offer.available,
+      reason: offer.available ? null : `${offer.reason} ${offer.fix}`,
+    };
+  });
+}
+
+/**
+ * One chooser of offers, closed reading what is selected.
+ *
+ * Drawn as a title-block cell: its caption, how many offers it holds, and the
+ * value with its fold marker. The count is of what can be chosen *at this
+ * desk*, with the whole list beside it where some are refused — "129
+ * controls" over a list of which 37 can be picked would be the cell claiming
+ * a choice the reader does not have.
+ *
+ * Pressing the value turns it into the box you type in, with the whole list
+ * standing under it until a word is typed. Closed, the value is a button
+ * rather than an input holding the selection, because two readings can stand
+ * in one cell and an input does not wrap. Not a `details`: a text field
+ * inside a `summary` is a field whose Space key toggles the disclosure in
+ * some engines.
+ */
+function pickList({ label, noun, summary, placeholder, options, selected, onPick, multiple = false }) {
+  const cell = el('div', 'survey-pick survey-combo');
+  cell.dataset.pick = label;
+  const head = el('div', 'survey-pick-head');
+  const open = options.filter((option) => option.available).length;
+  const count = open === options.length ? `${open} ${noun}` : `${open} of ${options.length} ${noun}`;
+  const opener = el('button', 'survey-pick-open');
+  opener.type = 'button';
+  const sign = el('span', 'survey-pick-sign', '+');
+  sign.setAttribute('aria-hidden', 'true');
+  opener.append(el('span', 'survey-pick-value', summary || placeholder), sign);
+  // The caption is lettered outside the button, so it is said inside it too:
+  // "Choose a control" read aloud does not say which axis.
+  opener.setAttribute('aria-label', `${label}: ${summary || placeholder}`);
+  opener.setAttribute('aria-expanded', 'false');
+  const field = el('input', 'survey-pick-field');
+  field.hidden = true;
+  const closer = el('button', 'survey-pick-close', '−');
+  closer.type = 'button';
+  closer.hidden = true;
+  closer.setAttribute('aria-label', `Close the ${noun} for ${label}`);
+  head.append(el('b', null, label), el('span', 'survey-pick-count', count), opener, field, closer);
+  cell.append(head);
+  const list = el('div', 'survey-options');
+  list.hidden = true;
+  list.id = `survey-options-${label.toLowerCase().replace(/\W+/g, '-')}`;
+  // Every row with the words it can be found by and the heading it stands
+  // under, so the filter can hide a heading once nothing beneath it matches.
+  // The channel's name is among a row's words: "fabric" is how a reader who
+  // knows where a control lives but not what it is called would look for it.
+  const fold = (text) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  const rows = [];
+  const heads = [];
+  let under = null;
+  const draw = (option) => {
+    const button = el('button', 'survey-option');
+    button.type = 'button';
+    const on = multiple ? selected.includes(option.id) : selected === option.id;
+    button.setAttribute('aria-pressed', String(on));
+    if (!option.available) {
+      button.disabled = true;
+      // In place, not on hover: `pointer: coarse` has no hover, so a reason
+      // that only floats does not exist on the phone this is most read on.
+      // A control with no numeric face carries none of its own — the sentence
+      // is identical for all of them and is printed once over the group.
+      button.append(el('span', null, option.label));
+      if (option.reason) button.append(el('small', null, option.reason));
+    } else {
+      button.append(el('span', null, option.label));
+      if (option.note) button.append(el('small', null, option.note));
+      button.addEventListener('click', (event) => {
+        onPick(option.id);
+        // A pick redraws the chooser, which takes the focused row with it and
+        // drops a keyboard reader on the body. `detail` is 0 for a key press
+        // and a click count otherwise, so only a keyed pick is handed back to
+        // the cell it was made in.
+        if (event.detail === 0) {
+          $('survey-choose')
+            .querySelector(`[data-pick="${label}"] .survey-pick-open`)
+            ?.focus();
+        }
+      });
+    }
+    list.append(button);
+    // Each word whole and in its parts, so "fact" finds U-factor as well as
+    // "u-fact" does.
+    const text = fold(`${under?.dataset.group ?? ''} ${option.label} ${option.note ?? ''}`);
+    const words = text.split(/\s+/).flatMap((word) => [word, ...word.split(/[^\p{L}\p{N}]+/u)]);
+    rows.push({ button, head: under, words: words.filter(Boolean) });
+  };
+
+  /**
+   * A heading for one run of options, carrying whatever is true of all of
+   * them.
+   *
+   * This is the design system's own rule — explain it in printed body text at
+   * the head of the block it belongs to, one sentence covering every copy of
+   * the control — applied twice, because the chooser broke it twice. A channel
+   * that is out of the path refuses every control it owns for one reason, and
+   * a control with no numeric face is refused by one rule shared with the
+   * other thirty-eight. Written per entry, those were 53 rows each repeating a
+   * whole paragraph, which is a list nobody can read down.
+   */
+  const heading = (name, note) => {
+    const head = el('div', 'survey-options-group');
+    head.append(el('b', null, name));
+    if (note) head.append(el('small', null, note));
+    head.dataset.group = name;
+    list.append(head);
+    heads.push(head);
+    under = head;
+  };
+
+  // Controls with a face first, grouped by the channel that owns them, in
+  // channel order. Controls with no numeric face at all go last under one
+  // statement of the rule — they stay in the list rather than being omitted,
+  // because a control absent from a chooser reads as one the desk does not
+  // have.
+  const faceless = options.filter((option) => option.faceless);
+  let group = null;
+  for (const option of options) {
+    if (option.faceless) continue;
+    if (option.group && option.group !== group) {
+      group = option.group;
+      heading(group, option.groupReason);
+    }
+    draw(option);
+  }
+  if (faceless.length) {
+    heading(
+      `${faceless.length} controls with no face`,
+      'A selector, a bearing, a daily profile or a list of dates carries no minimum, maximum or ' +
+        'step, so there is nothing to sweep along and no ground to cut. That is the same rule a ' +
+        'study is refused by.',
+    );
+    for (const option of faceless) draw(option);
+  }
+
+  // Typing filters. 129 rows is a list read by scrolling only if the reader
+  // does not already know the name, and usually they do. Every word typed has
+  // to begin one of a row's words, in any order, so "glaz s" finds Glazing S.
+  // Begin, not appear anywhere: matched inside words, the lone "s" of that
+  // query found Visible transmittance and Panes, which is a filter that has
+  // stopped filtering. A refused row that matches stays in the list,
+  // refused, for the reason the unfiltered list keeps it: a control missing
+  // from a chooser reads as one the desk does not have.
+  field.type = 'text';
+  // What is held, in ghost ink, so the box opens empty without hiding the
+  // selection it is about to replace.
+  field.placeholder = summary || `Type to filter ${noun}`;
+  field.autocomplete = 'off';
+  field.spellcheck = false;
+  field.setAttribute('role', 'combobox');
+  field.setAttribute('aria-autocomplete', 'list');
+  field.setAttribute('aria-expanded', 'true');
+  field.setAttribute('aria-label', `Filter the ${noun} for ${label}`);
+  field.setAttribute('aria-controls', list.id);
+  const none = el('p', 'survey-filter-none');
+  none.hidden = true;
+  list.append(none);
+
+  const apply = () => {
+    const terms = fold(field.value).split(/\s+/).filter(Boolean);
+    const shown = new Set();
+    let matches = 0;
+    for (const row of rows) {
+      const match = terms.every((term) => row.words.some((word) => word.startsWith(term)));
+      row.button.hidden = !match;
+      if (match) {
+        matches += 1;
+        shown.add(row.head);
+      }
+    }
+    for (const group of heads) group.hidden = !shown.has(group);
+    // Said, not left as an empty box: an empty list under a filter reads as a
+    // chooser that failed to draw.
+    none.hidden = matches > 0;
+    none.textContent = matches ? '' : `No ${noun} match “${field.value.trim()}”.`;
+    list.scrollTop = 0;
+  };
+  const pickable = () => rows.filter((row) => !row.button.hidden && !row.button.disabled).map((row) => row.button);
+
+  // Open is one state carried by four elements, so it is set in one place.
+  // Closing empties the box, so a cell reopened shows the whole list again: a
+  // filter left standing from last time would open onto four rows with
+  // nothing saying the other 125 were hidden on purpose.
+  const show = (on) => {
+    cell.classList.toggle('open', on);
+    list.hidden = !on;
+    field.hidden = !on;
+    closer.hidden = !on;
+    opener.hidden = on;
+    opener.setAttribute('aria-expanded', String(on));
+    if (!on && field.value) {
+      field.value = '';
+      apply();
+    }
+  };
+  // Whatever takes the focus is shown and focused *before* whatever gives it
+  // up is hidden. The other way round, a click on the value opened nothing:
+  // the click had focused the opener, `show` hid it, and `focus()`'s own
+  // style update found the focused element gone and blurred it with no
+  // relatedTarget, which the focusout below reads as the reader leaving — so
+  // the cell closed inside the click that opened it, before the field could
+  // take the focus. Only a real pointer finds this: a page without window
+  // focus fires no focus events, and a scripted `.click()` opened every time.
+  const openCell = () => {
+    if (!list.hidden) return;
+    field.hidden = false;
+    field.focus();
+    show(true);
+  };
+  const closeCell = (refocus) => {
+    if (refocus) {
+      opener.hidden = false;
+      opener.focus();
+    }
+    show(false);
+  };
+
+  // A letter typed on the closed cell, or on a row, lands in the box: the
+  // reader should not have to find the box before they can use it. Space is
+  // left alone, because on the value it is the key that opens the cell and on
+  // a row it is the key that picks it.
+  const printable = (event) =>
+    event.key.length === 1 && event.key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey;
+  const typeInto = (event) => {
+    event.preventDefault();
+    openCell();
+    field.value += event.key;
+    apply();
+    field.focus();
+  };
+
+  opener.addEventListener('click', openCell);
+  opener.addEventListener('keydown', (event) => {
+    if (printable(event)) typeInto(event);
+    else if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      openCell();
+    }
+  });
+  // The caption and the count are part of the cell a finger lands on, and a
+  // press on them that did nothing would make the cell's own edge a lie.
+  head.addEventListener('click', (event) => {
+    if (event.target === head || event.target.matches('b, .survey-pick-count')) openCell();
+  });
+  closer.addEventListener('mousedown', (event) => event.preventDefault());
+  closer.addEventListener('click', () => closeCell(true));
+  // A press on a row or on the list's scroll must not take the focus out of
+  // the box, or the focusout below would close the list under the pointer
+  // before the click it is part of could land.
+  list.addEventListener('mousedown', (event) => event.preventDefault());
+  // Leaving the cell closes it, the way a field is left: nothing on this
+  // sheet stays open over the drawing once the reader has gone elsewhere.
+  cell.addEventListener('focusout', (event) => {
+    if (!list.hidden && !cell.contains(event.relatedTarget)) closeCell(false);
+  });
+
+  field.addEventListener('input', apply);
+  field.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      pickable()[0]?.focus();
+    } else if (event.key === 'Enter') {
+      // Enter picks only when the filter has left exactly one choice. With
+      // several, nothing on the list says which is first, so picking one would
+      // be a guess about what the reader meant; the focus moves to the list
+      // instead and the next Enter is theirs.
+      event.preventDefault();
+      const left = pickable();
+      if (left.length === 1) left[0].click();
+      else left[0]?.focus();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      if (field.value) {
+        field.value = '';
+        apply();
+      } else {
+        closeCell(true);
+      }
+    }
+  });
+  list.addEventListener('keydown', (event) => {
+    if (printable(event)) {
+      typeInto(event);
+      return;
+    }
+    const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
+    if (!step && event.key !== 'Escape') return;
+    event.preventDefault();
+    if (event.key === 'Escape') {
+      field.focus();
+      return;
+    }
+    const left = pickable();
+    const next = left.indexOf(document.activeElement) + step;
+    if (next < 0) field.focus();
+    else left[Math.min(next, left.length - 1)]?.focus();
+  });
+
+  cell.append(list);
+  return cell;
+}
+
+/** What the chooser is currently holding, so a half-made survey survives a redraw. */
+let surveyChoice = { x: null, y: null, readings: [], extents: {} };
+
+/** The chooser's extents with one axis's entry dropped, when that axis changes. */
+const withoutExtent = (choice, which) => {
+  const key = choice[which];
+  if (!key) return choice.extents ?? {};
+  const rest = { ...choice.extents };
+  delete rest[key];
+  return rest;
+};
+
+/**
+ * Swap the two axes, between the two pickers it swaps.
+ *
+ * Here rather than up in the head's act row because it is a gesture *about*
+ * these two controls, and the head's acts — Let it fall, Clear the survey —
+ * are about the ground as a whole. It sits where the reader's eye already is
+ * when they decide the ground is the wrong way round.
+ *
+ * The label names what it does rather than what it is: a bare glyph would be
+ * the unnamed-verb problem the design system writes about, and the same
+ * sentence rides the `title` so it is read aloud as well as seen.
+ */
+function flipButton() {
+  const wrap = el('div', 'survey-pick survey-flip');
+  const { x, y } = surveyChoice;
+  if (!x || !y) return wrap;
+  const button = el('button', 'link', 'Flip axes');
+  button.type = 'button';
+  button.title =
+    `Cut the same ground the other way round: ${labelFor(y)} across and ${labelFor(x)} up. ` +
+    'Every position has already been run, so this costs no simulation.';
+  button.setAttribute('aria-label', button.title);
+  button.addEventListener('click', () => flipSurveyAxes());
+  wrap.append(button);
+  return wrap;
+}
+
+/**
+ * The two boxes that narrow one axis (FR-006).
+ *
+ * `axisFor`, `openSurvey` and the `sv` codec have carried `from` and `to`
+ * since the ground was first cut; until now nothing on the page set them, so
+ * an extent could only be narrowed by editing a link by hand.
+ *
+ * Two `quantityField`s rather than a second pair of sliders, and for the
+ * reason the sheet's dimensions grew one: an extent is an exact figure a
+ * reader arrives with — *survey the glazing between a fifth and a half* — and
+ * a slider across two hundred pixels cannot say a fifth. The parsing, the
+ * clamping to the control's own stops and the snapping to its step are
+ * `Ruled.parse`'s, so the boxes accept exactly what the control can hold and
+ * refuse the rest whole, the way a bad link is refused.
+ *
+ * Narrowing is a re-cut, not a filter: the ground is measured over the extent
+ * it was asked for, so the samples inside the old extent are reused from the
+ * cache and only the new positions cost a run.
+ */
+function extentField(which) {
+  const key = surveyChoice[which];
+  const wrap = el('div', 'survey-pick survey-extent');
+  if (!key) return wrap;
+  const { control } = controlFor(key);
+  const held = surveyChoice.extents?.[key] ?? {};
+  const from = held.from ?? control.min;
+  const to = held.to ?? control.max;
+
+  const set = (edge, value) => {
+    const next = { from, to, [edge]: value };
+    // An extent that is not an extent is refused where it is typed rather than
+    // thrown from `axisFor` a moment later, because the box is where the reader
+    // can see what they did. The old value comes back, as it does for anything
+    // else the field cannot hold.
+    if (!(next.to > next.from)) {
+      surveySay(
+        `An extent runs from a lower figure to a higher one, and ${formatValue(key, next.from)} to ` +
+          `${formatValue(key, next.to)} does not.`,
+      );
+      renderSurveyChoose();
+      return;
+    }
+    surveyChoice = {
+      ...surveyChoice,
+      extents: { ...(surveyChoice.extents ?? {}), [key]: { from: next.from, to: next.to } },
+    };
+    cutFromChoice();
+  };
+
+  const head = el('b', null, `Extent · ${labelFor(key)}`);
+  const line = el('div', 'survey-extent-pair');
+  for (const [edge, value] of [['from', from], ['to', to]]) {
+    const field = quantityField({
+      control,
+      name: `${labelFor(key)} ${edge}`,
+      read: () => value,
+      write: (v) => set(edge, v),
+    });
+    // Lettered on the way in. `quantityField` writes nothing until something
+    // asks it to — every other caller on this sheet calls `show()` from its own
+    // redraw — so a field built and appended alone stands empty, which is what
+    // these two did.
+    field.show();
+    line.append(field.node);
+    if (edge === 'from') line.append(el('span', 'survey-extent-rule', 'to'));
+  }
+  wrap.append(head, line);
+  return wrap;
+}
+
+/**
+ * What the chooser was last drawn against, so it is not rebuilt for nothing.
+ *
+ * `renderSurvey` runs on every landed sample — a hundred and forty-four times
+ * over one ground — and the chooser is 129 offers and four fields. Rebuilt
+ * each time, the cost is the smaller half of the problem: `host.textContent =
+ * ''` **destroys the node the reader is typing into**, so an extent typed
+ * while the ground fills loses its focus, its `took` value and therefore the
+ * keystrokes, and the box silently commits nothing. `field.js` guards its own
+ * `show()` against a redraw writing over a field; nothing can guard a field
+ * against being deleted.
+ *
+ * So the chooser is redrawn only when something it draws has actually moved:
+ * the selection, or the desk the offers are measured against.
+ */
+let chooserDrawn = null; // { choice, standing } as last drawn
+
+function renderSurveyChoose() {
+  const host = $('survey-choose');
+  // `surveyChoice` is always replaced and never mutated, so identity is the
+  // whole test for it; only the desk needs its key.
+  const standing = `${shapeKey(params)}|${Boolean(epwText)}`;
+  if (chooserDrawn?.choice === surveyChoice && chooserDrawn.standing === standing) return;
+  chooserDrawn = { choice: surveyChoice, standing };
+  host.textContent = '';
+  const axes = axisOffers();
+  const readings = surveyReadingOffers();
+  const named = (key) => (key ? labelFor(key) : '');
+
+  const axisOptions = (other) =>
+    axes.map((offer) => ({
+      id: offer.key,
+      // No channel prefix: the channel is the group heading above the run of
+      // controls that belong to it, so repeating it on every row is the same
+      // noise as repeating the channel's refusal on every row.
+      label: offer.label,
+      group: offer.channel.name,
+      // Stated once by the group where it is true of the whole channel; the
+      // per-entry `reason` below is for what differs *within* one — a wall
+      // that can carry no opening, a control inert at this desk.
+      groupReason: offer.channelOut ? offer.reason : null,
+      // The one refusal that is about the pair rather than about the control:
+      // a ground cut along one control twice is a line drawn twice.
+      available: offer.available && offer.key !== other,
+      reason:
+        offer.key === other
+          ? 'This control is already the other axis, and a ground needs two.'
+          : offer.channelOut
+            ? null
+            : offer.reason,
+      faceless: offer.faceless,
+    }));
+
+  host.append(
+    pickList({
+      label: 'Axis X',
+      noun: 'controls',
+      summary: named(surveyChoice.x),
+      placeholder: 'Choose a control',
+      options: axisOptions(surveyChoice.y),
+      selected: surveyChoice.x,
+      onPick: (key) => {
+        // A different control brings a different range with it, so the extent
+        // the reader set on the old one cannot be carried across: 0.2 to 0.9
+        // means nothing on an axis running 4 to 40.
+        surveyChoice = { ...surveyChoice, x: key, extents: withoutExtent(surveyChoice, 'x') };
+        syncSurveyAxes();
+        cutFromChoice();
+      },
+    }),
+    extentField('x'),
+    flipButton(),
+    pickList({
+      label: 'Axis Y',
+      noun: 'controls',
+      summary: named(surveyChoice.y),
+      placeholder: 'Choose a control',
+      options: axisOptions(surveyChoice.x),
+      selected: surveyChoice.y,
+      onPick: (key) => {
+        surveyChoice = { ...surveyChoice, y: key, extents: withoutExtent(surveyChoice, 'y') };
+        syncSurveyAxes();
+        cutFromChoice();
+      },
+    }),
+    extentField('y'),
+    pickList({
+      label: 'Reading',
+      noun: 'readings',
+      summary: surveyChoice.readings.map((id) => READING_BY_ID[id].label).join(' + '),
+      placeholder: 'Choose a reading',
+      options: readings.map((offer) => ({
+        id: offer.reading.id,
+        label: offer.reading.label,
+        note: offer.available ? offer.reading.unit : null,
+        available: offer.available,
+        reason: offer.reason,
+      })),
+      selected: surveyChoice.readings,
+      multiple: true,
+      onPick: (id) => {
+        const held = surveyChoice.readings;
+        // Two is the ceiling and the third press replaces the second rather
+        // than being refused: a reader adding a third reading has said which
+        // two they now want, and a refusal here would be the interface
+        // arguing with a gesture it understood perfectly well.
+        const next = held.includes(id)
+          ? held.filter((other) => other !== id)
+          : held.length < 2
+            ? [...held, id]
+            : [held[0], id];
+        surveyChoice = { ...surveyChoice, readings: next };
+        cutFromChoice();
+      },
+    }),
+  );
+}
+
+/**
+ * Name one axis from a plan key's legend, and cut when both are named.
+ *
+ * The console's offer fills the chooser rather than cutting a ground on its
+ * own, because a ground needs two controls and the second one — with the
+ * extent and the reading — is chosen on E-02. Pressing an armed offer takes
+ * that axis off again, which is what makes the button a switch rather than a
+ * one-way trigger.
+ */
+function nameSurveyAxis(key) {
+  const { x, y } = surveyChoice;
+  // An axis leaving takes its extent with it: a range is a fact about one
+  // control's face and means nothing on another's.
+  if (x === key) surveyChoice = { ...surveyChoice, x: null, extents: withoutExtent(surveyChoice, 'x') };
+  else if (y === key) surveyChoice = { ...surveyChoice, y: null, extents: withoutExtent(surveyChoice, 'y') };
+  else if (!x) surveyChoice = { ...surveyChoice, x: key };
+  else if (!y) surveyChoice = { ...surveyChoice, y: key };
+  // Both taken: the newest press replaces the older axis, which is the same
+  // rule the reading chooser follows. Refusing here would be the interface
+  // arguing with a gesture it understood perfectly well.
+  else surveyChoice = { ...surveyChoice, x: y, y: key, extents: withoutExtent(surveyChoice, 'x') };
+  syncSurveyAxes();
+  cutFromChoice();
+  if (surveyChoice.x && surveyChoice.y && !surveyChoice.readings.length) {
+    // Two axes and nothing to read them for. Say so where the reader is
+    // looking, rather than leaving E-02 apparently inert.
+    surveySay('Two axes named. Choose a reading on E-02 and the ground is cut.');
+    $('survey').scrollIntoView({ block: 'start', behavior: 'auto' });
+  }
+}
+
+const syncSurveyAxes = () =>
+  desk?.setSurveyAxes([surveyChoice.x, surveyChoice.y].filter(Boolean));
+
+/** Cut a ground the moment the chooser holds enough to cut one. */
+function cutFromChoice({ count = COARSE_GRID } = {}) {
+  const { x, y, readings, extents } = surveyChoice;
+  if (!x || !y || !readings.length) {
+    renderSurvey();
+    return;
+  }
+  openSurvey({ xKey: x, yKey: y, readingIds: readings, extents: extents ?? {}, count });
+}
+
+/**
+ * Turn the ground ninety degrees.
+ *
+ * **It costs no engine runs at all**, and that is a property of the
+ * arrangement rather than an optimisation. A sample's cache identity is the
+ * whole desk — `deskKey({ ...snapshot, [key]: value }, patch)` — so the design
+ * at glazing 0.3 against wall resistance 5 is the same design whichever of the
+ * two the rows are cut along. Every measured point of a flipped ground is the
+ * same desk transposed, so the whole thing comes back out of the cache the
+ * scheduler already holds.
+ *
+ * Which is also why the flip re-cuts at the density the ground already had
+ * rather than at the coarse pass: dropping a measured 12 x 12 to 7 x 7 and
+ * climbing back out of it would be free in runs and expensive in what the
+ * reader is looking at, for no reason but the default argument.
+ *
+ * The extents need no swapping — they are keyed by control, not by axis, which
+ * is what makes a narrowed extent survive this and a change of axis drop it.
+ */
+function flipSurveyAxes() {
+  const { x, y } = surveyChoice;
+  if (!x || !y) return;
+  surveyChoice = { ...surveyChoice, x: y, y: x };
+  syncSurveyAxes();
+  cutFromChoice({ count: surveyGrid });
+}
+
+/* The plan. Inline SVG, so every contour and every tick is a real node the
+   page can letter, hit-test and read out. */
+
+const GROUND_SIZE = 320;
+// The bottom gutter carries two courses of type — the axis stops and the axis
+// label — under a row of spot figures that at 12 x 12 reaches the frame edge,
+// and a second reading puts a second figure under the first. Measured at the
+// finest ground the desk can produce; below 42 the stops print through the
+// bottom row.
+const GROUND_PAD = { left: 44, right: 12, top: 14, bottom: 42 };
+
+function groundFrame(sv) {
+  const w = GROUND_SIZE - GROUND_PAD.left - GROUND_PAD.right;
+  const h = GROUND_SIZE - GROUND_PAD.top - GROUND_PAD.bottom;
+  const px = (ix) => GROUND_PAD.left + (sv.x.count === 1 ? w / 2 : (ix / (sv.x.count - 1)) * w);
+  // Y grows up the page, as it does on a survey drawing and as it does not in
+  // SVG, so the axis is flipped exactly once, here.
+  const py = (iy) => GROUND_PAD.top + h - (sv.y.count === 1 ? h / 2 : (iy / (sv.y.count - 1)) * h);
+  return { w, h, px, py };
+}
+
+/**
+ * Draw the ground.
+ *
+ * Three states, told apart three ways, because colour may not be the only
+ * carrier of a fact and here there is no colour to spend anyway:
+ *
+ *   - **measured** — a tick mark with its figure lettered beside it in the
+ *     sheet's mono face. Every figure on this drawing is one of these.
+ *   - **inferred** — a hairline contour with its level lettered at a turn.
+ *     Nothing else on the page may be read off it, and the caption says so.
+ *   - **unsurveyed** — bare sheet. No contour is carried across it, which is
+ *     structural rather than styled: `contoursOf` emits nothing for a cell
+ *     whose mask is not full, so there is no node to style into looking
+ *     measured later.
+ */
+function drawGround(sv) {
+  const host = $('survey-ground');
+  host.textContent = '';
+  const reading = sv.readings[0];
+  const lattice = latticeOf(sv, reading);
+  const { px, py } = groundFrame(sv);
+  const root = svg('svg', {
+    viewBox: `0 0 ${GROUND_SIZE} ${GROUND_SIZE}`,
+    role: 'img',
+    tabindex: '0',
+    'aria-label': surveyAriaLabel(sv),
+  });
+
+  // The hatch the improving region is filled with. Hatching rather than a
+  // wash: a tint would read as a fourth surface on a board that has four.
+  const defs = svg('defs');
+  const pattern = svg('pattern', {
+    id: 'survey-hatch',
+    width: 4,
+    height: 4,
+    patternUnits: 'userSpaceOnUse',
+    patternTransform: 'rotate(45)',
+  });
+  pattern.append(svg('line', { x1: 0, y1: 0, x2: 0, y2: 4, stroke: 'var(--ink-ghost)', 'stroke-width': 0.6 }));
+  defs.append(pattern);
+  root.append(defs);
+
+  /* ── axes, lettered with the controls' own names and stops ───────────── */
+  const frame = groundFrame(sv);
+  root.append(
+    svg('line', {
+      class: 'axis',
+      x1: GROUND_PAD.left,
+      y1: GROUND_PAD.top,
+      x2: GROUND_PAD.left,
+      y2: GROUND_PAD.top + frame.h,
+    }),
+    svg('line', {
+      class: 'axis',
+      x1: GROUND_PAD.left,
+      y1: GROUND_PAD.top + frame.h,
+      x2: GROUND_PAD.left + frame.w,
+      y2: GROUND_PAD.top + frame.h,
+    }),
+  );
+  const axisTitle = (axis) => {
+    const unit = axis.control.unit;
+    return unit ? `${labelFor(axis.key)} · ${unit}` : labelFor(axis.key);
+  };
+  for (const [axis, along] of [[sv.x, 'x'], [sv.y, 'y']]) {
+    const lo = axis.positions[0];
+    const hi = axis.positions[axis.positions.length - 1];
+    if (along === 'x') {
+      const text = svg('text', {
+        class: 'axis-stop',
+        x: GROUND_PAD.left,
+        y: GROUND_PAD.top + frame.h + 16,
+        'text-anchor': 'start',
+      });
+      text.textContent = stopOf(axis, lo);
+      const text2 = svg('text', {
+        class: 'axis-stop',
+        x: GROUND_PAD.left + frame.w,
+        y: GROUND_PAD.top + frame.h + 16,
+        'text-anchor': 'end',
+      });
+      text2.textContent = stopOf(axis, hi);
+      const label = svg('text', {
+        class: 'axis-label',
+        x: GROUND_PAD.left + frame.w / 2,
+        y: GROUND_PAD.top + frame.h + 30,
+        'text-anchor': 'middle',
+      });
+      label.textContent = axisTitle(axis);
+      root.append(text, text2, label);
+    } else {
+      const text = svg('text', {
+        class: 'axis-stop',
+        x: GROUND_PAD.left - 5,
+        y: GROUND_PAD.top + frame.h,
+        'text-anchor': 'end',
+      });
+      text.textContent = stopOf(axis, lo);
+      const text2 = svg('text', {
+        class: 'axis-stop',
+        x: GROUND_PAD.left - 5,
+        y: GROUND_PAD.top + 8,
+        'text-anchor': 'end',
+      });
+      text2.textContent = stopOf(axis, hi);
+      const label = svg('text', {
+        class: 'axis-label',
+        x: 11,
+        y: GROUND_PAD.top + frame.h / 2,
+        'text-anchor': 'middle',
+        transform: `rotate(-90 11 ${GROUND_PAD.top + frame.h / 2})`,
+      });
+      label.textContent = axisTitle(axis);
+      root.append(text, text2, label);
+    }
+  }
+
+  /* ── the region where every reading improves, under everything ───────── */
+  // Against where the desk is standing, not where the ground was cut, and
+  // through `standingAt` rather than `positionOf` so a desk between two
+  // measured designs is told apart from one outside the extent entirely.
+  const here = sv.standingAt(params);
+  const region = improvingRegion(sv, here);
+  for (const spot of region.spots) {
+    root.append(
+      svg('rect', {
+        class: 'improving',
+        x: px(spot.ix) - 5,
+        y: py(spot.iy) - 5,
+        width: 10,
+        height: 10,
+      }),
+    );
+  }
+
+  /* ── contours: inference, never lettered from ────────────────────────── */
+  const levels = levelsFor(lattice);
+  // Seeded with where the spot figures will stand, not empty. A contour label
+  // only tested against other contour labels overprinted the measured figures,
+  // which is the worst of the two collisions available: the spot heights are
+  // the only figures on this drawing that mean anything, and a level lettered
+  // over one hides a measurement behind an inference.
+  const dense = sv.x.count > 7 || sv.y.count > 7;
+  const figureAt = (spot) =>
+    !dense || (spot.ix % 2 === 0 && spot.iy % 2 === 0) ? [px(spot.ix), py(spot.iy) - 5] : null;
+  const lettered = sv
+    .spots()
+    .map(figureAt)
+    .filter(Boolean);
+  for (const { level, segments } of contoursOf(lattice, levels)) {
+    // Every fifth line heavier, the way a contoured plan has always ranked its
+    // interval, so the eye can count without reading every figure.
+    const major = Math.round(level / (levels[1] - levels[0] || 1)) % 5 === 0;
+    for (const [a, b] of segments) {
+      root.append(
+        svg('line', {
+          class: major ? 'contour major' : 'contour',
+          x1: px(a[0]),
+          y1: py(a[1]),
+          x2: px(b[0]),
+          y2: py(b[1]),
+        }),
+      );
+    }
+    // The level, lettered once at a turn of its own line, which is where a
+    // contour carries its value on a survey drawing — but only where the
+    // figure has room to stand. A label per level placed blind collided with
+    // the spot figures and with the other levels, and a drawing whose figures
+    // overprint one another is a drawing that cannot be read at all. So each
+    // candidate turn is tested against what has already been lettered and the
+    // line simply goes unlabelled where nothing clears; the schedule below
+    // carries every measured figure regardless.
+    const clears = (at) =>
+      lettered.every((prior) => Math.hypot(prior[0] - at[0], prior[1] - at[1]) > 26);
+    const candidates = segments
+      .map((segment) => [px(segment[0][0]), py(segment[0][1])])
+      .filter((at) => at[0] > GROUND_PAD.left + 14 && at[0] < GROUND_PAD.left + frame.w - 14);
+    const at = candidates.find(clears);
+    if (at) {
+      lettered.push(at);
+      const text = svg('text', { class: 'level', x: at[0], y: at[1] - 3, 'text-anchor': 'middle' });
+      text.textContent = level.toFixed(reading.digits);
+      root.append(text);
+    }
+  }
+
+  /* ── the traverse, where the desk has already stood ──────────────────── */
+  //
+  // A chain of ghost marks joined by a hairline, with the current stop
+  // carrying the armed square — which is the stance mark below, so the two are
+  // one idiom rather than two. Each earlier stop is restorable: a click puts
+  // the desk back exactly where it was, params and patch together.
+  if (traverse.length > 1) {
+    const stops = traverse
+      .map((visit) => ({
+        stop: visit,
+        ix: sv.x.indexOf(visit.params[sv.x.key]),
+        iy: sv.y.indexOf(visit.params[sv.y.key]),
+      }))
+      .filter((at) => at.ix !== -1 && at.iy !== -1);
+    if (stops.length > 1) {
+      root.append(
+        svg('polyline', {
+          class: 'traverse',
+          points: stops.map((at) => `${px(at.ix)},${py(at.iy)}`).join(' '),
+        }),
+      );
+      for (const at of stops.slice(0, -1)) {
+        const mark = svg('g');
+        mark.append(svg('circle', { class: 'traverse-stop', cx: px(at.ix), cy: py(at.iy), r: 1.6 }));
+        const title = svg('title');
+        title.textContent = `Stood here earlier — ${formatValue(sv.x.key, sv.x.positions[at.ix])} by ${formatValue(sv.y.key, sv.y.positions[at.iy])}. Click to go back to it.`;
+        mark.append(title);
+        const hit = svg('rect', {
+          x: px(at.ix) - 10,
+          y: py(at.iy) - 10,
+          width: 20,
+          height: 20,
+          fill: 'transparent',
+          style: 'cursor: pointer',
+        });
+        hit.addEventListener('click', () => restoreTraverse(at.stop));
+        mark.append(hit);
+        root.append(mark);
+      }
+    }
+  }
+
+  /* ── spot heights: the only thing on this drawing carrying a figure ──── */
+  for (const spot of sv.spots()) {
+    const x = px(spot.ix);
+    const y = py(spot.iy);
+    const mark = svg('g');
+    mark.append(
+      svg('line', { class: 'spot', x1: x - 2.5, y1: y, x2: x + 2.5, y2: y }),
+      svg('line', { class: 'spot', x1: x, y1: y - 2.5, x2: x, y2: y + 2.5 }),
+    );
+    const value = reading.valueOf(spot.readings);
+    // A figure at every one of a hundred and forty-four positions is
+    // illegible, so on the fine ground the figures thin out. The rest are not
+    // lost: pointing at any tick, or walking the ground with the arrow keys,
+    // letters that design in full under the plan, and the folded schedule
+    // below carries them all at once.
+    if (value !== null && figureAt(spot)) {
+      const text = svg('text', {
+        class: 'spot-figure',
+        x,
+        y: y - 5,
+        'text-anchor': 'middle',
+      });
+      text.textContent = value.toFixed(reading.digits);
+      mark.append(text);
+      // The second reading, where there is one, under the first (FR-031).
+      // Lettered rather than encoded as a hue or a radius: two readings side
+      // by side is exactly the arrangement that must not be summed into one,
+      // and a size or a colour is a summing in disguise — it ranks them. The
+      // sheet has no weighting to rank them with, because nobody published
+      // one, so both stand as figures in their own units.
+      const second = sv.readings[1];
+      if (second) {
+        const other = second.valueOf(spot.readings);
+        const under = svg('text', { class: 'spot-figure second', x, y: y + 11, 'text-anchor': 'middle' });
+        under.textContent = other === null ? '—' : other.toFixed(second.digits);
+        mark.append(under);
+      }
+    }
+    const title = svg('title');
+    title.textContent = spotSentence(sv, spot);
+    mark.append(title);
+    // Standing on a point is a real target, at the coarse-pointer size, not a
+    // 5px cross. The hit area is invisible and carries the gesture.
+    const hit = svg('rect', {
+      x: x - 12,
+      y: y - 12,
+      width: 24,
+      height: 24,
+      fill: 'transparent',
+      style: 'cursor: crosshair',
+    });
+    hit.addEventListener('click', () => standOn(sv, spot));
+    // Pointing at a tick letters it under the plan. The `<title>` above is the
+    // desk's tooltip and `pointer: coarse` never shows one, which is the same
+    // hole the ground key was drawn to close — on a phone every explanation
+    // that lives only in a `<title>` does not exist. This is also how the 108
+    // figures a fine ground does not letter on the plan are read.
+    //
+    // The cursor is deliberately left where it is: the ring is the keyboard's
+    // position and a hover is not a move. Nothing is re-rendered either, so
+    // sweeping the pointer across 144 ticks costs a string apiece rather than
+    // 144 redraws of the ground.
+    hit.addEventListener('pointerenter', () => renderSpotReadout(sv, spot));
+    hit.addEventListener('pointerleave', (event) => releaseReadout(sv, event));
+    mark.append(hit);
+    root.append(mark);
+  }
+
+  /* ── gaps: a cross, and its reason on the mark ───────────────────────── */
+  for (const gap of sv.gaps()) {
+    const x = px(gap.ix);
+    const y = py(gap.iy);
+    const mark = svg('g');
+    mark.append(
+      svg('line', { class: 'gap', x1: x - 3, y1: y - 3, x2: x + 3, y2: y + 3 }),
+      svg('line', { class: 'gap', x1: x - 3, y1: y + 3, x2: x + 3, y2: y - 3 }),
+    );
+    const title = svg('title');
+    title.textContent = `No reading here — ${gap.reason}`;
+    mark.append(title);
+    // A gap's reason was in a `<title>` and nowhere else, so on a phone the
+    // cross said only that something had failed. Pointing at it now letters
+    // why under the plan, on the same target size the ticks carry.
+    const miss = svg('rect', {
+      x: x - 12,
+      y: y - 12,
+      width: 24,
+      height: 24,
+      fill: 'transparent',
+    });
+    miss.addEventListener('pointerenter', () => renderSpotReadout(sv, gap));
+    miss.addEventListener('pointerleave', (event) => releaseReadout(sv, event));
+    mark.append(miss);
+    root.append(mark);
+  }
+
+  /* ── the stance: where the desk is standing now ──────────────────────── */
+  //
+  // Read off the live desk, never off `survey.stance`. That snapshot is where
+  // the ground was *cut* and must not move — every row's samples are built
+  // from it — so reading the mark from it left the crosshair pinned to a
+  // position the reader had already walked away from, and FR-021 says in so
+  // many words that it must move when the desk moves.
+  //
+  // Drawn at the desk's true position, which may be between two measured
+  // columns after a slider nudge. A mark snapped to the nearest measured point
+  // would be claiming the reader is standing on a design they are not.
+  const at = sv.standingAt(params);
+  if (at) {
+    const x = px(at.ix);
+    const y = py(at.iy);
+    root.append(
+      svg('line', { class: 'stance-rule', x1: x, y1: GROUND_PAD.top, x2: x, y2: GROUND_PAD.top + frame.h }),
+      svg('line', { class: 'stance-rule', x1: GROUND_PAD.left, y1: y, x2: GROUND_PAD.left + frame.w, y2: y }),
+      // Filled on a measured design, hollow between two — the tick-against-
+      // hollow-circle distinction the year rule already draws, and the
+      // difference between "the desk is on this run" and "the desk is here,
+      // and this survey has not run it".
+      at.on
+        ? svg('rect', { class: 'stance', x: x - 2.5, y: y - 2.5, width: 5, height: 5 })
+        : svg('rect', { class: 'stance stance-loose', x: x - 2.5, y: y - 2.5, width: 5, height: 5 }),
+    );
+  }
+
+  /* ── the keyboard's own mark ─────────────────────────────────────────── */
+  if (groundCursor) {
+    const x = px(groundCursor.ix);
+    const y = py(groundCursor.iy);
+    // A ring rather than a second armed square: the square is the stance and
+    // means "the desk is here", where this means "the keyboard is here" and
+    // the two are only the same thing until the first arrow key.
+    root.append(
+      svg('circle', {
+        class: 'ground-cursor',
+        cx: x,
+        cy: y,
+        r: 6,
+      }),
+    );
+  }
+
+  root.addEventListener('keydown', (event) => {
+    const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[event.key];
+    if (step) {
+      event.preventDefault();
+      const here = sv.positionOf(params);
+      const at = groundCursor ?? here ?? { ix: 0, iy: 0 };
+      groundCursor = {
+        ix: Math.min(sv.x.count - 1, Math.max(0, at.ix + step[0])),
+        iy: Math.min(sv.y.count - 1, Math.max(0, at.iy + step[1])),
+      };
+      renderSurvey();
+      $('survey-ground').querySelector('svg')?.focus({ preventScroll: true });
+      // Said as well as drawn, or the mark is a colour and a position to a
+      // reader who cannot see it. `renderSurvey` has just lettered the design
+      // under the new cursor into the readout, which is a live region, so the
+      // sentence is announced by being written rather than by being repeated
+      // into the refusal paragraph — which is where `surveySay` puts it, and
+      // which is not announced at all. A refusal says why there is no ground;
+      // this says what is on it, and one element cannot be both.
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      const at = groundCursor ?? sv.positionOf(params);
+      const under = at && sv.spotAt(at.ix, at.iy);
+      // Refused rather than approximated, exactly as a click on bare ground
+      // is: there is no design here that this survey has measured.
+      if (!under) {
+        surveySay('That position has not been measured, so there is no design there to stand on.');
+        return;
+      }
+      standOn(sv, under);
+    }
+  });
+
+  host.append(root);
+}
+
+/**
+ * The key to the ground.
+ *
+ * Five marks stand on this drawing and until now not one of them was named
+ * anywhere a reader could see: every explanation lived in a `<title>`, which
+ * `pointer: coarse` never shows, and which even on a desk requires knowing
+ * there is something there to hover. The reader who asked what the hatching
+ * meant was reading a drawing with no key, which is the drawing's fault.
+ *
+ * Each entry draws the mark itself rather than describing it, because a swatch
+ * a reader can match against the ground is the whole point of a key — and it
+ * is built from the same classes the ground uses, so a mark restyled there
+ * cannot come to disagree with its own key.
+ */
+function renderGroundKey(sv) {
+  const host = $('survey-key');
+  host.textContent = '';
+  const swatch = (draw) => {
+    const box = svg('svg', { viewBox: '0 0 14 10', 'aria-hidden': 'true' });
+    box.classList.add('ground');
+    for (const node of draw()) box.append(node);
+    return box;
+  };
+  const entry = (draw, said) => {
+    const li = el('li');
+    li.append(swatch(draw), el('span', null, said));
+    host.append(li);
+  };
+
+  entry(
+    () => [
+      svg('line', { class: 'spot', x1: 4, y1: 5, x2: 10, y2: 5 }),
+      svg('line', { class: 'spot', x1: 7, y1: 2, x2: 7, y2: 8 }),
+    ],
+    'A measured design — one completed run. The figure beside it is its reading.',
+  );
+  entry(
+    () => [svg('path', { class: 'contour', d: 'M0 8 C 4 8, 6 2, 14 2', fill: 'none' })],
+    'A contour: interpolation between measured designs, carrying no figure of its own.',
+  );
+  entry(
+    () => [
+      svg('line', { class: 'stance-rule', x1: 7, y1: 0, x2: 7, y2: 10 }),
+      svg('rect', { class: 'stance', x: 4.5, y: 2.5, width: 5, height: 5 }),
+    ],
+    'Where the desk is standing now. It moves when the desk moves, and is hollow between measured designs.',
+  );
+  const region = improvingRegion(sv, sv.standingAt(params));
+  // Which way "improves" is said, per reading, off the same declarations the
+  // region is built from — never "better", which is lower for a demand and
+  // higher for the zone's own low. Never null here: a region is only ever
+  // non-empty where every reading declares a direction.
+  const clause = improvingClause(sv.readings);
+  if (region.spots.length) {
+    const count = region.spots.length;
+    entry(
+      () => [svg('rect', { class: 'improving', x: 1, y: 1, width: 12, height: 8 })],
+      `Hatched: ${count} measured ${count === 1 ? 'design' : 'designs'} with ${clause} than the one the ` +
+        'desk is on. They are measured points, not gaps.',
+    );
+  }
+  if (sv.gaps().length) {
+    entry(
+      () => [
+        svg('line', { class: 'gap', x1: 4, y1: 2, x2: 10, y2: 8 }),
+        svg('line', { class: 'gap', x1: 4, y1: 8, x2: 10, y2: 2 }),
+      ],
+      `A run that could not be completed. ${sv.gaps().length} on this ground, each carrying its reason.`,
+    );
+  }
+  if (traverse.length > 1) {
+    entry(
+      () => [
+        svg('polyline', { class: 'traverse', points: '1,8 5,3 9,7 13,2' }),
+        svg('circle', { class: 'traverse-stop', cx: 5, cy: 3, r: 1.6 }),
+      ],
+      'The traverse: designs the desk has stood on this session, in order. Each is restorable.',
+    );
+  }
+  entry(
+    () => [],
+    'Bare sheet with no contour across it has not been measured at all.',
+  );
+}
+
+/** One spot height, as a sentence — the tooltip, and the plan's own readout. */
+function spotSentence(sv, spot) {
+  const said = sv.readings
+    .map((reading) => {
+      const value = reading.valueOf(spot.readings);
+      return `${reading.label} ${value === null ? '—' : reading.format(value, spot.readings)}`;
+    })
+    .join(', ');
+  return `${labelFor(sv.x.key)} ${formatValue(sv.x.key, spot.x)}, ${labelFor(sv.y.key)} ${formatValue(sv.y.key, spot.y)} — ${said}. Measured.`;
+}
+
+function surveyAriaLabel(sv) {
+  const coverage = coverageOf(sv);
+  return (
+    `${sv.readings.map((reading) => reading.label).join(' and ')} over ${labelFor(sv.x.key)} and ` +
+    `${labelFor(sv.y.key)}, on a ${sv.density} ground with ${coverage.measured} of ${coverage.wanted} ` +
+    'positions measured. Contours are drawn between measured points and carry no figure.'
+  );
+}
+
+/**
+ * Stand on a measured design (FR-032, FR-033).
+ *
+ * Through the same `commit` path a slider gesture uses, so the axonometric,
+ * the quantities, the bill, the schedule, the description, the studies and the
+ * address bar all follow without any of them being told separately. The
+ * address bar waits for the release, by the rule every gesture here follows:
+ * `commit(..., true)` on the last key is what ends the gesture.
+ *
+ * A position that was not measured is refused. There is no path here from an
+ * interpolated point, because the argument is only ever handed a `SpotHeight`
+ * and a `SpotHeight` cannot be built from interpolation.
+ */
+function standOn(sv, spot) {
+  if (!(spot && spot.readings)) return;
+  const already =
+    params[sv.x.key] === spot.x && params[sv.y.key] === spot.y;
+  if (already) return;
+  recordTraverse();
+  commit(sv.x.key, spot.x);
+  commit(sv.y.key, spot.y, true);
+  tour?.note('drag');
+}
+
+/**
+ * Go back to a design the desk has already stood on, exactly (FR-038).
+ *
+ * Params and patch together, through the same commit path a slider gesture
+ * uses, so everything that reads the desk follows. The ground is not re-cut:
+ * a traverse stop is a position on it, and its rest shape excludes both axes,
+ * so walking back along the traverse costs no runs at all where the stops
+ * differ only in the two surveyed controls.
+ */
+function restoreTraverse(stop) {
+  if (!stop) return;
+  if (stop.shape === shapeKey(params)) return;
+  recordTraverse();
+  beginGesture();
+  // The patch bay first, because a parameter on a channel that is out reaches
+  // no object: committing the parameters against the wrong patch state would
+  // write half of them into a document that cannot hold them, and the second
+  // half would then be applied to a different building from the first.
+  //
+  // Solo is dropped rather than reconstructed. `patching()` collapses solo into
+  // a full bypass map, so a stop cannot tell "Fabric soloed" from "everything
+  // but Fabric patched out" — and those are the same *document*, which is what
+  // a restored design is. Leaving solo on would make the two disagree.
+  let patched = false;
+  for (const channel of CHANNELS) {
+    if (!channel.bypassable) continue;
+    const want = Boolean(stop.patch[channel.id]);
+    if (bypass[channel.id] === want && !solo) continue;
+    bypass[channel.id] = want;
+    patched = true;
+  }
+  if (solo) {
+    solo = null;
+    desk.solo = null;
+    patched = true;
+  }
+  // No console call is needed: `bypass` is the same object the console was
+  // mounted with, and `applyGeometry` re-letters the strips from the model
+  // state it computes — which is exactly the path `patchChannel` takes.
+  if (patched) applyGeometry();
+
+  const keys = Object.keys(stop.params).filter((key) => params[key] !== stop.params[key]);
+  if (!keys.length) {
+    // The patch bay was the whole difference. It still has to be committed as
+    // a gesture, or the address bar keeps the scheme it arrived with and no
+    // solve follows.
+    if (patched) {
+      endGesture();
+      desk?.settle();
+      if (autoOn()) pump();
+    }
+    return;
+  }
+  keys.forEach((key, at) => commit(key, stop.params[key], at === keys.length - 1));
+}
+
+/** One stop on the traverse, recorded where the desk actually moves (FR-038). */
+function recordTraverse() {
+  const here = shapeKey(params);
+  const last = traverse[traverse.length - 1];
+  if (last && last.shape === here) return;
+  // A design revisited moves to the end of the record rather than being added
+  // to it again, keeping the readings it already carries.
+  //
+  // A traverse is a path and a path may double back, so a duplicate is not
+  // *wrong* — but the record exists to be restored from, and a second row for
+  // one design offers nothing the first does not. Two of them also both
+  // answered to "you are here", which is one claim too many, and a reader
+  // dragging a slider back and forth would fill the list with a design they
+  // never left. The path is redrawn over itself on the plan either way.
+  const at = traverse.findIndex((stop) => stop.shape === here);
+  const known = at === -1 ? null : traverse.splice(at, 1)[0];
+  traverse.push(
+    new TraverseStop({
+      params: known?.params ?? params,
+      patch: known?.patch ?? patching(),
+      shape: here,
+      readings: known?.readings ?? null,
+      at: traverse.length,
+    }),
+  );
+  // Redrawn here, because this is the only place the record changes. It had
+  // no redraw of its own at first and rode on `renderSurvey`, which meant the
+  // list was only ever refreshed when a solve happened to fill a stop's
+  // readings — so walking back to a design already measured moved the record
+  // and drew nothing, and the row marked "you are here" was the one the desk
+  // had left two gestures ago.
+  renderTraverse();
+}
+
+/**
+ * Attach the readings a run produced to the stop it describes (FR-038).
+ *
+ * A stop is recorded at the end of the gesture that reached it, which is
+ * *before* the desk has been solved — so the readings cannot be handed to the
+ * constructor and the field cannot be filled where it is created. It is filled
+ * here instead, from the solve, by matching the run's own snapshot against the
+ * stop's shape rather than against the live desk: an annual run takes the best
+ * part of a second and the reader may have moved on twice while it was in
+ * flight, and a stop that took whichever readings landed next would carry
+ * another building's numbers under its own name.
+ *
+ * `TraverseStop` is frozen, so the entry is replaced rather than mutated. That
+ * is the point of the freeze: a stop's readings are settled once and cannot
+ * drift afterwards.
+ */
+function landTraverseReadings(snapshot, patch, readings) {
+  const shape = deskKey(snapshot, patch);
+  // The desk the sheet opened on. `recordTraverse` is called from `commit`,
+  // which is a *move*, so the design the reader arrived at has no stop until
+  // they leave it — and the boot solve, which is the one run that describes it,
+  // lands before any stop exists. Left alone the first row of the traverse
+  // read as three em dashes for a design that had in fact been measured.
+  // Seeded only from an empty traverse: a later run that matches no stop is a
+  // stale solve of a desk already left, and inventing a stop for it would put
+  // a design on the record that the reader never came to rest on.
+  if (!traverse.length) {
+    traverse.push(new TraverseStop({ params: snapshot, patch, shape, readings, at: 0 }));
+    renderTraverse();
+    return;
+  }
+  for (let at = traverse.length - 1; at >= 0; at -= 1) {
+    const stop = traverse[at];
+    if (stop.shape !== shape) continue;
+    // Already carrying what this run says. Re-solving the same desk — a
+    // release after a drag that ended where it began — must not mint a new
+    // object and redraw the traverse for nothing.
+    if (stop.readings) return;
+    traverse[at] = new TraverseStop({
+      params: stop.params,
+      patch: stop.patch,
+      shape: stop.shape,
+      readings,
+      at: stop.at,
+    });
+    renderTraverse();
+    return;
+  }
+}
+
+/**
+ * The design under the reader, lettered under the plan.
+ *
+ * This is what stands in view now that the schedule of spot heights is folded
+ * shut, and it is what makes folding it legitimate. The schedule tabulates
+ * every position of the ground — 144 rows on a fine one, and because
+ * `.schedule` folds each row into a block at 620px, some five hundred lines of
+ * table on a phone under two drawings.
+ *
+ * Its three jobs are all questions about **one** design at a time, which is
+ * how a survey is actually read: the reader points at a tick and asks what it
+ * says. The table answered them by printing all 144 answers at once. This
+ * answers them where they are asked, and the table stays behind the fold as
+ * the complete record for comparing rows or scanning a column.
+ *
+ *   - The plan letters only every second position on each axis once a ground
+ *     passes seven (`figureAt`), so 108 of a fine ground's 144 figures are
+ *     lettered nowhere on it.
+ *   - Both drawings are `role="img"`, which makes their whole subtree
+ *     presentational, so every `<text>` figure on the plan is invisible to
+ *     assistive technology and `surveyAriaLabel` carries no reading at all.
+ *     A shut table is no route to a figure and neither was an open one. This
+ *     line is `role="status"` — a polite live region, which is what the
+ *     cursor's sentence never had, since `surveySay` writes into the refusal
+ *     paragraph and a refusal is not announced. Now it is spoken where it is
+ *     lettered.
+ *   - The relief can refuse to draw (FR-024), and the plan plus this line are
+ *     then the survey without anything needing to be opened.
+ *
+ * It is not in a fold and never can be: it is the reading, and the reading is
+ * what may not go behind a disclosure. The record may.
+ */
+/**
+ * The schedule of spot heights: every measured design, with its own figures.
+ *
+ * Folded shut by default, which is the one place on this sheet where a table
+ * of readings sits behind a disclosure — so the rule it looks like it breaks
+ * is worth stating. "Readings never go in a fold" is a rule about the reading
+ * a page is *for*, and what stands in view here is `renderSpotReadout`: the
+ * design under the reader, in full, always, plus the coverage line saying how
+ * much was measured and the plan's own figures. The fold holds the complete
+ * record — all 144 rows of it — which is a different thing from the reading,
+ * and it is the same shape as the TM59 qualifications block, where the count
+ * stays in view and the entries are one press down.
+ *
+ * The summary carries the count, so what is behind the fold is known without
+ * opening it. That is the condition on folding anything here: a reader who
+ * never opens it must still come away with what it holds.
+ *
+ * Two things about where this lives. The `<details>` is **static markup** in
+ * index.html and only its table is rebuilt, because `renderSurvey` runs on
+ * every landed sample — a fold rebuilt 144 times over one ground would slam
+ * itself shut under a reader who had opened it, which is the same hazard that
+ * made `renderSurveyChoose` stop rebuilding the extent fields. And the rows
+ * are built even while shut rather than on first open: `.schedule` folds each
+ * row into a block at 620px and the cells carry their own heads, so the work
+ * is the same either way, and a lazy build would put a second state into a
+ * function that has none.
+ */
+function renderSpots(sv) {
+  const table = $('survey-spots');
+  table.textContent = '';
+  const spots = sv.spots();
+  const heads = [labelFor(sv.x.key), labelFor(sv.y.key), ...sv.readings.map((reading) => reading.label)];
+  const thead = tableHead(heads);
+  const tbody = el('tbody');
+  for (const spot of spots) {
+    const row = el('tr');
+    const cells = [
+      formatValue(sv.x.key, spot.x),
+      formatValue(sv.y.key, spot.y),
+      ...sv.readings.map((reading) => {
+        const value = reading.valueOf(spot.readings);
+        // An absence is an em dash and stays out of every total. Zero is a
+        // measurement; missing is not one.
+        return value === null ? '—' : reading.format(value, spot.readings);
+      }),
+    ];
+    cells.forEach((text, at) => {
+      const cell = el('td', null, text);
+      // Set where the cell is built, so the words over a column and the words
+      // beside a folded figure are one string.
+      cell.dataset.head = heads[at];
+      row.append(cell);
+    });
+    tbody.append(row);
+  }
+  table.append(thead, tbody);
+  keepTableSemantics(table);
+  $('survey-spots-scope').textContent = spots.length
+    ? `${spots.length} measured ${spots.length === 1 ? 'design' : 'designs'}`
+    : 'nothing measured yet';
+}
+
+/**
+ * Give the readout back after a pointer leaves a tick — but only a *mouse*.
+ *
+ * A touch pointer does not hover: it comes into existence on contact and is
+ * destroyed on release, so `pointerleave` fires at the end of every tap. Left
+ * symmetrical with `pointerenter`, a tap on a tick lettered that design and
+ * took it away again in the same gesture, which on a phone is the whole of
+ * this line's usefulness — the reading would flash and revert before it could
+ * be read. So a finger leaves the reading standing until another tick is
+ * touched, which is what "point at a tick to read it" means on a device with
+ * no pointer to hover with, and a mouse restores the desk's own design as it
+ * always did.
+ *
+ * `pointerType` is the honest test, the same shape as the stylesheet's
+ * `pointer: coarse`: it names no device, it says what kind of pointer this is.
+ */
+function releaseReadout(sv, event) {
+  if (event.pointerType === 'mouse') renderSpotReadout(sv);
+}
+
+function renderSpotReadout(sv, at = groundCursor) {
+  const host = $('survey-spot');
+  const where = at ?? sv.positionOf(params);
+  const under = where && sv.spotAt(where.ix, where.iy);
+  if (under) {
+    host.textContent = spotSentence(sv, under);
+    host.classList.remove('loose');
+    return;
+  }
+  // A position with no run under it says so, with its own coordinates, rather
+  // than going blank: "not measured" is a reading about the ground and the
+  // reader is entitled to it. A gap knows why it could not be run, which is
+  // the one thing a cross on the plan cannot letter.
+  if (where) {
+    const gap = sv.gaps().find((one) => one.ix === where.ix && one.iy === where.iy);
+    host.textContent =
+      `${labelFor(sv.x.key)} ${formatValue(sv.x.key, sv.x.positions[where.ix])}, ` +
+      `${labelFor(sv.y.key)} ${formatValue(sv.y.key, sv.y.positions[where.iy])} — ` +
+      (gap ? `no reading here. ${gap.reason}` : 'not measured.');
+    host.classList.add('loose');
+    return;
+  }
+  // The desk is off the surveyed ground entirely, which is a fact about the
+  // desk rather than an empty line.
+  host.textContent =
+    'Point at a tick, or walk the ground with the arrow keys, to read the design measured there.';
+  host.classList.add('loose');
+}
+
+/**
+ * Coverage and density, lettered wherever the relief is drawn (FR-018i).
+ *
+ * The relief is smooth by decision, and a smooth surface does not report its
+ * own sample density the way a faceted one does in its own texture. So these
+ * two figures are the only thing separating a coarse survey from a convincing
+ * picture of one, and they are load bearing rather than a caption. They must
+ * not later be softened as cosmetic.
+ */
+function renderCoverage(sv) {
+  const host = $('survey-coverage');
+  const coverage = coverageOf(sv);
+  host.textContent = '';
+  host.append(
+    document.createTextNode('Ground '),
+    el('b', null, coverage.density),
+    document.createTextNode(' · '),
+    el('b', null, `${coverage.measured} of ${coverage.wanted}`),
+    document.createTextNode(' positions measured'),
+  );
+  if (coverage.gaps) {
+    host.append(document.createTextNode(` · ${coverage.gaps} could not be run`));
+  }
+  if (coverage.unsurveyed) {
+    host.append(el('span', 'loose', ` · ${coverage.unsurveyed} not yet measured`));
+  }
+}
+
+/**
+ * A quantity along one axis, in that control's own units.
+ *
+ * At the control's declared digits and in its unit, so the figure is lettered
+ * to the precision the margin number beside it uses —
+ * and so a unitless control (a ratio, a fraction) reads as a bare number
+ * rather than as a number with a trailing space where a unit was expected.
+ */
+function amountOn(axis, value) {
+  // The declaration's `digits` rather than `format` itself, because an amount
+  // of exactly zero is not the control's `zero` label.
+  const unit = axis.control.unit;
+  const said = value.toFixed(axis.control.digits);
+  return unit ? `${said} ${unit}` : said;
+}
+
+/**
+ * A tolerance, with at least one figure in it.
+ *
+ * `toFixed(1)` on a tolerance of 0.04 °C prints `0.0`, and "holding high to
+ * within 0.0 °C" is a claim of exactness the arithmetic did not make — the
+ * one shape of rounding this sheet cannot let through, because the reader has
+ * no way to see it. Below the reading's own precision it is lettered as a
+ * bound rather than as a figure.
+ */
+function within(tolerance, reading) {
+  const floor = 10 ** -reading.digits;
+  return tolerance < floor
+    ? `${floor.toFixed(reading.digits)} ${reading.unit}`
+    : `${tolerance.toFixed(reading.digits)} ${reading.unit}`;
+}
+
+/**
+ * The sentence under the ground: what it is, and what it is not.
+ *
+ * The inference is declared here **and** on the relief's own caption, because
+ * a continuous surface is read as continuous data wherever it is drawn and a
+ * declaration on the plan does not reach a reader looking at the relief
+ * (FR-019).
+ */
+function renderSurveyFinding(sv) {
+  const coverage = coverageOf(sv);
+  const host = $('survey-finding');
+  if (!coverage.measured) {
+    host.textContent = coverage.gaps
+      ? `Nothing on this ground could be measured: all ${coverage.gaps} runs failed. There is no relief to draw, and none is drawn.`
+      : '';
+    return;
+  }
+  const parts = [];
+  // Against where the desk is standing, not where the ground was cut. Read
+  // from the same call `drawGround` makes, or the sentence and the hatching
+  // under it disagree about the same region — which they did: 26 designs named
+  // in prose over a drawing showing none.
+  const here = sv.standingAt(params);
+  const region = improvingRegion(sv, here);
+  if (region.spots.length) {
+    // The key's own clause, so the finding and the key under the hatching name
+    // the region in one wording.
+    parts.push(
+      `${region.spots.length} measured ${region.spots.length === 1 ? 'design reads' : 'designs read'} ` +
+        `${improvingClause(sv.readings)} than the stance. That is a region of the measured ground, not an optimum.`,
+    );
+  } else if (region.refusal) {
+    parts.push(region.refusal);
+  }
+  // Where two readings disagree, the trade is stated in both readings' own
+  // units and no single figure ranks one against the other (FR-031). There is
+  // no combined score on this sheet and there must not be one: nobody
+  // published a weighting, and inventing one would be the drawing grading a
+  // design instead of measuring it.
+  if (sv.readings.length === 2) {
+    const at = sv.positionOf(params);
+    const standing = at && sv.spotAt(at.ix, at.iy);
+    if (standing) {
+      const base = sv.readings.map((entry) => entry.valueOf(standing.readings));
+      const split = sv.spots().filter((spot) => {
+        const values = sv.readings.map((entry) => entry.valueOf(spot.readings));
+        if (values.some((value) => value === null) || base.some((value) => value === null)) return false;
+        const better = sv.readings.map((entry, at2) => entry.improves(values[at2], base[at2]));
+        return better[0] !== better[1];
+      });
+      if (split.length) {
+        // The design where the *improvement* is largest, not where the first
+        // reading moved most. Ranked the second way, the exemplar was the
+        // design that made one reading worst while the other barely moved —
+        // "+5.4 °C of high against +0.0 °C of low", which is a trade nobody
+        // would make and therefore says nothing about the trade there is.
+        // Each reading's change is scaled by its own range across the ground,
+        // because the two are in different units and neither may be ranked
+        // against the other in absolute terms.
+        const spans = sv.readings.map((entry) => {
+          const values = sv.spots().map((spot) => entry.valueOf(spot.readings)).filter((v) => v !== null);
+          const span = Math.max(...values) - Math.min(...values);
+          return span > 0 ? span : 1;
+        });
+        const gain = (spot) =>
+          Math.min(
+            ...sv.readings.map((entry, at2) => {
+              const value = entry.valueOf(spot.readings);
+              const better = entry.improves(value, base[at2]);
+              return better ? Math.abs(value - base[at2]) / spans[at2] : 0;
+            }).filter((score) => score > 0),
+          );
+        const worst = split.reduce((left, right) => (gain(right) > gain(left) ? right : left));
+        const said = sv.readings.map((entry, at2) => {
+          const value = entry.valueOf(worst.readings);
+          const change = value - base[at2];
+          return `${change >= 0 ? '+' : ''}${entry.format(change, worst.readings)} of ${entry.label.toLowerCase()}`;
+        });
+        parts.push(
+          `${split.length} measured ${split.length === 1 ? 'design trades' : 'designs trade'} one reading ` +
+            `against the other. The largest gain is at ${formatValue(sv.x.key, worst.x)} by ` +
+            `${formatValue(sv.y.key, worst.y)}: ${said.join(' against ')}. Both are stated in their own ` +
+            'units and neither is ranked against the other, because nobody published a weighting.',
+        );
+      }
+    }
+  }
+  const exchange = freeExchange(sv, here);
+  if (exchange.flat) {
+    parts.push('The reading does not move around the stance, so there is no exchange to state.');
+  } else if (exchange.refusal) {
+    parts.push(exchange.refusal);
+  } else {
+    parts.push(
+      `Along the level line at the stance, ${amountOn(sv.x, Math.abs(exchange.dx))} of ` +
+        `${phraseFor(sv.x.key)} buys ${amountOn(sv.y, Math.abs(exchange.dy))} of ` +
+        `${phraseFor(sv.y.key)}, holding ${sv.readings[0].label.toLowerCase()} to within ` +
+        `${within(exchange.tolerance, sv.readings[0])}.`,
+    );
+  }
+  // Said once. The region and the exchange are two readings taken against the
+  // same stance, so when the stance itself is what refuses them they refuse
+  // with one sentence — and printed twice it reads as two different problems.
+  host.textContent = [...new Set(parts)].join(' ');
+}
+
+/* ── the pull ────────────────────────────────────────────────────────────── */
+
+let pullJobs = new Map(); // job id -> the probe spec it came from
+let pullLanded = new Map(); // job id -> { here, there }
+let pullStance = null;
+const pullFinished = new Map(); // job id -> its probe spec, once landed
+// Where the ranking opens. Not a cap: `pullShowAll` reaches the rest, because
+// a control missing from the table reads as one that was never probed.
+const PULL_ROWS = 20;
+let pullShowAll = false;
+
+/**
+ * Read the pull: one run per sweepable control, ranked at the stance.
+ *
+ * Queued through the existing scheduler, so a control already swept as a study
+ * or already measured by a survey is a cache hit and costs no engine run
+ * (FR-011, SC-011). There is no second pool and no second cache — the probes
+ * are study jobs sweeping two points, and the round-robin is what keeps them
+ * from holding the queue against a study or a survey.
+ */
+function readPull() {
+  if (!studyScheduler || !survey) return;
+  if (pullJobs.size) {
+    for (const id of [...pullJobs.keys()]) studyScheduler.cancel(id, 'stopped');
+    pullJobs.clear();
+    pullLanded.clear();
+    renderPull();
+    return;
+  }
+  if (!autoOn() || linkAttachPending || stationAttaching) {
+    surveySay('The pull waits for auto-solve and for any link or station still attaching.');
+    return;
+  }
+  const reading = pullReadingFor(survey.readings[0].id);
+  const stance = { ...params };
+  const patch = patching();
+  const { needed, carried } = surveyContents(survey);
+  const { probes, inert } = pullProbes(stance, patch, {
+    quantity: reading.quantity,
+    engaged: engagedChannels(stance, patch),
+    annual: Boolean(epwText),
+    epw: epwText ?? null,
+    needed,
+    carried,
+  });
+  pullStance = { stance, patch, reading, inert, annual: Boolean(epwText) };
+  pullJobs = new Map();
+  pullLanded = new Map();
+  pullFinished.clear();
+  studyScheduler.enqueueAll(
+    probes.map((probe) => {
+      // The rest of the desk excluding the probed key, exactly as a study's
+      // is: a probe is a study of two points, and moving the control it
+      // probes only walks along the answer it gave.
+      const job = makeStudyJob({ ...probe, restShape: restShapeKey(probe.key, stance, patch) });
+      pullJobs.set(job.id, probe);
+      return job;
+    }),
+  );
+  renderPull();
+}
+
+/** A landed probe, absorbed. Returns true where the event was a probe's. */
+function onPullUpdate(job, event) {
+  if (job?.origin !== 'pull') return false;
+  if (event === 'point' || event === 'done' || event === 'failed') {
+    const reading = pullStance?.reading;
+    if (reading) {
+      const here = job.curve[0]?.sample ? reading.valueOf(job.curve[0].sample.readings) : null;
+      const there = job.curve[1]?.sample ? reading.valueOf(job.curve[1].sample.readings) : null;
+      // Carried so the entry can tell a step that was refused from one that
+      // failed — see `entryFrom`. The stance is position 0 and is the desk
+      // itself, which is never refused, so only the step's own is worth taking.
+      pullLanded.set(job.id, { here, there, refused: job.curve[1]?.refused ?? null });
+    }
+    if (event !== 'point') pullDone(job.id);
+    renderPullSoon();
+    return true;
+  }
+  if (event === 'cancelled') {
+    pullDone(job.id);
+    renderPullSoon();
+    return true;
+  }
+  return false;
+}
+
+/**
+ * The ranking redrawn once a frame, for the reason `renderSurveySoon` is: a
+ * probe lands twice, cache hits land synchronously inside one drain, and each
+ * landing used to re-rank and rebuild the whole table for a reader who can
+ * only ever see the last.
+ */
+let pullFrame = 0;
+function renderPullSoon() {
+  if (pullFrame) return;
+  pullFrame = requestAnimationFrame(() => {
+    pullFrame = 0;
+    renderPull();
+  });
+}
+
+function pullDone(id) {
+  const probe = pullJobs.get(id);
+  if (probe) pullFinished.set(id, probe);
+  pullJobs.delete(id);
+}
+
+/** Every entry the ranking currently holds, measured and inert together. */
+function pullEntries() {
+  if (!pullStance) return [];
+  const entries = [...pullStance.inert];
+  for (const [id, probe] of [...pullFinished, ...pullJobs]) {
+    const landed = pullLanded.get(id);
+    if (!landed) continue;
+    entries.push(entryFrom(probe, { ...landed, reading: pullStance.reading }));
+  }
+  return rankPull(entries);
+}
+
+/**
+ * The ranking, drawn.
+ *
+ * The signed meter bar the balance rail uses, with one difference that is not
+ * a detail: the rail's `--warm` / `--cold` pair encodes a signed *physical*
+ * quantity, and "which way this control moves the reading" is not one. So the
+ * bars are graphite and the direction is a word in its own column — which is
+ * where the rail itself ended up, for the argument that a hue cannot be the
+ * only thing saying which way a term points (FR-025).
+ */
+function renderPull() {
+  const section = $('pull');
+  if (!section) return;
+  section.hidden = !survey;
+  if (!survey) return;
+
+  const running = pullJobs.size > 0;
+  $('pull-read').textContent = running ? 'Stop reading the pull' : 'Read the pull';
+  const entries = pullEntries();
+  const measured = entries.filter((entry) => !entry.inert);
+  const inert = entries.filter((entry) => entry.inert);
+
+  if (!pullStance) {
+    $('pull-scope').textContent = '';
+    $('pull-lede').textContent =
+      'Which of the ninety sweepable controls actually move this reading, at the desk as it stands — one ' +
+      'run each, ranked. It is the question that comes before the ground: which two controls are worth ' +
+      'cutting one along.';
+    $('pull-table').textContent = '';
+    $('pull-inert').textContent = '';
+    return;
+  }
+
+  // Read off what the probes were actually run at, never off the desk as it
+  // stands now: a station attached while the ranking was landing would have
+  // the sentence describe a year the runs never saw.
+  const kind = pullStance.annual ? 'annual' : 'design-day';
+  const pullReading = measured.length ? new PullReading({ kind, reading: pullStance.reading, entries }) : null;
+
+  const total = pullFinished.size + pullJobs.size;
+  $('pull-scope').textContent = running
+    ? `${pullFinished.size} of ${total} controls read`
+    : `${measured.length} controls read, ${inert.length} inert`;
+  // Which run kind the ranking was read at, stated rather than assumed. On an
+  // annual desk 90 runs is about 16 s, and a reader watching a ranking settle
+  // is entitled to know whether they are looking at a year or at two days.
+  $('pull-lede').textContent = pullReading
+    ? `${pullReading.said} ${running ? 'The order settles as the runs land; the top entries are stable early.' : ''}`.trim()
+    : 'Reading the pull — one run per control, at the desk as it stands.';
+
+  const table = $('pull-table');
+  table.textContent = '';
+  const heads = ['Control', 'Moves the reading', 'Per unit', 'Effect', 'Room left'];
+  // The whole ranking is reachable, not the top twenty of thirty-seven
+  // (FR-025). Twenty is where it opens because that is a screen and the tail
+  // of a ranking is by definition the part that moves the reading least — but
+  // a reader who wants a particular control's pull has to be able to find it,
+  // and a control that is missing from the table reads as one that was never
+  // probed. The rest is one press away and the press says how many.
+  const shown = pullShowAll ? measured.length : Math.min(PULL_ROWS, measured.length);
+  const thead = el('thead');
+  const headRow = el('tr');
+  heads.forEach((head, at) => {
+    const cell = el('th', at >= 3 ? 'num' : null, head);
+    headRow.append(cell);
+  });
+  thead.append(headRow);
+  const tbody = el('tbody');
+  const widest = Math.max(...measured.map((entry) => entry.pull), 0) || 1;
+  for (const entry of measured.slice(0, shown)) {
+    const row = el('tr');
+    if ([surveyChoice.x, surveyChoice.y].includes(entry.key)) row.classList.add('chosen');
+    // The control's name is the way to cut a ground along it (FR-028): choosing
+    // two entries names two axes without anything being retyped.
+    const pick = el('button', 'pull-pick', entry.label);
+    pick.type = 'button';
+    pick.title = `Make ${entry.label} an axis of the survey`;
+    pick.addEventListener('click', () => cutFromPull(entry.key));
+    const name = el('td');
+    name.append(pick);
+
+    // The bar, and the word beside it. Both, always: in monochrome, under
+    // forced colours, or read aloud as a swatch and a number, a bar says
+    // nothing whatever about which way it points.
+    const barCell = el('td');
+    const bar = el('div', 'pull-bar');
+    const fill = el('div', 'pull-fill');
+    const width = (entry.pull / widest) * 50;
+    const rising = entry.direction === 'raise';
+    fill.style.left = rising ? '50%' : `${50 - width}%`;
+    fill.style.width = `${width}%`;
+    bar.append(fill);
+    // The word, always, beside the bar. In monochrome, under forced colours,
+    // or read aloud as a swatch and a number, a bar says nothing whatever
+    // about which way it points — the same argument that put `in` and `out`
+    // beside every figure on the balance rail.
+    const said = el(
+      'span',
+      'pull-said',
+      entry.direction === 'none'
+        ? 'does not move it'
+        : entry.direction === 'raise'
+          ? 'raises it'
+          : 'lowers it',
+    );
+    barCell.append(bar, said);
+
+    const cells = [
+      name,
+      barCell,
+      el('td', null, entry.perUnit || '—'),
+      el('td', 'num', formatEffect(entry, pullStance.reading)),
+      el('td', 'num', entry.atStop ? 'At its stop' : `${entry.room.toFixed(2)}${entry.perUnit ? ` ${entry.perUnit}` : ''}`),
+    ];
+    cells.forEach((cell, at) => {
+      // Set where the cell is built, so the words over a column and the words
+      // beside a folded figure are one string. Written rather than assigned:
+      // `dataset` is a getter-only property, and `Object.assign` onto it
+      // throws — which, from inside a scheduler callback, took down the drain
+      // and left the ranking reading `0 of 37` for ever with the runs quietly
+      // completing behind it.
+      cell.dataset.head = heads[at];
+      row.append(cell);
+    });
+    tbody.append(row);
+  }
+  table.append(thead, tbody);
+  keepTableSemantics(table);
+
+  const more = $('pull-more');
+  more.hidden = measured.length <= PULL_ROWS;
+  if (!more.hidden) {
+    more.textContent = pullShowAll
+      ? `Show the top ${PULL_ROWS}`
+      : `Show all ${measured.length} controls`;
+  }
+
+  // Inert controls are listed rather than omitted or drawn as zero: "this
+  // reaches nothing here" is often exactly the answer to "why does nothing I
+  // try move this reading" (FR-027).
+  $('pull-inert').textContent = inert.length
+    ? `${inert.length} controls reach no object at this stance and cost no run: ` +
+      `${inert.slice(0, 4).map((entry) => `${entry.label} — ${entry.inert.toLowerCase()}`).join('; ')}` +
+      `${inert.length > 4 ? `; and ${inert.length - 4} more.` : ''}`
+    : '';
+}
+
+/**
+ * Name an axis from the ranking, and cut the ground once two are named
+ * (FR-028).
+ *
+ * The pair goes through `axesFrom` rather than straight to `openSurvey`,
+ * which is what that function is for: it refuses two entries that are the same
+ * control, and refuses an inert one **with that entry's own reason**. Neither
+ * refusal is hypothetical from here — the ranking lists inert controls
+ * deliberately, so a reader can press one — and "the Gains channel is out of
+ * the path" is a far better answer than the sentence `axisFor` would throw a
+ * moment later about a control reaching no object.
+ */
+function cutFromPull(key) {
+  const entries = pullEntries();
+  nameSurveyAxis(key);
+  const { x, y } = surveyChoice;
+  if (!x || !y) return;
+  try {
+    axesFrom(entries, x, y);
+  } catch (failure) {
+    // Refused whole, with the reason where the reader pressed. The axis is put
+    // back so the chooser does not hold a pairing the survey has just refused.
+    surveyChoice = { ...surveyChoice, [x === key ? 'x' : 'y']: null };
+    syncSurveyAxes();
+    surveySay(failure.message.replace(/^axesFrom: /, ''));
+    renderSurvey();
+  }
+}
+
+/** One effect, per unit of the control's own travel and in the reading's units. */
+function formatEffect(entry, reading) {
+  if (entry.effect === null) return '—';
+  const magnitude = Math.abs(entry.effect);
+  const digits = magnitude >= 100 ? 0 : magnitude >= 1 ? 2 : 3;
+  return `${entry.effect.toFixed(digits)} ${reading.unit}`;
+}
+
+/* ── letting the design fall ─────────────────────────────────────────────── */
+
+let falling = null;
+
+/**
+ * Release the desk and let it walk downhill, one real run at a time.
+ *
+ * Every intermediate desk is a design that was actually simulated — `fallStep`
+ * returns a measured neighbour or nothing, and there is no path here from an
+ * interpolated position — so E-01 follows every step as a building rather than
+ * as an animation of one. Each step goes through the same `commit` path a
+ * slider gesture uses, which is what makes the axonometric, the quantities,
+ * the bill, the schedule and the description all follow without any of them
+ * being told separately.
+ *
+ * **Stated as steps, not flown.** There is no animated descent to disable
+ * under `prefers-reduced-motion`, because there is none to begin with: each
+ * step is a commit and a line of prose (FR-023). A reader who has asked for
+ * reduced motion loses nothing here, which is the only version of that promise
+ * worth making.
+ */
+function letItFall() {
+  if (!survey) return;
+  if (falling) {
+    stopFalling('The descent was stopped. The desk is standing on the last completed design it reached.');
+    return;
+  }
+  // A descent while the world is moving under it would be walking a ground
+  // whose readings are about to be thrown away.
+  if (linkAttachPending || stationAttaching) {
+    surveySay('A link or a station is still attaching, so the ground is about to be re-measured. The descent waits for it.');
+    return;
+  }
+  const at = survey.positionOf(params);
+  if (!at) {
+    surveySay(
+      'The desk is not standing on a measured position of this ground, so there is nowhere on it to fall ' +
+        'from. Stand on a spot height first, or widen the extent.',
+    );
+    return;
+  }
+  falling = { visited: new Set([pointKey(at.ix, at.iy)]), steps: 0 };
+  $('survey-fall').textContent = 'Stop the descent';
+  fallOnce();
+}
+
+function fallOnce() {
+  if (!falling || !survey) return;
+  const at = survey.positionOf(params);
+  const next = fallStep(survey, at, { visited: falling.visited });
+  if (!next || next.stopped) {
+    stopFalling(next?.stopped ?? 'The descent stopped.');
+    return;
+  }
+  falling.visited.add(pointKey(next.ix, next.iy));
+  falling.steps += 1;
+  const reading = survey.readings[0];
+  const said =
+    `${formatValue(survey.x.key, next.x)} · ${formatValue(survey.y.key, next.y)} → ` +
+    reading.format(reading.valueOf(next.readings), next.readings);
+  standOn(survey, next);
+  surveySay(`Step ${falling.steps}: ${said}.`);
+  // A quarter second per step, and neither of the two obvious alternatives.
+  //
+  // A loop would move the desk to the hollow with nothing in between ever
+  // seen, which is the whole difference between letting a design fall and
+  // computing where it lands. `requestAnimationFrame` was the first attempt
+  // and is worse than it sounds: sixty designs a second is not watching a
+  // descent, every one of them commits and re-solves E-01, and a backgrounded
+  // tab stops delivering frames at all — measured, the descent took one step
+  // and stalled.
+  //
+  // This is not an animation and it is not disabled under reduced motion
+  // (FR-023): each step is a discrete state the reader asked for and can read,
+  // and the alternative — arriving at the hollow with no steps — is the thing
+  // that loses information rather than the thing that spares it.
+  setTimeout(() => fallOnce(), 250);
+}
+
+/**
+ * Stop, always on a completed design and never mid-run or on an interpolated
+ * position (FR-036), and always saying why (FR-035, FR-037).
+ */
+function stopFalling(reason) {
+  const steps = falling?.steps ?? 0;
+  falling = null;
+  $('survey-fall').textContent = 'Let it fall';
+  surveySay(
+    steps
+      ? `${reason} ${steps} ${steps === 1 ? 'step' : 'steps'} taken, each one a completed run.`
+      : reason,
+  );
+}
+
+/** One line under the chooser, for what the survey is doing right now. */
+function surveySay(sentence) {
+  const note = $('survey-refusal');
+  note.hidden = false;
+  note.classList.remove('bad');
+  note.textContent = sentence;
+}
+
+/**
+ * One stop of an axis, bare of its unit, for the plan and the relief alike.
+ *
+ * The stops carry a bare number and the axis label carries the unit, once,
+ * which is how a survey drawing has always lettered a scale. Lettered on both,
+ * `3.00 m²K/W` at the head of a 44px gutter simply ran off the left of the
+ * frame and printed as `00 m²K/W` — a number that is not the reading and not
+ * anything else either.
+ */
+function stopOf(axis, value) {
+  const said = formatValue(axis.key, value);
+  const unit = axis.control.unit;
+  return unit && said.endsWith(unit) ? said.slice(0, -unit.length).trim() : said;
+}
+
+/* ── the relief ──────────────────────────────────────────────────────────── */
+
+let relief = null;
+let reliefLoss = null;
+
+/**
+ * Draw the relief, or say in place why there is none.
+ *
+ * The relief is never the only carrier of anything (FR-018c). Every reading is
+ * on the plan and in the schedule already, so a context that cannot be had, or
+ * one the browser takes back mid-session, costs the reader the *shape* and
+ * nothing else — which is why `createRelief` returns null rather than
+ * substituting a still image, and why the loss is stated where the drawing
+ * would have been rather than logged.
+ */
+function drawRelief(sv) {
+  const host = $('survey-relief');
+  const caption = $('survey-relief-cap');
+  if (!relief && !reliefLoss) {
+    relief = createRelief(host, {
+      onLost: (reason) => {
+        reliefLoss = reason;
+        relief = null;
+        // The ground current when the context goes, not the one this handler
+        // was made under: it is made once, and holding that first survey here
+        // kept it alive for the session and would redraw the loss over it.
+        if (survey) drawRelief(survey);
+      },
+    });
+    if (!relief && !reliefLoss) {
+      reliefLoss = 'This browser has no WebGL2 drawing context, so the relief cannot be drawn.';
+    }
+  }
+  const views = $('survey-views');
+  if (!relief) {
+    host.textContent = '';
+    host.append(
+      el(
+        'p',
+        'survey-note bad',
+        `${reliefLoss} The plan carries every measurement: point at a tick to read it, ` +
+          'or open the schedule below.',
+      ),
+    );
+    views.textContent = '';
+    caption.textContent = '';
+    return;
+  }
+
+  const reading = sv.readings[0];
+  const lattice = latticeOf(sv, reading);
+  const extent = extentOf(lattice);
+  const levels = levelsFor(lattice);
+  const at = sv.standingAt(params);
+  const under = at && at.on ? sv.spotAt(at.ix, at.iy) : null;
+  // The pin stands where the desk stands. On a measured design it stands on
+  // that run's reading and its head is filled; between two it stands on the
+  // surface the relief draws there and its head is hollow — the plan's own
+  // filled-against-hollow mark, making the same claim: the desk is here, and
+  // this survey has not run it. Standing on the drawn surface lends the pin
+  // no reading, since nothing is lettered off it, as nothing is lettered off
+  // the surface. The pin used to be dropped between designs instead, so
+  // typing a figure between two positions took away the one mark on this
+  // drawing saying where the desk was. Over a cell the survey has not
+  // measured there is no surface to stand on, and no pin.
+  let stance = null;
+  if (under) {
+    stance = { ix: at.ix, iy: at.iy, value: reading.valueOf(under.readings), measured: true };
+  } else if (at && !at.on) {
+    const value = surfaceAt(lattice, at.ix, at.iy);
+    if (value !== null) stance = { ix: at.ix, iy: at.iy, value, measured: false };
+  }
+  const block = blockOf(lattice);
+  relief.draw({
+    mesh: meshOf(lattice),
+    extent,
+    // The block the ground stands in. Derived from the same lattice and the
+    // same mask, so it can add no ground the surface does not already have.
+    block,
+    // The same levels the plan contours, ruled around the cut so the side of
+    // the block is a vertical scale rather than a wash — and the arrises, so
+    // an oblique says which way each corner folds.
+    strata: strataOf(block, levels),
+    arrises: arrisesOf(block),
+    stance,
+    axes: {
+      x: { label: labelFor(sv.x.key), from: stopOf(sv.x, sv.x.positions[0]), to: stopOf(sv.x, sv.x.positions.at(-1)) },
+      y: { label: labelFor(sv.y.key), from: stopOf(sv.y, sv.y.positions[0]), to: stopOf(sv.y, sv.y.positions.at(-1)) },
+      // The reading the block stands up, which is the drawing's third axis and
+      // had no word on it anywhere. Its figures are the levels the cut is
+      // ruled at, lettered exactly as the plan letters its contours, and the
+      // unit rides the name once — the rule `stopOf` keeps for the other two.
+      z: {
+        label: reading.label,
+        unit: reading.unit,
+        ticks: levels.map((level) => ({ value: level, text: level.toFixed(reading.digits) })),
+      },
+    },
+  });
+
+  // Named viewpoints as real buttons: a coarse-pointer target and a tab stop
+  // apiece, so every camera move the pointer can make the keyboard can make
+  // too (FR-018e). There is no drag-to-orbit here that these do not cover.
+  //
+  // A camera move repaints what the relief already holds and re-letters the
+  // buttons and the label. It used to call `drawRelief` as well, after
+  // `setView` had already painted, which rebuilt the lattice, the mesh and the
+  // block and uploaded them all again to show the same ground from elsewhere.
+  const named = [];
+  const markView = () => {
+    for (const [button, viewpoint] of named) {
+      button.setAttribute('aria-pressed', String(relief.view.azimuth === viewpoint.azimuth));
+    }
+    host.setAttribute(
+      'aria-label',
+      `${surveyAriaLabel(sv)} Drawn from ${relief.view.azimuth}° at ${relief.view.elevation}° above.`,
+    );
+  };
+  views.textContent = '';
+  for (const viewpoint of relief.viewpoints) {
+    const button = el('button', 'relief-view', viewpoint.label);
+    button.type = 'button';
+    button.addEventListener('click', () => {
+      relief.setView(viewpoint);
+      markView();
+    });
+    named.push([button, viewpoint]);
+    views.append(button);
+  }
+  for (const [label, step] of [['Turn left', { azimuth: -1 }], ['Turn right', { azimuth: 1 }]]) {
+    const button = el('button', 'relief-view', label);
+    button.type = 'button';
+    button.addEventListener('click', () => {
+      relief.step(step);
+      markView();
+    });
+    views.append(button);
+  }
+  markView();
+
+  const coverage = coverageOf(sv);
+  // The inference is declared here as well as on the plan, because a
+  // continuous surface is read as continuous data wherever it is drawn and a
+  // declaration on the other figure does not reach a reader looking at this
+  // one (FR-019).
+  caption.textContent =
+    `The same ground cut as a block. The body under the terrain is not measurement and carries none: ` +
+    `this survey knows the reading on the ground and nothing about what is beneath it, so the cut is ` +
+    `ruled at the plan's own contour levels to serve as the vertical scale and shaded flat otherwise. ` +
+    `A hole in the terrain is a shaft through the block. The surface between the posts is interpolation, not measurement: ` +
+    `${coverage.measured} of ${coverage.wanted} positions carry a run, each marked by a post, and no ` +
+    `figure anywhere on this sheet is read off the surface between them. Holes are positions that could ` +
+    `not be measured. The vertical scale is fixed and the whole measured range fills the box — ` +
+    `${extent ? `${extent.lo.toFixed(sv.readings[0].digits)} to ${extent.hi.toFixed(sv.readings[0].digits)} ${sv.readings[0].unit}` : 'nothing measured yet'} — ` +
+    `and there is no exaggeration control, because a reader who can dial the drama of a result up and ` +
+    `down can argue from the picture.`;
+}
+
+/**
+ * Every design the desk has stood on this session, in order and restorable
+ * (FR-038), with a keyboard route to each (FR-049).
+ *
+ * The plan draws the traverse too, as a chain of ghost marks — but it can only
+ * draw the stops whose values fall inside the extent the ground was cut over,
+ * and it draws nothing at all with no survey open. A design the reader walked
+ * to with the sliders and then narrowed the extent past would simply vanish
+ * from the record, which is not what "every design the desk has stood on" can
+ * mean. So the list is the complete statement and the marks on the plan are
+ * the shortcut for the ones that happen to be under the drawing — the same
+ * arrangement the boundary key already keeps against the axonometric, where
+ * three of six surfaces can be clicked and the key carries all six.
+ *
+ * It is also where the keyboard reaches them. A mark on an SVG would need a
+ * tab stop apiece; a table row already has one.
+ */
+function renderTraverse() {
+  const section = $('traverse');
+  if (!section) return;
+  // One stop is where the desk started and is not a traverse. The record
+  // begins when the reader has actually moved.
+  section.hidden = traverse.length < 2;
+  if (section.hidden) return;
+
+  const here = shapeKey(params);
+  $('traverse-count').textContent = `${traverse.length} stops`;
+  const table = $('traverse-table');
+  table.textContent = '';
+  const heads = ['Design', 'High', 'Low', 'Hours'];
+  const thead = el('thead');
+  const headRow = el('tr');
+  heads.forEach((head, at) => headRow.append(el('th', at > 0 ? 'num' : null, head)));
+  thead.append(headRow);
+
+  const tbody = el('tbody');
+  // Most recent first: the stop a reader wants back is usually the one they
+  // just left, and a session's traverse has no natural ceiling.
+  for (const stop of [...traverse].reverse()) {
+    const row = el('tr');
+    const standing = stop.shape === here;
+    if (standing) row.classList.add('here');
+
+    const go = el('button', 'traverse-go', shapeLabel(stop.params));
+    go.type = 'button';
+    if (standing) {
+      go.disabled = true;
+      go.title = 'The desk is standing on this design.';
+    } else {
+      go.title = `Put the desk back on this design: ${shapeLabel(stop.params)}`;
+      go.addEventListener('click', () => restoreTraverse(stop));
+    }
+    const name = el('td');
+    name.append(go);
+
+    // The readings taken at it, or an em dash where the run that would have
+    // filled them never landed — a stop reached and immediately left again,
+    // or one whose solve was overtaken. Absence is not zero.
+    const cells = [
+      name,
+      el('td', 'num', stop.readings ? `${stop.readings.high.toFixed(1)} °C` : '—'),
+      el('td', 'num', stop.readings ? `${stop.readings.low.toFixed(1)} °C` : '—'),
+      el('td', 'num', stop.readings ? stop.readings.hours.toLocaleString('en-US') : '—'),
+    ];
+    cells.forEach((cell, at) => {
+      cell.dataset.head = heads[at];
+      row.append(cell);
+    });
+    tbody.append(row);
+  }
+  table.append(thead, tbody);
+  keepTableSemantics(table);
+}
+
+/** Everything E-02 letters, from the ground in hand. */
+function renderSurvey() {
+  const section = $('survey');
+  if (!section) return;
+  section.hidden = false;
+  renderSurveyChoose();
+
+  const refusal = $('survey-refusal');
+  refusal.hidden = !surveyRefused;
+  if (surveyRefused) refusal.textContent = surveyRefused;
+
+  const drawing = $('survey-drawing');
+  $('survey-fall').hidden = !survey;
+  $('survey-clear').hidden = !survey;
+
+  if (!survey) {
+    drawing.hidden = true;
+    renderPull();
+    $('survey-coverage').textContent = '';
+    $('survey-finding').textContent = '';
+    $('survey-spot').textContent = '';
+    $('survey-spots').textContent = '';
+    $('survey-spots-scope').textContent = '';
+    $('survey-axes').textContent = '';
+    $('survey-lede').textContent =
+      'Choose two controls and a reading, and the sheet surveys that reading over that ground — one real ' +
+      'EnergyPlus run at every position. Contours and relief are drawn between the runs and carry no figure ' +
+      'of their own. Standing on a measured point moves the whole of E-01 to that design.';
+    for (const [id, text] of [['s-ground', '—'], ['s-reading', '—'], ['s-runs', '—']]) {
+      $(id).textContent = text;
+    }
+    return;
+  }
+
+  drawing.hidden = false;
+  const coverage = coverageOf(survey);
+  $('survey-axes').textContent =
+    `${labelFor(survey.x.key)} × ${labelFor(survey.y.key)}`;
+  $('survey-lede').textContent =
+    `${survey.readings.map((reading) => reading.label).join(' and ')} over ` +
+    `${phraseFor(survey.x.key)} and ${phraseFor(survey.y.key)}, cut through the desk as it stands. ` +
+    `Every figure below is a completed ${survey.annual ? 'annual' : 'design-day'} run.`;
+
+  drawGround(survey);
+  renderGroundKey(survey);
+  renderPull();
+  renderCoverage(survey);
+  renderSurveyFinding(survey);
+  renderSpotReadout(survey);
+  renderSpots(survey);
+  drawRelief(survey);
+
+  $('survey-plan-cap').textContent =
+    `${survey.readings[0].label} in ${survey.readings[0].unit} over ${labelFor(survey.x.key)} and ` +
+    `${labelFor(survey.y.key)}. Ticks are measured designs and carry the only figures on this drawing; ` +
+    'the contours between them are interpolation and no figure anywhere is read off them. Ground with no ' +
+    'contour across it has not been measured.';
+  $('s-ground').textContent = coverage.density;
+  $('s-ground-sub').textContent = `${coverage.wanted} positions asked for`;
+  $('s-reading').textContent = survey.readings.map((reading) => reading.label).join(' + ');
+  $('s-reading-sub').textContent = survey.readings.map((reading) => reading.unit).join(' · ');
+  $('s-runs').textContent = String(coverage.measured);
+  $('s-runs-sub').textContent = coverage.gaps ? `${coverage.gaps} could not be run` : 'Completed simulations';
+}
+
+/**
+ * Re-cut the ground where the desk has moved out from under it.
+ *
+ * Called from `endGesture`, the one point every gesture path already shares.
+ * A move along either axis is not a move out from under: `surveyRestShape`
+ * omits both, so standing on a measured point leaves the ground exactly where
+ * it was, which is what US6 scenario 2 asks for and what stops the feature
+ * re-measuring itself every time the reader uses it.
+ */
+function refreshSurvey() {
+  // The traverse is a record of the desk rather than of the survey, so its
+  // "you are here" row moves with every gesture whether or not a ground is
+  // cut. It is redrawn here and where the record itself changes, and not from
+  // `renderSurvey`, which runs on every landed sample and changes neither.
+  renderTraverse();
+  if (!survey || !studyScheduler || !autoOn() || linkAttachPending) return;
+  const rest = surveyRestShape(survey);
+  if (surveyRestShape(survey, survey.stance, survey.patch) === rest) {
+    // The ground still describes this desk. Only the stance mark moves.
+    if (surveyPass === null && coverageOf(survey).unsurveyed > 0) refineSurvey();
+    renderSurvey();
+    return;
+  }
+  if (surveyStop === rest) return;
+  surveyStop = null;
+  openSurvey({
+    xKey: survey.x.key,
+    yKey: survey.y.key,
+    readingIds: survey.readings.map((reading) => reading.id),
+    extents: {
+      [survey.x.key]: { from: survey.x.from, to: survey.x.to },
+      [survey.y.key]: { from: survey.y.from, to: survey.y.to },
+    },
+  });
+}
+
+$('survey-fall').addEventListener('click', () => letItFall());
+$('pull-read').addEventListener('click', () => readPull());
+$('pull-more').addEventListener('click', () => {
+  pullShowAll = !pullShowAll;
+  renderPull();
+});
+// Clearing the survey takes the drawing down and touches neither `params` nor
+// the document, so no solve follows — the same difference `clearAllStudies`
+// keeps from Revert all beside it. The sample cache is deliberately kept: those
+// runs are still true of the desks they were solved for, so re-cutting the same
+// ground costs nothing.
+$('survey-clear').addEventListener('click', () => {
+  surveyChoice = { x: null, y: null, readings: [], extents: {} };
+  surveyRefused = null;
+  syncSurveyAxes();
+  closeSurvey();
+});
+
+// E-02 stands from the first frame, carrying its chooser and nothing else, so
+// a reader can find it before they know what it is for.
+renderSurvey();
+
 // The first instance compiled ahead of the first click, in idle time: the
 // binary is an HTTP-cache hit off the pump's download, so this trades a few
 // idle milliseconds for the first study starting on a warm engine.
-(window.requestIdleCallback ?? ((fn) => setTimeout(fn, 1500)))(() => studyPool.prewarm());
+whenIdle(() => studyPool.prewarm(), { fallback: 1500 });
 
 // The verdict on a link the page was opened with, now that boot has finished
 // writing the status line. A refusal stops auto-solve, so no pump starts and
@@ -7456,7 +10616,9 @@ if (linkError) {
     'This scheme skips the sizing days but attaches no weather, so there is nothing to solve. Set Design days to Run on the Run strip, or pick a station.';
 } else if (autoOn()) {
   restoreLinkedStudies(linked);
+  restoreLinkedSurvey(linked);
   pump();
 } else {
   restoreLinkedStudies(linked);
+  restoreLinkedSurvey(linked);
 }

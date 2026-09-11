@@ -53,6 +53,7 @@
  * 17 / 21" until the desk moves.
  */
 export function makeStudyJob({
+  id = null,
   key,
   snapshot,
   patch,
@@ -62,6 +63,7 @@ export function makeStudyJob({
   needed,
   carried = needed,
   restShape,
+  omits = key,
   points,
   order,
   origin,
@@ -82,6 +84,20 @@ export function makeStudyJob({
     throw new Error(`makeStudyJob: the study of ${key} needs a quantity and comparable carried contents`);
   }
   return {
+    // What the queue arbitrates on, which is not always the parameter key.
+    //
+    // A study is one curve of one control, so its identity and its swept key
+    // are the same thing and `id` defaults to `key`. A survey is a stack of
+    // rows that all sweep the same control at different values of a second
+    // one, and under `key` the scheduler's `byKey` would treat each row as
+    // superseding the last: enqueue nine rows in one breath and eight of them
+    // are cancelled as 'moved' before a single sample is dispatched, leaving a
+    // ground one row deep with nothing anywhere saying why.
+    //
+    // So the two are separated. `key` stays the parameter `buildSample`
+    // overlays and `restShapeKey` is taken against; `id` is what `enqueue`,
+    // `cancel` and `has` speak.
+    id: id ?? key,
     key,
     snapshot,
     patch,
@@ -91,9 +107,12 @@ export function makeStudyJob({
     needed,
     carried,
     restShape,
+    // The key or keys `restShape` leaves out, so the cancel point can take the
+    // live desk's shape the same way without knowing who owns the job.
+    omits,
     points,
     order,
-    origin, // 'manual' | 'refresh'
+    origin, // 'manual' | 'refresh' | 'survey' | 'pull'
     asked, // the sample count requested — the coarse pass is later densified
     openingBasis,
     curve: new Array(points.length),
@@ -125,7 +144,7 @@ export function createStudyScheduler({
   cacheLimit = 400,
 }) {
   const jobs = []; // active jobs in dispatch priority order
-  const byKey = new Map(); // key -> job, same objects
+  const byKey = new Map(); // job id -> job, same objects
   // Quantity readings per sample shape — a handful of floats each, so hundreds of
   // entries cost nothing and revisited ground (a patch toggled back, a study
   // densified from its coarse pass) comes back without a run.
@@ -146,6 +165,10 @@ export function createStudyScheduler({
   // asking for the same desk shape must not ride that promise.
   const pending = new Map();
   let inFlight = 0;
+  // Where the round-robin walk starts, as an index into the active jobs. Not a
+  // job reference: a job that finishes or is cancelled is spliced out of
+  // `jobs`, and a held reference would have to be found again on every pass.
+  let cursor = 0;
   // Bumped by clearAll. A run that was in flight when the world changed — a
   // station swap clears the cache because sample shapes never carry the
   // climate — must not repopulate the cache when it lands late.
@@ -238,14 +261,50 @@ export function createStudyScheduler({
   function drop(job) {
     const i = jobs.indexOf(job);
     if (i !== -1) jobs.splice(i, 1);
-    if (byKey.get(job.key) === job) byKey.delete(job.key);
+    if (byKey.get(job.id) === job) byKey.delete(job.id);
   }
 
+  /**
+   * The next sample to dispatch: one from each active job in turn.
+   *
+   * This walked `jobs` strictly for as long as the only thing in the queue was
+   * studies, and that was right while it was true — a study is one job, so
+   * list order was never asked to arbitrate anything. A survey is a *stack* of
+   * jobs enqueued in one breath, one per row of the ground, and under a strict
+   * walk row 1 drained across the whole pool before row 2 began. Two things
+   * broke, and only the second is a bug the reader could name: an eleven-row
+   * survey held every instance for its whole duration, so a study queued
+   * behind it sat at `0 / 21` with nothing to say why and read as a hang
+   * (FR-053); and the ground itself landed as three finished rows over eight
+   * empty ones rather than as a complete coarse relief, which is the opposite
+   * of what progressive measurement is for.
+   *
+   * Round-robin answers both at once. `cursor` is the job to start from and it
+   * advances past whoever was served, so no job can be starved by one ahead of
+   * it in the list and the survey's rows advance together.
+   *
+   * The invariant that survives unchanged, and the one worth stating because
+   * getting it wrong runs a sample twice: **every dispatched index is in
+   * `job.started` before its dispatch**, which `dispatch` does on its first
+   * line. This function only ever reads that set.
+   *
+   * Enqueue order still means something — `enqueue({ front: true })` puts a
+   * study the reader asked for by name at the head of the list, and the cursor
+   * starts there — so a manual study is still served first. It simply cannot
+   * be served *only*.
+   */
   function takeNext() {
-    for (const job of jobs) {
-      if (!active(job)) continue;
+    const live = jobs.filter(active);
+    if (!live.length) return null;
+    if (cursor >= live.length) cursor = 0;
+    for (let n = 0; n < live.length; n += 1) {
+      const at = (cursor + n) % live.length;
+      const job = live[at];
       for (const index of job.order) {
-        if (!job.started.has(index)) return { job, index };
+        if (!job.started.has(index)) {
+          cursor = at + 1;
+          return { job, index };
+        }
       }
     }
     return null;
@@ -357,6 +416,15 @@ export function createStudyScheduler({
     );
   }
 
+  function admit(job, front) {
+    const prior = byKey.get(job.id);
+    if (prior) cancel(prior, 'moved');
+    byKey.set(job.id, job);
+    if (front) jobs.unshift(job);
+    else jobs.push(job);
+    wasIdle = false;
+  }
+
   function drain() {
     while (!paused() && inFlight < capacity()) {
       const next = takeNext();
@@ -379,18 +447,27 @@ export function createStudyScheduler({
   return {
     /** Queue a study. A job already running under this key is superseded. */
     enqueue(job, { front = false } = {}) {
-      const prior = byKey.get(job.key);
-      if (prior) cancel(prior, 'moved');
-      byKey.set(job.key, job);
-      if (front) jobs.unshift(job);
-      else jobs.push(job);
-      wasIdle = false;
+      admit(job, front);
       drain();
     },
 
-    /** Stop one study by key. In-flight samples land into nothing. */
-    cancel(key, reason = 'stopped') {
-      const job = byKey.get(key);
+    /**
+     * Queue several jobs in one breath, then drain once.
+     *
+     * What the round-robin needs to interleave them: enqueued one at a time,
+     * each drain fills the pool from the first job before the second is in
+     * the list, and a survey's coarse pass landed as one finished row over
+     * eight empty ones. Callers used to get this by holding `paused()` true
+     * across their own loop, which made the pause mean two things.
+     */
+    enqueueAll(batch) {
+      for (const job of batch) admit(job, false);
+      drain();
+    },
+
+    /** Stop one job by its identity. In-flight samples land into nothing. */
+    cancel(id, reason = 'stopped') {
+      const job = byKey.get(id);
       if (job) cancel(job, reason);
       drain();
     },
@@ -417,8 +494,8 @@ export function createStudyScheduler({
       drain();
     },
 
-    /** Whether a study is queued or running under this key. */
-    has: (key) => Boolean(byKey.get(key)),
+    /** Whether a job is queued or running under this identity. */
+    has: (id) => Boolean(byKey.get(id)),
 
     /** Resume dispatching — call when a pause condition lifts. */
     drain,

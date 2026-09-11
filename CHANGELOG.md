@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The sheet reads at a glance.** Every reading, verdict, absence and refusal
+  stays in view; method notes, derivations, citations and the TM59
+  qualifications sit one press away in a fold under what they explain. Visible
+  prose falls from about 2,700 words to under 600 on the sheet, and from about
+  2,250 to under 400 with the console open. Each channel and general note now
+  leads with one short line, and a line that grows past its word budget stops
+  the page loading. The model and the link format do not move.
+
 - **The idfkit libraries move to 0.3.0-rc.3.** `@idfkit/core`, `@idfkit/schemas`
   and `@idfkit/weather` are pinned to the exact version that wrote the file, and
   every IDF this page hands out now stamps `@idfkit/core 0.3.0-rc.3` in its
@@ -24,6 +32,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   EnergyPlus 26.1.0.
 
 ### Added
+
+- **A survey of the design space, on a second drawing.** Choose two controls
+  and a reading, and the sheet cuts a ground through the desk as it stands: a
+  real EnergyPlus run at every position of a grid, contoured on a plan and
+  drawn in relief beside it. Standing on any measured point moves the whole of
+  E-01 to that design, and letting it fall walks the desk downhill one real run
+  at a time until it settles in a hollow that says it is one.
+
+  Everything lettered comes off a completed run. The contours and the surface
+  between the runs are interpolation, declared as such on both drawings, and no
+  figure anywhere is read off them; a run that failed is a hole with its reason
+  on it rather than a gap filled from a neighbour. Because a smooth relief does
+  not report its own sample density, the coverage and the grid size are
+  lettered beside it.
+
+  A ranking beside the ground answers the question that comes before it: which
+  of the ninety sweepable controls actually move the reading here, one run each,
+  with direction in words and how much range is left in it. Controls that reach
+  no object at this desk are listed with their reasons and cost no run at all.
+
+  The ground shares the studies' queue, pool and sample cache, so a control
+  already swept costs nothing, and neither starves the other. A link carries the
+  axes, the readings and the extents; the recipient re-measures to identical
+  numbers.
+
+  Each axis can be narrowed to the range worth looking at, and the ground is
+  re-cut over it — the runs already inside the new extent are reused. The two
+  axes can be swapped with one press, which costs no simulation at all: a
+  flipped ground is the same designs transposed. Every
+  design the desk has stood on this session is listed with the readings taken
+  at it and can be restored exactly, whether it was reached from the survey or
+  with the sliders.
 
 - **Studies can plot the quantity you choose.** Every open parameter study now
   shares one quantity selected from its card. Temperature draws its high and
@@ -48,13 +88,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A window-to-wall ratio now includes its frame, and a large framed window no
+  longer stops the run.** The ratio is measured over the whole opening, frame
+  included, as ASHRAE 90.1 measures it. A wider frame therefore means less
+  glass, not a bigger hole. Before, a ratio near 0.9 with a wide frame produced
+  a window bigger than its wall, and EnergyPlus stopped before simulating. A
+  small ratio with a frame wide enough to leave no glass is now refused on the
+  plan key, which says why. Desks without a frame produce the same file as
+  before.
+- **Fins, overhangs and curbs 1 cm deep are refused.** At that depth
+  EnergyPlus merges the shade's edges and deletes it, so the run went ahead
+  without a shade that the drawing still showed.
 - **A heating setpoint above the cooling one no longer kills the run.** The two
   sliders overlap and could pass each other, which EnergyPlus refuses in the
-  first warmup timestep. The System strip is now blocked, naming both setpoints,
-  until they are level or apart; Heat only and Cool only are unaffected.
-- **A study no longer mixes a building with a system and one without.** A
-  position where the swept control takes its own channel out of the model is
-  refused, drawn as a gap, and the card says why.
+  first warmup timestep. The System strip is now blocked until they are level or
+  apart; Heat only and Cool only are unaffected.
+- **A study, a survey ground or a pull ranking no longer mixes a building with
+  a system and one without.** A position where a swept control takes its own
+  channel out of the model is refused rather than run, drawn as a gap, and says
+  why — on a study card, on a ground, and as an inert row of a ranking, where
+  such a step would otherwise have measured the channel leaving rather than the
+  control moving. A survey asks this of both its axes. A *different* channel
+  going out under the sweep, such as blinds losing the window they hang on, is
+  still a design and is still measured.
 
 ## [0.3.0] - 2026-09-03
 

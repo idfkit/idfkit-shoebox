@@ -357,6 +357,67 @@ numbers are what stands behind a disclosure.
   `aria-expanded` is the state, and what a reader sees is that the boxes are
   there; a second saying of it is the one that goes stale.
 
+### The fold
+
+The one disclosure for every explanation that is not itself a reading. The
+sheet used to satisfy "nothing only on hover" by printing everything, always,
+and put about 2,000 words on the first screen. A fold satisfies the same rule
+and costs the reader nothing they did not ask for: a press is not a hover, and
+the text opens where it stands, under the thing it explains.
+
+- **Native `<details class="fold">`**, one `<summary>` first. The keyboard,
+  the announcement as expandable and the opening all come free; a
+  `<button aria-expanded>` would be a second implementation of all three.
+- **The register's marker, `+` closed and `−` open**, in mono, ahead of the
+  summary. Every fold on the page opens the same way.
+- **The summary names what the fold holds, in six words or fewer**: `Method`,
+  `Sources`, `Criteria c and d`. Where the word alone names nothing, as
+  `Note` does, the summary carries an `aria-label` naming its subject.
+- **Summary in the control note's face**: `400 10.5px/1.45` sans in
+  `--ink-ghost`, `--ink-2` on hover, the `--rule-focus` ring on
+  `:focus-visible`, `width: fit-content` so the target is the words and not
+  the column. The open body keeps its host's own note style, so moving a note
+  into a fold does not restyle it.
+- **A stable `data-fold` key**, `<kind>:<id>` (`ctl:wallR`,
+  `target:phi-heat`, `strip:fabric`). The scoreboard and the strips are rebuilt
+  on every solve, fifty milliseconds apart during a drag, so an open fold
+  would snap shut under the reader. The builder, `fold()` in `console.js`,
+  keeps the keys the reader has opened in a `Set` and rebuilds those open.
+- **Open for the session only.** The set lives in memory. How the sheet is
+  being read is not what the building is, so it reaches neither the link nor
+  `localStorage`, and a reload closes every fold.
+- **`.fold` sets `display`, so it has a `.fold[hidden]` twin.** Inside a
+  folded strip the strip's own `hidden` takes every fold out of the tab order.
+
+**What never goes in a fold**: readings, figures, units, labels, verdicts, em
+dashes and the reason beside each, blocking reasons, refusals and their
+remedies. Those are what the sheet is for, and a refusal nobody sees is a
+silent fallback.
+
+### Copy budgets
+
+What stays in view is a glance, and a glance stays one only if something
+refuses it the day it grows. The budgets are declared once, in `src/copy.js`,
+and the declaring modules assert their strings against them at load: an
+over-long channel line stops the page naming the channel, the count and the
+limit.
+
+| Budget | Words | Holds |
+| --- | --- | --- |
+| `STRIP_LINE` | 12 | a channel's line in the console |
+| `STEP` | 15 | a general note's instruction, the notes lede |
+| `STANDING` | 15 | a blocking reason, a refusal |
+| `ABSENCE` | 12 | the reason beside an em dash |
+| `SUMMARY` | 6 | a fold's summary |
+| `BLOCK` | 25 | one block's explanation in view, a page lede |
+| `CHASE` | 20 | the Chase sentence above the board |
+| `DESCRIPTION` | 60 | the description and finding together |
+| `CEILING` | 40 | any single visible block |
+
+The last five bound text composed at render time from the run, which is
+measured at four desk positions rather than thrown on: a throw mid-render would
+turn a copy defect into a broken sheet. A fold's long form has no budget.
+
 ### The square marker
 
 An `8px` to `9px` square with a `1px` border and `1px` radius means "a step that
@@ -575,6 +636,241 @@ uses for a rate, one level up.
   reason for each. A panel showing only the questions it happens to be able to
   answer reads as a certification.
 
+### A surveyed ground: measured, inferred, and not yet visited
+
+Three states on one drawing, and the palette has no colour to spend on any of
+them — the reading is a magnitude with no direction, so `--cold` / `--warm` are
+not available, which is why the survey is graphite. They are told apart three
+ways instead:
+
+| State | Drawn as | Carries a figure |
+| --- | --- | --- |
+| **Measured** | a tick mark, `--ink` | yes, in the mono face |
+| **Inferred** | a hairline contour, `--ink-ghost`, every fifth `--ink-3` | its level only, at a turn |
+| **Unsurveyed** | bare sheet, nothing at all | no |
+
+The third is the important one and it is drawn by **absence**: no contour is
+carried across ground nobody has stood on, and no triangle spans it in the
+relief. That is structural rather than styled — the geometry is never generated
+— so there is no `fillStyle` between an honest drawing and a dishonest one. A
+failed run is a hole with its reason on the mark, never a region in a different
+shade.
+
+Two rules that follow from it:
+
+- **A figure may only ever come off a measured point.** Contours are inference
+  and the caption says so, on the plan *and* on the relief, because a
+  continuous surface is read as continuous data wherever it is drawn.
+- **A smooth surface does not report its own density**, so the coverage and
+  the lattice size are lettered wherever the relief is drawn and are load
+  bearing rather than a caption. They are the only thing separating a coarse
+  survey from a convincing picture of one.
+
+A second reading at the same point is lettered **under** the first, in
+`--ink-ghost`, never beside it and never as a size or a hue: a size ranks one
+reading against the other, and there is no published weighting on this sheet to
+rank them with.
+
+### A block diagram, not a floating surface
+
+A relief drawn as a bare surface floats: nothing says which way is down, there
+is no silhouette to judge a slope against, and there is nowhere to letter an
+axis. Cut the ground away beneath it and draw the solid.
+
+- **The body is not data, and it has to keep saying so.** It takes the trough
+  tone — the surface every inset on this page uses — never the ink the reading
+  is shaded in, and it is shaded flat rather than by the height of the terrain
+  above it. A body toned by the reading would be the block claiming to know
+  what is under the ground.
+- **A hole in the surface is a shaft through the block.** The alternative is a
+  solid body where nothing was measured, which is the drawing filling in a gap
+  it was built to leave open.
+- **Rule the levels around the cut, clipped to the face.** This is what turns
+  the side from a wash into the vertical scale: a terrain surface is
+  foreshortened from every viewpoint and cannot be measured with a ruler, but
+  a ruled cut can be counted in bands. Clip each rule to the sloping top of its
+  own face, or the lines float above the terrain at exactly the corners where
+  the ground is highest.
+- **Rule the vertical arrises.** Without them an oblique is two flat washes
+  meeting at a seam that does not say which way the corner folds. A corner is
+  wherever the silhouette turns, which around a hole is more than four.
+- **Letter on the base.** It is the one plane in the drawing that is flat,
+  known, and carrying no reading.
+- **A pin stands proud of the ground, not down through it.** A pin run from the
+  base to the surface is inside the solid at every viewpoint and the depth test
+  hides all of it, leaving a mark with no pin in it.
+
+**Lettering over a 3D drawing is text over the canvas, not glyphs in it** — real
+SVG positioned through the same matrices the drawing is handed, so it is
+selectable, scales with the reader's own type size, and is read aloud. Push it
+clear of the drawing in **screen** space: which way is "outside" depends on
+where the camera is standing, and an offset that clears the silhouette from one
+viewpoint lies across it from the next.
+
+### A drawing that carries several marks carries a key
+
+Five marks stood on the surveyed ground — a measured design, a contour, the
+stance, a failed run, a hatched region — and not one was named anywhere a
+reader could see. Every explanation lived in a `<title>`, which under
+`pointer: coarse` does not exist and which even on a desk requires knowing
+there is something there to hover. A reader asked what the hatching meant, and
+the honest answer was that the drawing had no key.
+
+- **Draw the mark, do not describe it.** A swatch a reader can match against
+  the drawing is the point; build it from the same classes the drawing uses, so
+  a mark restyled in one place cannot come to disagree with its own key.
+- **Only list what is on the drawing.** A key line for gaps on a ground with no
+  gaps teaches a mark the reader will never meet.
+- **Count in the key where a count is what is being asked.** "Hatched: 26
+  measured designs that read better than the one the desk is on" answers the
+  question; "hatched: improving region" restates the label.
+
+The hatching was being read as *not yet computed* — the exact opposite of what
+it meant. That is the cost of an unlabelled mark: a reader will assign it a
+meaning, and the meaning they pick will be a reasonable one.
+
+### A record of where a desk has been
+
+A list of designs the desk has stood on is a **schedule**, not a breadcrumb
+trail: it folds at the schedules' own breakpoint, every figure keeps the head
+it stood under, and the design's own name is the button that restores it. Most
+recent first, because the stop a reader wants back is usually the one they just
+left and a session has no natural ceiling.
+
+- **The current row carries the armed square**, so "you are here" is the same
+  mark as the stance on the ground, the patch button and the rail pin. Exactly
+  one row may carry it: a design revisited moves to the front of the record
+  rather than appearing twice, or two rows make the same claim.
+- **A stop with no readings behind it shows em dashes**, not zeros. A design
+  reached and left again before its run landed was genuinely never measured.
+- **Where a drawing can only show part of a record, the list is the record.**
+  A plan can only mark the stops inside the extent it was cut over. Draw the
+  marks as the shortcut for what is under the drawing and let the list be
+  complete — the same split the boundary key keeps against the axonometric,
+  where three of six surfaces are clickable and the key carries all six. It is
+  also how the keyboard reaches them without a tab stop per mark.
+
+### A long list of offers, and the two ways it goes wrong
+
+A chooser that lists everything — ninety controls a ground can be cut along, and
+thirty-nine more that it cannot — is a list, not a menu. Two mistakes are easy
+to make in one and both shipped here before they were caught.
+
+**A height-capped column of flex items squashes them.** `display: flex;
+flex-direction: column` with a `max-height` gives every child the default
+`flex-shrink: 1`, so 129 entries shared 220px between them: each computed to
+**6px tall** — its padding and nothing else — while its wrapped text carried on
+painting over the four rows below it. The list scrolls, so its items must keep
+their own height: `flex: none` on every one. Cap the list's width too, or it
+takes the width of its widest entry and pushes its siblings onto lines of their
+own.
+
+**A reason that is true of a whole group belongs to the group.** This is the
+same rule as *Naming a control the reader has never met*, one level up: explain
+it in printed body text at the head of the block it belongs to, one sentence
+covering every member. Written per entry instead, a bypassed channel repeated
+"Patch Blinds in; with it out of the path this control reaches no object" on
+every control it owns, and one shared rule about controls with no numeric face
+appeared thirty-nine times — 53 rows of one paragraph, which is a list nobody
+reads down. Grouped under headings the same list carries **three** per-entry
+reasons, and those three are the ones that genuinely differ within a group: a
+wall that can carry no opening, a control inert at this desk.
+
+Group headings earn their keep twice over: they let each row drop the prefix it
+was repeating, and they make a long list navigable rather than a wall.
+
+**A picker is a title-block cell.** A caption over a line of mono is how this
+sheet letters a reading, and a reading cannot be pressed, so an unruled summary
+looked like one more figure. The cell is one `1px --rule` hairline at `var(--r)`
+round four things: the caption top left, the count top right in ghost
+condensed caps, the value in `--mono` under the caption, and a `+` fold marker
+under the count, which turns to a `--redline` `−` while open. Hover and open
+firm the hairline to `--rule-firm`; the focus ring goes round the cell rather
+than across it.
+
+- **The list folds out inside the cell**, under a `--rule` line drawn beneath
+  the summary, so it reads as the cell's own contents and the edge a scroll
+  cuts rows off at is ruled.
+- **The width is fixed and the list takes it**, so opening a picker changes
+  its height and nothing else. Sized by its contents the summary was as wide as
+  its value and the list 300px, and opening one picker shoved its neighbours
+  along the row.
+- **The count is what can be chosen here**, `37 of 129 controls` where some
+  are refused. A flat total over a list of mostly disabled rows would be the
+  cell claiming a choice the reader does not have.
+- **The value wraps rather than ellipsising**: two readings can stand in one
+  cell, and a closed cell has to read without being opened.
+- **The value is the box you type in.** Pressing it (or its caption) turns
+  the value line into an entry field in place, lettered exactly as the value
+  was, with no box of its own: the cell's hairline is its edge and the text
+  cursor and caret say it takes typing. It holds the current selection as its
+  placeholder; the whole list
+  stands under it until a word is typed. Closed, the value is a button rather
+  than an input, because two readings can stand in one cell and an input does
+  not wrap. Leaving the cell closes it. It is not a `details`: a text field
+  inside a `summary` has its Space key toggle the disclosure in some engines.
+- **Typing filters.** A letter typed on the closed cell or on a row lands in
+  the box. Every
+  word typed must begin a word of the row's label, note or channel name, in
+  any order; matched anywhere inside a word, a lone `s` finds half the list. A refused row that matches stays, refused. Nothing matching is said in
+  a sentence, not left as an empty box. Enter picks only when one choice is
+  left; Escape clears the filter, then closes the cell. Reopening shows the
+  whole list.
+
+### Two boxes for a range
+
+Where a reader sets an interval — the extent a survey is cut over — use a pair
+of `quantityField`s with the word *to* between them, not a second pair of
+sliders. An interval is an exact figure somebody arrives with (*between a fifth
+and a half*), and a slider across two hundred pixels cannot say a fifth. The
+parsing, the clamping to the control's own stops and the snapping to its step
+come from the control's own declaration, so the boxes accept exactly what the
+control can hold.
+
+Two things the pair must do that a single field does not:
+
+- **Refuse a reversed interval where it is typed**, with both figures in the
+  sentence, rather than letting it throw somewhere downstream. The box is where
+  the reader can see what they did.
+- **Set its own face.** `.num-field` is `font: inherit` by design — it takes
+  the lettering of whatever it replaced — so a pair that replaces nothing has
+  to say what it is, or it comes out at the section's body size.
+
+**And a field is destroyed by any redraw that empties its host.** A panel that
+rebuilds itself on every incoming event cannot hold a text field: the reader's
+focus, the value the field took at focus, and therefore their keystrokes all go
+with the node. Redraw such a panel only when something it draws has moved.
+
+### The armed square, a fourth time, and a ring beside it
+
+The stance on a surveyed ground carries the same `--redline` square the patch
+button, the rail pin and the plate marker use, with a crosshair through it. One
+idiom, four places, so "you are here" is learned once.
+
+Where a drawing takes the keyboard as well as the pointer, the keyboard's own
+position is a **dashed `--redline` ring**, not a second square: the square
+already means "the desk is here", and the two part company at the first arrow
+key. The ground takes **one** tab stop and the arrow keys rove the ring across
+it, rather than a tab stop per position — the same argument that keeps the
+landmark marks unpressable, since eighty-one focusable points would be worse
+than the two hundred that rule was written about.
+
+### Layout thresholds, and asking a different question
+
+`--survey` is the third threshold on this page and it answers a question
+neither of the others does. `--index` asks whether the window can hold the desk
+as a column; the schedules' 620px asks whether a table can keep its columns;
+`--survey` asks whether a plan and a relief can stand side by side. Each of them
+wants a square, and two squares in one measure is two very small squares, so
+they part company some way above the width at which a table does — 900px, and
+620px of height, since two squares and a schedule stacked in a short window is
+a page of scrolling with nothing on the screen to say where you are.
+
+Declare each one once, in its own media query, as a custom property the module
+reads back. Do not derive a new threshold from an existing one because the
+numbers happen to be close: they are different questions and they will move
+apart.
+
 ### Folding a table to stacked rows
 
 The table equivalent of the index sheet. Where a schedule has more columns than
@@ -650,6 +946,11 @@ between what they measure and what the method means by them.
   scoreboard: `pointer: coarse` has no hover, so a caveat that floats does not
   exist on the phone where a figure is most likely to be carried away from the
   page it was read on.
+- **In place, and folded under a summary that states the count.** The `dl`
+  sits inside a `.fold` whose summary says how many reasons there are ("Four
+  reasons this is not TM59"), with the number read off the list rather than
+  typed. Printed whole it was 520 words under five rows of figures; a reader
+  who never opens it still leaves knowing there are reasons and how many.
 - **One entry is two statements, so it gets two tracks**, as a `dl` laid out on
   a grid: what the figure does not answer, and what that is measured or read
   from. Written as one paragraph each they become grey blocks a reader skims,
