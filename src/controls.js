@@ -14,7 +14,7 @@
 // `scripts/build-tm59.mjs`. Imported rather than restated so the Room type
 // selector and the profile library cannot name different spaces; see
 // `TM59_SPACES` below for what happened the one time they did.
-import { COINCIDENT, builds, openingFor, shadeBuilds } from './aperture.js';
+import { COINCIDENT, builds, openingFor, rooflightsFor, shadeBuilds } from './aperture.js';
 import { LIGHTING_PATTERN, PROFILE_IDS, profileFor } from './tm59.data.js';
 import { BUDGETS, withinBudget } from './copy.js';
 
@@ -2885,6 +2885,26 @@ const layered = (p) => p.glazingModel === 'Layered';
 // depends on "is there glass here" has to say which glass it means. Fins and
 // frames are a wall opening's business; daylight is either one's.
 const skylit = (p) => p.skyRatio > 0 && opensOut(p, 'roof');
+
+/**
+ * The rooflights this desk would cut, laid out by the function `applySkylights`
+ * lays them out with, so the strip and the document cannot disagree about
+ * whether they build. The count control is looked up at call time because it is
+ * declared inside `CHANNELS`, below this line.
+ */
+const rooflights = (p) => rooflightsFor(p, controlFor('skyCount').control);
+
+/**
+ * The Skylights strip's two refusals, declared rather than composed so each is
+ * held to the standing budget at load, the arrangement `AIR_REASONS` keeps. The
+ * arithmetic that would let the reader check the second one, a band's depth
+ * against the ratio and the count, is in the count control's note, which folds.
+ * See `Rooflights` in `aperture.js` for the severe it refuses.
+ */
+const SKY_REASONS = Object.freeze({
+  noRoof: 'Needs a roof with an outside to cut a rooflight into.',
+  tooThin: `Under ${COINCIDENT * 100} cm deep, EnergyPlus deletes these rooflights: raise the ratio or run fewer.`,
+});
 // Whether the rooflights are built of the walls' own assembly. It matters
 // beyond the Skylights strip: a blind can only be hung on the layered
 // construction, so a rooflight glazed in its own simple unit is one the Blinds
@@ -3536,8 +3556,16 @@ export const CHANNELS = Object.freeze([
       // channel opens. A curb is a `Shading:Zone:Detailed` on the roof and the
       // engine refuses that on an adiabatic base surface exactly as it refuses
       // the rooflight itself, so both go out together with the boundary.
-      test: (p, on, off) => !off('fabric') && opensOut(p, 'roof'),
-      reason: 'Needs a roof with an outside to cut a rooflight into.',
+      //
+      // And the lights have to be thick enough to be surfaces. Linear bands at
+      // the ratio's first stop can come out 5 mm deep, which the engine deletes
+      // as degenerate and then runs a solid roof under the drawing's rooflights.
+      // Refused here rather than dimmed on a control, because the way out is
+      // either of two controls, the ratio or the count, and the strip is where
+      // both of them stand.
+      test: (p, on, off) => !off('fabric') && opensOut(p, 'roof') && rooflights(p).builds,
+      reasons: SKY_REASONS,
+      reason: (p, on, off) => (off('fabric') || !opensOut(p, 'roof') ? SKY_REASONS.noRoof : SKY_REASONS.tooThin),
     },
     // Read off the roof rather than out of the ESO. The transmitted-solar
     // series the Glazing strip reads is the enclosure's total, walls and roof
@@ -3589,7 +3617,7 @@ export const CHANNELS = Object.freeze([
         digits: 0,
         unit: '×',
         needs: skylit,
-        note: 'Square lights sit one per cell of an n × n grid, so 4 across is sixteen of them; linear rooflights are n bands.',
+        note: `Square lights sit one per cell of an n × n grid, so 4 across is sixteen of them; linear rooflights are n bands. A band is about ratio × depth ÷ n deep, so at 0.005 four bands on a 4 m roof are 5 mm, and EnergyPlus deletes any surface with an edge under ${COINCIDENT * 100} cm. The strip refuses that rather than draw lights the run never sees.`,
       }),
       new Scale({
         key: 'skyCurb',

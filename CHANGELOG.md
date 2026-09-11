@@ -123,6 +123,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   control moving. A survey asks this of both its axes. A *different* channel
   going out under the sweep, such as blinds losing the window they hang on, is
   still a design and is still measured.
+- **Linear rooflights too thin to build are refused.** At the lowest
+  skylight-to-roof ratio, three or four bands on a shallow roof came out under
+  1 cm deep, and EnergyPlus deleted every one while the drawing still showed
+  them. The Skylights strip now goes out and says why.
 
 ## [0.3.0] - 2026-09-03
 
