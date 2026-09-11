@@ -335,6 +335,32 @@ built out of panes.
   `Number('')` is 0, which would have printed a U-factor of zero over every
   frameless window. The reader treats an empty cell and a lone hyphen as
   absent.
+- **The ratio is the rough opening, and the frame is inside it.** It used to be
+  the glass alone, with `WindowProperty:FrameAndDivider` laid round it
+  afterwards, and a ratio near 0.9 under a frame near 0.2 handed the engine a
+  window bigger than its wall: `Window Surface="ZN001:WALL001:WIN001" area
+  (with frame) is too large to fit on the surface`, then a get-input fatal.
+  The engine's test is **area and nothing else**: the wall less its glass
+  against the ring `(w + 2f)(h + 2f) − wh`. The sill has no part in it, and a
+  frame standing 0.15 m past the head of its wall runs clean. So `sizeOpening`
+  in `src/aperture.js` sizes the rough opening to the ratio and the glass to
+  what is left inside the frame, which makes the fatal unreachable at any ratio
+  below 1. That also makes the ratio what its own `Code limit` mark means,
+  since ASHRAE 90.1 measures fenestration over the rough opening, frame
+  included. An unframed desk is byte-identical to the old rule; a framed one
+  has less glass for the same ratio. `geometryFacts` reads the ratio back as
+  glass plus the engine's own frame ring, and `glazing` stays the glass alone.
+- **A small ratio under a wide frame is refused on the wall.** A 0.10 ribbon on
+  a 3 m wall is a 0.30 m band, and 0.2 m of frame top and bottom leaves no
+  glass. The old rule reported that desk as 0.10 while building 0.23. Now the
+  wall's `Side` greys it and prints the two sides of the opening and the frame
+  width, and `apertureOn` writes no window there. Both ask the one predicate,
+  `openingFor(params, face, ratio).glazes`, asked of the desk rather than of
+  the drawn wall, because a turned wall's length differs from `width` by an
+  ulp and the two could otherwise disagree at the ratio where the answer
+  changes. `opens()` in `controls.js` is the "is there glass on this wall"
+  question for everything downstream: `glazed`, the shading and openable keys,
+  and the Air strip's opening count.
 
 ### Skylights (channel 04)
 
@@ -2356,6 +2382,18 @@ which discharges the output-budget requirement outright.
   error. Nothing here is autosized, so the limit is computed from zone volume.
 - **A shading device cannot be hung on `WindowMaterial:SimpleGlazingSystem`**,
   which is why the Blinds channel requires the layered glazing model.
+- **EnergyPlus merges two vertices closer than 0.01 m and deletes the surface
+  left behind.** `** Severe ** GetSurfaceData: There are 2 degenerate
+  surfaces`, then a completed run, so the only symptom is a shade in the
+  document the engine never simulated. The first stop off zero on the fin, the
+  overhang and the curb is exactly 0.01 m. An edge of exactly 0.01 survives,
+  so a 1 cm fin is kept on a building squared to the compass and deleted at
+  45°, where a rotation hands back 0.00999…. A 1 cm curb is deleted on every
+  bearing, since its edge is the difference of two heights. `COINCIDENT` and
+  `builds()` in `src/aperture.js` are the one statement of it: the appliers
+  write no shade that does not build, the fin and curb controls go idle on it,
+  and the Shading key's wall says why. Linear rooflights can come out thinner
+  than this at the Skylights strip's first stop and are not yet refused.
 - **Per-surface output variables are ruinously expensive.** Requesting them with
   key `*` took the ESO from 15 series to 173 and the annual run from 681 ms to
   2,984 ms, almost all of it after the simulation finished. Keep new output

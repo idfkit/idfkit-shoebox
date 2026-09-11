@@ -14,6 +14,7 @@
 // `scripts/build-tm59.mjs`. Imported rather than restated so the Room type
 // selector and the profile library cannot name different spaces; see
 // `TM59_SPACES` below for what happened the one time they did.
+import { COINCIDENT, builds, openingFor, shadeBuilds } from './aperture.js';
 import { LIGHTING_PATTERN, PROFILE_IDS, profileFor } from './tm59.data.js';
 import { BUDGETS, withinBudget } from './copy.js';
 
@@ -2771,12 +2772,49 @@ export const OPENABLE_KEYS = Object.freeze(
 const noOutside = (wall) =>
   `The ${wall} wall is adiabatic, so there is nothing outside it to open onto.`;
 
-const ORIENTATIONS = WALL_FACES.map(({ face, label, wwr }) => ({
-  key: wwr,
-  side: face,
-  label,
-  needs: (p) => opensOut(p, face),
-  unreached: noOutside(face),
+/**
+ * Whether the frame leaves any glass in the opening this wall's ratio asks for.
+ *
+ * The ratio is the rough opening, glass and frame together (see
+ * `sizeOpening`), so a small ratio under a wide frame is an opening the frame
+ * closes. The applier asks `openingFor` the same question and writes no window
+ * where the answer is no; a solid wall is not a refusal, so zero passes.
+ */
+const frameFits = (p, { face, wwr }) => !(p[wwr] > 0) || Boolean(openingFor(p, face, p[wwr])?.glazes);
+
+/**
+ * The frame's refusal, with the arithmetic in it, because the reader can redo
+ * it: the rough opening's two sides less twice the frame each.
+ */
+const frameCloses = (p, { face, wwr }) => {
+  const o = openingFor(p, face, p[wwr]);
+  return `The ${face} wall's opening is ${o.width.toFixed(2)} × ${o.height.toFixed(2)} m, and a ${p.frameWidth.toFixed(3)} m frame all round it leaves no glass for the engine to build.`;
+};
+
+/**
+ * Whether this wall carries an opening, as the applier decides it: an outside
+ * to open onto, a ratio off zero, and glass left inside the frame. Every
+ * question on this desk about "the glass on this wall" asks this one, or it
+ * would engage something on a wall the document holds no window in.
+ */
+const opens = (p, wall) => opensOut(p, wall.face) && p[wall.wwr] > 0 && frameFits(p, wall);
+
+/**
+ * Why a wall that ought to have glass has none, in the order the causes bite,
+ * or `whenSolid` for the one cause that is a setting rather than a refusal.
+ */
+const noGlass = (p, wall, whenSolid) => {
+  if (!opensOut(p, wall.face)) return noOutside(wall.face);
+  if (!(p[wall.wwr] > 0)) return whenSolid;
+  return frameCloses(p, wall);
+};
+
+const ORIENTATIONS = WALL_FACES.map((wall) => ({
+  key: wall.wwr,
+  side: wall.face,
+  label: wall.label,
+  needs: (p) => opensOut(p, wall.face) && frameFits(p, wall),
+  unreached: (p) => (opensOut(p, wall.face) ? frameCloses(p, wall) : noOutside(wall.face)),
 }));
 
 /**
@@ -2790,15 +2828,26 @@ const ORIENTATIONS = WALL_FACES.map(({ face, label, wwr }) => ({
 const noOpening = (wall) =>
   `The ${wall} wall has no opening, so an overhang there hangs on nothing.`;
 
-const SHADE_SIDES = WALL_FACES.map(({ face, label, wwr, overhang }) => ({
-  key: overhang,
-  side: face,
-  label,
-  // Two ways for this one to reach nothing, and the note has to say which:
-  // the wall can be solid, or it can have no outside for an opening to be in.
-  // Hence a function here where the ratios above carry a sentence.
-  needs: (p) => opensOut(p, face) && p[wwr] > 0,
-  unreached: (p) => (opensOut(p, face) ? noOpening(face) : noOutside(face)),
+/**
+ * An overhang too shallow for the engine to keep. Its short edges are its
+ * depth, and EnergyPlus merges two vertices closer than `COINCIDENT` and deletes
+ * the surface left with two sides — a severe, a completed run, and a shade in
+ * the document the engine never simulated. See `COINCIDENT` in `aperture.js`.
+ */
+const tooShallow = (wall, depth) =>
+  `EnergyPlus reads two vertices closer than ${COINCIDENT} m as one, so a ${depth.toFixed(2)} m overhang on the ${wall} wall would be deleted rather than built.`;
+
+const SHADE_SIDES = WALL_FACES.map((wall) => ({
+  key: wall.overhang,
+  side: wall.face,
+  label: wall.label,
+  // Four ways for this one to reach nothing, and the note has to say which:
+  // no outside for an opening to be in, a solid wall, a frame that closes the
+  // opening, or a projection too shallow to be a surface. Hence a function
+  // here where a single cause could carry a sentence.
+  needs: (p) => opens(p, wall) && shadeBuilds(p[wall.overhang]),
+  unreached: (p) =>
+    opens(p, wall) ? tooShallow(wall.face, p[wall.overhang]) : noGlass(p, wall, noOpening(wall.face)),
 }));
 
 /**
@@ -2817,19 +2866,19 @@ const noneToOpen = (wall) =>
  * opening it sits in, so a wall with no glass has nothing to open, and a wall
  * with no outside has nowhere to open onto.
  */
-const OPENABLE_SIDES = WALL_FACES.map(({ face, label, wwr, openable }) => ({
-  key: openable,
-  side: face,
-  label,
-  needs: (p) => opensOut(p, face) && p[wwr] > 0,
-  unreached: (p) => (opensOut(p, face) ? noneToOpen(face) : noOutside(face)),
+const OPENABLE_SIDES = WALL_FACES.map((wall) => ({
+  key: wall.openable,
+  side: wall.face,
+  label: wall.label,
+  needs: (p) => opens(p, wall),
+  unreached: (p) => noGlass(p, wall, noneToOpen(wall.face)),
 }));
 
-// An opening exists where the ratio is off zero *and* the wall it would be cut
-// into has an outside — the applier writes exactly that set, so every
-// precondition asking "is there any glass" has to ask the same question or it
-// will engage a channel that has nothing to work on.
-const glazed = (p) => WALL_FACES.some(({ face, wwr }) => opensOut(p, face) && p[wwr] > 0);
+// An opening exists where the ratio is off zero, the wall it would be cut into
+// has an outside, and the frame leaves glass in it — the applier writes exactly
+// that set, so every precondition asking "is there any glass" has to ask the
+// same question or it will engage a channel that has nothing to work on.
+const glazed = (p) => WALL_FACES.some((wall) => opens(p, wall));
 const layered = (p) => p.glazingModel === 'Layered';
 // Roof glazing is deliberately a separate question from wall glazing: the two
 // channels own different holes in different surfaces, and everything that
@@ -2980,8 +3029,7 @@ export function gainsForRoom(id) {
 const NO_ROOM = Object.freeze({});
 
 /** Whether any wall has an area to open at all, asked of the parameters. */
-const anyOpenable = (p) =>
-  WALL_FACES.some(({ face, wwr, openable }) => opensOut(p, face) && p[wwr] > 0 && p[openable] > 0);
+const anyOpenable = (p) => WALL_FACES.some((wall) => opens(p, wall) && p[wall.openable] > 0);
 
 /**
  * How many ways through the envelope a pressure network would have, counted the
@@ -3007,8 +3055,7 @@ const anyOpenable = (p) =>
  */
 const networkPaths = (p) =>
   (p.envLeak > 0 ? WEATHER_FACES.filter((face) => opensOut(p, face)).length : 0) +
-  WALL_FACES.filter(({ face, wwr, openable }) => opensOut(p, face) && p[wwr] > 0 && p[openable] > 0)
-    .length;
+  WALL_FACES.filter((wall) => opens(p, wall) && p[wall.openable] > 0).length;
 
 /**
  * The venting rules that will not run without a setpoint schedule.
@@ -3408,7 +3455,7 @@ export const CHANNELS = Object.freeze([
         zero: 'None',
         landmarks: FRAME_WIDTH,
         needs: glazed,
-        note: 'Adds a framed perimeter outside the glass, with its own conductance.',
+        note: 'A framed perimeter with its own conductance, counted inside the window-to-wall ratio the way ASHRAE 90.1 counts it: the ratio is the rough opening, so a wider frame means less glass rather than a bigger hole.',
       }),
       new Scale({
         key: 'frameCond',
@@ -3507,8 +3554,10 @@ export const CHANNELS = Object.freeze([
         unit: 'm',
         zero: 'Flush',
         landmarks: SKY_CURB,
-        needs: skylit,
-        note: 'The upstand a rooflight is bedded on, standing all the way round. It is the roof\'s overhang, and the only shade a horizontal opening gets.',
+        // Refused at its first stop off zero, where every face it writes is one
+        // the engine deletes (see `COINCIDENT`).
+        needs: (p) => skylit(p) && shadeBuilds(p.skyCurb),
+        note: `The upstand a rooflight is bedded on, standing all the way round. It is the roof's overhang, and the only shade a horizontal opening gets. EnergyPlus reads two vertices closer than ${COINCIDENT} m as one, so a curb has to stand taller than that or the engine deletes it.`,
       }),
       new Selector({
         key: 'skyGlass',
@@ -3591,14 +3640,16 @@ export const CHANNELS = Object.freeze([
         key: 'fin',
         label: 'Side fins',
         value: 0, min: 0, max: 3, step: 0.01, unit: 'm', zero: 'None',
-        needs: glazed,
-        note: 'Stood at both jambs of every opening there is.',
+        // The first stop off zero is refused as well as a wall with no glass:
+        // at 0.01 m the fin is a surface the engine deletes (see `COINCIDENT`).
+        needs: (p) => glazed(p) && shadeBuilds(p.fin),
+        note: `Stood at both jambs of every opening there is. EnergyPlus reads two vertices closer than ${COINCIDENT} m as one, so a fin has to stand out further than that or the engine deletes it.`,
       }),
       new Scale({
         key: 'finOffset',
         label: 'Fin offset from jamb',
         value: 0, min: 0, max: 1.5, step: 0.01, unit: 'm', zero: 'At jamb',
-        needs: (p) => p.fin > 0,
+        needs: (p) => builds(p.fin),
       }),
     ],
   }),
