@@ -2328,6 +2328,11 @@ against the repository before labelling. Findings that shaped the workflow:
   arrives at the CLI as a bare flag. `--tools StructuredOutput` is not empty,
   starts the run with that one tool, and returns a verdict in two turns. The
   prompt also says so, since a small model left to itself answered in prose.
+- **Six turns, because the action enforces the ceiling on a finished run.**
+  With the tool in place, run 34635843699 came back `success` after four turns
+  and the action failed it anyway, as "exceeding the configured maximum of 3".
+  The same prompt took two turns locally; in the action each verdict the
+  schema rejects is re-asked for, one turn apiece.
 - **App tokens trigger further runs**, unlike `GITHUB_TOKEN`, and the action
   rejects bot actors. The job is gated on the sender not ending in `[bot]`, or
   idfkit-bot's own `enhancement` label would start the starter path on every
