@@ -315,6 +315,31 @@ geometry earlier ones wrote).
   for signed physical quantities. Read it before touching visual design.
 - **Prefer typed objects** (classes, frozen instances) over loose dictionaries.
 
+## The consumer register
+
+The shoebox is `idfkit-shoebox` in the consumer register,
+`governance/consumers.toml` in idfkit-conformance (feature 004 of the
+unification). The register says where this repository's idfkit level is written
+and never states the level itself.
+
+- **Where the level is declared.** `package.json`, `dependencies` of
+  `@idfkit/core`, `@idfkit/schemas` and `@idfkit/weather`, exact pins. They are
+  one release and must always carry one version. `@idfkit/engine` (a caret range)
+  and `@idfkit/engine-assets` are recorded as outside the unification and
+  governed by nothing here.
+- **The entry point is the scoped packages, and that is first-class.** It is not
+  a lag and not debt. Do not migrate to the shared `idfkit` name; no check asks
+  for it and none may be satisfied by it (FR-037, FR-044).
+- **The self-check.** `.github/workflows/check.yml` calls `check-consumer.yml` at
+  a pinned governance tag. It fails when the register no longer describes this
+  repository. Moving where the level lives or adding a governed package needs a
+  register change in idfkit-conformance too; a plain bump does not.
+- **Rehearsal.** `rehearse-candidate.yml` builds the page against an unpublished
+  idfkit-js commit without touching the manifest or lockfile. With no test runner
+  and no type checker, the production build is the whole rehearsal.
+- **Adoption.** `bump-idfkit-js.yml` is dispatched by idfkit-js on each release,
+  moves the three packages together, builds, and opens a pull request.
+
 ## Weather data
 
 `src/weather.js` wraps `@idfkit/weather`. The 1.7 MB station index loads on the

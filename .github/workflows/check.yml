@@ -1,0 +1,29 @@
+# The consumer register self-check (feature 004 of the unification).
+#
+# This repository has no test runner and no linter, so it had no check workflow at all. It still
+# consumes idfkit-js, and the consumer register in idfkit-conformance says where its level is
+# written, so this is the one check every consumer runs: does the register still describe this
+# repository. The called workflow asserts that every declaration it names resolves, that the
+# scoped packages agree on one release, that the entry point is the scoped one it records, and
+# that @idfkit/engine and @idfkit/engine-assets are recorded as outside the unification. It never
+# compares the level with what is published; being behind is allowed, being undescribed is not.
+#
+# The tag is written twice, on `uses:` and as the input, because a called workflow cannot see its
+# own ref. The called workflow refuses the run unless the two are identical. Move both together,
+# and only to a tag that exists.
+
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  consumer-register:
+    uses: idfkit/idfkit-conformance/.github/workflows/check-consumer.yml@governance-2026.18
+    with:
+      governance_level: governance-2026.18

@@ -1,0 +1,43 @@
+# Build the shoebox against an unpublished build of idfkit-js, before it is released
+# (feature 004 of the unification, User Story 2).
+#
+# Dispatched by a maintainer, or fanned out by idfkit-js's rehearse-all.yml. Never run on pull
+# requests: a failure it finds belongs to the library (FR-013).
+#
+# The repository has no type checker and no test runner, so the register names the production
+# build as its rehearsal: Rollup refuses an import the candidate no longer exports, which is the
+# rename a visitor's browser would otherwise meet. The build runs at the declared level first and
+# then with the candidate's tarballs installed into a scratch copy with --no-save, so package.json
+# and package-lock.json never change (FR-010). With no candidate it fails rather than rehearsing the
+# published level (FR-012).
+
+name: rehearse-candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      # Declared because both libraries' rehearse-all.yml dispatch every consumer with the same two
+      # inputs, and GitHub rejects a dispatch carrying an input the workflow does not declare. This
+      # consumer resolves one library, so the choice has one option.
+      library:
+        description: The library being rehearsed. This consumer resolves javascript only.
+        required: true
+        type: choice
+        options: [javascript]
+        default: javascript
+      candidate_ref:
+        description: A commit, branch or tag in idfkit/idfkit-js to rehearse against. Required.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  rehearse:
+    uses: idfkit/idfkit-conformance/.github/workflows/rehearse.yml@governance-2026.18
+    with:
+      governance_level: governance-2026.18
+      consumer: idfkit-shoebox
+      library: ${{ inputs.library }}
+      candidate_ref: ${{ inputs.candidate_ref }}
