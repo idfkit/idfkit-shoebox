@@ -23,7 +23,8 @@ name: bump-idfkit-js
 #      this run fails, until the statement is removed or given an own_reason.
 #   2. A lag the register holds for the shoebox. Reaching the released level closes it, and FR-023 wants
 #      that recorded with the adoption: the run dispatches record-adoption.yml in idfkit-conformance
-#      to open the paired pull request, or prints the command when it has no token to do so.
+#      to open the paired pull request, with a token the organisation's GitHub App mints for that
+#      one repository, or prints the command when APP_ID and APP_PRIVATE_KEY are not set.
 #
 # DECLINING. Give `decline_reason` and nothing is bumped: the run records a deliberate lag in the
 # register instead, which is a resting state rather than a bot pull request left open (FR-024).
@@ -58,6 +59,8 @@ env:
 jobs:
   bump:
     runs-on: ubuntu-latest
+    env:
+      HAS_APP: ${{ secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
     timeout-minutes: 20
     steps:
       - name: Check out
@@ -100,17 +103,30 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "previous=$(node -p "require('./package.json').dependencies['@idfkit/core']")" >> "$GITHUB_OUTPUT"
 
+      # The consumer register lives in idfkit-conformance, so recording an adoption there is a dispatch
+      # into another repository. The organisation's GitHub App (idfkit-bot) mints a token for that one
+      # repository, valid for an hour, rather than a personal token stored for months. Without APP_ID
+      # and APP_PRIVATE_KEY this step is skipped and the steps below say what to run instead.
+      - name: Mint a token that can dispatch in idfkit-conformance
+        id: app-token
+        if: env.HAS_APP == 'true'
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: idfkit-conformance
       - name: Decline, and record why
         if: inputs.decline_reason != ''
         env:
-          GH_TOKEN: ${{ secrets.CONFORMANCE_DISPATCH_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REASON: ${{ inputs.decline_reason }}
         run: |
           set -euo pipefail
           command=(gh workflow run record-adoption.yml -R idfkit/idfkit-conformance
                    -f consumer="$CONSUMER" -f library=javascript -f outcome=decline -f reason="$REASON")
           if [ -z "$GH_TOKEN" ]; then
-            echo "::error title=Decline not recorded::No CONFORMANCE_DISPATCH_TOKEN, so the deliberate lag cannot be recorded from here. Run: ${command[*]}"
+            echo "::error title=Decline not recorded::No APP_ID/APP_PRIVATE_KEY, so the deliberate lag cannot be recorded from here. Run: ${command[*]}"
             exit 1
           fi
           "${command[@]}"
@@ -211,7 +227,6 @@ jobs:
           ISSUE: ${{ steps.register.outputs.issue }}
           HELD: ${{ steps.register.outputs.held }}
           CURRENT: ${{ steps.current.outputs.current }}
-          HAS_TOKEN: ${{ secrets.CONFORMANCE_DISPATCH_TOKEN != '' }}
         run: |
           {
             echo "idfkit-js $VERSION was released, so every governed @idfkit package moves from $PREVIOUS to $VERSION in one change."
@@ -234,7 +249,7 @@ jobs:
               echo "## The register"
               echo
               echo "The consumer register records a \`$LAG\` lag for the shoebox ($ISSUE). This adoption closes it, and the register change is a paired pull request in idfkit-conformance."
-              if [ "$HAS_TOKEN" != true ]; then
+              if [ "$HAS_APP" != true ]; then
                 echo
                 echo "This run had no token to open it. Run:"
                 echo
@@ -268,11 +283,11 @@ jobs:
       - name: Record the closed lag in the register
         if: inputs.decline_reason == '' && steps.register.outputs.lag != '' && steps.pr.outputs.pull-request-url != ''
         env:
-          GH_TOKEN: ${{ secrets.CONFORMANCE_DISPATCH_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR: ${{ steps.pr.outputs.pull-request-url }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "::warning title=Register not updated::No CONFORMANCE_DISPATCH_TOKEN; the command is in the pull request body."
+            echo "::warning title=Register not updated::No APP_ID/APP_PRIVATE_KEY; the command is in the pull request body."
             exit 0
           fi
           gh workflow run record-adoption.yml -R idfkit/idfkit-conformance \
