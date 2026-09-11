@@ -1,0 +1,9 @@
+# Blank issues stay open: a reader who cannot open the sheet must still be able
+# to report, and triage reads a hand-filed issue from its words alone. The
+# contact link points first at the route that captures what the reader was
+# looking at, the Report button on the sheet itself.
+blank_issues_enabled: true
+contact_links:
+  - name: Report from the sheet
+    url: https://shoebox.idfkit.com/
+    about: Opens the sheet; its Report button attaches the link, build and engine log for you.

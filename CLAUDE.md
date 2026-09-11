@@ -258,6 +258,20 @@ geometry earlier ones wrote).
   drawn by absence (no geometry emitted). `Coverage` asserts its sum. The relief is
   hand-written WebGL2, orthographic, no exaggeration control, one hue. `cutAt` is
   where the ground was cut; `standingAt(desk)` is where the desk is.
+- **Reports** (`report.js`, `report-sheet.js`): `report.js` is DOM-free (records,
+  `buildBody`, `handoff`, the trail, the error log, the `provide`/`ask`
+  registry). `report-sheet.js` is a **second module entry, loaded before
+  `main.js`**, so the Report button and the error trap work when the boot never
+  finishes. `main.js` registers `screen`, `runFiles` and `refusedLink` at the
+  very foot of the module (earlier would hit the TDZ on a half-finished boot).
+  The hand-off is the only moment a report leaves the machine; the page makes no
+  request. See "Feedback reports and triage".
+- **Triage** (`.github/workflows/triage.yml`): Claude reads the issue with no
+  tools and a read-only token and returns a schema-checked verdict;
+  `.github/scripts/triage-apply.cjs` validates it and labels as idfkit-bot.
+  `--disallowedTools "*"` (the action drops `--tools ""`); the job skips bot
+  senders (app tokens retrigger); read `steps.claude.outcome`. Test from a branch
+  with `workflow_dispatch`.
 
 ## Invariants that fail quietly
 
@@ -295,6 +309,9 @@ geometry earlier ones wrote).
 - Any class that sets or unsets `display` and is toggled by `hidden` needs its own
   `[hidden]` twin (`all: unset` defeats the attribute too).
 - `dataset` is getter-only: write `el.dataset.x`, never `Object.assign(el, { dataset })`.
+- Never put `labels=` in a new-issue address: GitHub answers 404 to a reader who
+  cannot label. Keep the whole address under 5,500 characters (GitHub fails from
+  about 6,050); `handoff()` trims the log, oldest first, and says so.
 
 ## Conventions
 
@@ -362,6 +379,10 @@ deployed by GitHub OIDC (`AWS_PROFILE=idfkit` locally; no stored keys).
   in `infra/lib/shoebox-stack.ts` must agree with `deploy.yml`'s `tags:` filter.
 - Previews run only for same-repo branches; the comment comes from the idfkit GitHub
   App (`.github/scripts/preview-comment.cjs`).
+- Triage needs the repository secret `CLAUDE_CODE_OAUTH_TOKEN` (a one-year
+  subscription token from `claude setup-token`, tied to the maintainer who made
+  it; **renew by 2027-09-11**) and idfkit-bot's Issues read and write permission
+  (granted 2026-09-11).
 - The title block stamps its revision (`scripts/revision.mjs` →
   `__SHEET_REVISION__`, read only by `src/version.js`): bare version on a tag,
   `+sha` otherwise, `+unknown` if unreadable. Workflows check out with

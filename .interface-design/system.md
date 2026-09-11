@@ -1010,6 +1010,60 @@ being re-summarised at each surface. A path that writes its own sentence over
 the top of the specific one is the sheet knowing exactly what is wrong and
 saying none of it.
 
+### The report sheet: a transmittal slip, laid in the flow
+
+How a reader sends the maintainers what they were looking at. A drafting
+office answers a drawing with a transmittal: a slip that names what went wrong
+and lists what is enclosed. That is the shape here, and it is laid on the sheet,
+not floated over it.
+
+- **In the flow, under the status line.** The sheet (`<section class="report">`)
+  opens in the field column directly below `.status-row`, above the plate, so
+  the sentence that went wrong and the slip reporting it are one glance. It is
+  opened by the ledger's fourth way out, **Report**, beside Download, Share and
+  Save, because it is the same kind of act: take this away. Never a dialog;
+  nothing on this board floats. Shown and hidden with `hidden`, and since
+  `.report` sets `display`, it has a `.report[hidden]` twin.
+- **Vellum, because it is worked.** `--vellum` with a `--rule` hairline and
+  `--r` corners, padded like a panel head (`16px 18px 14px`), blocks `11px`
+  apart. The console is the other thing on this board that is worked rather
+  than read, and the report borrows its surface rather than inventing a third.
+- **Eyebrow and one standing line.** The heading is an eyebrow; beneath it one
+  line in the strip-blurb face (`400 11.5px/1.5` sans, `--ink-3`) says the
+  report becomes a public issue and needs a GitHub account. Held to `BLOCK`.
+- **The description is an inset field.** `--inset`, `--rule-soft` hairline,
+  the `--rule-focus` ring, `400 12px/1.5` sans in `--ink`. Inputs are darker
+  than their surroundings, as everywhere on this board.
+- **The enclosures are the run log's ticks.** Each captured item is one row: an
+  `8px` square with a `1px` border, filled `--ink` when the item is enclosed and
+  a `--ink-ghost` outline when it has been taken out, exactly as the ledger
+  marks a completed phase. Then the item's label in the control-label face, its
+  one-line summary in the value-readout face (`400 11px/1.3` mono, `--ink-2`),
+  and a `.link` toggle reading **Remove** or **Put back** (`aria-pressed`). A
+  removed row's summary is replaced by the word "Removed", so the state is
+  never carried by the square alone. The build row has no toggle and says
+  "Always included."
+- **Files are `.link` buttons with their reason beside them.** A file that
+  cannot be made (no run yet, no screen capture on this browser) is a disabled
+  link with the reason under it in the control-note face, per "A refusal that
+  carries its next step". Never dimmed without words.
+- **The preview is a fold of the exact text.** `fold('report:preview', 'Exactly
+  what is sent')` holding a `<pre>` in `400 10.5px/1.5` mono, `--ink-2`, on
+  `--inset`, `pre-wrap`, scrolling within itself past about twenty lines. What
+  the preview shows is byte for byte what leaves, so it is the body string and
+  not a rendering of it.
+- **Actions are links, and the one that sends says so.** **Open on GitHub**,
+  **Copy text**, **Close**, as `.link` buttons in a wrapping row. Under Open on
+  GitHub, in the standing-line face, what pressing it does: the text goes to
+  GitHub to fill the form, and the reader submits it there. The sheet's one
+  real button is Run; this does not get a second.
+- **The outcome is a status line.** Written into a `role="status"` element in
+  the `.status` face, `.bad` for a refusal, so the result of the press is
+  announced and stands in place.
+
+At 390 px the slip is already one column; the files and actions rows wrap. No
+part of it exists only on hover.
+
 ### Withdrawing a control: dim it, or do not draw it
 
 Two different facts, two treatments, and one treatment for both was misreading

@@ -33,6 +33,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Report a problem from the sheet.** A fourth way out beside Download, Share
+  and Save opens a slip under the status line carrying what the reader was
+  looking at: the link and build that reproduce the desk, the engine's severe
+  and fatal lines, what was refused or blocked in view, the browser and layout,
+  the errors the page caught and the last twenty actions. The reader reads every
+  line before one press opens a prefilled GitHub issue, which is the only moment
+  it leaves their machine. It opens even when the engine fails to load, which
+  the status line now says instead of stopping silently.
+
+- **New issues sort themselves.** Each gets one bucket or "needs a person", area
+  and failure labels, and likely duplicates named, with a folded starter
+  paragraph for `/speckit-specify` on a feature request. Claude reads the issue
+  with no tools; idfkit-bot applies only what survives a check against the
+  repository, and never overrides a maintainer's label.
+
 - **A survey of the design space, on a second drawing.** Choose two controls
   and a reading, and the sheet cuts a ground through the desk as it stands: a
   real EnergyPlus run at every position of a grid, contoured on a plan and
