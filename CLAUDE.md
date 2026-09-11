@@ -266,12 +266,14 @@ geometry earlier ones wrote).
   very foot of the module (earlier would hit the TDZ on a half-finished boot).
   The hand-off is the only moment a report leaves the machine; the page makes no
   request. See "Feedback reports and triage".
-- **Triage** (`.github/workflows/triage.yml`): Claude reads the issue with no
-  tools and a read-only token and returns a schema-checked verdict;
-  `.github/scripts/triage-apply.cjs` validates it and labels as idfkit-bot.
-  `--disallowedTools "*"` (the action drops `--tools ""`); the job skips bot
-  senders (app tokens retrigger); read `steps.claude.outcome`. Test from a branch
-  with `workflow_dispatch`.
+- **Triage** (`.github/workflows/triage.yml`): Claude reads the issue with one
+  tool, `StructuredOutput`, and a read-only token, and returns a schema-checked
+  verdict; `.github/scripts/triage-apply.cjs` validates it and labels as
+  idfkit-bot. **`--tools StructuredOutput`, never `--disallowedTools "*"`**,
+  which denies the verdict's own tool (the first live run died of it), nor
+  `--tools ""`, which the action drops. The job skips bot senders (app tokens
+  retrigger); read `steps.claude.outcome`. Test from a branch with
+  `workflow_dispatch` (works because the file is on `main` and has run).
 
 ## Invariants that fail quietly
 

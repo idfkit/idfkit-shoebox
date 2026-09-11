@@ -3,8 +3,9 @@
 # folded starter paragraph for /speckit-specify. See specs/009-feedback-reports.
 #
 # Two steps, and the split is the security boundary. The step that reads the
-# issue runs Claude with no tools, a read-only GITHUB_TOKEN and nothing else it
-# could write with; its only product is a JSON verdict. The idfkit-bot token is
+# issue runs Claude with one tool, the one that hands back its verdict, a
+# read-only GITHUB_TOKEN and nothing else it could write with; its only product
+# is a JSON verdict. The idfkit-bot token is
 # minted after that step has ended, and the apply script checks every field of
 # the verdict against the repository before it labels or comments. On a public
 # repository anyone can write an issue, including one written to steer this
@@ -17,6 +18,8 @@
 # `issues` events run the default branch's copy of this file, so a change to it
 # is tested before merge with workflow_dispatch from the branch:
 #   gh workflow run triage.yml --ref <branch> -f issue=<n> -f mode=triage
+# That only works because this file is already on the default branch and has
+# run there: GitHub refuses to dispatch a workflow the default branch lacks.
 name: Triage
 
 on:
@@ -91,10 +94,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      # `--disallowedTools "*"` rather than `--tools ""`: the action's argument
-      # parser drops an empty value, so the second would reach the CLI as a bare
-      # flag. Three turns rather than one, because a verdict that misses the
-      # schema is re-asked for, and whether that costs a turn is undocumented.
+      # `--tools StructuredOutput` takes every built-in tool away and leaves the
+      # one the verdict is returned through. Two spellings that look right fail:
+      # `--disallowedTools "*"` denies StructuredOutput too, and the first live
+      # run spent its turns on two refused calls and ended `error_max_turns`
+      # with no verdict (run 34634116301); `--tools ""` would do, but the
+      # action's argument parser drops an empty value. Three turns: a verdict
+      # takes two, and a schema mismatch is re-asked for.
       # `allowed_non_write_users` lets a stranger's issue be read at all; it
       # needs `github_token`, and this job's token can only read.
       - name: Read the issue
@@ -109,7 +115,7 @@ jobs:
           claude_args: >-
             --model claude-opus-5
             --max-turns 3
-            --disallowedTools "*"
+            --tools StructuredOutput
             --json-schema '${{ steps.context.outputs.schema }}'
 
       # Minted only now, after the model has finished, and scoped to issues.

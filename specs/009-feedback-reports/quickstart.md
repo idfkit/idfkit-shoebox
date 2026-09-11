@@ -54,7 +54,7 @@ At 390 px wide, and with the keyboard alone: repeat step 1. Expect one column, t
 
 ## 5. Run triage from the branch (story 3; SC-003 to SC-005, SC-010)
 
-`issues` events use the default branch's workflow, so the branch is tested with `workflow_dispatch`:
+`issues` events use the default branch's workflow, so the branch is tested with `workflow_dispatch`. That works only once `triage.yml` is on the default branch, which it now is; before the first merge GitHub refused the dispatch:
 
 ```bash
 gh workflow run triage.yml --ref <branch> -f issue=<n> -f mode=triage
@@ -67,7 +67,7 @@ Expect, for each run:
 - One bucket label or `needs a person`, `from the sheet` or `no captured context`, and failure labels parsed from the body.
 - The duplicate names #21.
 - The feature requests carry one folded starter comment; the ruled-out one opens by naming Principle I and what an amendment would argue.
-- The run's `execution_file` shows an empty tool list in its `system/init` entry.
+- The run's `execution_file` shows `StructuredOutput` and no other tool in its `system/init` entry, and the result is `success` with a `structured_output`.
 - The action accepted the schema. If it rejects a keyword (a length limit, a pattern, a `null` type), drop that keyword from the schema: the apply validator already enforces the same rule.
 - Re-running with `mode=starter` on the feature request posts nothing new.
 - Relabelling a question to `enhancement` (after merge, or by dispatch with `mode=starter`) posts one starter; relabelling away and back posts nothing.
