@@ -2257,6 +2257,189 @@ the same journey or the words drift off the corners they name.
 `src/model.js` is untouched and no new `Output:Variable` is requested anywhere,
 which discharges the output-budget requirement outright.
 
+### The strategy plan (src/space.js, src/strategy.js, src/strategy-view.js)
+
+A component of E-02 that reads the whole design space at once. For a chosen
+reading it draws every sampled design along the two moves that decide it, shows
+the worlds one door away as islands with measured jumps, screens every control
+and door, and for a pair of readings sorts each into no-regret, trade-off, lever
+or free, printing the kind on the control's own strip. `space.js` says what
+could be run, `strategy.js` what the runs said, and both are DOM-free and
+engine-free so the harnesses in `specs/009-strategy-plan/verify/` call the real
+arithmetic; `strategy-view.js` is the one DOM-bound module.
+
+**One sequence over every face is the foundation, not a detail.** Every design
+is a point of one scrambled Sobol sequence (Joe and Kuo directions, Burley's
+hash-based Owen scramble at a declared seed) that assigns a value to every
+varied face on the desk, including faces dark in the world being sampled. So
+design *i* in two worlds one door apart is the same parameters with one key
+flipped (a jump is a difference between two runs of one building), entering a
+world reuses every run its island made, a slider gesture invalidates nothing,
+and a link samples the same designs everywhere. `matched` asserts the pair
+differs only in the door and what it implies, and a `Jump` accepts nothing but
+`MatchedPairs`, so an unmatched jump cannot be constructed.
+
+- **`DIMENSION_ORDER` is append-only.** Inserting a control mid-strip would
+  renumber every later dimension and silently change the sample behind every
+  plan link ever shared, so a new face takes the next dimension and a departed
+  one goes into `RETIRED`. `verify/dimension-order.json` is the frozen copy the
+  gate compares against. The seed is part of the link format in effect.
+- **Every key has exactly one role**, asserted at load: 85 varied, 23 doors, 36
+  held with a sentence each (Solver and Run are not the building, the priced
+  channels do not reach it, System's own choices change what a reading means,
+  `solarDist` and `hbAlgorithm` are solution algorithms, and a faceless kind has
+  no position). The patch doors are exactly Context, Skylights, Shading, Blinds
+  and Daylight.
+- **The default desk has 19 enterable neighbours, not 20.** research.md first
+  said 20; its own itemised terms sum to 19, which is what `neighboursOf`
+  returns. Blinds in is refused with its channel's own `requires.reason`.
+- **A design is built in the live desk's own key order** (`PARAM_ORDER`, which
+  is `DEFAULT_PARAMETERS`'s), because a sample's cache identity is a
+  serialisation of its whole desk, and a plan design and a study sample of one
+  building only share a cache entry if their keys come out in the same order.
+  `sampleDesk` in `main.js` is the one function both the identity and the build
+  read.
+
+**A control's darkness can depend on its own value, and the skip proof found it
+on its first run.** A probe is skipped, costing no run and recording an exact
+zero, where the control reaches nothing. At base 0 the west overhang stood at
+0.01 m, which its wall calls dark because EnergyPlus merges two vertices that
+close and deletes the surface; stepped to 0.16 m the same overhang is built.
+Dark at the base alone, that probe was an exact zero over a real effect. So a
+probe is skipped only where the control is dark at **both** ends of its step,
+and `skip-proof.mjs` builds both documents for every skipped probe and compares
+them byte for byte. A skipped probe at a base that itself failed claims nothing.
+
+**Design-list jobs, and a context per world.** A plan design moves every varied
+control at once, so it cannot be positions along one face; as a thousand
+one-point jobs the round-robin would hand a study one dispatch in 1,025. So
+`makeStudyJob` takes `designs` and a plan is at most three jobs (home designs,
+home probes, neighbours), which keeps a study to a turn in every four. A
+neighbours job mixes worlds, and `roomType` is a door that moves the occupied-hour
+floor TM59 a and c read, so `contextFor(job, index)` is resolved once per
+distinct `entry.context` rather than once per job. The scheduler hands `onUpdate`
+the landed index, because finding it by walking a curve of thousands on every
+point is quadratic. Every job leaves out the designs the ledger already holds,
+which is what makes stepping into a measured island free.
+
+**A ledger beside the cache.** The cache is FIFO at 400 and a world at full depth
+is 1,024 runs, so `DesignLedger` keeps every visited world for the session and
+is cleared only where the cache is, on a station change; its epoch drops a run
+that lands after the climate moved. A run landed for one reading is re-run when
+another is chosen that it cannot answer, and the two bags are merged: one
+building, read twice. A design whose bag lacks the chosen reading entirely is
+waiting, not failed, and is never counted as a gap.
+
+**The state lives at the top of `main.js`, with the studies'.** `applyGeometry`
+moves the plan's stance mark and runs during boot, long before the foot of the
+file is evaluated, and a `let` in its temporal dead zone simply throws. The
+console's `tagRows` met the same trap on the first load, inside `mountConsole`.
+
+**The four kinds wait for four complete screening points.** Classified off one
+point, all 34 controls and doors printed a kind with a consistency of 1 of 1,
+which is a guess about the design space rather than a reading of it. The same
+four points fit the moves.
+
+**Measured on the reference desk** (free-running default desk, Denver
+Centennial design days, 16 screening bases and 512 designs, 1,007 runs under
+Node through `verify/reference-plan.mjs`):
+
+| Reading | Two moves | One move | The two strongest single controls | Terrain |
+| --- | --- | --- | --- | --- |
+| Zone high | 76.6 % | 74.4 % | 44.8 % (SHGC and U-factor) | 67.2 % at bandwidth 0.127 |
+| Zone low | 57.3 % | 58.5 % | 5.5 % (U-factor and height) | 48.1 % at bandwidth 0.127 |
+
+The high's leading move is *lower U-factor 37 %, higher SHGC 32 %, brighter
+ground 19 %*; the low's is *lower U-factor 49 %, lower storey 16 %*. SC-004
+passed at 16 bases, so the contingency of 32 was not needed. On the low, one
+move scores marginally higher than two, and the plan offers the one-move view.
+
+**The jumps, measured for the first time** (`verify/jumps.mjs`: 32 matched
+designs per world, one door from the reference desk, 608 runs). Median, and the
+10th to 90th percentile, in kelvin; every pair landed for every world:
+
+| World one door away | Zone high | Zone low |
+| --- | --- | --- |
+| Terrain: Country | −0.94 (−1.85 to −0.29) | +0.26 (+0.09 to +0.38) |
+| Terrain: City | +1.24 (+0.44 to +2.37) | −0.39 (−0.58 to −0.20) |
+| Terrain: Ocean | −1.36 (−2.70 to −0.41) | +0.37 (+0.12 to +0.53) |
+| With the neighbouring buildings | −0.26 (−1.41 to +0.00) | +0.22 (+0.02 to +0.49) |
+| North wall adiabatic | +0.19 (−1.34 to +2.82) | +0.87 (+0.04 to +4.68) |
+| East wall adiabatic | −1.73 (−7.11 to −0.34) | +1.14 (+0.05 to +3.75) |
+| South wall adiabatic | +0.03 (−1.96 to +1.80) | +1.38 (+0.07 to +4.40) |
+| West wall adiabatic | −2.38 (−8.42 to −0.19) | +0.79 (+0.06 to +4.36) |
+| Roof adiabatic | +0.65 (−0.34 to +3.81) | +0.50 (+0.04 to +3.08) |
+| Floor on the ground | −15.45 (−37.55 to −5.96) | +17.14 (+9.93 to +27.79) |
+| Sheltered from wind | +3.03 (+1.28 to +5.79) | −1.43 (−2.29 to −0.75) |
+| Lightweight slab | +1.42 (+0.40 to +2.93) | −0.31 (−3.33 to −0.01) |
+| Timber slab | +2.60 (+0.89 to +4.61) | −0.31 (−3.54 to −0.01) |
+| Ribbon windows | −0.65 (−1.69 to −0.24) | +0.07 (+0.02 to +0.16) |
+| Full-height windows | +0.36 (+0.07 to +0.87) | −0.02 (−0.08 to +0.09) |
+| Layered glazing | +8.55 (−9.66 to +27.19) | +0.72 (−0.79 to +4.49) |
+| With rooflights | +1.71 (−0.22 to +14.75) | −0.55 (−3.57 to −0.01) |
+| Without shading | +2.43 (+0.57 to +6.52) | −0.33 (−0.51 to −0.15) |
+| With daylight dimming | exactly 0 on all 32 | exactly 0 on all 32 |
+
+Three things the table says that nothing had measured. Grounding the floor is
+the largest door on the desk by an order of magnitude, larger than any slider's
+whole range. The layered glazing world's spread straddles zero on both readings,
+so its median is a poor summary of it: which way that jump goes depends on the
+rest of the design, and the island's consistency (26 of 32) is what says so.
+And daylight dimming reaches nothing on a free-running desk with Gains out,
+since there are no lights for it to dim, so it is reported as leading to the
+same reading rather than drawn as an island, which is US2 scenario 7 happening
+on the default desk rather than in theory.
+
+**Measured on the annual evidence desk** (System, Gains and Daylight in, the
+Golden NREL TMY3 year shipped with EnergyPlus 26.1, 16 bases and 512 designs,
+1,278 annual runs in 1,120 s under Node through `verify/annual-plan.mjs`). This
+is SC-008's record, and it stands whatever it came out as:
+
+| Reading | Two moves | One move | Leading move |
+| --- | --- | --- | --- |
+| Energy use intensity | 54.1 % | 42.6 % | higher equipment 32 %, higher heating setpoint 20 %, narrower plan 17 % |
+| Hours above 25 °C | 79.4 % | 45.5 % | higher cooling setpoint 81 %, deeper setback 17 % |
+
+The count against a threshold explained *more* than the energy reading, not
+less, which is the opposite of what the spec feared. The sweet spots agree with
+the spec's own annual evidence: SHGC ≈0.43 on energy use intensity (the spec
+said near 0.41), plan width ≈28.6 m and depth ≈29.5 m (near 28 m), and the
+heating setpoint at its limit rather than at a spot, as the spec's 12 °C case
+predicted. None was named within the 0.15 margin.
+
+**A fifth of the annual sample failed, in two classes, and both are the model's
+rather than the plan's.** Of 1,278 runs, 153 crossed the setpoints
+(`DualSetPointWithDeadBand: Effective heating set-point higher than effective
+cooling set-point`), which the spec expects to appear as failed runs until the
+model refuses that combination itself. And 140 failed at get-input on
+`GetInternalHeatGains: Lights="LIGHTING", Sum of Fractions > 1.0`, which is a
+fatal reachable from the Gains strip's own sliders and was not known before
+this sample found it. Both are listed on the plan as failures with the engine's
+sentence and are never drawn; they cost the screening five of its sixteen
+bases, since a failed base takes its whole row of probes with it.
+
+**The lever is looked for in both directions, and the first rule missed the
+spec's own case.** A trade-off was stated taken for the first reading chosen,
+with levers looked for only on the second, and every one of the five
+trade-offs on the reference desk came back "nothing moves the low without
+moving the high". The spec's case runs the other way: lower U-factor for the
+winter low, at the cost of the summer high, bought back with SHGC. Both
+directions are tried now, and U-factor reads *trade-off, paid by SHGC*: the
+passive-design rule of thumb, derived from this building. `Classification.losing`
+says which way it is stated.
+
+**A sweet spot needs the screening to agree it matters.** The quadratic-in-one
+fit handed the zone multiplier a spot on the high, though its effect on a zone
+temperature is exactly zero at every point: curvature from other controls leaks
+into one control's quadratic term. A spot is now named only where the control's
+mean effect at the bases is at least the free threshold and most of the measured
+gradients point toward it.
+
+**Short forms are one word each, and the TAG budget is asserted over every
+combination.** `words()` counts every whitespace-separated token, so the
+research's own example, "Best ≈ 0.41 · EUI, est.", was six words against its
+own budget of five. A tag now reads `Trade-off: High/Low; High ≈0.41 est.`.
+
 ## Invariants that fail quietly
 
 - **`Building.north_axis` is ignored** because `GlobalGeometryRules` declares

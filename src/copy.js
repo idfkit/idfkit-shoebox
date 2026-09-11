@@ -47,6 +47,11 @@ const roster = [
   new Budget({ id: 'CHASE', words: 20, scope: 'the Chase sentence above the board', asserted: false }),
   new Budget({ id: 'DESCRIPTION', words: 60, scope: 'description and finding together', asserted: false }),
   new Budget({ id: 'CEILING', words: 40, scope: 'any single visible block', asserted: false }),
+  // A classification printed under a control's face and on its folded index
+  // row. Asserted over every combination the declarations can produce rather
+  // than measured, because a tag that could not fit would have to be cut
+  // mid-word on a 390 px strip, and the edge case says it never is.
+  new Budget({ id: 'TAG', words: 5, scope: "a strip tag under a control's face", asserted: true }),
 ];
 
 export const BUDGETS = Object.freeze(Object.fromEntries(roster.map((b) => [b.id, b])));

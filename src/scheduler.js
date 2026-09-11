@@ -21,9 +21,12 @@
  *                                safe against the pump.
  *   runSample(built)           — the pool; resolves to an engine result
  *   readPoint(job, result, built) — extract every answerable quantity, or null
+ *                                (handed the context as a fourth argument)
  *   contextFor(job)            — SYNCHRONOUS: facts the quantity readers
  *                                needs that the sweep does not change, built
- *                                once for the whole study (see below)
+ *                                once for the whole study (see below);
+ *                                contextFor(job, index) for a design-list job,
+ *                                once per distinct world it carries
  *   paused()                   — true while a gesture is in progress
  *   capacity()                 — how many samples may be in flight at once
  *   onUpdate(job, event)       — 'point' | 'done' | 'failed' | 'cancelled',
@@ -64,9 +67,43 @@ export function makeStudyJob({
   origin,
   asked,
   openingBasis = null,
+  designs = null,
 }) {
   if (!Array.isArray(points) || !points.length || points.some((v) => !Number.isFinite(v))) {
-    throw new Error(`makeStudyJob: the study of ${key} carries no numeric positions to sample`);
+    throw new Error(`makeStudyJob: the study of ${key ?? id} carries no numeric positions to sample`);
+  }
+  // A job whose points are whole designs rather than positions of one key.
+  //
+  // A study moves one control and a plan design moves every varied control at
+  // once, so the strategy plan cannot be expressed as positions along a face.
+  // It could be expressed as a thousand one-point jobs, and the round-robin
+  // below would then hand a study one dispatch in 1,025 — FR-011's "must not
+  // delay" broken by arithmetic. So a job may carry its designs outright, and
+  // `points` are then just their indices, which keeps every other line of this
+  // module — the order, the curve, `started`, `done` — exactly as it was.
+  if (designs !== null) {
+    if (!Array.isArray(designs) || !designs.length) {
+      throw new Error(`makeStudyJob: the design-list job ${id} carries no designs`);
+    }
+    if (points.length !== designs.length || points.some((value, at) => value !== at)) {
+      throw new Error(
+        `makeStudyJob: the design-list job ${id} has ${designs.length} designs, so its points must be the ` +
+          'indices 0 to n − 1 and nothing else',
+      );
+    }
+    designs.forEach((entry, at) => {
+      if (!entry?.params || !entry?.patch) {
+        throw new Error(`makeStudyJob: design ${at} of ${id} carries no ${entry?.params ? 'patch' : 'params'}`);
+      }
+    });
+    // With no single key there is nothing for `omits` to default to, and a
+    // job the cancel point cannot take the rest shape of would be cancelled on
+    // every apply the desk makes — including the ones its own samples cause.
+    if (omits === null || omits === undefined) {
+      throw new Error(`makeStudyJob: the design-list job ${id} must say which keys its rest shape leaves out`);
+    }
+  } else if (!key) {
+    throw new Error('makeStudyJob: a study with no designs needs the key it sweeps');
   }
   const named = new Set(order);
   if (named.size !== points.length || order.some((i) => !Number.isInteger(i) || i < 0 || i >= points.length)) {
@@ -107,7 +144,7 @@ export function makeStudyJob({
     omits,
     points,
     order,
-    origin, // 'manual' | 'refresh' | 'survey' | 'pull'
+    origin, // 'manual' | 'refresh' | 'survey' | 'pull' | 'strategy'
     asked, // the sample count requested — the coarse pass is later densified
     openingBasis,
     curve: new Array(points.length),
@@ -119,6 +156,14 @@ export function makeStudyJob({
     // which is the cost this exists to avoid.
     context: null,
     contextTaken: false,
+    // A design-list job's designs, and its contexts memoised by each entry's
+    // own `context` signature. A plan's neighbours job mixes worlds, and a
+    // world's `roomType` decides the occupied-hour floor TM59 a and c read, so
+    // one context per job would judge every design against the first design's
+    // room. Frozen, because the scheduler reads an entry at dispatch time and a
+    // caller mutating one in between would run a desk nobody queued.
+    designs: designs === null ? null : Object.freeze([...designs]),
+    contexts: designs === null ? null : new Map(),
     done: 0,
     total: points.length,
     state: 'queued', // -> 'done' | 'cancelled'
@@ -241,7 +286,11 @@ export function createStudyScheduler({
       sample,
     };
     job.done += 1;
-    onUpdate(job, 'point');
+    // The index rides along for a design-list job's reader, which files each
+    // landing once into its own ledger; walking a curve of thousands on every
+    // point to find the one that just arrived would be quadratic. Every other
+    // caller ignores the third argument.
+    onUpdate(job, 'point', index);
     if (job.done < job.total) return;
     job.state = 'done';
     drop(job);
@@ -365,9 +414,19 @@ export function createStudyScheduler({
     // the study's first dispatch. It must not touch the shared document —
     // that is `buildSample`'s one synchronous breath and nothing else may be
     // inside it.
-    if (!job.contextTaken) {
-      job.context = contextFor(job);
-      job.contextTaken = true;
+    let context;
+    if (job.designs) {
+      // Per distinct world rather than per job, and still never per sample:
+      // a hundred designs in one world ask once, as a study does.
+      const signature = String(job.designs[index].context ?? '');
+      if (!job.contexts.has(signature)) job.contexts.set(signature, contextFor(job, index));
+      context = job.contexts.get(signature);
+    } else {
+      if (!job.contextTaken) {
+        job.context = contextFor(job);
+        job.contextTaken = true;
+      }
+      context = job.context;
     }
 
     inFlight += 1;
@@ -375,7 +434,7 @@ export function createStudyScheduler({
     const promise = (async () => {
       const built = buildSample(job, value);
       const result = await runSample(built);
-      return result?.success ? readPoint(job, result, built) : null;
+      return result?.success ? readPoint(job, result, built, context) : null;
     })();
     pending.set(pendingKey, promise);
     promise.then(

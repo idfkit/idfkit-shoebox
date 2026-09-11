@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The pull lists a control its own precondition has switched off.** It asked
+  each control a question none of them answers, so a control greyed on its strip
+  (the infiltration coefficients at zero infiltration, a frame's conductance
+  with no frame) was probed anyway and ranked as moving the reading by exactly
+  nothing. It is now listed with the strip's own reason and costs no run.
+
 ### Changed
 
 - **The sheet reads at a glance.** Every reading, verdict, absence and refusal
@@ -32,6 +40,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   EnergyPlus 26.1.0.
 
 ### Added
+
+- **The strategy plan: the whole design space for one reading.** Under the
+  survey's pull, choose a reading and the sheet samples every live control at
+  once, drawing each completed run along the two moves that decide the reading,
+  each lettered as a recipe with how much it explains, over a smoothed terrain
+  that says it is inference. Around it stand the worlds one choice away, each
+  jump measured on the same designs run in both; press a design to step in.
+  Choose two readings and every control and door is sorted into helps both,
+  trade-off, lever or free, printed on its own strip in the console. The plan
+  shares the studies' queue and cache, and a link carries its readings.
 
 - **A survey of the design space, on a second drawing.** Choose two controls
   and a reading, and the sheet cuts a ground through the desk as it stands: a

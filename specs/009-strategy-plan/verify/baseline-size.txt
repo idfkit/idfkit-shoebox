@@ -1,0 +1,46 @@
+Pre-feature transfer baseline for SC-015.
+
+Taken on the feature branch's parent commit, 82d098d, with `npm run build` in
+a clean worktree of that commit, so the one-line fix to `src/pull.js` that this
+branch carries ahead of the feature is not counted in either figure. Every
+figure is of `dist/` **excluding** the three staged directories `energyplus/`,
+`schemas/` and `weather/`: those are engine assets, identical before and after,
+and at about 50 MB they would swamp a 60 KB delta in the noise of their own
+brotli settings.
+
+Brotli is applied the way `scripts/deploy.mjs` applies it (quality 9 above
+4 MiB, quality 11 below), because SC-015 is stated as transfer on a cold visit
+and the deploy script's own settings decide that figure, not the raw byte count
+vite writes. The measuring script is the one the 006 baseline used: walk
+`dist/`, skip the three staged directories, compress each file with those
+settings, and sum.
+
+                                          raw     brotli
+assets/index-*.js                      605681     175403
+index.html                             246276      50156
+----------------------------------------------------------
+TOTAL                                  851957     225559
+
+SC-015's ceiling is 60 KB of **added transfer**, so the figure this feature
+must come in under is a post-feature brotli total of 225559 + 61440 =
+**286999 bytes**.
+
+Re-measure with the same script rather than with `ls`: `index.html` carries the
+whole stylesheet inline, so a style-only change moves a number that a
+JavaScript-only measurement would miss entirely.
+
+────────────────────────────────────────────────────────────────────────────
+After the feature, same script, same brotli settings:
+
+                                          raw     brotli
+assets/index-*.js                      683754     198603
+index.html                             259761      52015
+----------------------------------------------------------
+TOTAL                                  943515     250618
+
+**Added transfer: 25,059 bytes** against SC-015's ceiling of 61,440, close to
+research.md section 15's estimate of about 20 KB. Of it, about 1.5 KB is the
+Joe and Kuo direction table for 128 dimensions, carried past the 85 faces the
+desk has today so that appending a control never touches it. No asset, font or
+binary was added, and no new output variable is requested, so the engine's own
+payload is untouched.

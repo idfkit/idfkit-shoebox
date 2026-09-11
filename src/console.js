@@ -161,6 +161,12 @@ export function mountConsole({
   // parameter key -> the line under its face that letters what the model was
   // given for it. See `setDerived`.
   const derivedLines = new Map();
+  // The rows a strip tag can stand on: one entry per control row, each naming
+  // the keys it owns. A scale and a selector own one; a plan key owns its four
+  // walls and the boundary key its six faces, each tagged with its own letter.
+  // Declared up here with the other registries because the strips are built
+  // during this function's own setup, before anything below it is evaluated.
+  const tagRows = [];
   const daysWidgets = new Map(); // parameter key -> that list's weather-file offer
   let solo = null;
   // The instant every meter on the desk is reading at: `{ text, pinned,
@@ -253,6 +259,22 @@ export function mountConsole({
 
   /* ── the strips ──────────────────────────────────────────────────────── */
 
+  function registerTags(row, control, channel) {
+    const keys =
+      control.kind === 'facade'
+        ? control.sides.map((side) => ({ key: side.key, prefix: side.label }))
+        : control.kind === 'boundary'
+          ? control.faces.map((face) => ({ key: face.key, prefix: face.label }))
+          : control.kind === 'scale' || control.kind === 'selector'
+            ? [{ key: control.key, prefix: null }]
+            : [];
+    if (!keys.length) return;
+    const host = el('div', 'ctl-tags');
+    host.hidden = true;
+    row.append(host);
+    tagRows.push({ row, host, keys, channel });
+  }
+
   function buildStrip(channel) {
     const strip = el('section', 'strip');
     strip.dataset.channel = channel.id;
@@ -268,6 +290,10 @@ export function mountConsole({
     toggle.type = 'button';
     const read = el('b', 'strip-read');
     const mark = el('i', 'strip-mark');
+    // The strip tags of this channel, on the folded row, where the row is the
+    // whole reading. Drawn only below the index threshold; `setTags` fills it.
+    const tagline = el('span', 'strip-tags');
+    tagline.hidden = true;
     // A channel with no "off" has no arming to report, so its cell is left
     // blank rather than drawn as a marker that is permanently lit. Blank is not
     // an em dash: there is no figure missing here, there is no figure.
@@ -291,6 +317,7 @@ export function mountConsole({
       read,
       mark,
       el('i', 'strip-chev'),
+      tagline,
     );
     title.append(toggle);
     head.append(title);
@@ -347,7 +374,11 @@ export function mountConsole({
     );
 
     const body = el('div', 'strip-body');
-    for (const control of channel.controls) body.append(buildControl(control, channel));
+    for (const control of channel.controls) {
+      const row = buildControl(control, channel);
+      registerTags(row, control, channel);
+      body.append(row);
+    }
     stripFold.append(body);
 
     const readout = buildReadout(channel);
@@ -358,7 +389,7 @@ export function mountConsole({
     strip.append(stripFold);
 
     strips.set(channel.id, {
-      strip, note, patch, solo: soloBtn, meter, readout, body, toggle, read, fold: stripFold,
+      strip, note, patch, solo: soloBtn, meter, readout, body, toggle, read, tagline, fold: stripFold,
       mark: channel.bypassable ? mark : null,
     });
     return strip;
@@ -2406,6 +2437,59 @@ export function mountConsole({
         const said = lines?.get(key) ?? null;
         node.textContent = said ?? '';
         node.hidden = !said;
+      }
+    },
+
+    /**
+     * Print a classification where the hand is (FR-038 to FR-040).
+     *
+     * Replaces the whole set, as `setDerived` does. A key with an entry whose
+     * `stamp` is the current one draws a `button.ctl-tag` under its face; a key
+     * with no entry, or one stamped for another world or another pair of
+     * readings, draws nothing — never the last tag it had, which is what makes
+     * a stale tag structurally impossible rather than merely avoided (SC-013).
+     * Pressing a tag raises a `ctl-tag` event carrying the moves-panel entry
+     * it leads to, so the console knows nothing about where that entry is.
+     *
+     * A free control is dimmed at its face only, by `.free`, and stays at full
+     * ink in its label, value and tag, focusable and draggable: free for two
+     * readings is not reaching nothing, and must not look like `.idle`.
+     */
+    setTags(tags, stamp) {
+      const byChannel = new Map();
+      for (const { row, host, keys, channel } of tagRows) {
+        host.textContent = '';
+        let any = false;
+        let freeAll = true;
+        for (const { key, prefix } of keys) {
+          const tag = tags.get(key);
+          if (!tag || !stamp || tag.stamp !== stamp) {
+            freeAll = false;
+            continue;
+          }
+          any = true;
+          if (!tag.free) freeAll = false;
+          const button = el('button', 'ctl-tag', prefix ? `${prefix} · ${tag.text}` : tag.text);
+          button.type = 'button';
+          button.setAttribute('aria-label', `${labelFor(key)}: ${tag.text}. Go to its entry among the kinds of move.`);
+          button.addEventListener('click', () => {
+            button.dispatchEvent(new CustomEvent('ctl-tag', { bubbles: true, detail: { target: tag.target, key } }));
+          });
+          host.append(button);
+          if (!byChannel.has(channel.id)) byChannel.set(channel.id, []);
+          byChannel.get(channel.id).push({ key, tag });
+        }
+        host.hidden = !any;
+        row.classList.toggle('free', any && freeAll);
+      }
+      for (const channel of CHANNELS) {
+        const here = strips.get(channel.id);
+        const list = byChannel.get(channel.id) ?? [];
+        const named = list.filter(({ tag }) => !tag.free).map(({ key, tag }) => `${labelFor(key)} ${tag.text}`);
+        const free = list.filter(({ tag }) => tag.free).length;
+        const said = [...named, ...(free ? [`${free} free`] : [])].join(' · ');
+        here.tagline.textContent = said;
+        here.tagline.hidden = !said;
       }
     },
 

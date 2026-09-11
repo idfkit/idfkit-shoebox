@@ -79,9 +79,46 @@ import {
   strataOf,
   SpotHeight,
   TraverseStop,
+  CONVENTION,
 } from './survey.js';
 import { createRelief } from './relief.js';
 import { PullReading, axesFrom, entryFrom, pullProbes, pullReadingFor, rankPull } from './pull.js';
+import { VARIED, designAt, neighboursOf, probesAt, worldOf } from './space.js';
+import {
+  DEPTH,
+  DesignLedger,
+  FREE,
+  Landed,
+  MatchedPairs,
+  MOVES_FROM,
+  SAME_MOVE,
+  classifyAll,
+  designId,
+  effectsOf,
+  jumpOf,
+  oneOrTwo,
+  planOf,
+  screen,
+  stampOf,
+  tagsFor,
+  thresholdFor,
+  trendOf,
+} from './strategy.js';
+import {
+  drawArchipelago,
+  drawOneMove,
+  drawPlan,
+  percent,
+  plain,
+  recipeText,
+  renderDesignList,
+  renderInert,
+  renderIslandCards,
+  renderMoves,
+  renderReadingChooser,
+  renderScreening,
+  signed,
+} from './strategy-view.js';
 import { createEnginePool, poolLimit } from './pool.js';
 import { createStudyScheduler, makeStudyJob } from './scheduler.js';
 import { runBundle } from './bundle.js';
@@ -2132,6 +2169,25 @@ let solvedShape = null; // the shape the visible results were solved for
 let lastMean = null; // zone mean of the last run, for the axonometric tint
 let modelState = null; // which channels the model says are in the path
 let studyScheduler = null; // built with the engine pool once the engine section runs
+
+// The strategy plan's state, declared up here with the studies' rather than at
+// the foot of the file beside its functions, because `applyGeometry` moves the
+// plan's stance mark and runs during boot — long before the foot has been
+// evaluated — and a `let` in its temporal dead zone has no optional-chaining
+// spelling: it simply throws. See "The strategy plan" in CLAUDE.md.
+const ledger = new DesignLedger();
+let strategyPlan = null; // { readingIds, view, runsAt, lastWorld, stepLabel, entered, focused, asked, queuedFor }
+const strategyJobs = new Map(); // job id -> job, while queued or running
+let strategyShed = null; // the rest shape the reader set the plan aside at
+let strategyGeneration = 0;
+let strategyHandle = null; // the drawn plan, so a drag moves only its stance mark
+let strategyShown = null; // the Plan that handle drew
+let strategyDrawn = null; // what the handle drew, as a key
+let strategyTimer = 0;
+let strategyRenderMs = 0; // how long the last redraw took, which paces the next
+let pricingVersion = 0; // bumped by a reprice, so a cost plan re-letters from the ledger
+const worldVersion = new Map(); // world signature -> landings filed, for the plan caches
+const failureReasons = new Map(); // `${job id}:${index}` -> the engine's reason, for a run that failed
 const studies = new Map(); // parameter key -> the study drawn under that control
 let studyQuantity = null; // initialized once, shared by every open study
 const openStudies = new Set(); // includes queued cards before their curves land
@@ -2378,6 +2434,9 @@ function applyGeometry() {
   // resistance and the conformance falls away by itself.
   syncStandards();
   markStale();
+  // A varied control moves the plan's stance mark and invalidates nothing:
+  // the sample does not depend on where the varied controls stand.
+  syncStrategyStance();
 }
 
 /**
@@ -3485,6 +3544,9 @@ const endGesture = () => {
   // standing on a measured point is — leaves the ground standing and only
   // walks the stance mark across it.
   refreshSurvey?.();
+  // And the plan: a door opened on the desk is a step into another world,
+  // re-queued from there with every design the ledger holds answered free.
+  refreshStrategy();
 };
 
 /* ══ controls ════════════════════════════════════════════════════════════ */
@@ -3550,6 +3612,7 @@ autoBox.addEventListener('change', () => {
     // Switching auto back on catches the studies up the way it catches the
     // sheet up: whatever went stale while solving by hand re-queues now.
     refreshStudies();
+    refreshStrategy({ force: true });
   } else {
     markStale();
     // Background healing is exactly what this toggle governs, so the refresh
@@ -3961,6 +4024,13 @@ async function attach(row, pick, sizing) {
   // keeping (FR-052). The chooser's own selection stays: which two controls
   // the reader is interested in is not a property of the weather.
   closeSurvey({ forgetTraverse: true });
+  // The plan goes too, and every world it visited with it (FR-047): the
+  // ledger is every run of the plan under the outgoing climate, and its epoch
+  // moves so a run still in flight lands into nothing rather than filing
+  // Denver's reading under Munich's title block.
+  ledger.clear();
+  worldVersion.clear();
+  closeStrategy();
   // The comfort line goes with them, and for the same reason: it is 365 daily
   // means of one city's year, and Bavaria's May is not Denver's. Cleared here
   // rather than left to fall out of the identity check in `runningMeanFor`,
@@ -4122,6 +4192,10 @@ const schemeHash = (p = params) =>
           },
         }
       : null,
+    // The plan's reading or readings and nothing else (FR-045): the sample is
+    // decided by the desk above and a frozen sequence, and every measured
+    // value, tag and visited world is re-measured by the recipient.
+    plan: strategyPlan ? strategyPlan.readingIds : null,
   });
 
 /** The absolute form, for the clipboard and the run bundle's manifest. */
@@ -4202,6 +4276,10 @@ let linkedStudiesRestored = false;
  * was loaded — so what is left here is to name it and let the ground fill.
  */
 function restoreLinkedSurvey(state) {
+  // The plan rides the same restore: after the studies and after any station,
+  // for the survey's reason — it queues runs, and a sample built before the
+  // station landed would fatal on zero environments.
+  restoreLinkedPlan(state);
   if (!state?.survey) return;
   const { x, y, readings, extents } = state.survey;
   // The link's extents come back into the chooser too, or the boxes would
@@ -7062,19 +7140,31 @@ function sampleContentsFor(quantities, snapshot, patch, annual) {
   return { needed, carried };
 }
 
+/**
+ * One sample's priced readings, re-lettered from its physical meter basis.
+ * Named, because the scheduler's cache and the plan's ledger re-price by this
+ * one rule, and two copies of it would be two bills for one run.
+ */
+function repricedReadings(readings, basis) {
+  const priced = billFromBasis(basis, params);
+  const landed = { bill: priced };
+  return Object.freeze({
+    ...readings,
+    eui: QUANTITY_BY_ID.eui.read(landed),
+    cost: QUANTITY_BY_ID.cost.read(landed),
+    carbon: QUANTITY_BY_ID.carbon.read(landed),
+  });
+}
+
 function repriceStudies() {
   if (!studyScheduler) return;
-  studyScheduler.reprice((readings, basis) => {
-    const priced = billFromBasis(basis, params);
-    const landed = { bill: priced };
-    return Object.freeze({
-      ...readings,
-      eui: QUANTITY_BY_ID.eui.read(landed),
-      cost: QUANTITY_BY_ID.cost.read(landed),
-      carbon: QUANTITY_BY_ID.carbon.read(landed),
-    });
-  });
+  studyScheduler.reprice(repricedReadings);
   if (studyQuantity) redrawStudiesForQuantity({ queue: false });
+  // A cost or carbon plan re-letters from the runs already in hand, with no
+  // new run (FR-015, SC-009).
+  ledger.reprice(repricedReadings);
+  pricingVersion += 1;
+  renderStrategySoon();
 }
 
 /**
@@ -7083,6 +7173,23 @@ function repriceStudies() {
  * reads this same document; the only reason they can share it is that
  * neither ever yields to the other while it is in overlay state.
  */
+/**
+ * The whole desk one sample is: a study's snapshot with its swept key moved,
+ * or, for a strategy plan's design-list job, the design itself.
+ *
+ * One function, read by both the cache identity and the build, so the key a
+ * run is filed under and the building it was run on cannot describe two
+ * different desks. A plan design is built in the live desk's own key order,
+ * which is what makes it and a study sample of the same building one cache
+ * entry rather than two (FR-011).
+ */
+function sampleDesk(job, value) {
+  const entry = job.designs?.[value];
+  return entry
+    ? { params: entry.params, patch: entry.patch }
+    : { params: { ...job.snapshot, [job.key]: value }, patch: job.patch };
+}
+
 function buildSample(job, value) {
   try {
     // `setAnnual` lives outside `applyModel`, so it is bracketed here both
@@ -7091,13 +7198,17 @@ function buildSample(job, value) {
     setAnnual(model, job.annual);
     // Structured contents off the declaration, never a profile name inferred
     // from the selected id.
-    applyModel(model, { ...job.snapshot, [job.key]: value }, job.patch, {
+    const desk = sampleDesk(job, value);
+    applyModel(model, desk.params, desk.patch, {
       reporting: job.carried,
     });
     // Each sample's intensity divides by that sample's own floor, which the
     // swept key may itself be moving — the same live read the bill takes.
     const floorArea = geometryFacts(model).grossFloor;
-    return { idf: writeIdf(model), epw: job.epw, floorArea, carried: job.carried, value };
+    // `jobKey` names the sample for the one caller that needs a failure's
+    // reason back: a plan design is recorded with the engine's own sentence
+    // rather than as a bare gap (FR-013).
+    return { idf: writeIdf(model), epw: job.epw, floorArea, carried: job.carried, value, jobKey: `${job.id}:${value}` };
   } finally {
     applyModel(model, params, patching());
     setAnnual(model, annual());
@@ -7117,8 +7228,9 @@ function buildSample(job, value) {
  * answers to "which run was that", and the second one would be wrong.
  */
 function sampleIdentity(job, value, carried) {
+  const desk = sampleDesk(job, value);
   const bucket = JSON.stringify([
-    deskKey({ ...job.snapshot, [job.key]: value }, job.patch),
+    deskKey(desk.params, desk.patch),
     job.annual ? 'year' : 'design-day',
   ]);
   return { bucket, exact: JSON.stringify([bucket, carried.serialize()]) };
@@ -7131,8 +7243,9 @@ studyScheduler = createStudyScheduler({
   // deliberately absent, which is why a station change clears the cache.
   keyOf: sampleIdentity,
   buildSample,
-  runSample: async ({ idf, epw }) => {
+  runSample: async ({ idf, epw, jobKey }) => {
     const result = await studyPool.run({ idf, epw });
+    if (!result?.success && jobKey?.startsWith('strategy:')) failureReasons.set(jobKey, engineFailure(result));
     // The counter counts engine runs, so cache hits — honestly — do not turn it.
     runCount += 1;
     $('runs').textContent = String(runCount);
@@ -7147,13 +7260,15 @@ studyScheduler = createStudyScheduler({
   // `built` is what `buildSample` returned and `context` is what `contextFor`
   // resolved once for the whole sweep; each reader takes the pair and helps
   // itself to the half it needs.
-  readPoint: (job, result, built) => {
+  readPoint: (job, result, built, context = job.context) => {
     if (!result.eso) return null;
     const { landed, basis } = landedFrom(result.eso, job, built);
     const readings = {};
+    // The context the scheduler resolved for *this* sample: a study's one, or
+    // a design-list job's for the world this design is in.
     const deskContext = {
-      runningMean: job.context?.runningMean ?? null,
-      occupiedFloor: job.context?.occupiedFloor,
+      runningMean: context?.runningMean ?? null,
+      occupiedFloor: context?.occupiedFloor,
     };
     for (const quantity of QUANTITIES) {
       const needed = contentsFor(quantity, basis.engaged);
@@ -7210,9 +7325,12 @@ studyScheduler = createStudyScheduler({
    * precisely so the absence stands in its own precedence, so the pair is what
    * it is given.
    */
-  contextFor: (job) => ({
+  // A design-list job is asked once per world it carries, with the index of
+  // one of that world's designs, because `roomType` is a door and the floor
+  // differs between worlds; every design in one world shares its room.
+  contextFor: (job, index) => ({
     runningMean: runningMeanFor(job.epw),
-    occupiedFloor: occupiedFloor(job.snapshot),
+    occupiedFloor: occupiedFloor(job.designs ? job.designs[index].params : job.snapshot),
   }),
   // Shut during a gesture. A survey's rows go in together through
   // `enqueueAll`, which admits the lot and drains once.
@@ -7632,7 +7750,10 @@ function clearAllStudies() {
   // not ask to clear, from a button that says nothing about either, which is
   // the silent effect FR-054 forbids. E-02 has its own Clear beside its own
   // drawing.
-  studyScheduler?.cancelWhere((job) => job.origin !== 'survey' && job.origin !== 'pull', 'cleared');
+  studyScheduler?.cancelWhere(
+    (job) => job.origin !== 'survey' && job.origin !== 'pull' && job.origin !== 'strategy',
+    'cleared',
+  );
   studies.clear();
   openStudies.clear();
   studyStops.clear();
@@ -7644,7 +7765,10 @@ function clearAllStudies() {
   syncStudyStatus('Studies cleared — every control stands where it was.');
 }
 
-function onStudyUpdate(job, event) {
+function onStudyUpdate(job, event, index) {
+  // The plan first: its jobs carry no control key at all, and it files every
+  // landing into its own ledger, which no other origin's gate knows about.
+  if (onStrategyUpdate(job, event, index)) return;
   // A survey row and a pull probe both carry a real control key, so without
   // these gates every one of them would draw a study card under that control
   // and the last to land would win.
@@ -10041,8 +10165,7 @@ function renderPull() {
  * the path" is a far better answer than the sentence `axisFor` would throw a
  * moment later about a control reaching no object.
  */
-function cutFromPull(key) {
-  const entries = pullEntries();
+function cutFromPull(key, entries = pullEntries()) {
   nameSurveyAxis(key);
   const { x, y } = surveyChoice;
   if (!x || !y) return;
@@ -10057,6 +10180,841 @@ function cutFromPull(key) {
     renderSurvey();
   }
 }
+
+/* ── the strategy plan ───────────────────────────────────────────────────── */
+
+/**
+ * The whole design space for one reading, wired to the queue the studies, the
+ * pull and the survey already use.
+ *
+ * There is no second pool and no second cache. A plan is at most three
+ * design-list jobs — the home world's designs, its screening probes, and the
+ * neighbours (jumps first, then islands) — so a study queued beside it keeps
+ * a turn in every four of the round-robin (FR-011). A design and a study
+ * sample of the same building are one cache entry, because a design is built
+ * in the live desk's own key order and `sampleDesk` keys both the same way.
+ *
+ * What lands is filed into the plan's own ledger, which keeps every world the
+ * reader has visited for the session (FR-028) where the cache's FIFO would
+ * evict them, and which comes down only where the cache does.
+ */
+
+/** Seconds per run at each cadence, from research.md section 7, for the stated cost. */
+const STRATEGY_CADENCE = Object.freeze({ 'design-day': 0.05, annual: 0.7 });
+
+const strategyWorld = () => worldOf(params, patching());
+const strategyKind = () => (epwText ? 'annual' : 'design-day');
+const strategyReadings = () => (strategyPlan ? strategyPlan.readingIds.map((id) => READING_BY_ID[id]) : []);
+
+/** The engine's own reason a run failed, or a sentence saying it gave none. */
+function engineFailure(result) {
+  // The worker hands the error file back parsed, as the sheet's own solve
+  // reads it: entries with a severity and the engine's message.
+  const entries = result?.err?.entries ?? [];
+  const first = entries.find((entry) => entry.severity === 'severe') ?? entries.find((entry) => entry.severity === 'fatal');
+  if (first?.message) return String(first.message).trim();
+  return 'The run did not complete, and the engine gave no reason this sheet could read.';
+}
+
+function takeFailure(job, index) {
+  const key = `${job.id}:${index}`;
+  const reason = failureReasons.get(key);
+  failureReasons.delete(key);
+  return reason ?? 'The run did not complete, and the engine gave no reason this sheet could read.';
+}
+
+/** Whether the ledger already answers this design for every reading chosen. */
+function strategyHas(id, quantities) {
+  const entry = ledger.get(id);
+  return Boolean(entry && (entry.failure || quantities.every((quantity) => quantity in entry.readings)));
+}
+
+/** What the plan waits on before it measures anything, in words (FR-012). */
+function strategyWaitingReason() {
+  if (!autoOn()) return 'Auto-solve is off, so nothing is measured yet. Turn it on to measure the plan.';
+  if (linkAttachPending) return 'A link is still attaching. The plan is measured once its station lands.';
+  if (stationAttaching) return 'A station is still attaching. The plan is measured against the new climate once it lands.';
+  return null;
+}
+
+/**
+ * The stance's own reading, for a free threshold stated as a share of it
+ * (cost and carbon). Read off the sheet's own bill, never off a sample.
+ */
+function stanceValueFor(reading) {
+  if (!FREE[reading.id].relative || !bill) return null;
+  const quantity = QUANTITY_BY_ID[reading.quantity.id];
+  return reading.valueOf({ [quantity.id]: quantity.read({ bill }) });
+}
+
+/** A reading's free threshold, or the sentence saying why there is none yet. */
+function strategyTau(reading) {
+  try {
+    return { tau: thresholdFor(reading, stanceValueFor(reading)), absence: null };
+  } catch (failure) {
+    return { tau: null, absence: `${failure.message}. Solve the sheet once so it has a bill to take the share of.` };
+  }
+}
+
+const planCache = new Map();
+const neighbourCache = new Map();
+const pairCache = new Map();
+
+/** A plan of one world for one reading, recomputed only when that world has landed something. */
+function planFor(world, reading, depth) {
+  const key = [world.signature, reading.id, depth.designs, depth.bases, strategyKind(), ledger.epoch, pricingVersion,
+    worldVersion.get(world.signature) ?? 0].join('|');
+  let plan = planCache.get(key);
+  if (!plan) {
+    if (planCache.size > 96) planCache.clear();
+    plan = planOf(world, reading, ledger, { ...depth, kind: strategyKind(), tau: strategyTau(reading).tau });
+    planCache.set(key, plan);
+  }
+  return plan;
+}
+
+function neighboursFor(world) {
+  let found = neighbourCache.get(world.signature);
+  if (!found) {
+    if (neighbourCache.size > 32) neighbourCache.clear();
+    found = neighboursOf(world);
+    neighbourCache.set(world.signature, found);
+  }
+  return found;
+}
+
+/** A neighbour's matched pairs, built by `matched` and therefore asserted (SC-007). */
+function pairsFor(world, neighbour) {
+  const key = `${world.signature}|${neighbour.id}`;
+  let pairs = pairCache.get(key);
+  if (!pairs) {
+    if (pairCache.size > 512) pairCache.clear();
+    pairs = new MatchedPairs(world, neighbour, DEPTH.jump);
+    pairCache.set(key, pairs);
+  }
+  return pairs;
+}
+
+function cancelStrategyJobs(reason) {
+  for (const id of [...strategyJobs.keys()]) studyScheduler?.cancel(id, reason);
+  strategyJobs.clear();
+}
+
+/**
+ * Queue what the ledger does not yet hold (FR-009, FR-011, FR-014).
+ *
+ * The home world's designs in natural order, which is progressive by itself:
+ * the first 128 are a balanced Sobol prefix, and the full 512 extend it. Its
+ * probes base-major, so four whole bases land before a fifth begins and the
+ * moves can be fitted early. Then every neighbour's 32 matched designs, in
+ * design-stage order; then each island's own reduced-depth screening, at once
+ * on a design-day desk and only on request on an annual one, where the cost is
+ * stated before it is spent (clarified 2026-09-10).
+ *
+ * Every design the ledger already answers is left out, which is what makes
+ * stepping into a world free where its island was measured (FR-025).
+ */
+function queueStrategy() {
+  if (!strategyPlan || !studyScheduler) return;
+  const world = strategyWorld();
+  const kind = strategyKind();
+  const key = [world.signature, strategyPlan.readingIds.join('.'), kind, [...strategyPlan.asked].join(','), ledger.epoch].join('|');
+  if (strategyWaitingReason()) {
+    cancelStrategyJobs('replaced');
+    strategyPlan.queuedFor = null;
+    renderStrategySoon();
+    return;
+  }
+  const readings = strategyReadings();
+  const quantities = [...new Set(readings.map((reading) => reading.quantity.id))];
+  const annualDesk = kind === 'annual';
+  const { needed, carried } = sampleContentsFor(
+    quantities.map((id) => QUANTITY_BY_ID[id]),
+    world.desk,
+    world.patch,
+    annualDesk,
+  );
+  const lists = { designs: [], probes: [], neighbours: [] };
+  const add = (list, w, desk, id) => {
+    if (!strategyHas(id, quantities)) list.push(Object.freeze({ params: desk, patch: w.patch, context: w.signature, id }));
+  };
+  for (let index = 0; index < DEPTH.home.designs; index += 1) {
+    const design = designAt(world, index);
+    add(lists.designs, world, design.params, design.id);
+  }
+  for (let base = 0; base < DEPTH.home.bases; base += 1) {
+    for (const probe of probesAt(world, designAt(world, base))) {
+      if (!probe.skip) add(lists.probes, world, probe.params, probe.id);
+    }
+  }
+  const enterable = neighboursFor(world).filter((neighbour) => neighbour.world);
+  for (const neighbour of enterable) {
+    for (const [, id] of pairsFor(world, neighbour).pairs) {
+      const index = Number(id.slice(id.lastIndexOf(':') + 1));
+      add(lists.neighbours, neighbour.world, designAt(neighbour.world, index).params, id);
+    }
+  }
+  for (const neighbour of enterable) {
+    if (annualDesk && !strategyPlan.asked.has(neighbour.id)) continue;
+    const other = neighbour.world;
+    for (let base = 0; base < DEPTH.island.bases; base += 1) {
+      for (const probe of probesAt(other, designAt(other, base))) {
+        if (!probe.skip) add(lists.neighbours, other, probe.params, probe.id);
+      }
+    }
+    for (let index = DEPTH.jump; index < DEPTH.island.designs; index += 1) {
+      const design = designAt(other, index);
+      add(lists.neighbours, other, design.params, design.id);
+    }
+  }
+  cancelStrategyJobs('replaced');
+  strategyGeneration += 1;
+  const restShape = deskKey(params, patching(), VARIED);
+  const jobs = Object.entries(lists)
+    .filter(([, list]) => list.length)
+    .map(([name, list]) => {
+      const job = makeStudyJob({
+        id: `strategy:${name}:${strategyGeneration}`,
+        key: null,
+        snapshot: { ...params },
+        patch: patching(),
+        epw: epwText ?? null,
+        annual: annualDesk,
+        quantity: quantities[0],
+        needed,
+        carried,
+        restShape,
+        omits: VARIED,
+        points: list.map((_, at) => at),
+        order: list.map((_, at) => at),
+        origin: 'strategy',
+        asked: list.length,
+        designs: list,
+      });
+      job.ledgerEpoch = ledger.epoch;
+      strategyJobs.set(job.id, job);
+      return job;
+    });
+  strategyShed = null;
+  strategyPlan.queuedFor = key;
+  if (jobs.length) studyScheduler.enqueueAll(jobs);
+  renderStrategySoon();
+}
+
+/**
+ * Re-queue where the desk has moved into another world, and nowhere else.
+ * A varied slider leaves the world, and every job, exactly where it was.
+ */
+function refreshStrategy({ force = false } = {}) {
+  if (!strategyPlan || !studyScheduler) return;
+  const world = strategyWorld();
+  const key = [world.signature, strategyPlan.readingIds.join('.'), strategyKind(), [...strategyPlan.asked].join(','), ledger.epoch].join('|');
+  if (!force && strategyPlan.queuedFor === key) {
+    renderStrategySoon();
+    return;
+  }
+  if (!force && strategyShed === deskKey(params, patching(), VARIED)) return;
+  queueStrategy();
+}
+
+/** A landed run of the plan, filed. Returns true where the event was the plan's. */
+function onStrategyUpdate(job, event, index) {
+  if (job?.origin !== 'strategy') return false;
+  if (event === 'point') {
+    const entry = job.designs[index];
+    const sample = job.curve[index]?.sample;
+    const prior = ledger.get(entry.id);
+    const landed = sample?.readings
+      ? new Landed({
+          // A run re-landed for a second reading keeps what it said about the
+          // first: one building, read twice.
+          readings: prior?.readings ? Object.freeze({ ...prior.readings, ...sample.readings }) : sample.readings,
+          meterBasis: sample.meterBasis ?? prior?.meterBasis ?? null,
+        })
+      : new Landed({ failure: takeFailure(job, index) });
+    if (ledger.land(entry.id, landed, job.ledgerEpoch)) {
+      worldVersion.set(entry.context, (worldVersion.get(entry.context) ?? 0) + 1);
+    }
+    renderStrategySoon();
+    return true;
+  }
+  if (event === 'done' || event === 'failed') {
+    strategyJobs.delete(job.id);
+    renderStrategySoon();
+    return true;
+  }
+  if (event === 'cancelled') {
+    if (strategyJobs.get(job.id) === job) strategyJobs.delete(job.id);
+    // A global Set-aside suppresses the plan until the desk next moves, the
+    // way it suppresses a study, or the next release would restart it.
+    if (job.cancelled === 'shed') strategyShed = deskKey(params, patching(), VARIED);
+    if (job.cancelled === 'moved' && strategyPlan) strategyPlan.queuedFor = null;
+    renderStrategySoon();
+    return true;
+  }
+  return false;
+}
+
+function openStrategy(readingIds) {
+  strategyPlan = {
+    readingIds: [...readingIds],
+    view: 0,
+    runsAt: runCount,
+    lastWorld: null,
+    stepLabel: null,
+    entered: null,
+    focused: null,
+    asked: new Set(),
+    queuedFor: null,
+  };
+  queueStrategy();
+  renderStrategy();
+  updatePermalink();
+}
+
+function closeStrategy() {
+  cancelStrategyJobs('cleared');
+  strategyPlan = null;
+  strategyHandle = null;
+  strategyShown = null;
+  strategyDrawn = null;
+  desk?.setTags(new Map(), '');
+  renderStrategy();
+  updatePermalink();
+}
+
+/** One or two readings; a third press replaces the second. */
+function toggleStrategyReading(id) {
+  const ids = strategyPlan ? [...strategyPlan.readingIds] : [];
+  if (ids.includes(id)) ids.splice(ids.indexOf(id), 1);
+  else if (ids.length === 2) ids[1] = id;
+  else ids.push(id);
+  if (!ids.length) {
+    closeStrategy();
+    return;
+  }
+  if (!strategyPlan) {
+    openStrategy(ids);
+    return;
+  }
+  // The tags come down before the new classification lands, so no strip ever
+  // carries a kind judged against a pair of readings no longer chosen (FR-040).
+  desk?.setTags(new Map(), '');
+  strategyPlan.readingIds = ids;
+  strategyPlan.view = 0;
+  queueStrategy();
+  renderStrategy();
+  updatePermalink();
+}
+
+/** Restore a plan a link carried, refusing the link whole where it cannot be drawn. */
+function restoreLinkedPlan(state) {
+  if (!state?.plan) return;
+  const offers = surveyReadingOffers();
+  for (const id of state.plan) {
+    const offer = offers.find((candidate) => candidate.reading.id === id);
+    if (!offer?.available) {
+      refuseLink(
+        `This link asks for a strategy plan of ${READING_BY_ID[id].label.toLowerCase()}, which this desk cannot ` +
+          `offer: ${offer?.reason ?? 'no such reading is declared'}`,
+      );
+      return;
+    }
+  }
+  openStrategy(state.plan);
+}
+
+/**
+ * Stand on one design: the desk moves to exactly it, in its world, through
+ * the path a traverse stop takes — the patch bay first, then every differing
+ * key committed with the last one closing the gesture (FR-020). Refused where
+ * the position is not a landed run: there is no building there to stand on.
+ */
+function standOnDesign(world, index, via = null) {
+  const landed = ledger.get(designId(world, index));
+  if (!landed?.readings) {
+    strategySay('That position is not a completed run, so there is no building there to stand on.');
+    return;
+  }
+  const design = designAt(world, index);
+  if (strategyPlan) strategyPlan.stepLabel = via;
+  restoreTraverse({ params: design.params, patch: world.patch, shape: deskKey(design.params, world.patch) });
+}
+
+function strategySay(sentence) {
+  const line = $('strategy-waiting');
+  line.hidden = !sentence;
+  line.textContent = sentence ?? '';
+}
+
+/**
+ * The plan redrawn at most every quarter second, and never more often than
+ * three times the last redraw took. A redraw refits the moves, the terrain,
+ * the islands and the screening off every landing so far, and the main thread
+ * it runs on is the one that builds every sample: a fixed cadence that let the
+ * redraw outrun it would starve the very runs it was waiting for.
+ */
+function renderStrategySoon() {
+  if (strategyTimer) return;
+  strategyTimer = setTimeout(() => {
+    strategyTimer = 0;
+    // Never while a control is held: a redraw refits every plan on the sheet,
+    // and the live solve is what a drag is for (SC-002). The release catches
+    // it up; the stance mark follows the hand meanwhile through
+    // `syncStrategyStance`, which refits nothing.
+    if (gesture) {
+      renderStrategySoon();
+      return;
+    }
+    const started = performance.now();
+    try {
+      renderStrategy();
+    } finally {
+      strategyRenderMs = performance.now() - started;
+    }
+  }, Math.max(250, 3 * strategyRenderMs));
+}
+
+/** Where the desk stands along the moves of the plan drawn. */
+function stanceOn(plan) {
+  if (!plan?.moves) return null;
+  const u = plan.world.live.map((key) => controlFor(key).control.fraction(params[key]));
+  return { x: plan.moves[0].along(u), y: plan.moves[1].along(u) };
+}
+
+function syncStrategyStance() {
+  if (!strategyHandle || !strategyShown) return;
+  const here = worldOf(params, patching()).signature === strategyShown.world.signature;
+  strategyHandle.setStance(here ? stanceOn(strategyShown) : null);
+}
+
+/** One design, lettered in full: its reading, its world, its place and that it ran. */
+function letterDesign(plan, dot) {
+  const line = $('strategy-spot');
+  if (!dot) {
+    line.textContent = '';
+    return;
+  }
+  line.textContent =
+    `Design ${dot.index}: ${plan.reading.format(dot.value)}, a completed ${plan.kind} run in this world, ` +
+    `at ${dot.x.toFixed(2)} along move 1 and ${dot.y.toFixed(2)} along move 2. Press it to stand on it.`;
+}
+
+/** A move's recipe, lettered under its axis. */
+function axisLine(host, move, reading, n) {
+  host.textContent = '';
+  if (!move) return;
+  host.append(
+    Object.assign(document.createElement('b'), { textContent: `Move ${n}` }),
+    document.createTextNode(
+      `, ${percent(move.explains)} of what drives ${reading.label.toLowerCase()} here, from ${move.bases} screening ` +
+        `points: ${recipeText(move)}.`,
+    ),
+  );
+}
+
+/** The islands around this world for one reading, in design-stage order. */
+function islandsOf(world, reading) {
+  const islands = [];
+  const same = [];
+  for (const neighbour of neighboursFor(world)) {
+    if (!neighbour.world) continue;
+    const jump = jumpOf(pairsFor(world, neighbour), reading, ledger);
+    if (jump.same && jump.measured === jump.wanted) {
+      same.push(neighbour);
+      continue;
+    }
+    const plan = planFor(neighbour.world, reading, DEPTH.island);
+    const depth = plan.moves ? 'plan' : 'jump';
+    islands.push({
+      id: neighbour.id,
+      neighbour,
+      jumpObj: jump,
+      plan,
+      depth,
+      label: neighbour.label,
+      edge: jump.measured ? signed(jump.median, reading) : '—',
+      jump: jump.measured
+        ? `Jump ${signed(jump.median, reading)}, p10 ${signed(jump.p10, reading)} to p90 ${signed(jump.p90, reading)}; ` +
+          `${jump.consistency.agree} of ${jump.consistency.of} one way`
+        : 'Jump not yet measured',
+      detail:
+        depth === 'plan'
+          ? `Its own moves measured; explains ${percent(plan.explained2)}`
+          : `${jump.measured} of ${jump.wanted} pairs measured; its moves not yet measured`,
+    });
+  }
+  return { islands, same };
+}
+
+/** The runs one island's own screening still wants, and what they cost here. */
+function islandCost(world) {
+  const runs = DEPTH.island.bases * world.live.length + (DEPTH.island.designs - DEPTH.jump);
+  return { runs, seconds: Math.round((runs * STRATEGY_CADENCE[strategyKind()]) / Math.max(1, studyCapacity)) };
+}
+
+/**
+ * Everything the plan letters, from the ledger in hand.
+ *
+ * Throttled to four times a second, because landings arrive by the hundred
+ * and a reader can only read the last. A varied slider does not come through
+ * here at all; `syncStrategyStance` moves the one mark that changes.
+ */
+function renderStrategy() {
+  if (!$('strategy')) return;
+  const offers = surveyReadingOffers();
+  renderReadingChooser($('strategy-readings'), offers, strategyPlan?.readingIds ?? [], toggleStrategyReading);
+  $('strategy-close').hidden = !strategyPlan;
+  const body = $('strategy-body');
+  if (!strategyPlan) {
+    body.hidden = true;
+    $('strategy-scope').textContent = '';
+    $('strategy-entered').hidden = true;
+    strategySay(null);
+    $('strategy-lede').textContent =
+      'Choose one reading or two: each dot is a completed run, placed along the two moves that decide it, ' +
+      'with the worlds one door away.';
+    return;
+  }
+
+  const world = strategyWorld();
+  const readings = strategyReadings();
+  const kind = strategyKind();
+  const view = Math.min(strategyPlan.view, readings.length - 1);
+  const reading = readings[view];
+  const plan = planFor(world, reading, DEPTH.home);
+  body.hidden = false;
+  $('strategy-scope').textContent = ` ${readings.map((r) => r.label).join(' and ')} · ${kind} runs`;
+  $('strategy-lede').textContent =
+    'System, Plant and Tariff are not doors: they change what a reading means or costs, not what the building is.';
+
+  // Entering a world says, in words, what came alive and what went dark (FR-025).
+  const before = strategyPlan.lastWorld;
+  if (before && before.signature !== world.signature) {
+    const came = world.cameAlive(before).map((key) => labelFor(key));
+    const dark = world.wentDark(before).map((key) => labelFor(key));
+    strategyPlan.entered =
+      `${strategyPlan.stepLabel ? `Entered ${strategyPlan.stepLabel}` : 'The desk is in another world'}: ` +
+      `${came.length ? `${came.join(', ')} came alive` : 'no control came alive'}, and ` +
+      `${dark.length ? `${dark.join(', ')} went dark` : 'none went dark'}.`;
+    strategyPlan.stepLabel = null;
+    strategyPlan.focused = null;
+  }
+  strategyPlan.lastWorld = world;
+  const entered = $('strategy-entered');
+  entered.hidden = !strategyPlan.entered;
+  entered.textContent = strategyPlan.entered ?? '';
+
+  const waiting =
+    strategyWaitingReason() ??
+    (gesture && strategyJobs.size ? 'Measurement pauses while a control is held, and resumes on release.' : null);
+  if (waiting || !$('strategy-waiting').textContent.startsWith('That position')) strategySay(waiting);
+
+  // Which reading's plan is drawn, and whether one serves both.
+  const views = $('strategy-views');
+  views.textContent = '';
+  let sameMoves = false;
+  if (readings.length === 2) {
+    const other = planFor(world, readings[1 - view], DEPTH.home);
+    sameMoves = oneOrTwo(plan.moves, other.moves) === 'one';
+    for (const [at, r] of readings.entries()) {
+      const button = el('button', 'strategy-view', `Drawn for ${r.label.toLowerCase()}`);
+      button.type = 'button';
+      button.setAttribute('aria-pressed', String(at === view));
+      button.addEventListener('click', () => {
+        strategyPlan.view = at;
+        strategyDrawn = null;
+        renderStrategy();
+      });
+      views.append(button);
+    }
+    if (sameMoves) {
+      views.append(
+        el('span', 'strategy-why', `One plan serves both: their leading moves point within ${SAME_MOVE.degrees}° of each other.`),
+      );
+    }
+  }
+
+  // The drawing, rebuilt only when what it shows has changed.
+  const host = $('strategy-plan');
+  const drawKey = `${world.signature}|${reading.id}|${plan.dots.length}|${ledger.epoch}|${pricingVersion}|${worldVersion.get(world.signature) ?? 0}`;
+  if (!plan.moves) {
+    host.textContent = plan.flat
+      ? plan.flat
+      : `The moves are fitted from four complete screening points; ${plan.effects.complete.length} so far.`;
+    strategyHandle = null;
+    strategyShown = null;
+    strategyDrawn = null;
+  } else if (strategyDrawn !== drawKey) {
+    strategyShown = plan;
+    strategyHandle = drawPlan(host, plan, {
+      stance: stanceOn(plan),
+      label: `${reading.label} across the design space, ${plan.dots.length} completed runs along two moves`,
+      onPress: (dot) => standOnDesign(world, dot.index),
+      onHover: (dot) => letterDesign(plan, dot),
+      onCursor: (dot) => letterDesign(plan, dot),
+    });
+    strategyDrawn = drawKey;
+    tour?.note('strategy');
+  } else {
+    strategyHandle?.setStance(stanceOn(plan));
+  }
+  axisLine($('strategy-axis-x'), plan.moves?.[0], reading, 1);
+  axisLine($('strategy-axis-y'), plan.moves?.[1], reading, 2);
+
+  const better =
+    reading.better === 'lower'
+      ? `lower is better for ${reading.label.toLowerCase()}, so the best designs are the pale low ground`
+      : `higher is better for ${reading.label.toLowerCase()}, so the best designs are the dark high ground`;
+  $('strategy-plan-cap').textContent =
+    `Dots are completed runs, darker where ${reading.label.toLowerCase()} is higher; the square is where the desk ` +
+    `stands. ${
+      plan.terrain?.lattice
+        ? `The shading under them is inference, smoothed so it shows no best area the dots do not support, left ` +
+          `bare where they are sparse, and never read for a figure; ${better}. It explains ` +
+          `${percent(plan.terrain.explained)} on its own.`
+        : `${plan.terrain?.refused ?? 'No terrain is drawn until the moves are fitted.'} ${better[0].toUpperCase()}${better.slice(1)}.`
+    }`;
+
+  $('strategy-share').textContent =
+    plan.explained2 !== null
+      ? `Share explained: ${percent(plan.explained2)} along two moves` +
+        `${plan.oneMove ? `, ${percent(plan.explained1)} along the first alone` : ''}, scored on designs the ` +
+        'moves were not fitted from.'
+      : `Share explained: — ${plan.scoreAbsence ?? 'The moves are not yet fitted.'}`;
+
+  const c = plan.coverage;
+  const remaining = [...strategyJobs.values()].reduce((sum, job) => sum + job.total - job.done, 0);
+  const seconds = Math.round((remaining * STRATEGY_CADENCE[kind]) / Math.max(1, studyCapacity));
+  $('strategy-coverage').textContent =
+    `${c.measured} of ${c.wanted} designs measured${c.gaps ? `, ${c.gaps} failed` : ''} · ` +
+    `${plan.effects.complete.length} of ${DEPTH.home.bases} screening points · ${kind} runs · ` +
+    `${remaining ? `${remaining} runs to go, about ${seconds} s at this desk's cadence` : 'nothing queued'} · ` +
+    `${runCount - strategyPlan.runsAt} engine runs spent since the plan opened`;
+
+  const notes = [];
+  if (plan.gaps.length) {
+    const reasons = new Map();
+    for (const gap of plan.gaps) reasons.set(gap.reason, (reasons.get(gap.reason) ?? 0) + 1);
+    notes.push(`Failed runs, never drawn: ${[...reasons].map(([reason, n]) => `${reason} (${n})`).join('; ')}.`);
+  }
+  if (plan.limits.length) {
+    notes.push(
+      `The best designs here stand at the rim: ${plan.limits
+        .map(({ key, end }) => `${labelFor(key)} at its ${end === 'min' ? 'lowest' : 'highest'} setting`)
+        .join(', ')}. No best region inside the world is implied.`,
+    );
+  }
+  const tau = strategyTau(reading);
+  if (tau.absence) notes.push(tau.absence);
+  const limits = $('strategy-limits');
+  limits.hidden = !notes.length;
+  limits.textContent = notes.join(' ');
+
+  // The reading against the leading move alone (FR-018).
+  const one = $('strategy-one');
+  one.hidden = !plan.oneMove;
+  if (plan.oneMove) {
+    const trend = trendOf(plan);
+    drawOneMove($('strategy-one-plot'), plan, trend, {
+      stance: stanceOn(plan),
+      onPress: (dot) => standOnDesign(world, dot.index),
+      onHover: (dot) => letterDesign(plan, dot),
+    });
+    const spread = trend.length ? trend.reduce((sum, bin) => sum + (bin.hi - bin.lo), 0) / trend.length : null;
+    $('strategy-one-cap').textContent =
+      `${reading.label} against move 1 alone, which explains nearly as much as two. The dashed trend is an ` +
+      `estimate, the median of ten equal bins; the spread around it, about ${plain(spread, reading)} between the ` +
+      'tenth and ninetieth percentiles, is what the other controls decide.';
+  }
+
+  // The archipelago (FR-023 to FR-027).
+  const { islands, same } = islandsOf(world, reading);
+  const neighbours = neighboursFor(world);
+  const refused = neighbours.filter((neighbour) => !neighbour.world);
+  const measured = islands.filter((island) => island.jumpObj.measured === island.jumpObj.wanted).length + same.length;
+  $('strategy-islands-scope').textContent =
+    ` ${islands.length + same.length} worlds one door away · ${measured} measured · ${refused.length} not entered from here`;
+  $('strategy-islands-lede').textContent =
+    'Each island is a world one choice away, its jump measured on matched designs. Positions are schematic: ' +
+    'distance means nothing.';
+  const cards = getComputedStyle($('strategy')).getPropertyValue('--cards').trim() === '1';
+  const openIsland = (id) => {
+    strategyPlan.focused = strategyPlan.focused === id ? null : id;
+    renderStrategy();
+  };
+  $('strategy-ring').hidden = cards;
+  if (!cards) drawArchipelago($('strategy-ring'), islands, { chosen: strategyPlan.focused, onOpen: openIsland });
+  renderIslandCards($('strategy-cards'), islands, { chosen: strategyPlan.focused, onOpen: openIsland });
+  const sameLine = $('strategy-same');
+  sameLine.hidden = !same.length;
+  sameLine.textContent = same.length
+    ? `Lead to the same reading on every matched design: ${same.map((n) => n.label).join(', ')}.`
+    : '';
+  const refusedLine = $('strategy-refused');
+  const byReason = new Map();
+  for (const neighbour of refused) {
+    if (!byReason.has(neighbour.refusal)) byReason.set(neighbour.refusal, []);
+    byReason.get(neighbour.refusal).push(neighbour.label);
+  }
+  refusedLine.hidden = !refused.length;
+  refusedLine.textContent = refused.length
+    ? `Not entered from here: ${[...byReason].map(([reason, labels]) => `${labels.join(', ')}: ${reason}`).join(' ')}`
+    : '';
+
+  // One island, opened.
+  const island = islands.find((candidate) => candidate.id === strategyPlan.focused) ?? null;
+  const panel = $('strategy-island');
+  panel.hidden = !island;
+  if (island) {
+    const other = island.neighbour.world;
+    $('strategy-island-title').textContent = island.label;
+    const measure = $('strategy-measure');
+    const asked = strategyPlan.asked.has(island.id);
+    measure.hidden = !(kind === 'annual' && island.depth === 'jump' && !asked);
+    if (!measure.hidden) {
+      const cost = islandCost(other);
+      measure.textContent = `Measure this world: about ${cost.runs} annual runs, about ${cost.seconds} s`;
+      measure.onclick = () => {
+        strategyPlan.asked.add(island.id);
+        queueStrategy();
+      };
+    }
+    if (island.depth === 'plan') {
+      $('strategy-island-lede').textContent =
+        `${island.jump}. Its own moves: ${recipeText(island.plan.moves[0])}. Explains ` +
+        `${percent(island.plan.explained2)}, measured in this world alone; press a design to step in.`;
+      $('strategy-island-designs').textContent = '';
+      drawPlan($('strategy-island-plan'), island.plan, {
+        label: `${reading.label} in the world ${island.label}`,
+        onPress: (dot) => standOnDesign(other, dot.index, island.label),
+        onHover: (dot) => letterDesign(island.plan, dot),
+        onCursor: (dot) => letterDesign(island.plan, dot),
+      });
+    } else {
+      $('strategy-island-plan').textContent = '';
+      $('strategy-island-lede').textContent =
+        `${island.jump}. Its moves are not yet measured, so its share explained is — until its own screening ` +
+        `lands${kind === 'annual' && !asked ? ', which on a weather year waits to be asked for' : ''}. ` +
+        'Its matched designs, by reading; press one to step in.';
+      const rows = [];
+      for (const [, id] of island.jumpObj.neighbour ? pairsFor(world, island.neighbour).pairs : []) {
+        const value = reading.valueOf(ledger.get(id)?.readings);
+        if (!Number.isFinite(value)) continue;
+        const index = Number(id.slice(id.lastIndexOf(':') + 1));
+        rows.push({ index, value, text: `Design ${index}: ${reading.format(value)}` });
+      }
+      rows.sort((l, r) => l.value - r.value || l.index - r.index);
+      renderDesignList($('strategy-island-designs'), rows, (row) => standOnDesign(other, row.index, island.label));
+    }
+  }
+
+  // The screening (FR-029 to FR-032).
+  const jumps = new Map(
+    neighbours.filter((n) => n.world).map((n) => [n.id, jumpOf(pairsFor(world, n), reading, ledger)]),
+  );
+  if (tau.tau === null) {
+    $('strategy-screen-lede').textContent = tau.absence;
+    $('strategy-screen').textContent = '';
+    $('strategy-inert').textContent = '';
+    $('strategy-screen-scope').textContent = '';
+  } else {
+    const pulled =
+      pullStance && pullStance.reading.id === reading.id && deskKey(pullStance.stance, pullStance.patch) === deskKey(params, patching())
+        ? new Map(pullEntries().filter((entry) => !entry.inert).map((entry) => [entry.key, entry]))
+        : new Map();
+    const entries = screen(world, reading, ledger, { bases: DEPTH.home.bases, stance: pulled, neighbours, jumps, tau: tau.tau });
+    const scored = entries.filter((entry) => entry.effect !== null).length;
+    $('strategy-screen-scope').textContent = ` ${scored} measured · ${entries.length - scored} listed with reasons`;
+    $('strategy-screen-lede').textContent =
+      `Effects across each control's full range, at up to ${DEPTH.home.bases} points over this world, beside the ` +
+      `pull at the stance. Free below ${plain(tau.tau, reading)}.${pulled.size ? '' : ' Read the pull to fill the stance column.'}`;
+    renderScreening($('strategy-screen'), entries, {
+      reading,
+      spots: plan.spots,
+      onPick: (key) => cutFromPull(key, entries),
+      chosen: [surveyChoice.x, surveyChoice.y].filter(Boolean),
+    });
+    renderInert($('strategy-inert'), entries);
+  }
+
+  // The four kinds, and the tags on the strips (FR-033 to FR-040a).
+  const movesPart = $('strategy-moves-part');
+  movesPart.hidden = readings.length !== 2;
+  if (readings.length === 2) {
+    const taus = readings.map((r) => strategyTau(r));
+    const absent = taus.find((t) => t.tau === null);
+    const effects = readings.map((r) => effectsOf(world, r, ledger, { bases: DEPTH.home.bases }));
+    const complete = Math.min(...effects.map((e) => e.complete.length));
+    if (absent) {
+      $('strategy-moves-lede').textContent = absent.absence;
+      $('strategy-moves').textContent = '';
+      desk?.setTags(new Map(), '');
+    } else if (complete < MOVES_FROM) {
+      // A kind read off one screening point is a guess about the design
+      // space, not a reading of it; the same four points fit the moves.
+      $('strategy-moves-scope').textContent = '';
+      $('strategy-moves-lede').textContent =
+        `The four kinds are read once ${MOVES_FROM} screening points are complete for both readings; ${complete} so far.`;
+      $('strategy-moves').textContent = '';
+      desk?.setTags(new Map(), '');
+    } else {
+      const enterable = neighbours.filter((n) => n.world);
+      const pairJumps = readings.map((r) => new Map(enterable.map((n) => [n.id, jumpOf(pairsFor(world, n), r, ledger)])));
+      const classes = classifyAll({ pair: readings, effects, jumps: pairJumps, neighbours: enterable, taus: taus.map((t) => t.tau) });
+      const spots = new Map();
+      for (const r of readings) {
+        for (const [key, spot] of planFor(world, r, DEPTH.home).spots) {
+          if (!spots.has(key)) spots.set(key, []);
+          spots.get(key).push(spot);
+        }
+      }
+      $('strategy-moves-scope').textContent = ` ${classes.length} classified`;
+      $('strategy-moves-lede').textContent =
+        `Judged against ${readings[0].label.toLowerCase()} and ${readings[1].label.toLowerCase()}, each against its ` +
+        `own free threshold (${plain(taus[0].tau, readings[0])}, ${plain(taus[1].tau, readings[1])}). No figure ` +
+        'combines the two.';
+      const labelOf = (key) => classes.find((c) => c.key === key)?.label ?? labelFor(key);
+      renderMoves($('strategy-moves'), classes, {
+        spots,
+        labelOf,
+        stageNote: `Ordered from the moves usually settled earliest in a design to the latest. ${CONVENTION}`,
+      });
+      // A choice door is tagged on its selector only where every world behind
+      // it has been measured, so one word can speak for all of them.
+      const doors = new Map();
+      for (const neighbour of neighbours) {
+        const key = neighbour.door.key;
+        if (!key) continue;
+        if (!doors.has(key)) doors.set(key, { ids: [], whole: true });
+        const entry = doors.get(key);
+        if (neighbour.world) entry.ids.push(neighbour.id);
+        else entry.whole = false;
+      }
+      const doorIds = new Map([...doors].filter(([, entry]) => entry.whole && entry.ids.length).map(([key, entry]) => [key, entry.ids]));
+      desk?.setTags(tagsFor(world, readings, classes, spots, doorIds), stampOf(world, readings));
+    }
+  } else {
+    desk?.setTags(new Map(), '');
+  }
+
+  // The complete record of this world's measured designs.
+  const rows = plan.dots
+    .map((dot) => ({ index: dot.index, value: dot.value, text: `Design ${dot.index}: ${reading.format(dot.value)}` }))
+    .sort((l, r) => l.index - r.index);
+  $('strategy-designs-scope').textContent = ` · ${rows.length}`;
+  renderDesignList($('strategy-designs'), rows, (row) => standOnDesign(world, row.index));
+}
+
+$('strategy-close').addEventListener('click', () => closeStrategy());
+// A strip tag leads to its entry among the kinds of move, readable without
+// hovering (FR-039). The console raises the event; the entry is found here.
+document.addEventListener('ctl-tag', (event) => {
+  const target = document.getElementById(event.detail.target);
+  if (!target) return;
+  target.scrollIntoView({ block: 'center' });
+  target.focus({ preventScroll: true });
+});
 
 /** One effect, per unit of the control's own travel and in the reading's units. */
 function formatEffect(entry, reading) {
@@ -10537,6 +11495,7 @@ $('survey-clear').addEventListener('click', () => {
 // E-02 stands from the first frame, carrying its chooser and nothing else, so
 // a reader can find it before they know what it is for.
 renderSurvey();
+renderStrategy();
 
 // The first instance compiled ahead of the first click, in idle time: the
 // binary is an HTTP-cache hit off the pump's download, so this trades a few

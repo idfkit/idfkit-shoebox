@@ -95,7 +95,7 @@ const MIGRATIONS = Object.freeze({});
  * quietly collide with one — `controlFor` would route the collision to a
  * parameter and the link would mean two things at once.
  */
-const RESERVED = Object.freeze(['in', 'out', 'stn', 'win', 'at', 'sty', 'sv']);
+const RESERVED = Object.freeze(['in', 'out', 'stn', 'win', 'at', 'sty', 'sv', 'sp']);
 for (const key of RESERVED) {
   if (ALL_KEYS.includes(key)) {
     throw new Error(`the reserved link key "${key}" collides with a control parameter`);
@@ -210,7 +210,7 @@ export { PIN_KINDS, encodePin, decodePin };
  * samples that disagree by up to 9 % on degree days, so a link that named only
  * the site would reproduce a different year than the one argued over.
  */
-export function encodeState({ params, bypass, station = null, pin = null, quantity = null, studies = [], survey = null }) {
+export function encodeState({ params, bypass, station = null, pin = null, quantity = null, studies = [], survey = null, plan = null }) {
   const pairs = new URLSearchParams();
   for (const key of ALL_KEYS) {
     // `String` rather than a display format: the display rounds, and a link
@@ -249,8 +249,44 @@ export function encodeState({ params, bypass, station = null, pin = null, quanti
     pairs.append('sty', `${quantity}${studyKeys.length ? `.${studyKeys.join(',')}` : ''}`);
   }
   if (survey) pairs.append('sv', encodeSurvey(survey));
+  if (plan) pairs.append('sp', encodePlan(plan));
   const body = pairs.toString();
   return body ? `${LINK_VERSION}&${body}` : '';
+}
+
+/**
+ * The strategy plan, as one value: the reading or the pair it is drawn for,
+ * joined by a full stop (`sp=high.low`).
+ *
+ * Nothing else rides it, and that is the arrangement rather than an economy:
+ * which designs and worlds a plan samples is decided by the desk and a frozen
+ * sequence, so the readings are all a recipient needs to sample the same ones
+ * (FR-045). Measured values and strip tags are re-measured, as the survey's
+ * are, and whether an island was measured on request is how the plan was
+ * looked at, not what it is — the chase pin's rule.
+ *
+ * The full stop is `sv`'s own reason: `URLSearchParams` leaves only `*`, `.`,
+ * `-` and `_` unescaped, and a series id contains none of them.
+ */
+export function encodePlan(ids) {
+  return decodePlan(ids.join('.')).join('.');
+}
+
+/**
+ * One or two reading ids, validated whole. Refused, with the reason, for an
+ * empty value, a trailing full stop, more than two ids, the same id twice or
+ * an id that names no reading.
+ */
+export function decodePlan(raw) {
+  if (typeof raw !== 'string' || raw === '') throw new Error('the strategy plan value ("sp") is empty');
+  const ids = raw.split('.');
+  if (ids.some((id) => id === '')) throw new Error(`"${raw}" is not a plan value like high.low`);
+  if (ids.length > 2) throw new Error(`a strategy plan is drawn for one or two readings, not ${ids.length}`);
+  if (ids.length === 2 && ids[0] === ids[1]) throw new Error(`the strategy plan names "${ids[0]}" twice`);
+  for (const id of ids) {
+    if (!READING_BY_ID[id]) throw new Error(`no reading is called "${id}", so no strategy plan can be drawn for it`);
+  }
+  return Object.freeze(ids);
 }
 
 /**
@@ -539,6 +575,13 @@ export function decodeState(raw) {
   const encodedSurvey = pairs.get('sv');
   const survey = encodedSurvey === null ? null : decodeSurvey(encodedSurvey);
 
+  // The strategy plan, read here beside `sv` for the same reason: a reserved
+  // key never reaches `readValue`, whose numeric regex would otherwise refuse
+  // every plan link as "is not a number for sp". It is re-serialised on the
+  // way out by `encodePlan`, so one plan is one string.
+  const encodedPlan = pairs.get('sp');
+  const plan = encodedPlan === null ? null : decodePlan(encodedPlan);
+
   // `in` and `out` are lists and repeat by design; every other key — the
   // station pair included — is one claim, and a repeated one is two claims
   // about one thing. Either could be meant, so neither is taken. The check
@@ -568,5 +611,6 @@ export function decodeState(raw) {
     scheme.studies = study.controls;
   }
   if (survey) scheme.survey = survey;
+  if (plan) scheme.plan = plan;
   return scheme;
 }

@@ -3978,6 +3978,15 @@
            This is the one place the breakpoint is declared; the console reads
            the flag back rather than knowing the number. */
         .strips { --index: 1; overflow-y: visible; }
+        .strategy { --cards: 1; }
+        .strip-tags {
+          display: block;
+          flex-basis: 100%;
+          font: 400 10.5px/1.35 var(--sans);
+          color: var(--ink-3);
+          text-align: left;
+        }
+        .strip-tags[hidden] { display: none; }
         /* The index is one list read top to bottom; columns would cut it in
            half and put channels 09–17 beside 00–08 instead of after them. */
         .strip-grid { column-width: auto; column-count: auto; }
@@ -4821,6 +4830,186 @@
       }
       .pull-pick:hover { color: var(--redline); }
 
+      /* ── The strategy plan ───────────────────────────────────────────────
+         The whole design space for one reading, under the pull it answers
+         the question before. Graphite for magnitude, hairlines for the
+         frame, the accent only where the desk stands; the terrain is paint
+         on a canvas under the SVG and carries no figure (FR-019, FR-022). */
+      .strategy {
+        --cards: 0;
+        margin-top: 22px;
+        padding-top: 16px;
+        border-top: 1px solid var(--rule);
+      }
+
+      .strategy-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+
+      .strategy-lede,
+      .strategy-note {
+        margin: 6px 0 10px;
+        max-width: 68ch;
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--ink-3);
+      }
+
+      .strategy-offers,
+      .strategy-inert,
+      .strategy-designs,
+      .strategy-kind-list,
+      .island-cards {
+        list-style: none;
+        margin: 8px 0 0;
+        padding: 0;
+      }
+
+      .strategy-offers { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+      .strategy-offers li { display: flex; align-items: baseline; gap: 6px; min-width: 0; flex-wrap: wrap; }
+
+      /* A reading offered is a small stamp; chosen, it takes the markup
+         pen's border, and `aria-pressed` says the same thing in words. */
+      .strategy-reading,
+      .strategy-view {
+        min-width: 0;
+        min-height: 0;
+        padding: 3px 8px;
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        background: var(--sheet);
+        color: var(--ink-2);
+        font: 400 11.5px/1.3 var(--sans);
+        cursor: pointer;
+      }
+      .strategy-reading[aria-pressed="true"],
+      .strategy-view[aria-pressed="true"] { border-color: var(--redline); color: var(--ink); }
+      .strategy-reading:disabled { color: var(--ink-ghost); cursor: default; }
+      .strategy-why { font-size: 11px; line-height: 1.4; color: var(--ink-3); }
+      .strategy-views { display: flex; gap: 8px; flex-wrap: wrap; }
+
+      .strategy-body { display: grid; gap: 6px; margin-top: 12px; }
+      .strategy-body[hidden] { display: none; }
+      .strategy-figure { margin: 6px 0 0; }
+      .strategy-figure[hidden] { display: none; }
+
+      .strategy-plan,
+      .strategy-one { position: relative; width: 100%; }
+      .strategy-plan canvas { position: absolute; top: 0; left: 0; width: 100%; height: auto; }
+      .plan-svg { position: relative; display: block; width: 100%; height: auto; }
+      .plan-svg:focus-visible { outline: 1px solid var(--rule-focus); outline-offset: 2px; }
+      .plan-frame { fill: none; stroke: var(--rule-firm); stroke-width: 1; }
+      .plan-dot { fill: var(--ink); stroke: var(--sheet); stroke-width: 0.75; }
+      .plan-stance { fill: var(--redline); stroke: var(--sheet); stroke-width: 1; }
+      .plan-stance-line { stroke: var(--redline); stroke-width: 1; }
+      .plan-cursor { fill: none; stroke: var(--redline); stroke-width: 1.2; }
+      .plan-trend { fill: none; stroke: var(--ink-2); stroke-width: 1.3; stroke-dasharray: 4 3; }
+      .plan-axis { font: 400 10px var(--sans); fill: var(--ink-3); }
+
+      .strategy-axis { margin: 0; max-width: 72ch; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+      .strategy-axis b { font-weight: 500; color: var(--ink); }
+      .strategy-part { margin-top: 16px; }
+
+      /* The ring is the overview on a wide sheet; below the index threshold
+         the cards are the whole archipelago. `--cards` is read back by
+         `renderStrategy`, the arrangement `--index` uses. */
+      .island-ring { display: block; width: 100%; height: auto; }
+      .island-home { fill: var(--inset); stroke: var(--rule-firm); }
+      .island-marker { fill: var(--sheet); stroke: var(--ink-2); stroke-width: 1; }
+      .island-marker.plan { fill: var(--ink-2); }
+      .island.chosen .island-marker { stroke: var(--redline); stroke-width: 1.5; }
+      .island { cursor: pointer; }
+      .island-no { font: 400 9px var(--mono); fill: var(--ink); pointer-events: none; }
+      .island-marker.plan + .island-no { fill: var(--sheet); }
+      .island-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; }
+      .island-card {
+        display: grid;
+        gap: 2px;
+        width: 100%;
+        min-width: 0;
+        min-height: 0;
+        padding: 6px 8px;
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        background: var(--sheet);
+        color: var(--ink);
+        font: 400 12px/1.4 var(--sans);
+        text-align: left;
+        cursor: pointer;
+      }
+      .island-card b { font-weight: 500; }
+      .island-card small { font: 400 11px/1.4 var(--mono); color: var(--ink-3); }
+      .island-card[aria-pressed="true"] { border-color: var(--redline); }
+      .strategy-island { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--rule); background: var(--inset); }
+      .strategy-island[hidden] { display: none; }
+
+      .strategy-designs { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+      .strategy-design {
+        min-width: 0;
+        min-height: 0;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--ink-2);
+        font: 400 11px/1.5 var(--mono);
+        font-variant-numeric: tabular-nums;
+        cursor: pointer;
+      }
+      .strategy-design:hover { color: var(--redline); }
+
+      #strategy-screen { width: 100%; border-collapse: collapse; }
+      #strategy-screen td,
+      #strategy-screen th { padding: 5px 8px 5px 0; text-align: left; vertical-align: baseline; }
+      #strategy-screen td + td,
+      #strategy-screen th + th { padding-left: 14px; }
+      #strategy-screen .num { font: 400 11px/1.3 var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+      #strategy-screen tbody tr { border-bottom: 1px solid var(--rule-soft); }
+      #strategy-screen tr.group th { padding-top: 12px; font: 500 11px/1.3 var(--sans); color: var(--ink-3); }
+      #strategy-screen tr.chosen td { color: var(--redline); }
+      .strategy-inert { display: grid; gap: 4px; font-size: 11.5px; line-height: 1.5; color: var(--ink-3); }
+      .strategy-inert b { font-weight: 500; color: var(--ink-2); }
+
+      .strategy-kind h4 { margin: 12px 0 0; font: 500 12px/1.4 var(--sans); color: var(--ink); }
+      .strategy-kind-list { display: grid; gap: 6px; }
+      .strategy-move { font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+      .strategy-move b { font-weight: 500; color: var(--ink); }
+      .strategy-move:focus { outline: 1px solid var(--rule-focus); outline-offset: 2px; }
+      .strategy-held { color: var(--ink-3); }
+
+      /* A classification printed where the hand is: one short line under a
+         control's face, a button to its entry in the moves panel. A free
+         control is dimmed at the face only, less than an idle one, because
+         free for two readings is not reaching nothing; its label, value and
+         tag stay at full ink, and it stays focusable and draggable. */
+      .ctl-tags { display: flex; flex-wrap: wrap; gap: 3px 10px; margin-top: 3px; }
+      .ctl-tags[hidden] { display: none; }
+      .ctl-tag {
+        min-width: 0;
+        min-height: 0;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--ink-2);
+        font: 400 10.5px/1.35 var(--sans);
+        text-align: left;
+        text-decoration: underline dotted var(--rule-firm);
+        text-underline-offset: 2px;
+        cursor: pointer;
+      }
+      .ctl-tag[hidden] { display: none; }
+      .ctl-tag:hover { color: var(--redline); }
+      .ctl.free > .face,
+      .ctl.free > .segments { opacity: 0.62; }
+
+      /* The folded row's copy of the tags, drawn only where the row is the
+         whole reading: below the index threshold. */
+      .strip-tags { display: none; }
+      .strip-tags[hidden] { display: none; }
+
       /* The key to the ground. A drawing that carries five different marks
          has to name them somewhere the reader can see without hovering. */
       .ground-key {
@@ -5306,6 +5495,86 @@
               <table id="pull-table"></table>
               <button type="button" class="link" id="pull-more" hidden></button>
               <p class="survey-note" id="pull-inert"></p>
+            </section>
+
+            <!-- The strategy plan: the whole design space for one reading,
+                 drawn along the two moves that decide it, with the worlds one
+                 door away as islands. Every dot is a completed run; the
+                 terrain under them is inference and says so; every island's
+                 jump is measured on matched designs. Written by
+                 `renderStrategy` in main.js, drawn by `strategy-view.js`. -->
+            <section class="strategy" id="strategy" aria-labelledby="strategy-title">
+              <div class="strategy-head">
+                <p class="eyebrow" id="strategy-title">The strategy plan<span class="base" id="strategy-scope"></span></p>
+                <button type="button" class="link" id="strategy-close" hidden>Close the plan</button>
+              </div>
+              <p class="strategy-lede" id="strategy-lede"></p>
+              <div id="strategy-readings" role="group" aria-label="Readings the plan is drawn for"></div>
+              <p class="survey-note" id="strategy-waiting" hidden></p>
+              <p class="survey-note" id="strategy-entered" hidden></p>
+              <div class="strategy-body" id="strategy-body" hidden>
+                <div class="strategy-views" id="strategy-views" role="group" aria-label="Which reading the plan is drawn for"></div>
+                <figure class="strategy-figure">
+                  <div class="strategy-plan" id="strategy-plan"></div>
+                  <figcaption>
+                    <span class="fig">Fig. 4</span>
+                    <span id="strategy-plan-cap"></span>
+                  </figcaption>
+                </figure>
+                <p class="strategy-axis" id="strategy-axis-x"></p>
+                <p class="strategy-axis" id="strategy-axis-y"></p>
+                <p class="survey-coverage" id="strategy-share"></p>
+                <p class="survey-coverage" id="strategy-coverage"></p>
+                <p class="spot-readout" id="strategy-spot" role="status"></p>
+                <p class="survey-note" id="strategy-limits" hidden></p>
+                <figure class="strategy-figure" id="strategy-one" hidden>
+                  <div class="strategy-one" id="strategy-one-plot"></div>
+                  <figcaption>
+                    <span class="fig">Fig. 5</span>
+                    <span id="strategy-one-cap"></span>
+                  </figcaption>
+                </figure>
+
+                <section class="strategy-part" aria-labelledby="strategy-islands-title">
+                  <p class="eyebrow" id="strategy-islands-title">Worlds one door away<span class="base" id="strategy-islands-scope"></span></p>
+                  <p class="strategy-lede" id="strategy-islands-lede"></p>
+                  <div id="strategy-ring"></div>
+                  <div id="strategy-cards"></div>
+                  <p class="survey-note" id="strategy-same" hidden></p>
+                  <p class="survey-note" id="strategy-refused" hidden></p>
+                  <div class="strategy-island" id="strategy-island" hidden>
+                    <p class="eyebrow" id="strategy-island-title"></p>
+                    <p class="strategy-lede" id="strategy-island-lede"></p>
+                    <button type="button" class="link" id="strategy-measure" hidden></button>
+                    <div class="strategy-plan" id="strategy-island-plan"></div>
+                    <ol class="strategy-designs" id="strategy-island-designs"></ol>
+                  </div>
+                </section>
+
+                <section class="strategy-part" aria-labelledby="strategy-screen-title">
+                  <p class="eyebrow" id="strategy-screen-title">What pulls, anywhere in this world<span class="base" id="strategy-screen-scope"></span></p>
+                  <p class="strategy-lede" id="strategy-screen-lede"></p>
+                  <section class="schedule strategy-schedule">
+                    <table id="strategy-screen"></table>
+                  </section>
+                  <ul class="strategy-inert" id="strategy-inert"></ul>
+                </section>
+
+                <section class="strategy-part" id="strategy-moves-part" aria-labelledby="strategy-moves-title" hidden>
+                  <p class="eyebrow" id="strategy-moves-title">Four kinds of move<span class="base" id="strategy-moves-scope"></span></p>
+                  <p class="strategy-lede" id="strategy-moves-lede"></p>
+                  <div id="strategy-moves"></div>
+                </section>
+
+                <!-- The complete record: every measured design of this world,
+                     each one a building to stand on. Static markup, for the
+                     reason the spot-height schedule is: a fold rebuilt on every
+                     landed run would slam shut under a reader who opened it. -->
+                <details class="fold schedule-fold" data-fold="strategy:designs">
+                  <summary>Every measured design<span class="base" id="strategy-designs-scope"></span></summary>
+                  <ol class="strategy-designs" id="strategy-designs"></ol>
+                </details>
+              </div>
             </section>
 
             <!-- A refusal stands where the ground would have been, never

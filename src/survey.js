@@ -95,8 +95,12 @@ export const FINE_GRID = 11;
  * opens its sentence — the same prefix the landmarks in `controls.js` use, and
  * for the same reason: a convention sitting beside a compliance metric without
  * saying which it is would be the sheet asserting under cover of citing.
+ *
+ * Exported so the strategy plan's own conventions — the free thresholds, the
+ * design stages, the sweet-spot margin — open with this exact sentence rather
+ * than a second copy of it.
  */
-const CONVENTION = 'Convention of practice rather than a published figure.';
+export const CONVENTION = 'Convention of practice rather than a published figure.';
 
 /**
  * Which direction improves each reading, declared rather than assumed.
@@ -119,8 +123,11 @@ const CONVENTION = 'Convention of practice rather than a published figure.';
  * height and refuses the two readings that need a direction, with the reason.
  * That is the honest answer rather than a coin toss, and it is why this is a
  * lookup with a `why` on every row instead of a hard-coded `<`.
+ *
+ * Exported for the strategy plan, which classifies moves by each reading's
+ * improving direction and must read the one declaration rather than restate it.
  */
-const SENSE = Object.freeze({
+export const SENSE = Object.freeze({
   high: {
     better: 'lower',
     why: `${CONVENTION} A lower peak zone temperature is the design intent of every control on this desk that shades, insulates or vents.`,

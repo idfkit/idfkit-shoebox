@@ -40,7 +40,12 @@ import { fold } from './console.js';
 // step in view and folds its fuller body. The completion events did not move,
 // but a returning reader's ticks were taken against notes they would no longer
 // recognise, and the rule is that a changed sheet is met as a new one.
-const STORE = 'shoebox-general-notes-v4';
+//
+// v5 because the strategy plan added a ninth step. A reader carrying v4's
+// eight ticks would meet a sheet of nine with the new one standing unfilled
+// as though skipped — or, if v4 had retired the sheet as all taken, never meet
+// the note about the plan at all.
+const STORE = 'shoebox-general-notes-v5';
 const VIEWS = ['open', 'folded', 'retired'];
 
 // A sheet counts its own notes in words, and the count is read off the
@@ -183,6 +188,25 @@ export const NOTES = Object.freeze([
       'along: it ranks all ninety by how far each moves the reading here.',
     target: '#survey',
     focus: '#survey-choose',
+  }),
+  // The plan's own step, after the survey's because it answers the question
+  // the survey leaves open — which two controls, and what then — and because
+  // it is drawn inside E-02, under the pull. Its square fills when a plan
+  // first stands with its moves fitted, which is the event the note teaches:
+  // the whole desk read at once, not merely a reading chosen.
+  new Note({
+    id: 'strategy',
+    title: 'Read the whole design space',
+    step: 'Choose a reading under the survey, and read every world one door away.',
+    body:
+      'The strategy plan samples every live control at once and draws the designs ' +
+      'along the two moves that decide the reading, each lettered as a recipe with ' +
+      'how much of the reading it explains. Around it stand the worlds one choice ' +
+      'away, each jump measured on the same designs run in both. Choose two ' +
+      'readings and every control is sorted into helps both, trade-off, lever or ' +
+      'free, and the kind is printed on its own strip in the console.',
+    target: '#strategy',
+    focus: '#strategy-readings',
   }),
   new Note({
     id: 'link',
