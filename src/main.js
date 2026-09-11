@@ -9302,7 +9302,17 @@ function renderGroundKey(sv) {
         svg('line', { class: 'gap', x1: 4, y1: 2, x2: 10, y2: 8 }),
         svg('line', { class: 'gap', x1: 4, y1: 8, x2: 10, y2: 2 }),
       ],
-      `A run that could not be completed. ${sv.gaps().length} on this ground, each carrying its reason.`,
+      // "A run that could not be completed" until refused positions existed,
+      // which was true of every gap while the only way to have one was for the
+      // engine to fail. A refused position never reached the engine at all, so
+      // under that wording the commonest gap on a ground cut across a blocking
+      // control was described as a failure that never happened — 96 of them on
+      // the ground this was found on. The two are not told apart here on
+      // purpose: the glyph is one glyph, the mark's own title carries the
+      // sentence that distinguishes them, and "each carrying its reason" is
+      // what sends the reader to it. This wording is the per-mark title's own
+      // ("No reading here — …"), so the legend and the mark agree.
+      `A position with no reading. ${sv.gaps().length} on this ground, each carrying its reason.`,
     );
   }
   if (traverse.length > 1) {

@@ -103,6 +103,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sliders overlap and could pass each other, which EnergyPlus refuses in the
   first warmup timestep. The System strip is now blocked until they are level or
   apart; Heat only and Cool only are unaffected.
+- **A survey ground whose readings are nearly flat no longer fails to draw.**
+  The contour interval is chosen from the measured range, and where that range
+  was a few floating-point ticks wide the interval came out finer than the
+  numbers themselves could step by — the drawing threw and the whole ground
+  went off the sheet. A ground that flat now draws its measured designs with no
+  contours across them, which is what it already did for a ground that was
+  exactly flat.
+- **A position a ground could not measure is no longer called a failed run.**
+  The key called every gap "a run that could not be completed", which was true
+  while the only way to have one was for the engine to fail. A refused position
+  never reaches the engine, so both now read as a position with no reading,
+  each still carrying its own reason.
 - **A study, a survey ground or a pull ranking no longer mixes a building with
   a system and one without.** A position where a swept control takes its own
   channel out of the model is refused rather than run, drawn as a gap, and says

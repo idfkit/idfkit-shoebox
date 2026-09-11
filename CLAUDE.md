@@ -2436,6 +2436,23 @@ which discharges the output-budget requirement outright.
   write no shade that does not build, the fin and curb controls go idle on it,
   and the Shading key's wall says why. Linear rooflights can come out thinner
   than this at the Skylights strip's first stop and are not yet refused.
+- **A contour interval must be one the numbers can actually step by.**
+  `levelsFor` in `src/survey.js` picks a 1-2-5 interval off the measured extent
+  at about a span-eighth. Where the span is a few ULPs of the readings
+  themselves the interval lands *below* their spacing, `v += step` hands back
+  `v`, and the loop fills its array until `push` throws `RangeError: Invalid
+  array length` — inside `drawGround`, so the whole ground leaves the sheet.
+  Measured: two readings of 20 °C one ULP apart span 3.55e-15, an eighth of
+  which is 4.44e-16, so the interval is 5e-16 against a spacing of 3.55e-15 and
+  `20 + 5e-16` is exactly 20. That is not a contrived input — a design-day zone
+  temperature high comes back bit-identical across most of a ground and differs
+  in the last bit at one or two positions, which is precisely a control that
+  does not move its reading. It returns `[]` now, as it already did for an
+  exactly flat ground and for one with nothing measured: a span of a few ULPs
+  is a reading that did not move and has no relief to contour, and the spot
+  heights still stand. Any future interval chosen off a measured range owes the
+  same check, and the honest form of it is whether the step advances the
+  cursor — not a magic floor on the span.
 - **Per-surface output variables are ruinously expensive.** Requesting them with
   key `*` took the ESO from 15 series to 173 and the annual run from 681 ms to
   2,984 ms, almost all of it after the simulation finished. Keep new output

@@ -784,8 +784,34 @@ export function levelsFor(lattice, target = 8) {
   const rough = span / target;
   const power = 10 ** Math.floor(Math.log10(rough));
   const step = [1, 2, 5, 10].map((m) => m * power).find((candidate) => candidate >= rough) ?? 10 * power;
+  const start = Math.ceil(extent.lo / step) * step;
+  // An interval finer than the spacing of the numbers it steps through is not
+  // an interval at all: `v += step` hands back `v` unchanged, the cursor never
+  // reaches `hi`, and the loop below fills `levels` until the array passes its
+  // maximum length and `push` throws `RangeError: Invalid array length`. That
+  // lands in `drawGround` and takes the whole ground off the sheet — measured
+  // in the browser as 26 identical page errors and no drawing.
+  //
+  // Measured: two readings of 20 °C one ULP apart span 3.55e-15, an eighth of
+  // which is 4.44e-16, so the 1-2-5 progression lands the interval at 5e-16
+  // against a spacing at that magnitude of 3.55e-15 — and `20 + 5e-16` is
+  // exactly 20. The window is any span below about `target` ULPs of the
+  // readings themselves, which is narrow and is exactly what a control that
+  // barely moves its reading produces: a design-day zone temperature high
+  // comes back bit-identical across most of a ground and differs in the last
+  // bit at one or two positions.
+  //
+  // The guard above catches a ground that is *exactly* flat. This is the same
+  // ground one bit less flat and it gets the same answer for the same reason:
+  // a span of a few ULPs is a reading that did not move, and there is no
+  // relief in it to contour. `[]` is already what this function returns for a
+  // flat ground and for one with nothing measured, `contoursOf` draws nothing
+  // from an empty list, and the spot heights still stand — so the drawing says
+  // the ground is flat, which is true of it. Inventing an interval that does
+  // advance would letter contours through a rounding error instead.
+  if (!(start + step > start)) return [];
   const levels = [];
-  for (let v = Math.ceil(extent.lo / step) * step; v <= extent.hi + step / 1e6; v += step) {
+  for (let v = start; v <= extent.hi + step / 1e6; v += step) {
     levels.push(Number(v.toFixed(10)));
   }
   return levels;
