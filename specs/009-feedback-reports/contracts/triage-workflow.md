@@ -46,11 +46,11 @@ permissions:
      claude_args: >-
        --model claude-opus-5
        --max-turns 3
-       --disallowedTools "*"
+       --tools StructuredOutput
        --json-schema '${{ steps.context.outputs.schema }}'
    ```
 
-   No `track_progress`, no `use_sticky_comment`, no allowed tools. The schema contains no single quote; the context script asserts it.
+   No `track_progress`, no `use_sticky_comment`, and one tool: `StructuredOutput`, through which the verdict is returned. Never `--disallowedTools "*"`, which denies that tool too. The schema contains no single quote; the context script asserts it.
 4. **Mint app token** (`actions/create-github-app-token`, `app-id`, `private-key`, `owner`, `permission-issues: write`). Runs only after step 3 has ended.
 5. **Apply** (`actions/github-script`, app token, `if: always()`), loading `triage-apply.cjs` with the mode, `steps.claude.outputs.conclusion` and `structured_output` from `env:`.
 

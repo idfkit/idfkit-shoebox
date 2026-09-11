@@ -2312,14 +2312,22 @@ auto-solve on is control, run, control, run; collapsing only consecutive
 repeats left twenty entries of one slider.
 
 **Triage is two steps, and the split is the security boundary.** The step that
-reads the issue runs Claude through `anthropics/claude-code-action` with no
-tools, a read-only `GITHUB_TOKEN` and a JSON schema; the idfkit-bot token is
+reads the issue runs Claude through `anthropics/claude-code-action` with one
+tool, `StructuredOutput`, a read-only `GITHUB_TOKEN` and a JSON schema; the idfkit-bot token is
 minted after it ends, and `.github/scripts/triage-apply.cjs` checks every field
 against the repository before labelling. Findings that shaped the workflow:
 
-- **`--disallowedTools "*"`, not `--tools ""`.** The action's argument parser
-  treats an empty next argument as no value, so the second arrives at the CLI as
-  a bare flag.
+- **`--tools StructuredOutput`, and neither of the obvious spellings.** A JSON
+  schema's verdict comes back through a tool the model calls, named
+  `StructuredOutput`. `--disallowedTools "*"` denies it with everything else:
+  the first live run (34634116301) made two refused calls, spent its three turns
+  and ended `error_max_turns` with no verdict, so every issue fell to "needs a
+  person". Reproduced locally on Claude Code 2.1.268, the version the action
+  pins. `--tools ""` removes the built-ins and keeps `StructuredOutput`, but
+  the action's argument parser treats an empty next argument as no value, so it
+  arrives at the CLI as a bare flag. `--tools StructuredOutput` is not empty,
+  starts the run with that one tool, and returns a verdict in two turns. The
+  prompt also says so, since a small model left to itself answered in prose.
 - **App tokens trigger further runs**, unlike `GITHUB_TOKEN`, and the action
   rejects bot actors. The job is gated on the sender not ending in `[bot]`, or
   idfkit-bot's own `enhancement` label would start the starter path on every
@@ -2331,7 +2339,10 @@ against the repository before labelling. Findings that shaped the workflow:
   organisation from a starter comment; model text and principle names are both
   escaped before posting.
 - **`issues` events run the default branch's workflow**, so a change to triage
-  is tested from its branch with `workflow_dispatch`.
+  is tested from its branch with `workflow_dispatch`. That needs the file on the
+  default branch already: GitHub refuses to dispatch a workflow the default
+  branch lacks, which is why the first version could only be tested after it
+  merged.
 
 The subscription token (`CLAUDE_CODE_OAUTH_TOKEN`, from `claude setup-token`)
 lasts a year and is tied to the maintainer who made it.

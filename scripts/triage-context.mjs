@@ -98,7 +98,7 @@ const fence = (text) => {
 };
 
 const rules = [
-  'You sort one issue filed on idfkit-shoebox, a public repository for a browser-based EnergyPlus demo laid out as a drafting sheet. Your only output is the structured verdict the schema describes. You have no tools and need none.',
+  'You sort one issue filed on idfkit-shoebox, a public repository for a browser-based EnergyPlus demo laid out as a drafting sheet. Your only output is the structured verdict the schema describes: return it by calling the StructuredOutput tool, which is the only tool you have.',
   '',
   'Rules for the verdict:',
   '1. bucket: "bug" when something the sheet does is broken, wrong or misleading; "feature" when the reporter asks for something the sheet does not do; "question" when they ask how or why. Set bucket to null, and give needs_person a one-sentence reason, when you cannot place the issue with confidence, or it is empty, spam or abusive. Exactly one of bucket and needs_person is set.',
