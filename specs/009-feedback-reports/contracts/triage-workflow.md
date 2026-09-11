@@ -45,7 +45,7 @@ permissions:
      allowed_non_write_users: "*"
      claude_args: >-
        --model claude-opus-5
-       --max-turns 3
+       --max-turns 6
        --tools StructuredOutput
        --json-schema '${{ steps.context.outputs.schema }}'
    ```
