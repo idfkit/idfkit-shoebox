@@ -21,6 +21,15 @@
  *                                safe against the pump.
  *   runSample(built)           — the pool; resolves to an engine result
  *   readPoint(job, result, built) — extract every answerable quantity, or null
+ *   refuses(job, value)        — SYNCHRONOUS and pure: the sentence saying why
+ *                                this position is not the building the sweep
+ *                                is about, or null. A refused position is
+ *                                never built, run or cached; it lands as a
+ *                                point carrying the sentence and draws as a
+ *                                gap. Asked by `dispatch` and by `curveFor`
+ *                                alike, so a curve resolved from the cache
+ *                                classifies a position the way a drain does —
+ *                                which is also why it must be pure and cheap
  *   contextFor(job)            — SYNCHRONOUS: facts the quantity readers
  *                                needs that the sweep does not change, built
  *                                once for the whole study (see below)
@@ -131,6 +140,7 @@ export function createStudyScheduler({
   buildSample,
   runSample,
   readPoint,
+  refuses = () => null,
   contextFor = () => null,
   paused,
   capacity,
@@ -232,14 +242,29 @@ export function createStudyScheduler({
   const readingOf = (entry, quantity) => entry?.readings?.[quantity] ?? null;
   const drew = (point) => point?.reading != null;
 
-  function land(job, index, sample) {
+  /**
+   * One curve point, built in one place.
+   *
+   * `land` and `curveFor` each used to spell this literal out, and the moment
+   * `refused` was added to one of them a point resolved from the cache stopped
+   * being the same shape as a point that landed — so a curve rebuilt on a
+   * quantity change lost every refusal it had, and counted those positions as
+   * runs still to come.
+   */
+  const pointAt = (job, value, sample, refused = null) => ({
+    value,
+    reading: readingOf(sample, job.quantity),
+    ...(sample?.readings ?? {}),
+    sample,
+    // Kept apart from a failed run, which is also a point with no reading:
+    // a failure is the engine's and says nothing about the position, where
+    // a refusal is a fact about the position and has a sentence to say.
+    refused,
+  });
+
+  function land(job, index, sample, refused = null) {
     if (!active(job)) return; // cancelled while this sample was in flight
-    job.curve[index] = {
-      value: job.points[index],
-      reading: readingOf(sample, job.quantity),
-      ...(sample?.readings ?? {}),
-      sample,
-    };
+    job.curve[index] = pointAt(job, job.points[index], sample, refused);
     job.done += 1;
     onUpdate(job, 'point');
     if (job.done < job.total) return;
@@ -303,6 +328,14 @@ export function createStudyScheduler({
   function dispatch(job, index) {
     job.started.add(index);
     const value = job.points[index];
+    // Asked before the cache, because nothing about a refused position is worth
+    // a lookup: it is refused for what it is, not for what a run of it said.
+    // Landed synchronously and outside `inFlight`, like a cache hit.
+    const refusal = refuses(job, value);
+    if (refusal) {
+      land(job, index, null, refusal);
+      return;
+    }
     const { identity, entry: hit } = lookup(job, value);
     if (hit) {
       land(job, index, hit);
@@ -487,9 +520,19 @@ export function createStudyScheduler({
       const curve = [];
       let missing = 0;
       for (const value of job.points) {
+        // Asked before the cache, exactly as `dispatch` asks it, or the two
+        // ways a curve comes to exist would disagree about the same position.
+        // A refused position is also not `missing`: nothing is coming for it,
+        // and counted as missing it puts a card into a wait that no drain can
+        // ever end — which is what it did when only `dispatch` asked.
+        const refusal = refuses(job, value);
+        if (refusal) {
+          curve.push(pointAt(job, value, null, refusal));
+          continue;
+        }
         const { entry } = lookup(job, value);
         if (!entry) missing += 1;
-        curve.push({ value, reading: readingOf(entry, job.quantity), ...(entry?.readings ?? {}), sample: entry });
+        curve.push(pointAt(job, value, entry));
       }
       return { curve, missing };
     },

@@ -3161,15 +3161,62 @@ const assertCopy = () => {
 };
 
 const assertSetpointModes = () => {
-  const offered = new Set(
-    CHANNEL_BY_ID.air.controls.find((c) => c.key === 'openRule').options.map((o) => o.value),
-  );
-  for (const mode of NEEDS_SETPOINT) {
-    if (!offered.has(mode)) {
-      throw new Error(`NEEDS_SETPOINT names "${mode}", which openRule does not offer`);
+  // One loop over every set of mode literals a declaration keeps beside a
+  // selector, because the hazard is the same in each: a set and the options it
+  // names are two lists of one vocabulary, and a rename that touches only the
+  // selector leaves a set naming a mode nothing can reach. `NEEDS_SETPOINT`
+  // failing that way is the get-input fatal quoted above it; `SINGLE_SETPOINT`
+  // failing that way is quieter and worse — the System precondition simply
+  // stops exempting Heat only, and a desk that used to run is refused, or the
+  // exemption widens and a crossed pair reaches the warmup fatal the
+  // precondition exists to prevent.
+  const modesOf = (channel, key) =>
+    new Set(CHANNEL_BY_ID[channel].controls.find((c) => c.key === key).options.map((o) => o.value));
+  const declared = [
+    { name: 'NEEDS_SETPOINT', modes: NEEDS_SETPOINT, channel: 'air', key: 'openRule' },
+    { name: 'SINGLE_SETPOINT', modes: SINGLE_SETPOINT, channel: 'system', key: 'availability' },
+  ];
+  for (const { name, modes, channel, key } of declared) {
+    const offered = modesOf(channel, key);
+    for (const mode of modes) {
+      if (!offered.has(mode)) {
+        throw new Error(`${name} names "${mode}", which ${key} does not offer`);
+      }
     }
   }
 };
+
+/**
+ * A channel's blocking sentence at one position, or its `reason` unchanged.
+ *
+ * One place, because a reason may be a sentence or a function of the
+ * parameters and every reader has to resolve it the same way. It was spelled
+ * once in `channelState` and the preset assertion in `schemes.js` interpolated
+ * `requires.reason` bare — which was correct for as long as every reason was a
+ * string, and became "lettering the function's source into the throw" the day
+ * the Air channel's became a function. That is the whole argument for this
+ * being a function rather than a rule everybody remembers: the second reader
+ * was already wrong before anyone noticed it existed.
+ *
+ * The readers are passed through rather than built here, because what `on`
+ * means is the caller's to decide: `channelState` answers "in the path", while
+ * the preset assertion asks only "not patched out" — a preset is checked
+ * against what it wrote, not against what the rest of the desk then made of it.
+ */
+export function blockReason(requires, params, on, off) {
+  return typeof requires.reason === 'function' ? requires.reason(params, on, off) : requires.reason;
+}
+
+/**
+ * The availability modes under which one setpoint reaches no object.
+ *
+ * `applySystem` writes a `ThermostatSetpoint:SingleHeating` or
+ * `:SingleCooling` for these and a dual setpoint for every other mode, so they
+ * are the modes where the order of the two setpoints is not a question the
+ * engine asks. The System channel's precondition reads it; the literals match
+ * the ones `applySystem` switches on.
+ */
+const SINGLE_SETPOINT = Object.freeze(new Set(['HeatingOnly', 'CoolingOnly']));
 
 /**
  * The three ways the Air channel's pressure network can be blocked, one
@@ -4352,6 +4399,42 @@ export const CHANNELS = Object.freeze([
       'plate reads a float. Engaged, an ideal unit holds the setpoints and the ' +
       'plate reads what that costs.',
     bypassed: true,
+    requires: {
+      // The two setpoint faces overlap, 18 to 26 °C, and nothing about either
+      // slider knows where the other stands. A heating setpoint above the
+      // cooling one is a thermostat asked to heat and cool the same air at
+      // once, and the engine stops in the first warmup timestep:
+      //
+      //   ** Severe ** DualSetPointWithDeadBand: Effective heating set-point
+      //                higher than effective cooling set-point - increase
+      //                deadband if using unmixed air model
+      //   ** Fatal  ** Program terminates due to above conditions.
+      //
+      // Measured: about one design in ten of an 800-point Latin hypercube over
+      // the System-in desk died this way. The test is EnergyPlus's own, which
+      // is strict: 22 over 21.5 fatals, 22 and 22 runs clean with the default
+      // desk's warning count, so equal setpoints are a zero deadband and not a
+      // refusal. Neither slider is clamped to the other, which would be the
+      // desk quietly moving a number the reader set.
+      //
+      // Only the dual thermostat carries both numbers. At "Heat only" and
+      // "Cool only" `applySystem` writes a single-setpoint object and the other
+      // setpoint reaches nothing, so a crossed pair there is two numbers and
+      // one of them unread: measured, both run clean at 24 over 19. The
+      // setback cannot cross them either, since it lowers heating and raises
+      // cooling and so only ever widens the occupied band's gap.
+      test: (p) => SINGLE_SETPOINT.has(p.availability) || p.heatSet <= p.coolSet,
+      // One string rather than a function of the two setpoints, which is what
+      // this was first written as. Interpolated, it read both numbers back at
+      // the reader at 41 words, and a function cannot be held to the standing
+      // budget at load — so the longest always-visible sentence on the desk was
+      // also the one nothing counted. The numbers are not lost: both faces are
+      // on this strip, lettered and a thumb apart, which is how the reader got
+      // here. What a blocked strip owes is the block and the fix; the argument
+      // is in the comment above and in CLAUDE.md, under the thermostat
+      // invariant. Heat only and Cool only never read it.
+      reason: 'The heating setpoint is above the cooling one: bring them level or apart.',
+    },
     meter: new Meter({
       label: 'System air transfer',
       rail: true,

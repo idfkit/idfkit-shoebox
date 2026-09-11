@@ -11,6 +11,7 @@ import {
   leakageBuildUp,
   modelFacts,
   occupiedFloor,
+  sampleRefusal,
   setAnnual,
   setDesignConditions,
   shadeGeometry,
@@ -6886,6 +6887,16 @@ const studyPool = createEnginePool({
 });
 
 /**
+ * The desk a sample stands on: the job's snapshot with its swept control moved.
+ *
+ * Spelled inline at four call sites before this had a name — the cache
+ * identity, the build, the meter basis and the refusal — which is one more
+ * than the number at which a repeated literal starts being a place for the
+ * four to drift.
+ */
+const deskAt = (job, value) => ({ ...job.snapshot, [job.key]: value });
+
+/**
  * The declaration one sweep is read under, refused by name where there is none.
  *
  * `study.js` owns the quantity's lettering, contents and reader together. The
@@ -6960,7 +6971,7 @@ function landedFrom(eso, job, built) {
     const total = meterTotal(eso, use.meter, environments);
     if (total != null) series.set(use.meter, total);
   }
-  const sampleParams = { ...job.snapshot, [job.key]: built.value };
+  const sampleParams = deskAt(job, built.value);
   const engaged = new Set(
     [...channelState(sampleParams, job.patch)].filter(([, state]) => state.engaged).map(([id]) => id),
   );
@@ -7045,6 +7056,12 @@ function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? nul
  * sentence claims to be checking; the rest of the desk is already in the cache
  * key through `deskKey`, so nothing about sample identity is lost.
  *
+ * The one channel a sample may not lose is the swept control's own, and that
+ * is refused before this is ever consulted: a heating setpoint swept past the
+ * cooling one blocks System, and solved anyway those positions would be the
+ * free-running building drawn on the conditioned building's curve. See
+ * `sampleRefusal`.
+ *
  * A list of quantities, because a ground surveyed for demand and overheating is
  * one set of runs read twice, not two sets: the needs are their union.
  */
@@ -7091,7 +7108,7 @@ function buildSample(job, value) {
     setAnnual(model, job.annual);
     // Structured contents off the declaration, never a profile name inferred
     // from the selected id.
-    applyModel(model, { ...job.snapshot, [job.key]: value }, job.patch, {
+    applyModel(model, deskAt(job, value), job.patch, {
       reporting: job.carried,
     });
     // Each sample's intensity divides by that sample's own floor, which the
@@ -7118,11 +7135,22 @@ function buildSample(job, value) {
  */
 function sampleIdentity(job, value, carried) {
   const bucket = JSON.stringify([
-    deskKey({ ...job.snapshot, [job.key]: value }, job.patch),
+    deskKey(deskAt(job, value), job.patch),
     job.annual ? 'year' : 'design-day',
   ]);
   return { bucket, exact: JSON.stringify([bucket, carried.serialize()]) };
 }
+
+/**
+ * The channels a job's swept keys belong to, in the order the keys are given.
+ *
+ * The one place `job.omits` is normalised — it is a bare key for a study and a
+ * pull probe, a pair for a survey row (`makeStudyJob` defaults it to the key).
+ * `controlFor` resolves a wall's own key to the `Facade` that owns it, so a
+ * ground cut across two walls asks one channel twice, which `sampleRefusal`
+ * answers on the first and is why there is no dedupe here to go stale.
+ */
+const sweptChannels = (omits) => [omits].flat().map((key) => controlFor(key).channel.id);
 
 studyScheduler = createStudyScheduler({
   // The cache key is the sample's whole desk — the overlay's shape key —
@@ -7131,6 +7159,14 @@ studyScheduler = createStudyScheduler({
   // deliberately absent, which is why a station change clears the cache.
   keyOf: sampleIdentity,
   buildSample,
+  // Asked of the swept controls' own channels only; see `sampleRefusal` for why
+  // another channel going out under the overlay is still a position.
+  //
+  // `job.omits` rather than `job.key`, because it is the set of keys this job
+  // sweeps: a study's own control, and a survey row's two axes — the one it
+  // steps along and the one the row stands at. `makeStudyJob` defaults it to
+  // the key, so a study asks exactly what it asked before.
+  refuses: (job, value) => sampleRefusal(deskAt(job, value), job.patch, sweptChannels(job.omits)),
   runSample: async ({ idf, epw }) => {
     const result = await studyPool.run({ idf, epw });
     // The counter counts engine runs, so cache hits — honestly — do not turn it.
@@ -7695,7 +7731,10 @@ function onStudyUpdate(job, event) {
     desk.setStudy(key, study, { stale: study.restShape !== restShapeKey(key) });
     // A curve the reader asked for says so when it lands; one that healed
     // itself in the background just appears, which is the whole point of it.
-    syncStudyStatus(`Study drawn — ${job.total} ${kind} runs across ${said}.`, {
+    // A refused position reached no engine, so it is not a run.
+    const refused = job.curve.filter((point) => point?.refused).length;
+    const note = refused ? `, ${refused} positions refused` : '';
+    syncStudyStatus(`Study drawn — ${job.total - refused} ${kind} runs across ${said}${note}.`, {
       quietly: job.origin !== 'manual',
     });
   } else if (event === 'failed') {
@@ -7710,8 +7749,14 @@ function onStudyUpdate(job, event) {
     // A failure is worth saying whichever way the study was asked for — it is
     // the one study outcome that leaves nothing drawn to speak for itself.
     if (!pumping) {
+      // A curve with every position refused never ran at all, and "failed to
+      // solve" would send the reader looking for an engine error that does
+      // not exist. It says what the strip would say instead.
+      const refused = job.curve.find((point) => point?.refused);
       statusEl.className = 'status bad';
-      statusEl.textContent = `The study of ${said} could not be drawn: every sample failed to solve.`;
+      statusEl.textContent = refused && job.curve.every((point) => point?.refused)
+        ? `The study of ${said} could not be drawn: every position takes its own channel out of the model. ${refused.refused}`
+        : `The study of ${said} could not be drawn: every sample failed to solve.`;
     }
   } else if (event === 'cancelled') {
     desk.setStudyProgress(key, null);
@@ -7836,6 +7881,10 @@ function absorbSurveyRow(job) {
       ix,
       iy,
       sample: point.sample ?? null,
+      // Or `landPoint`'s own fallback would call it "The run did not complete"
+      // over a position where no run was ever started. The distinction itself
+      // is the scheduler's, at `land`.
+      reason: point.refused ?? null,
       // The run this figure came from, by the scheduler's own identity, so a
       // spot height can be traced to it rather than merely believed.
       cacheKey: point.sample
@@ -9254,7 +9303,17 @@ function renderGroundKey(sv) {
         svg('line', { class: 'gap', x1: 4, y1: 2, x2: 10, y2: 8 }),
         svg('line', { class: 'gap', x1: 4, y1: 8, x2: 10, y2: 2 }),
       ],
-      `A run that could not be completed. ${sv.gaps().length} on this ground, each carrying its reason.`,
+      // "A run that could not be completed" until refused positions existed,
+      // which was true of every gap while the only way to have one was for the
+      // engine to fail. A refused position never reached the engine at all, so
+      // under that wording the commonest gap on a ground cut across a blocking
+      // control was described as a failure that never happened — 96 of them on
+      // the ground this was found on. The two are not told apart here on
+      // purpose: the glyph is one glyph, the mark's own title carries the
+      // sentence that distinguishes them, and "each carrying its reason" is
+      // what sends the reader to it. This wording is the per-mark title's own
+      // ("No reading here — …"), so the legend and the mark agree.
+      `A position with no reading. ${sv.gaps().length} on this ground, each carrying its reason.`,
     );
   }
   if (traverse.length > 1) {

@@ -1933,7 +1933,7 @@ export function mountConsole({
   * control just walks it along the curve.
    */
   function studyCard(key, study) {
-    const { control } = controlFor(key);
+    const { control, channel } = controlFor(key);
     const card = el('div', 'study-card');
     const head = el('div', 'study-head');
     head.append(el('span', 'study-tag', 'Study'), ...studySubject(key));
@@ -1967,6 +1967,37 @@ export function mountConsole({
           'study-quantity-waiting',
           study.waiting.reason ??
             `Waiting for ${study.waiting.quantity}: ${study.waiting.missing} sample${study.waiting.missing === 1 ? '' : 's'} still need a run.`,
+        ),
+      );
+    }
+
+    // Positions refused for taking this control's own channel out of the path.
+    // They draw as a gap like a failed run, so the gap has to say which kind it
+    // is: the channel that went out, and the channel's own sentence for why.
+    //
+    // The position lettered is the refused one nearest the drawn curve, which
+    // is where the curve stops and therefore the edge the reader is looking at.
+    // That is the whole reason one of them is singled out now that the reason
+    // is a constant: every refused position says the same sentence, so what the
+    // card has left to add is where the refusing starts.
+    const refused = study.curve.filter((point) => point?.refused);
+    if (refused.length) {
+      const drawn = study.curve.filter((point) => point && !point.refused).map((point) => point.value);
+      // No empty-`drawn` branch: `Math.min()` of nothing is Infinity, so with
+      // nothing drawn yet every comparison is false and the reduce keeps the
+      // first refused position — which is the answer that branch would have
+      // produced anyway, at the cost of a second path to read.
+      const away = (point) => Math.min(...drawn.map((v) => Math.abs(v - point.value)));
+      const edge = refused.reduce((best, point) => (away(point) < away(best) ? point : best));
+      const total = study.progress?.total ?? study.curve.length;
+      // 26 words with the 13-word reason, against the 25-word BLOCK budget and
+      // the 40-word ceiling a single visible block is held to. Composed, so it
+      // is measured rather than thrown over — see `src/copy.js`.
+      card.append(
+        el(
+          'p',
+          'study-refused',
+          `${refused.length} of ${total} positions take ${channel.name} out of the model, from ${control.format(edge.value)}. ${edge.refused}`,
         ),
       );
     }

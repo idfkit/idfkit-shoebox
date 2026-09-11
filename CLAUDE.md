@@ -2378,6 +2378,48 @@ which discharges the output-budget requirement outright.
   control type. Not valid for this zone.`) that takes the run down before any
   environment starts, whatever the weather. So `applySystem` picks the number
   and the object together, and clears all three setpoint types on every apply.
+- **A heating setpoint above the cooling one is a warmup fatal, and the two
+  faces overlap.** `heatSet` runs 10 to 26 °C and `coolSet` 18 to 34, so the
+  sliders can pass each other, and the dual thermostat then stops the run with
+  `DualSetPointWithDeadBand: Effective heating set-point higher than effective
+  cooling set-point`. It took about one design in ten of an 800-point Latin
+  hypercube over the System-in desk. The System channel's `requires` blocks,
+  with one constant sentence rather than the two setpoints read back — both
+  faces are on the strip a thumb apart, and a function of the parameters cannot
+  be held to the `STANDING` copy budget at load, which made the longest
+  always-visible sentence on the desk the one nothing counted. Neither slider is
+  clamped to the other.
+  The engine's test is strict and the gate matches it: equal setpoints run with
+  the default desk's warning count, 0.5 K crossed fatals. It does not fire at
+  "Heat only" or "Cool only", where one setpoint reaches no object, and a link
+  carrying a crossed pair decodes to the blocked desk rather than being refused,
+  because the desk can reach it. A study sweeping either setpoint past the
+  other **refuses** those positions rather than solving them with System out:
+  `sampleRefusal` in `model.js` refuses any sample where a swept control takes
+  its *own* channel out of the path, so a curve never joins a conditioned zone
+  to a free-running one. Another channel going out under the overlay (Blinds
+  losing its window as a wall's ratio reaches zero) is still a position and
+  still runs. A refused position is never built or cached, draws as a gap, and
+  the card says which sentence refused it.
+  - **It is asked of every swept key, which is `job.omits` and not `job.key`.**
+    A study sweeps one control and a survey row sweeps two — its own axis along
+    the row, and the other axis fixed into the snapshot that made the row — and
+    both have to be asked, so `sampleRefusal` takes one channel id or several,
+    the same shape and for the same reason `deskKey`'s `omit` does. Asked only
+    about the row's own axis, a ground cut across the heating setpoint would
+    refuse nothing and draw every row above the cooling setpoint as the
+    free-running building: eighty-one designs of which a band is a different
+    model, arriving by the one route that does not look like a study.
+  - **A refused position is not a failed run, at all three surfaces that land
+    one.** The scheduler keeps `refused` apart from a reading it never got,
+    because a failure is the engine's and says nothing about the design where a
+    refusal is a fact about the design and has a sentence for it. So
+    `absorbSurveyRow` passes that sentence to `landPoint` rather than letting it
+    fall back to "The run did not complete" over a position no run was started
+    for, and a refused pull probe is an **inert** entry under the refusal rather
+    than an unmeasured one — a step that takes its own channel out would
+    otherwise measure the channel leaving instead of the control moving, which
+    is the largest effect on the board and about nothing.
 - **An economizer requires a cooling flow limit**, or EnergyPlus raises a severe
   error. Nothing here is autosized, so the limit is computed from zone volume.
 - **A shading device cannot be hung on `WindowMaterial:SimpleGlazingSystem`**,
@@ -2394,6 +2436,23 @@ which discharges the output-budget requirement outright.
   write no shade that does not build, the fin and curb controls go idle on it,
   and the Shading key's wall says why. Linear rooflights can come out thinner
   than this at the Skylights strip's first stop and are not yet refused.
+- **A contour interval must be one the numbers can actually step by.**
+  `levelsFor` in `src/survey.js` picks a 1-2-5 interval off the measured extent
+  at about a span-eighth. Where the span is a few ULPs of the readings
+  themselves the interval lands *below* their spacing, `v += step` hands back
+  `v`, and the loop fills its array until `push` throws `RangeError: Invalid
+  array length` — inside `drawGround`, so the whole ground leaves the sheet.
+  Measured: two readings of 20 °C one ULP apart span 3.55e-15, an eighth of
+  which is 4.44e-16, so the interval is 5e-16 against a spacing of 3.55e-15 and
+  `20 + 5e-16` is exactly 20. That is not a contrived input — a design-day zone
+  temperature high comes back bit-identical across most of a ground and differs
+  in the last bit at one or two positions, which is precisely a control that
+  does not move its reading. It returns `[]` now, as it already did for an
+  exactly flat ground and for one with nothing measured: a span of a few ULPs
+  is a reading that did not move and has no relief to contour, and the spot
+  heights still stand. Any future interval chosen off a measured range owes the
+  same check, and the honest form of it is whether the step advances the
+  cursor — not a magic floor on the span.
 - **Per-surface output variables are ruinously expensive.** Requesting them with
   key `*` took the ESO from 15 series to 173 and the annual run from 681 ms to
   2,984 ms, almost all of it after the simulation finished. Keep new output
