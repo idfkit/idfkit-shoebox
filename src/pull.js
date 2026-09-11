@@ -40,6 +40,7 @@
  */
 
 import { CHANNELS, controlFor, labelFor } from './controls.js';
+import { sampleRefusal } from './model.js';
 import { READING_BY_ID } from './survey.js';
 import { refusesSweep } from './study.js';
 
@@ -193,6 +194,22 @@ export function pullProbes(stance, patch, { quantity, engaged, annual, epw = nul
           );
           continue;
         }
+        // The third way a control can be unmeasurable from here, and it is
+        // decided in the same breath as the other two rather than after a run
+        // comes back: a step that takes this control's *own* channel out of
+        // the model measures the channel leaving, not the control moving,
+        // which is the largest effect on the board and about nothing.
+        //
+        // Sited here rather than at the landing surface because `inertReason`
+        // above is this same judgement at the stance, and a probe known
+        // unmeasurable before anything is queued should not be queued: read
+        // off a landed point it would stand on the board as *pending* and
+        // then resolve to inert, alone among inert rows in doing so.
+        const refused = sampleRefusal({ ...stance, [key]: to }, patch, channel.id);
+        if (refused) {
+          inert.push(new PullEntry({ key, control, side, channel, inert: refused }));
+          continue;
+        }
         probes.push({
           id: `${id}:${key}`,
           key,
@@ -230,7 +247,7 @@ export function pullProbes(stance, patch, { quantity, engaged, annual, epw = nul
  * so every difference that comes back is real, and rounding one away would be
  * this sheet deciding which of its own measurements to believe.
  */
-export function entryFrom(probe, { here, there, reading, refused = null }) {
+export function entryFrom(probe, { here, there, reading }) {
   const { control, side, channel, key, from, to } = probe;
   if (here === null || there === null) {
     return new PullEntry({
@@ -238,18 +255,14 @@ export function entryFrom(probe, { here, there, reading, refused = null }) {
       control,
       side,
       channel,
-      // A refused step is inert rather than failed, and it belongs on this list
-      // under its own sentence: the step would have taken this control's own
-      // channel out of the model, so what a run of it measured would be the
-      // channel leaving and not the control moving — the largest effect on the
-      // board, at the top of a ranking, about nothing. That is the same reading
-      // about the desk the inert entries already carry, which is why it is one
-      // of them rather than a gap. "The probe run did not complete" is kept for
-      // the runs that actually did not.
+      // Only genuine failures reach here. A step the desk refuses never became
+      // a probe at all — `pullProbes` classifies it inert beside the other two
+      // unmeasurable cases — so this sentence is about a run that was started
+      // and did not finish, which is what it says.
       inert:
         here === null
           ? 'The stance itself could not be read for this quantity.'
-          : (refused ?? 'The probe run did not complete, so this control could not be measured.'),
+          : 'The probe run did not complete, so this control could not be measured.',
     });
   }
   const delta = there - here;

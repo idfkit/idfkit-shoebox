@@ -3,6 +3,7 @@ import {
   ADIABATIC,
   ADAPTIVE_RULES,
   AS_DRAWN,
+  blockReason,
   BOUNDARY_KEYS,
   NEEDS_SETPOINT,
   OPENABLE_KEYS,
@@ -895,11 +896,9 @@ export function channelState(params, bypass) {
       // more than one way to be blocked — the Air strip's network needs a
       // surface with an outside *and* something to leak through or open — and
       // one sentence covering both would name the wrong cause half the time.
-      blocked: blocked
-        ? typeof channel.requires.reason === 'function'
-          ? channel.requires.reason(params, on, patchedOut)
-          : channel.requires.reason
-        : null,
+      // Resolved through `blockReason` rather than here, so the preset
+      // assertion in `schemes.js` resolves it identically.
+      blocked: blocked ? blockReason(channel.requires, params, on, patchedOut) : null,
     });
   }
   return state;
@@ -924,16 +923,13 @@ export function channelState(params, bypass) {
  * The sentence is the channel's own `requires` reason at that position, so the
  * card says exactly what the strip would have said had the desk stood there.
  *
- * `channels` takes one id or several, the same shape and for the same reason
- * `deskKey`'s `omit` does: a study sweeps one control and a survey row sweeps
- * two, its own axis along the row and the other fixed into the snapshot that
- * made the row. Both axes have to be asked. Handed only the row's own axis, a
- * ground cut across the heating setpoint would refuse nothing and draw every
- * row above the cooling setpoint as the free-running building — eighty-one
- * designs of which a band is a different model, which is the defect this
- * function exists to prevent, arriving by the one route that does not look
- * like a study. The first blocked channel in the order given is the sentence,
- * since a sample is refused wholly and one reason is what there is room to say.
+ * `channels` takes one id or several, the shape `deskKey`'s `omit` already
+ * uses: a study and a pull probe sweep one control, a survey row sweeps two —
+ * its own axis along the row and the other fixed into the snapshot that made
+ * it — and every swept axis has to be asked. See CLAUDE.md, under the
+ * thermostat invariant, for what asking only one of a ground's two costs.
+ * The first blocked channel in the order given is the sentence, since a sample
+ * is refused wholly and one reason is what there is room to say.
  */
 export function sampleRefusal(params, bypass, channels) {
   const state = channelState(params, bypass);

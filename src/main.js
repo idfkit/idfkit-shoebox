@@ -6887,6 +6887,16 @@ const studyPool = createEnginePool({
 });
 
 /**
+ * The desk a sample stands on: the job's snapshot with its swept control moved.
+ *
+ * Spelled inline at four call sites before this had a name — the cache
+ * identity, the build, the meter basis and the refusal — which is one more
+ * than the number at which a repeated literal starts being a place for the
+ * four to drift.
+ */
+const deskAt = (job, value) => ({ ...job.snapshot, [job.key]: value });
+
+/**
  * The declaration one sweep is read under, refused by name where there is none.
  *
  * `study.js` owns the quantity's lettering, contents and reader together. The
@@ -6961,7 +6971,7 @@ function landedFrom(eso, job, built) {
     const total = meterTotal(eso, use.meter, environments);
     if (total != null) series.set(use.meter, total);
   }
-  const sampleParams = { ...job.snapshot, [job.key]: built.value };
+  const sampleParams = deskAt(job, built.value);
   const engaged = new Set(
     [...channelState(sampleParams, job.patch)].filter(([, state]) => state.engaged).map(([id]) => id),
   );
@@ -7098,7 +7108,7 @@ function buildSample(job, value) {
     setAnnual(model, job.annual);
     // Structured contents off the declaration, never a profile name inferred
     // from the selected id.
-    applyModel(model, { ...job.snapshot, [job.key]: value }, job.patch, {
+    applyModel(model, deskAt(job, value), job.patch, {
       reporting: job.carried,
     });
     // Each sample's intensity divides by that sample's own floor, which the
@@ -7125,7 +7135,7 @@ function buildSample(job, value) {
  */
 function sampleIdentity(job, value, carried) {
   const bucket = JSON.stringify([
-    deskKey({ ...job.snapshot, [job.key]: value }, job.patch),
+    deskKey(deskAt(job, value), job.patch),
     job.annual ? 'year' : 'design-day',
   ]);
   return { bucket, exact: JSON.stringify([bucket, carried.serialize()]) };
@@ -7134,14 +7144,13 @@ function sampleIdentity(job, value, carried) {
 /**
  * The channels a job's swept keys belong to, in the order the keys are given.
  *
- * Deduped, because a survey may cut two axes of one channel — two setpoints, a
- * pane count against a coating — and one channel asked twice would letter the
- * same sentence twice over. `controlFor` resolves a wall's own key to the
- * `Facade` that owns it, so a ground cut across two walls is one channel here.
+ * The one place `job.omits` is normalised — it is a bare key for a study and a
+ * pull probe, a pair for a survey row (`makeStudyJob` defaults it to the key).
+ * `controlFor` resolves a wall's own key to the `Facade` that owns it, so a
+ * ground cut across two walls asks one channel twice, which `sampleRefusal`
+ * answers on the first and is why there is no dedupe here to go stale.
  */
-const sweptChannels = (omits) => [
-  ...new Set((Array.isArray(omits) ? omits : [omits]).map((key) => controlFor(key).channel.id)),
-];
+const sweptChannels = (omits) => [omits].flat().map((key) => controlFor(key).channel.id);
 
 studyScheduler = createStudyScheduler({
   // The cache key is the sample's whole desk — the overlay's shape key —
@@ -7157,12 +7166,7 @@ studyScheduler = createStudyScheduler({
   // sweeps: a study's own control, and a survey row's two axes — the one it
   // steps along and the one the row stands at. `makeStudyJob` defaults it to
   // the key, so a study asks exactly what it asked before.
-  refuses: (job, value) =>
-    sampleRefusal(
-      { ...job.snapshot, [job.key]: value },
-      job.patch,
-      sweptChannels(job.omits),
-    ),
+  refuses: (job, value) => sampleRefusal(deskAt(job, value), job.patch, sweptChannels(job.omits)),
   runSample: async ({ idf, epw }) => {
     const result = await studyPool.run({ idf, epw });
     // The counter counts engine runs, so cache hits — honestly — do not turn it.
@@ -7729,8 +7733,8 @@ function onStudyUpdate(job, event) {
     // itself in the background just appears, which is the whole point of it.
     // A refused position reached no engine, so it is not a run.
     const refused = job.curve.filter((point) => point?.refused).length;
-    const runs = `${job.total - refused} ${kind} runs across ${said}`;
-    syncStudyStatus(`Study drawn — ${refused ? `${runs}, ${refused} positions refused` : runs}.`, {
+    const note = refused ? `, ${refused} positions refused` : '';
+    syncStudyStatus(`Study drawn — ${job.total - refused} ${kind} runs across ${said}${note}.`, {
       quietly: job.origin !== 'manual',
     });
   } else if (event === 'failed') {
@@ -7877,12 +7881,9 @@ function absorbSurveyRow(job) {
       ix,
       iy,
       sample: point.sample ?? null,
-      // A refused position is a gap like a failed run, and `landPoint`'s own
-      // fallback would call it one — "The run did not complete" over a position
-      // where no run was ever started. The distinction is the same one the
-      // scheduler draws when it lands the point: a failure is the engine's and
-      // says nothing about the design, where a refusal is a fact about the
-      // design and has a sentence for it.
+      // Or `landPoint`'s own fallback would call it "The run did not complete"
+      // over a position where no run was ever started. The distinction itself
+      // is the scheduler's, at `land`.
       reason: point.refused ?? null,
       // The run this figure came from, by the scheduler's own identity, so a
       // spot height can be traced to it rather than merely believed.
@@ -9893,10 +9894,7 @@ function onPullUpdate(job, event) {
     if (reading) {
       const here = job.curve[0]?.sample ? reading.valueOf(job.curve[0].sample.readings) : null;
       const there = job.curve[1]?.sample ? reading.valueOf(job.curve[1].sample.readings) : null;
-      // Carried so the entry can tell a step that was refused from one that
-      // failed — see `entryFrom`. The stance is position 0 and is the desk
-      // itself, which is never refused, so only the step's own is worth taking.
-      pullLanded.set(job.id, { here, there, refused: job.curve[1]?.refused ?? null });
+      pullLanded.set(job.id, { here, there });
     }
     if (event !== 'point') pullDone(job.id);
     renderPullSoon();

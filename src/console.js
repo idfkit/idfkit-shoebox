@@ -1983,8 +1983,12 @@ export function mountConsole({
     const refused = study.curve.filter((point) => point?.refused);
     if (refused.length) {
       const drawn = study.curve.filter((point) => point && !point.refused).map((point) => point.value);
-      const gap = (point) => (drawn.length ? Math.min(...drawn.map((v) => Math.abs(v - point.value))) : 0);
-      const edge = refused.reduce((best, point) => (gap(point) < gap(best) ? point : best));
+      // No empty-`drawn` branch: `Math.min()` of nothing is Infinity, so with
+      // nothing drawn yet every comparison is false and the reduce keeps the
+      // first refused position — which is the answer that branch would have
+      // produced anyway, at the cost of a second path to read.
+      const away = (point) => Math.min(...drawn.map((v) => Math.abs(v - point.value)));
+      const edge = refused.reduce((best, point) => (away(point) < away(best) ? point : best));
       const total = study.progress?.total ?? study.curve.length;
       // 26 words with the 13-word reason, against the 25-word BLOCK budget and
       // the 40-word ceiling a single visible block is held to. Composed, so it

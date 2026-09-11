@@ -449,11 +449,10 @@ console.log('survey invariants (gate 1, SC-003)');
 
   // An ordinary ground is exactly what it was: the guard must be invisible
   // anywhere the interval was already usable.
-  ok(
-    'an ordinary ground is unmoved',
-    JSON.stringify(levelsFor(lat([20, 22, 26, 30]))) === JSON.stringify([20, 22, 24, 26, 28, 30]),
-    JSON.stringify(levelsFor(lat([20, 22, 26, 30]))),
-  );
+  // Read once, so the detail on a failure is the evaluation that failed rather
+  // than a second one that might not agree with it.
+  const ordinary = JSON.stringify(levelsFor(lat([20, 22, 26, 30])));
+  ok('an ordinary ground is unmoved', ordinary === JSON.stringify([20, 22, 24, 26, 28, 30]), ordinary);
 
   // And the contours drawn from a degenerate ground are simply absent, rather
   // than the caller having to know that the level list might be nonsense.

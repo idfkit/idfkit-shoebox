@@ -49,6 +49,7 @@ import {
   CHANNEL_BY_ID,
   DEFAULT_BYPASS,
   DEFAULT_PARAMETERS,
+  blockReason,
   controlFor,
   formatValue,
   gainsForRoom,
@@ -1282,16 +1283,18 @@ for (const preset of PRESETS) {
   // Checked against the preset laid over the issued drawing, which is the one
   // desk it can be checked against; over the reader's own it is their business.
   const over = applyPreset(DEFAULT_PARAMETERS, DEFAULT_BYPASS, preset);
+  // Both readers a precondition is handed. `engaged` is deliberately not
+  // `channelState`'s `on`, which means "in the path": a preset is checked
+  // against what it wrote, so a channel it engages that some *other* channel
+  // then blocks is not this assertion's business — only one the preset's own
+  // settings block. `patchedOut` is the patch bay itself and means the same
+  // thing in both.
   const engaged = (id) => !over.bypass[id];
-  // Both readers `channelState` hands a precondition, and the reason resolved
-  // the way it resolves it: a reason may be a function of the parameters, and
-  // interpolated bare it would letter the function's source into the throw.
   const patchedOut = (id) => Boolean(over.bypass[id]);
   for (const id of preset.engages) {
     const { requires } = CHANNEL_BY_ID[id];
     if (requires && !requires.test(over.params, engaged, patchedOut)) {
-      const reason =
-        typeof requires.reason === 'function' ? requires.reason(over.params, engaged, patchedOut) : requires.reason;
+      const reason = blockReason(requires, over.params, engaged, patchedOut);
       throw new Error(`${preset.id} engages "${id}", which its own settings then block: ${reason}`);
     }
   }

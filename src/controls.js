@@ -3161,15 +3161,51 @@ const assertCopy = () => {
 };
 
 const assertSetpointModes = () => {
-  const offered = new Set(
-    CHANNEL_BY_ID.air.controls.find((c) => c.key === 'openRule').options.map((o) => o.value),
-  );
-  for (const mode of NEEDS_SETPOINT) {
-    if (!offered.has(mode)) {
-      throw new Error(`NEEDS_SETPOINT names "${mode}", which openRule does not offer`);
+  // One loop over every set of mode literals a declaration keeps beside a
+  // selector, because the hazard is the same in each: a set and the options it
+  // names are two lists of one vocabulary, and a rename that touches only the
+  // selector leaves a set naming a mode nothing can reach. `NEEDS_SETPOINT`
+  // failing that way is the get-input fatal quoted above it; `SINGLE_SETPOINT`
+  // failing that way is quieter and worse — the System precondition simply
+  // stops exempting Heat only, and a desk that used to run is refused, or the
+  // exemption widens and a crossed pair reaches the warmup fatal the
+  // precondition exists to prevent.
+  const modesOf = (channel, key) =>
+    new Set(CHANNEL_BY_ID[channel].controls.find((c) => c.key === key).options.map((o) => o.value));
+  const declared = [
+    { name: 'NEEDS_SETPOINT', modes: NEEDS_SETPOINT, channel: 'air', key: 'openRule' },
+    { name: 'SINGLE_SETPOINT', modes: SINGLE_SETPOINT, channel: 'system', key: 'availability' },
+  ];
+  for (const { name, modes, channel, key } of declared) {
+    const offered = modesOf(channel, key);
+    for (const mode of modes) {
+      if (!offered.has(mode)) {
+        throw new Error(`${name} names "${mode}", which ${key} does not offer`);
+      }
     }
   }
 };
+
+/**
+ * A channel's blocking sentence at one position, or its `reason` unchanged.
+ *
+ * One place, because a reason may be a sentence or a function of the
+ * parameters and every reader has to resolve it the same way. It was spelled
+ * once in `channelState` and the preset assertion in `schemes.js` interpolated
+ * `requires.reason` bare — which was correct for as long as every reason was a
+ * string, and became "lettering the function's source into the throw" the day
+ * the Air channel's became a function. That is the whole argument for this
+ * being a function rather than a rule everybody remembers: the second reader
+ * was already wrong before anyone noticed it existed.
+ *
+ * The readers are passed through rather than built here, because what `on`
+ * means is the caller's to decide: `channelState` answers "in the path", while
+ * the preset assertion asks only "not patched out" — a preset is checked
+ * against what it wrote, not against what the rest of the desk then made of it.
+ */
+export function blockReason(requires, params, on, off) {
+  return typeof requires.reason === 'function' ? requires.reason(params, on, off) : requires.reason;
+}
 
 /**
  * The availability modes under which one setpoint reaches no object.
