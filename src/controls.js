@@ -17,6 +17,11 @@
 import { COINCIDENT, builds, openingFor, shadeBuilds } from './aperture.js';
 import { LIGHTING_PATTERN, PROFILE_IDS, profileFor } from './tm59.data.js';
 import { BUDGETS, withinBudget } from './copy.js';
+// The lettering, not the value. `units.js` imports nothing and reaches no
+// document; it is imported here rather than in the console because a control's
+// own `format` is the first thing that asks how a number reads, and every other
+// surface on the sheet reaches that one formatter through `formatValue`.
+import { KINDS, TYPED, assertReachable, deltaKindOf, figureIn, kindFor, letter, parseIn, precisionFor, suffixIn } from './units.js';
 
 /* ══ controls ════════════════════════════════════════════════════════════ */
 
@@ -141,13 +146,17 @@ function readQuantity(control, text) {
   if (control.zero && said.toLowerCase() === control.zero.toLowerCase()) {
     return onFace(control, 0);
   }
-  const unit = control.unit.toLowerCase();
-  const bare = unit && said.toLowerCase().endsWith(unit)
-    ? said.slice(0, said.length - unit.length).trim()
-    : said;
-  if (!TYPED_NUMBER.test(bare)) return null;
-  const n = Number(bare);
-  return Number.isFinite(n) ? onFace(control, n) : null;
+  // The unit is read by the kind, in either system, because the box letters in
+  // either system: `parseIn` strips whichever suffix is there and the `R-` a
+  // resistance wears instead of one, and hands back the SI number the model
+  // holds. A bare number means the system showing.
+  //
+  // Still onto the face afterwards, and that is the half that has not moved: a
+  // typed figure is clamped to the stops and snapped to the step whatever
+  // spelling it arrived in, so nothing off the grid can reach `params` through
+  // an IP box any more than through an SI one.
+  const si = parseIn(control.quantityKind, said);
+  return si === null ? null : onFace(control, si);
 }
 
 /**
@@ -155,13 +164,17 @@ function readQuantity(control, text) {
  *
  * Wider than the canonical `FRACTION` a link is read with, and deliberately:
  * somebody typing `.5` means a half, and what lands on `params` is
- * re-serialized canonically before it ever reaches a link. It is named here
- * because two faces undo two different lettering rules with it — `readQuantity`
- * above for a quantity and `Pattern`'s hour face below for one hour of a day —
- * and a grammar widened in one of them and not the other is a box that accepts
- * what its twin refuses.
+ * re-serialized canonically before it ever reaches a link.
+ *
+ * It used to serve two faces, a quantity's and `Pattern`'s hour. The quantity's
+ * half moved into `units.js` with the unit stripping it is inseparable from —
+ * you cannot decide whether `R-20` is a number without knowing that the box
+ * letters resistance — so `Pattern`'s hour is the caller left here. It is the
+ * same regular expression object rather than a second copy of it: the warning
+ * this comment used to carry, that two grammars must say the same thing about
+ * what a number is or one box accepts what its twin refuses, was a copy with
+ * nothing holding it.
  */
-const TYPED_NUMBER = /^[+-]?(\d+(\.\d+)?|\.\d+)$/;
 
 /**
  * A named stretch of a scale — the repère a number is read against.
@@ -315,7 +328,7 @@ function readLandmarks(list, control) {
  */
 class Ruled extends Control {
   constructor({
-    key, label, value, min, max, step,
+    key, label, value, min, max, step, quantityKind,
     unit = '', digits = 2, zero = null, note = null, needs = null, when = null, landmarks = [],
   }) {
     super({ key, label, value, note, needs, when });
@@ -324,6 +337,27 @@ class Ruled extends Control {
     this.step = step;
     this.unit = unit;
     this.digits = digits;
+    // What this quantity *is*, which is what decides how it converts and how
+    // precisely it may be lettered in IP.
+    //
+    // Named `quantityKind` and not `kind`, which is the obvious name and is
+    // already taken: every control carries `kind` for the kind of *control* it
+    // is, and `console.js` switches on it to decide what to draw. One field
+    // meaning two things would have had the console trying to draw a length.
+    //
+    // Resolved through `kindFor` rather than looked up, so a declaration naming
+    // a kind that is not in the roster throws here, at the line that names it.
+    // The unit goes with it, so `kindFor` can check that the kind letters SI
+    // exactly as this control letters it today — the byte-identity guarantee
+    // for the SI sheet, asserted where the declaration is written.
+    this.quantityKind = kindFor(quantityKind, key, unit);
+    // The IP precision this face letters to, computed once. Both inputs are
+    // final by this line, and the answer is asked for every figure on every
+    // synced frame of a drag: a gesture redraws all eighty-seven controls, each
+    // lettering its value and its margin box and a plan key doing it four times
+    // over, so this was some hundreds of `log10`s a frame to arrive at a
+    // constant. `assertReachable` computes the same number once at load.
+    this.ipDigits = precisionFor(this.quantityKind, this.step);
     // What the low stop means, when it means something other than "a very small
     // number" — "None" at zero glazing says more than "0.00".
     this.zero = zero;
@@ -332,7 +366,67 @@ class Ruled extends Control {
 
   format(v) {
     if (this.zero && !(v > 0)) return this.zero;
-    return `${v.toFixed(this.digits)}${this.unit ? ` ${this.unit}` : ''}`;
+    // The IP precision is this control's own, taken from the step it can
+    // actually reach, and not the kind's: a kind's precision is for a reading,
+    // which has no grid behind it. A face ruled to a tenth of a foot must not
+    // letter hundredths it can never stand on.
+    return letter(this.quantityKind, v, {
+      digits: this.digits,
+      ipDigits: this.ipDigits,
+    });
+  }
+
+  /**
+   * The number alone, at the same precision `format` would letter it to.
+   *
+   * The plan key's bar caps are the caller: four numbers ruled along the edges
+   * of a small plan, where the unit would be printed four times on a drawing
+   * that has room for none of them. They still have to convert, and they still
+   * have to agree with the face above them to the last decimal, so they take
+   * the same precision rather than a second opinion about it.
+   */
+  figure(v) {
+    return figureIn(this.quantityKind, v, {
+      digits: this.digits,
+      ipDigits: this.ipDigits,
+    });
+  }
+
+  /**
+   * The unit this face's *values* letter in, in the system showing.
+   *
+   * For the places that letter a figure and its unit apart rather than together:
+   * a survey axis, whose name carries the unit once for a whole column of bare
+   * stops, and the pull ranking's own columns. Every one of them read
+   * `control.unit` — the declaration's SI string — which held while nothing
+   * converted and became a mismatch the moment `format` letters in IP: the
+   * relief drew `50.0 ft` under an axis named `Width m`, and `stopOf` then
+   * failed to strip a suffix that was no longer there.
+   *
+   * Through `suffixIn` and not `unitIn`, which is the difference between "what
+   * is this kind's unit" and "what does a lettered figure of it actually carry
+   * after the number". A resistance face letters `R-29.0` and carries nothing
+   * behind it, so this is empty there — the figure is already self-describing
+   * and an axis heading it with `h·ft²·°F/Btu` would say the unit twice.
+   */
+  get unitNow() {
+    return suffixIn(this.quantityKind, this.unit);
+  }
+
+  /**
+   * The kind a *difference* along this face letters in, and its unit.
+   *
+   * How much room a control has left is a subtraction, not a position, so it
+   * cannot go through `quantityKind` where that kind carries an offset — five
+   * degrees of room on a setpoint would read as `41 °F`. `deltaKindOf` owns that
+   * rule; this is the face asking it.
+   */
+  get spanKind() {
+    return deltaKindOf(this.quantityKind);
+  }
+
+  get spanUnitNow() {
+    return suffixIn(this.spanKind, this.unit);
   }
 
   /** Where the tick sits on the face, 0 to 1. */
@@ -923,7 +1017,7 @@ export class Pattern extends Control {
       format: (v) => v.toFixed(digits),
       parse(text) {
         const said = String(text).trim();
-        if (!said || !TYPED_NUMBER.test(said)) return null;
+        if (!said || !TYPED.test(said)) return null;
         const n = Number(said);
         if (!Number.isFinite(n)) return null;
         return Number(Math.min(PATTERN_MAX, Math.max(PATTERN_MIN, n)).toFixed(digits));
@@ -2788,7 +2882,12 @@ const frameFits = (p, { face, wwr }) => !(p[wwr] > 0) || Boolean(openingFor(p, f
  */
 const frameCloses = (p, { face, wwr }) => {
   const o = openingFor(p, face, p[wwr]);
-  return `The ${face} wall's opening is ${o.width.toFixed(2)} × ${o.height.toFixed(2)} m, and a ${p.frameWidth.toFixed(3)} m frame all round it leaves no glass for the engine to build.`;
+  // The three figures are live values off the desk, not the engine's own facts,
+  // so they letter in the reader's system: a refusal quoting an opening in
+  // metres to a reader working in feet is asking them to check the arithmetic
+  // in a unit they are not holding. The frame is `lengthSmall` because that is
+  // the kind its own control declares — inches, not feet.
+  return `The ${face} wall's opening is ${figureIn(KINDS.length, o.width, { digits: 2, ipDigits: 1 })} × ${letter(KINDS.length, o.height, { digits: 2, ipDigits: 1 })}, and a ${letter(KINDS.lengthSmall, p.frameWidth, { digits: 3, ipDigits: 2 })} frame all round it leaves no glass for the engine to build.`;
 };
 
 /**
@@ -2834,8 +2933,18 @@ const noOpening = (wall) =>
  * the surface left with two sides — a severe, a completed run, and a shade in
  * the document the engine never simulated. See `COINCIDENT` in `aperture.js`.
  */
+// `COINCIDENT` keeps its metres in both systems, and that is the distinction
+// this sentence turns on: the tolerance is the engine's own constant, quoted as
+// EnergyPlus states it, while the depth is the reader's own control and letters
+// where they are working.
+// Inches, not feet, and that is a measurement rather than a preference: this
+// sentence only ever fires for a depth at or under the engine's 0.01 m
+// tolerance, and 0.01 m lettered to the overhang face's own IP precision is
+// `0.0 ft` — a sentence claiming a zero-depth overhang would be deleted, which
+// is both nonsense and the one figure the reader is here to compare against the
+// tolerance. In inches it reads 0.39, which is the reading.
 const tooShallow = (wall, depth) =>
-  `EnergyPlus reads two vertices closer than ${COINCIDENT} m as one, so a ${depth.toFixed(2)} m overhang on the ${wall} wall would be deleted rather than built.`;
+  `EnergyPlus reads two vertices closer than ${COINCIDENT} m as one, so a ${letter(KINDS.lengthSmall, depth, { digits: 2, ipDigits: 2 })} overhang on the ${wall} wall would be deleted rather than built.`;
 
 const SHADE_SIDES = WALL_FACES.map((wall) => ({
   key: wall.overhang,
@@ -3245,14 +3354,14 @@ export const CHANNELS = Object.freeze([
     bypassable: false,
     meter: new Meter({ label: 'Envelope ÷ volume', terms: [], derived: true }),
     controls: [
-      new Scale({ key: 'width', label: 'Width', value: 15.24, min: 4, max: 40, step: 0.01, unit: 'm' }),
-      new Scale({ key: 'depth', label: 'Depth', value: 15.24, min: 4, max: 40, step: 0.01, unit: 'm' }),
+      new Scale({ key: 'width', quantityKind: 'length', label: 'Width', value: 15.24, min: 4, max: 40, step: 0.01, unit: 'm' }),
+      new Scale({ key: 'depth', quantityKind: 'length', label: 'Depth', value: 15.24, min: 4, max: 40, step: 0.01, unit: 'm' }),
       new Scale({
-        key: 'height', label: 'Height', value: 4.572, min: 2.4, max: 12, step: 0.01, unit: 'm',
+        key: 'height', quantityKind: 'length', label: 'Height', value: 4.572, min: 2.4, max: 12, step: 0.01, unit: 'm',
         landmarks: STOREY_HEIGHT,
       }),
       new Scale({
-        key: 'multiplier',
+        key: 'multiplier', quantityKind: 'factorOf',
         label: 'Zone multiplier',
         value: 1,
         min: 1,
@@ -3297,7 +3406,7 @@ export const CHANNELS = Object.freeze([
         ],
       }),
       new Scale({
-        key: 'groundReflect',
+        key: 'groundReflect', quantityKind: 'ratio',
         label: 'Ground reflectance',
         value: 0.2,
         min: 0,
@@ -3307,7 +3416,7 @@ export const CHANNELS = Object.freeze([
         landmarks: GROUND_REFLECT,
       }),
       new Scale({
-        key: 'groundTemp',
+        key: 'groundTemp', quantityKind: 'temperature',
         label: 'Ground temperature',
         value: 18,
         min: 2,
@@ -3346,9 +3455,20 @@ export const CHANNELS = Object.freeze([
     meter: new Meter({ label: 'Obstruction altitude', terms: [], derived: true }),
     controls: [
       new Bearing({ key: 'ctxAzimuth', label: 'Bearing from site', value: 180 }),
-      new Scale({ key: 'ctxDistance', label: 'Distance', value: 20, min: 3, max: 120, step: 0.5, digits: 1, unit: 'm' }),
-      new Scale({ key: 'ctxHeight', label: 'Height', value: 18, min: 2, max: 120, step: 0.5, digits: 1, unit: 'm' }),
-      new Scale({ key: 'ctxWidth', label: 'Width', value: 40, min: 4, max: 200, step: 1, digits: 0, unit: 'm' }),
+      // 0.1 m, not the 0.5 m this carried: one old step is 1.64 ft, so most
+      // whole feet could not be reached at all and no choice of lettering can
+      // invent a position the grid does not have. 0.1 divides 0.5 exactly, so
+      // every stop the old grid had is still a stop on this one.
+      new Scale({ key: 'ctxDistance', quantityKind: 'length', label: 'Distance', value: 20, min: 3, max: 120, step: 0.1, digits: 1, unit: 'm' }),
+      // 0.1 m for the same measurement as the distance above it: 0.5 m is
+      // 1.64 ft a step.
+      new Scale({ key: 'ctxHeight', quantityKind: 'length', label: 'Height', value: 18, min: 2, max: 120, step: 0.1, digits: 1, unit: 'm' }),
+      // 0.25 m, from 1 m: one old step is 3.28 ft. The two decimals come with
+      // the step rather than by choice — `onFace` snaps to the step and then
+      // rounds to the step's own decimals, so a face still ruled to whole
+      // metres would hold 40.25 and letter `40 m`, and the margin box could not
+      // hand back what it had been given.
+      new Scale({ key: 'ctxWidth', quantityKind: 'length', label: 'Width', value: 40, min: 4, max: 200, step: 0.25, digits: 2, unit: 'm' }),
     ],
   }),
 
@@ -3386,7 +3506,7 @@ export const CHANNELS = Object.freeze([
     }),
     controls: [
       new Facade({
-        key: 'wwr',
+        key: 'wwr', quantityKind: 'ratio',
         label: 'Window-to-wall ratio',
         short: 'Glazing',
         sides: ORIENTATIONS,
@@ -3409,7 +3529,7 @@ export const CHANNELS = Object.freeze([
         ],
       }),
       new Scale({
-        key: 'sill',
+        key: 'sill', quantityKind: 'ratio',
         label: 'Sill height',
         value: 0.5,
         min: 0,
@@ -3430,7 +3550,7 @@ export const CHANNELS = Object.freeze([
         ],
       }),
       new Scale({
-        key: 'uFactor',
+        key: 'uFactor', quantityKind: 'transmittance',
         label: 'U-factor',
         value: 1.8,
         min: 0.4,
@@ -3441,21 +3561,21 @@ export const CHANNELS = Object.freeze([
         when: (p) => !layered(p),
       }),
       new Scale({
-        key: 'shgc',
+        key: 'shgc', quantityKind: 'ratio',
         label: 'SHGC',
         value: 0.4, min: 0.05, max: 0.9, step: 0.01, digits: 2,
         landmarks: GLASS_SHGC,
         when: (p) => !layered(p),
       }),
       new Scale({
-        key: 'visT',
+        key: 'visT', quantityKind: 'ratio',
         label: 'Visible transmittance',
         value: 0.6, min: 0.05, max: 0.9, step: 0.01, digits: 2,
         landmarks: GLASS_VT,
         when: (p) => !layered(p),
       }),
       new Scale({
-        key: 'panes',
+        key: 'panes', quantityKind: 'count',
         label: 'Panes',
         value: 2,
         min: 2,
@@ -3467,7 +3587,7 @@ export const CHANNELS = Object.freeze([
         note: 'Sheets of glass, with a cavity of the width below between each pair. The simple model has no pane count to give — its three numbers are the whole assembly already — so this is the one place on the desk where a window is built rather than specified.',
       }),
       new Scale({
-        key: 'paneEmiss',
+        key: 'paneEmiss', quantityKind: 'ratio',
         label: 'Low-e coating',
         value: 0.84,
         min: 0.04,
@@ -3479,7 +3599,7 @@ export const CHANNELS = Object.freeze([
         note: 'Inboard pane, outside face.',
       }),
       new Scale({
-        key: 'gapWidth',
+        key: 'gapWidth', quantityKind: 'lengthSmall',
         label: 'Cavity width',
         value: 0.013,
         min: 0.006,
@@ -3491,7 +3611,7 @@ export const CHANNELS = Object.freeze([
         when: layered,
       }),
       new Scale({
-        key: 'frameWidth',
+        key: 'frameWidth', quantityKind: 'lengthSmall',
         label: 'Frame width',
         value: 0,
         min: 0,
@@ -3505,7 +3625,7 @@ export const CHANNELS = Object.freeze([
         note: 'A framed perimeter with its own conductance, counted inside the window-to-wall ratio the way ASHRAE 90.1 counts it: the ratio is the rough opening, so a wider frame means less glass rather than a bigger hole.',
       }),
       new Scale({
-        key: 'frameCond',
+        key: 'frameCond', quantityKind: 'transmittance',
         label: 'Frame conductance',
         value: 3,
         min: 0.5,
@@ -3547,7 +3667,7 @@ export const CHANNELS = Object.freeze([
     meter: new Meter({ label: 'Roof glazing', terms: [], derived: true }),
     controls: [
       new Scale({
-        key: 'skyRatio',
+        key: 'skyRatio', quantityKind: 'ratio',
         label: 'Skylight-to-roof ratio',
         value: 0.06,
         min: 0,
@@ -3580,7 +3700,7 @@ export const CHANNELS = Object.freeze([
         note: 'The same area, spread as discrete lights or as continuous rooflights running the width.',
       }),
       new Scale({
-        key: 'skyCount',
+        key: 'skyCount', quantityKind: 'factorOf',
         label: 'Units across',
         value: 2,
         min: 1,
@@ -3592,7 +3712,7 @@ export const CHANNELS = Object.freeze([
         note: 'Square lights sit one per cell of an n × n grid, so 4 across is sixteen of them; linear rooflights are n bands.',
       }),
       new Scale({
-        key: 'skyCurb',
+        key: 'skyCurb', quantityKind: 'length',
         label: 'Curb height',
         value: 0.15,
         min: 0,
@@ -3618,7 +3738,7 @@ export const CHANNELS = Object.freeze([
         note: 'Its own is a simple unit and nothing can be hung inside one, so rooflights glazed that way take no blind — the walls\' assembly is what the Blinds strip reaches.',
       }),
       new Scale({
-        key: 'skyU',
+        key: 'skyU', quantityKind: 'transmittance',
         label: 'Rooflight U-factor',
         value: 2.6,
         min: 0.4,
@@ -3631,7 +3751,7 @@ export const CHANNELS = Object.freeze([
         note: 'A domed unit is a worse assembly than a wall window of the same generation, and it loses to a colder sky.',
       }),
       new Scale({
-        key: 'skySHGC',
+        key: 'skySHGC', quantityKind: 'ratio',
         label: 'Rooflight SHGC',
         value: 0.35,
         min: 0.05,
@@ -3643,7 +3763,7 @@ export const CHANNELS = Object.freeze([
         needs: skylit,
       }),
       new Scale({
-        key: 'skyVisT',
+        key: 'skyVisT', quantityKind: 'ratio',
         label: 'Rooflight visible transmittance',
         value: 0.5,
         min: 0.05,
@@ -3670,7 +3790,7 @@ export const CHANNELS = Object.freeze([
     meter: new Meter({ label: 'Shade area', terms: [], derived: true }),
     controls: [
       new Facade({
-        key: 'overhang',
+        key: 'overhang', quantityKind: 'length',
         label: 'Overhang projection',
         short: 'Overhang',
         sides: SHADE_SIDES,
@@ -3678,13 +3798,13 @@ export const CHANNELS = Object.freeze([
         landmarks: OVERHANG,
       }),
       new Scale({
-        key: 'ohRise',
+        key: 'ohRise', quantityKind: 'length',
         label: 'Overhang above head',
         value: 0, min: 0, max: 1.5, step: 0.01, unit: 'm', zero: 'At head',
         note: 'Lifting it off the head lets low winter sun back under.',
       }),
       new Scale({
-        key: 'fin',
+        key: 'fin', quantityKind: 'length',
         label: 'Side fins',
         value: 0, min: 0, max: 3, step: 0.01, unit: 'm', zero: 'None',
         // The first stop off zero is refused as well as a wall with no glass:
@@ -3693,7 +3813,7 @@ export const CHANNELS = Object.freeze([
         note: `Stood at both jambs of every opening there is. EnergyPlus reads two vertices closer than ${COINCIDENT} m as one, so a fin has to stand out further than that or the engine deletes it.`,
       }),
       new Scale({
-        key: 'finOffset',
+        key: 'finOffset', quantityKind: 'length',
         label: 'Fin offset from jamb',
         value: 0, min: 0, max: 1.5, step: 0.01, unit: 'm', zero: 'At jamb',
         needs: (p) => builds(p.fin),
@@ -3756,19 +3876,19 @@ export const CHANNELS = Object.freeze([
         ],
       }),
       new Scale({
-        key: 'shadeSetpoint',
+        key: 'shadeSetpoint', quantityKind: 'unconverted',
         label: 'Setpoint',
         value: 200, min: 20, max: 600, step: 5, digits: 0,
         needs: (p) => p.shadeControl !== 'AlwaysOn',
         note: 'W/m² on the glass, or °C, depending on what it is watching.',
       }),
       new Scale({
-        key: 'slatAngle', label: 'Slat angle', value: 45, min: 0, max: 180, step: 1, digits: 0, unit: '°',
+        key: 'slatAngle', quantityKind: 'angle', label: 'Slat angle', value: 45, min: 0, max: 180, step: 1, digits: 0, unit: '°',
         landmarks: SLAT_ANGLE,
         note: 'Measured from the glazing\'s outward normal, not from the horizontal, so 90° is fully open and both stops are shut.',
       }),
       new Scale({
-        key: 'slatWidth', label: 'Slat width', value: 0.025, min: 0.01, max: 0.12, step: 0.001, digits: 3, unit: 'm',
+        key: 'slatWidth', quantityKind: 'lengthSmall', label: 'Slat width', value: 0.025, min: 0.01, max: 0.12, step: 0.001, digits: 3, unit: 'm',
         landmarks: SLAT_WIDTH,
       }),
     ],
@@ -3793,31 +3913,31 @@ export const CHANNELS = Object.freeze([
     }),
     controls: [
       new Scale({
-        key: 'wallR', label: 'Wall resistance', value: 2.290965,
+        key: 'wallR', quantityKind: 'resistance', label: 'Wall resistance', value: 2.290965,
         min: 0.2, max: 10, step: 0.005, unit: 'm²K/W',
         landmarks: WALL_R,
         note: 'One insulating layer, not the whole build-up: EnergyPlus adds the surface films either side.',
       }),
       new Scale({
-        key: 'roofR', label: 'Roof resistance', value: 5.456, min: 0.2, max: 14, step: 0.005, unit: 'm²K/W',
+        key: 'roofR', quantityKind: 'resistance', label: 'Roof resistance', value: 5.456, min: 0.2, max: 14, step: 0.005, unit: 'm²K/W',
         landmarks: ROOF_R,
       }),
       new Scale({
-        key: 'wallMass', label: 'Wall mass layer', value: 0,
+        key: 'wallMass', quantityKind: 'lengthSmall', label: 'Wall mass layer', value: 0,
         min: 0, max: 0.4, step: 0.005, digits: 3, unit: 'm', zero: 'None',
         landmarks: WALL_MASS,
         note: 'Heavyweight masonry set inboard of the insulation.',
       }),
       new Scale({
-        key: 'wallAbs', label: 'Wall absorptance', value: 0.75, min: 0.05, max: 0.95, step: 0.01, digits: 2,
+        key: 'wallAbs', quantityKind: 'ratio', label: 'Wall absorptance', value: 0.75, min: 0.05, max: 0.95, step: 0.01, digits: 2,
         landmarks: SOLAR_ABS,
       }),
       new Scale({
-        key: 'roofAbs', label: 'Roof absorptance', value: 0.75, min: 0.05, max: 0.95, step: 0.01, digits: 2,
+        key: 'roofAbs', quantityKind: 'ratio', label: 'Roof absorptance', value: 0.75, min: 0.05, max: 0.95, step: 0.01, digits: 2,
         landmarks: ROOF_ABS,
       }),
       new Scale({
-        key: 'emittance', label: 'Thermal emittance', value: 0.9, min: 0.05, max: 0.95, step: 0.01, digits: 2,
+        key: 'emittance', quantityKind: 'ratio', label: 'Thermal emittance', value: 0.9, min: 0.05, max: 0.95, step: 0.01, digits: 2,
         landmarks: EMITTANCE,
         note: 'How well the outer face radiates to the sky at night.',
       }),
@@ -3875,7 +3995,7 @@ export const CHANNELS = Object.freeze([
     }),
     controls: [
       new Scale({
-        key: 'slab', label: 'Slab thickness', value: 0.1014984,
+        key: 'slab', quantityKind: 'lengthSmall', label: 'Slab thickness', value: 0.1014984,
         min: 0.02, max: 0.6, step: 0.001, digits: 3, unit: 'm',
         landmarks: SLAB_DEPTH,
         note: 'Four inches of heavyweight concrete is the stock example.',
@@ -3889,13 +4009,13 @@ export const CHANNELS = Object.freeze([
         ],
       }),
       new Scale({
-        key: 'internalMass', label: 'Internal mass', value: 0,
+        key: 'internalMass', quantityKind: 'floorMultiple', label: 'Internal mass', value: 0,
         min: 0, max: 4, step: 0.05, digits: 2, unit: '× floor', zero: 'None',
         landmarks: INTERNAL_MASS,
         note: 'Partitions and furniture, as a multiple of the floor area.',
       }),
       new Scale({
-        key: 'internalMassThickness', label: 'Its thickness', value: 0.1,
+        key: 'internalMassThickness', quantityKind: 'lengthSmall', label: 'Its thickness', value: 0.1,
         min: 0.01, max: 0.4, step: 0.005, digits: 3, unit: 'm',
         needs: (p) => p.internalMass > 0,
       }),
@@ -3999,7 +4119,7 @@ export const CHANNELS = Object.freeze([
       }),
       // ── the network's own controls ──────────────────────────────────────
       new Scale({
-        key: 'envLeak', label: 'Envelope leakiness', value: 0.5,
+        key: 'envLeak', quantityKind: 'airChanges', label: 'Envelope leakiness', value: 0.5,
         min: 0, max: 3, step: 0.01, digits: 2, unit: 'ACH', zero: 'Sealed',
         // `INFILTRATION` reused rather than copied. Both quantities are air
         // changes per hour at natural conditions, so the published cases a
@@ -4020,7 +4140,7 @@ export const CHANNELS = Object.freeze([
       // argument for the network — the facade a window is on reaches the
       // result, which no stated rate can say.
       new Facade({
-        key: 'openable',
+        key: 'openable', quantityKind: 'ratio',
         label: 'Openable area',
         short: 'Openable',
         sides: OPENABLE_SIDES,
@@ -4050,7 +4170,7 @@ export const CHANNELS = Object.freeze([
         ],
       }),
       new Scale({
-        key: 'openSetpoint', label: 'Open above indoor', value: 22,
+        key: 'openSetpoint', quantityKind: 'temperature', label: 'Open above indoor', value: 22,
         min: 10, max: 32, step: 0.5, digits: 1, unit: '°C',
         // Offered exactly when the schedule will be written, because
         // `NEEDS_SETPOINT` decides both. See its declaration for the fatal that
@@ -4059,22 +4179,25 @@ export const CHANNELS = Object.freeze([
         needs: anyOpenable,
       }),
       new Scale({
-        key: 'openDeltaLo', label: 'Full open at ΔT', value: 0,
+        key: 'openDeltaLo', quantityKind: 'temperatureDifference', label: 'Full open at ΔT', value: 0,
         min: 0, max: 20, step: 0.5, digits: 1, unit: 'K',
         when: network,
         needs: anyOpenable,
         note: 'Indoor minus outdoor. Below this the opening is held at its smallest venting factor; at and above it, at its largest.',
       }),
       new Scale({
-        key: 'openDeltaHi', label: 'Shut above ΔT', value: 100,
-        min: 1, max: 100, step: 1, digits: 0, unit: 'K',
+        // 0.5 K, from 1 K: one old step is 1.80 °F of difference, which is
+        // coarser than the whole degree it would be lettered to.
+        key: 'openDeltaHi', quantityKind: 'temperatureDifference', label: 'Shut above ΔT', value: 100,
+        min: 1, max: 100, step: 0.5, digits: 1, unit: 'K',
         when: network,
         needs: anyOpenable,
         note: 'Left at the stop the opening never shuts on ΔT alone: 100 K is past any weather.',
       }),
       new Scale({
-        key: 'openMaxWind', label: 'Shut above wind', value: 40,
-        min: 1, max: 40, step: 0.5, digits: 1, unit: 'm/s',
+        // 0.25 m/s, from 0.5: one old step is 1.12 mph.
+        key: 'openMaxWind', quantityKind: 'speed', label: 'Shut above wind', value: 40,
+        min: 1, max: 40, step: 0.25, digits: 2, unit: 'm/s',
         landmarks: WIND,
         // Drawn under the network and dimmed until a wall is openable, which is
         // the split the two predicates are for: it belongs to this model, and a
@@ -4093,14 +4216,14 @@ export const CHANNELS = Object.freeze([
       // this feature adds is an addition, and additions are free under delta
       // encoding.
       new Scale({
-        key: 'infiltration', label: 'Infiltration', value: 0.5,
+        key: 'infiltration', quantityKind: 'airChanges', label: 'Infiltration', value: 0.5,
         min: 0, max: 3, step: 0.01, digits: 2, unit: 'ACH', zero: 'Sealed',
         landmarks: INFILTRATION,
         when: scheduled,
         note: 'Air changes at natural pressure, not the ACH50 a blower door reports — the usual rule divides one by about twenty to get the other.',
       }),
       new Scale({
-        key: 'infConstant', label: 'Constant coefficient', value: 1,
+        key: 'infConstant', quantityKind: 'ratio', label: 'Constant coefficient', value: 1,
         min: 0, max: 1, step: 0.01, digits: 2,
         landmarks: INF_CONSTANT,
         when: scheduled,
@@ -4108,21 +4231,21 @@ export const CHANNELS = Object.freeze([
         note: 'The A of A + B·ΔT + C·v. Move weight off it and on to the two below to make leakage answer the weather.',
       }),
       new Scale({
-        key: 'infWind', label: 'Wind coefficient', value: 0,
+        key: 'infWind', quantityKind: 'ratio', label: 'Wind coefficient', value: 0,
         min: 0, max: 0.4, step: 0.005, digits: 3, zero: 'None',
         landmarks: INF_WIND,
         when: scheduled,
         needs: (p) => p.infiltration > 0,
       }),
       new Scale({
-        key: 'infStack', label: 'Stack coefficient', value: 0,
+        key: 'infStack', quantityKind: 'ratio', label: 'Stack coefficient', value: 0,
         min: 0, max: 0.1, step: 0.001, digits: 3, zero: 'None',
         landmarks: INF_STACK,
         when: scheduled,
         needs: (p) => p.infiltration > 0,
       }),
       new Scale({
-        key: 'ventilation', label: 'Ventilation', value: 0,
+        key: 'ventilation', quantityKind: 'airChanges', label: 'Ventilation', value: 0,
         min: 0, max: 12, step: 0.05, digits: 2, unit: 'ACH', zero: 'None',
         landmarks: VENTILATION,
         when: scheduled,
@@ -4140,27 +4263,28 @@ export const CHANNELS = Object.freeze([
         ],
       }),
       new Scale({
-        key: 'ventMinIndoor', label: 'Open above indoor', value: 22,
+        key: 'ventMinIndoor', quantityKind: 'temperature', label: 'Open above indoor', value: 22,
         min: 10, max: 32, step: 0.5, digits: 1, unit: '°C',
         when: scheduled,
         needs: (p) => p.ventilation > 0,
       }),
       new Scale({
-        key: 'ventMaxOutdoor', label: 'Open below outdoor', value: 20,
+        key: 'ventMaxOutdoor', quantityKind: 'temperature', label: 'Open below outdoor', value: 20,
         min: 5, max: 32, step: 0.5, digits: 1, unit: '°C',
         when: scheduled,
         needs: (p) => p.ventilation > 0,
       }),
       new Scale({
-        key: 'ventDeltaT', label: 'Minimum ΔT', value: 2,
+        key: 'ventDeltaT', quantityKind: 'temperatureDifference', label: 'Minimum ΔT', value: 2,
         min: 0, max: 10, step: 0.5, digits: 1, unit: 'K',
         when: scheduled,
         needs: (p) => p.ventilation > 0,
         note: 'Indoor minus outdoor. Below this the opening is not worth the draught.',
       }),
       new Scale({
-        key: 'ventMaxWind', label: 'Shut above wind', value: 40,
-        min: 1, max: 40, step: 0.5, digits: 1, unit: 'm/s',
+        // 0.25 m/s, from 0.5, as on the network's own wind bound above.
+        key: 'ventMaxWind', quantityKind: 'speed', label: 'Shut above wind', value: 40,
+        min: 1, max: 40, step: 0.25, digits: 2, unit: 'm/s',
         landmarks: WIND,
         when: scheduled,
         needs: (p) => p.ventilation > 0,
@@ -4199,8 +4323,10 @@ export const CHANNELS = Object.freeze([
         note: 'Naming a space swaps the densities for the counts and the band for three profiles, and brings that space\u2019s published figures with it.',
       }),
       new Scale({
-        key: 'occupancy', label: 'Occupant density', value: 12,
-        min: 4, max: 60, step: 0.5, digits: 1, unit: 'm²/pp',
+        // 0.05 m²/pp, from 0.5: one old step is 5.38 ft²/person, and a density
+        // that walked 129, 134, 140 ft² reads as a fault rather than a face.
+        key: 'occupancy', quantityKind: 'areaPerPerson', label: 'Occupant density', value: 12,
+        min: 4, max: 60, step: 0.05, digits: 2, unit: 'm²/pp',
         landmarks: OCCUPANCY,
         // Withdrawn rather than dimmed, by `Control.when`'s own rule: a density
         // under a named room type is not a control that has gone quiet, it is a
@@ -4221,28 +4347,34 @@ export const CHANNELS = Object.freeze([
       // sources here describe completely: one person at 75 % from 09:00 to
       // 22:00, 150 W of equipment over a 19 W base.
       new Scale({
-        key: 'peopleCount', label: 'Occupants', value: 1,
+        key: 'peopleCount', quantityKind: 'people', label: 'Occupants', value: 1,
         min: 0, max: 10, step: 0.5, digits: 1, unit: 'pp', zero: 'Empty',
         when: prescribed,
       }),
       new Scale({
-        key: 'activity', label: 'Activity level', value: 120,
-        min: 70, max: 400, step: 5, digits: 0, unit: 'W/pp',
+        // 0.25 W/pp, from 5: one old step is 17.06 Btu/h·pp. This is also where
+        // `refuses`' whole-number rule stops applying, since the step is no
+        // longer an integer — checked against the 26.1.0 schema before it was
+        // refined, because that rule exists to keep a fraction out of an
+        // integer IDF field: this writes `Schedule:Constant.hourly_value`,
+        // which the schema types `number`.
+        key: 'activity', quantityKind: 'heatPerPerson', label: 'Activity level', value: 120,
+        min: 70, max: 400, step: 0.25, digits: 2, unit: 'W/pp',
         landmarks: ACTIVITY,
         note: 'Total heat, sensible and latent together. Heavy machine work is 425 W and athletics 525 W, both past the top of this face.',
       }),
       new Scale({
-        key: 'lighting', label: 'Lighting', value: 8, min: 0, max: 30, step: 0.1, digits: 1, unit: 'W/m²', zero: 'Dark',
+        key: 'lighting', quantityKind: 'powerDensity', label: 'Lighting', value: 8, min: 0, max: 30, step: 0.1, digits: 1, unit: 'W/m²', zero: 'Dark',
         landmarks: LIGHTING,
       }),
       new Scale({
-        key: 'lightRadiant', label: 'Lighting radiant fraction', value: 0.42,
+        key: 'lightRadiant', quantityKind: 'ratio', label: 'Lighting radiant fraction', value: 0.42,
         min: 0, max: 0.9, step: 0.01, digits: 2,
         needs: (p) => p.lighting > 0,
         note: 'What goes to the surfaces rather than straight to the air.',
       }),
       new Scale({
-        key: 'equipment', label: 'Equipment', value: 8, min: 0, max: 60, step: 0.1, digits: 1, unit: 'W/m²', zero: 'None',
+        key: 'equipment', quantityKind: 'powerDensity', label: 'Equipment', value: 8, min: 0, max: 60, step: 0.1, digits: 1, unit: 'W/m²', zero: 'None',
         landmarks: EQUIPMENT,
         when: asDrawn,
       }),
@@ -4253,7 +4385,7 @@ export const CHANNELS = Object.freeze([
       // top stop is a claim about the largest figure the sources here carry, and
       // it is better for it to be wrong noisily than quietly.
       new Scale({
-        key: 'equipPeak', label: 'Equipment peak', value: 150,
+        key: 'equipPeak', quantityKind: 'appliancePower', label: 'Equipment peak', value: 150,
         min: 0, max: 1000, step: 1, digits: 0, unit: 'W', zero: 'None',
         when: prescribed,
       }),
@@ -4263,7 +4395,7 @@ export const CHANNELS = Object.freeze([
       // a control's own precondition drifting the moment the strip switched
       // model, with nothing on the page to say which figure it was asking about.
       new Scale({
-        key: 'equipLatent', label: 'Equipment latent fraction', value: 0,
+        key: 'equipLatent', quantityKind: 'ratio', label: 'Equipment latent fraction', value: 0,
         min: 0, max: 0.6, step: 0.01, digits: 2, zero: 'Dry',
         needs: (p) => (asDrawn(p) ? p.equipment : p.equipPeak) > 0,
       }),
@@ -4368,21 +4500,21 @@ export const CHANNELS = Object.freeze([
         ],
       }),
       new Scale({
-        key: 'dlSetpoint', label: 'Illuminance setpoint', value: 500, min: 100, max: 1000, step: 10, digits: 0, unit: 'lx',
+        key: 'dlSetpoint', quantityKind: 'illuminance', label: 'Illuminance setpoint', value: 500, min: 100, max: 1000, step: 10, digits: 0, unit: 'lx',
         landmarks: ILLUMINANCE,
       }),
       new Scale({
-        key: 'dlFraction', label: 'Fraction controlled', value: 1,
+        key: 'dlFraction', quantityKind: 'ratio', label: 'Fraction controlled', value: 1,
         min: 0.1, max: 1, step: 0.05, digits: 2,
         note: 'How much of the installed lighting the sensor speaks for.',
       }),
       new Scale({
-        key: 'dlDepth', label: 'Sensor depth', value: 0.5,
+        key: 'dlDepth', quantityKind: 'ratio', label: 'Sensor depth', value: 0.5,
         min: 0.1, max: 0.95, step: 0.01, digits: 2,
         note: 'Across the plan from the south wall. Deep in the room is the honest place to put it.',
       }),
       new Scale({
-        key: 'dlHeight', label: 'Sensor height', value: 0.8, min: 0.1, max: 2, step: 0.05, digits: 2, unit: 'm',
+        key: 'dlHeight', quantityKind: 'length', label: 'Sensor height', value: 0.8, min: 0.1, max: 2, step: 0.05, digits: 2, unit: 'm',
         landmarks: WORK_PLANE,
       }),
     ],
@@ -4445,15 +4577,15 @@ export const CHANNELS = Object.freeze([
     }),
     controls: [
       new Scale({
-        key: 'heatSet', label: 'Heating setpoint', value: 20, min: 10, max: 26, step: 0.5, digits: 1, unit: '°C',
+        key: 'heatSet', quantityKind: 'temperature', label: 'Heating setpoint', value: 20, min: 10, max: 26, step: 0.5, digits: 1, unit: '°C',
         landmarks: HEAT_SET,
       }),
       new Scale({
-        key: 'coolSet', label: 'Cooling setpoint', value: 26, min: 18, max: 34, step: 0.5, digits: 1, unit: '°C',
+        key: 'coolSet', quantityKind: 'temperature', label: 'Cooling setpoint', value: 26, min: 18, max: 34, step: 0.5, digits: 1, unit: '°C',
         landmarks: COOL_SET,
       }),
       new Scale({
-        key: 'setback', label: 'Night setback', value: 0,
+        key: 'setback', quantityKind: 'temperatureDifference', label: 'Night setback', value: 0,
         min: 0, max: 10, step: 0.5, digits: 1, unit: 'K', zero: 'None',
         note: 'Widens the band outside the occupied hours set under Gains.',
       }),
@@ -4467,8 +4599,10 @@ export const CHANNELS = Object.freeze([
         ],
       }),
       new Scale({
-        key: 'outdoorAir', label: 'Outdoor air', value: 0,
-        min: 0, max: 20, step: 0.5, digits: 1, unit: 'L/s·pp', zero: 'None',
+        // 0.25 L/s·pp, from 0.5: one old step is 1.06 cfm/person, and 62.1 is
+        // read in whole cfm.
+        key: 'outdoorAir', quantityKind: 'airflowPerPerson', label: 'Outdoor air', value: 0,
+        min: 0, max: 20, step: 0.25, digits: 2, unit: 'L/s·pp', zero: 'None',
         landmarks: OUTDOOR_AIR,
         note: 'Air the system has to condition, as opposed to the openings above.',
       }),
@@ -4482,14 +4616,18 @@ export const CHANNELS = Object.freeze([
         ],
       }),
       new Scale({
-        key: 'heatRecovery', label: 'Heat recovery', value: 0,
+        key: 'heatRecovery', quantityKind: 'ratio', label: 'Heat recovery', value: 0,
         min: 0, max: 0.9, step: 0.01, digits: 2, zero: 'None',
         landmarks: HEAT_RECOVERY,
         needs: (p) => p.outdoorAir > 0,
         note: 'Sensible effectiveness on the outdoor air stream.',
       }),
-      new Scale({ key: 'supplyMaxT', label: 'Max supply air', value: 50, min: 25, max: 60, step: 1, digits: 0, unit: '°C' }),
-      new Scale({ key: 'supplyMinT', label: 'Min supply air', value: 13, min: 5, max: 20, step: 0.5, digits: 1, unit: '°C' }),
+      // 0.5 °C, from 1: one old step is 1.80 °F. It writes
+      // `ZoneHVAC:IdealLoadsAirSystem.maximum_heating_supply_air_temperature`,
+      // which the 26.1.0 schema types `number`, so the fraction `refuses` will
+      // now admit reaches no integer field.
+      new Scale({ key: 'supplyMaxT', quantityKind: 'temperature', label: 'Max supply air', value: 50, min: 25, max: 60, step: 0.5, digits: 1, unit: '°C' }),
+      new Scale({ key: 'supplyMinT', quantityKind: 'temperature', label: 'Min supply air', value: 13, min: 5, max: 20, step: 0.5, digits: 1, unit: '°C' }),
       new Selector({
         key: 'humidity', label: 'Dehumidification', value: 'None',
         options: [
@@ -4516,7 +4654,7 @@ export const CHANNELS = Object.freeze([
     meter: new Meter({ label: 'Site electricity', terms: [], derived: true }),
     controls: [
       new Scale({
-        key: 'extLights', label: 'Grounds lighting', value: 5.25,
+        key: 'extLights', quantityKind: 'power', label: 'Grounds lighting', value: 5.25,
         min: 0.05, max: 20, step: 0.05, digits: 2, unit: 'kW',
         note: 'Installed power across the site: car park, paths, floodlighting. The stock example carries 5.25 kW.',
       }),
@@ -4558,20 +4696,20 @@ export const CHANNELS = Object.freeze([
         ],
       }),
       new Scale({
-        key: 'heatEfficiency', label: 'Seasonal efficiency', value: 0.85,
+        key: 'heatEfficiency', quantityKind: 'ratio', label: 'Seasonal efficiency', value: 0.85,
         min: 0.5, max: 1.05, step: 0.01, digits: 2,
         landmarks: BOILER,
         needs: (p) => p.heatSource !== 'HeatPump',
         note: 'Fuel in against useful heat out, across the season.',
       }),
       new Scale({
-        key: 'heatCOP', label: 'Seasonal COP', value: 3, min: 1.5, max: 5.5, step: 0.1, digits: 1,
+        key: 'heatCOP', quantityKind: 'ratio', label: 'Seasonal COP', value: 3, min: 1.5, max: 5.5, step: 0.1, digits: 1,
         landmarks: HEAT_COP,
         needs: (p) => p.heatSource === 'HeatPump',
         note: 'Heat delivered per unit of electricity, across the season.',
       }),
       new Scale({
-        key: 'coolCOP', label: 'Cooling COP', value: 3.5, min: 2, max: 7, step: 0.1, digits: 1,
+        key: 'coolCOP', quantityKind: 'ratio', label: 'Cooling COP', value: 3.5, min: 2, max: 7, step: 0.1, digits: 1,
         landmarks: COOL_COP,
         note: 'The chiller is electric whatever the heat runs on.',
       }),
@@ -4600,11 +4738,11 @@ export const CHANNELS = Object.freeze([
         ],
       }),
       new Scale({
-        key: 'elecPrice', label: 'Electricity', value: 0.15, min: 0.02, max: 0.6, step: 0.005, digits: 3,
+        key: 'elecPrice', quantityKind: 'money', label: 'Electricity', value: 0.15, min: 0.02, max: 0.6, step: 0.005, digits: 3,
         unit: '/kWh', needs: (p) => p.rateBasis === 'Assumed',
       }),
       new Scale({
-        key: 'gasPrice', label: 'Gas', value: 0.07, min: 0.01, max: 0.3, step: 0.005, digits: 3,
+        key: 'gasPrice', quantityKind: 'money', label: 'Gas', value: 0.07, min: 0.01, max: 0.3, step: 0.005, digits: 3,
         unit: '/kWh', needs: (p) => p.rateBasis === 'Assumed',
       }),
       new Selector({
@@ -4615,7 +4753,10 @@ export const CHANNELS = Object.freeze([
         ],
       }),
       new Scale({
-        key: 'gridFactor', label: 'Grid intensity', value: 200, min: 0, max: 900, step: 5, digits: 0,
+        // 0.25 gCO₂e/kWh, from 5: one old step is 11.02 lb/MWh. Priced, so it
+        // reaches no IDF object at all and the whole-number rule it leaves
+        // behind guarded nothing.
+        key: 'gridFactor', quantityKind: 'carbonIntensity', label: 'Grid intensity', value: 200, min: 0, max: 900, step: 0.25, digits: 2,
         unit: 'gCO₂e/kWh', landmarks: GRID, needs: (p) => p.factorBasis === 'Assumed',
         note: 'The building will outlive the grid it was designed against. Wind this down to find out what it costs then.',
       }),
@@ -4663,7 +4804,7 @@ export const CHANNELS = Object.freeze([
         ],
       }),
       new Scale({
-        key: 'shadowFreq', label: 'Shadow recalculation', value: 20,
+        key: 'shadowFreq', quantityKind: 'days', label: 'Shadow recalculation', value: 20,
         min: 1, max: 60, step: 1, digits: 0, unit: 'days',
         landmarks: SHADOW_FREQ,
         note: 'How often the sun angles are re-cut. Every day is exact and slow.',
@@ -4675,16 +4816,16 @@ export const CHANNELS = Object.freeze([
           { value: 'DetailedSkyDiffuseModeling', label: 'Detailed' },
         ],
       }),
-      new Scale({ key: 'warmupMin', label: 'Warmup, minimum', value: 6, min: 1, max: 25, step: 1, digits: 0, unit: 'days' }),
+      new Scale({ key: 'warmupMin', quantityKind: 'days', label: 'Warmup, minimum', value: 6, min: 1, max: 25, step: 1, digits: 0, unit: 'days' }),
       new Scale({
-        key: 'warmupMax', label: 'Warmup, maximum', value: 30, min: 5, max: 60, step: 1, digits: 0, unit: 'days',
+        key: 'warmupMax', quantityKind: 'days', label: 'Warmup, maximum', value: 30, min: 5, max: 60, step: 1, digits: 0, unit: 'days',
         landmarks: WARMUP_MAX,
       }),
       new Scale({
-        key: 'loadsTol', label: 'Loads tolerance', value: 0.04, min: 0.001, max: 0.2, step: 0.001, digits: 3,
+        key: 'loadsTol', quantityKind: 'ratio', label: 'Loads tolerance', value: 0.04, min: 0.001, max: 0.2, step: 0.001, digits: 3,
         landmarks: LOADS_TOL,
       }),
-      new Scale({ key: 'tempTol', label: 'Temperature tolerance', value: 0.004, min: 0.001, max: 0.05, step: 0.001, digits: 3, unit: 'K' }),
+      new Scale({ key: 'tempTol', quantityKind: 'temperatureDifference', label: 'Temperature tolerance', value: 0.004, min: 0.001, max: 0.05, step: 0.001, digits: 3, unit: 'K' }),
     ],
   }),
 
@@ -4881,9 +5022,31 @@ export function phraseFor(key) {
 
 export const CHANNEL_BY_ID = Object.freeze(Object.fromEntries(CHANNELS.map((c) => [c.id, c])));
 
+/**
+ * That every ruled face can produce a round IP figure.
+ *
+ * The fourth load assertion, and it sits beside the other three for the reason
+ * `readLandmarks`' step-grid rule exists: a face whose grid falls between two
+ * lettered positions draws a place the reader cannot stand on. That rule had to
+ * be written before anyone noticed five landmarks were unreachable; this one is
+ * written before anyone reads a context distance that walks 3, 5, 6, 8 ft.
+ *
+ * Over the declarations rather than inside `Ruled`'s constructor, because the
+ * arithmetic is about the step and the kind together and reads better stated
+ * once over the whole desk than eighty-seven times under it.
+ */
+const assertReachableGrids = () => {
+  for (const channel of CHANNELS) {
+    for (const control of channel.controls) {
+      if (control.kind === 'scale' || control.kind === 'facade') assertReachable(control);
+    }
+  }
+};
+
 assertHideable();
 assertSetpointModes();
 assertCopy();
+assertReachableGrids();
 
 /** Every parameter key, in strip order. Used to key a solve. */
 export const ALL_KEYS = Object.freeze([...CHANNELS.flatMap((c) => c.keys()), 'occFrom', 'occTo'].filter(

@@ -2352,6 +2352,175 @@ against the repository before labelling. Findings that shaped the workflow:
 The subscription token (`CLAUDE_CODE_OAUTH_TOKEN`, from `claude setup-token`)
 lasts a year and is tied to the maintainer who made it.
 
+### Units, SI and IP (src/units.js)
+
+The toggle is lettering and nothing else. Every value on `params` stays the SI
+number the document holds, a frozen `Kind` says how it converts and how
+precisely it reads, and conversion happens at the moment of lettering. Measured
+on either side of a switch, the IDF at eight desk positions is byte-identical
+and every link re-encodes to the same string.
+
+**The factors are expressions of three constants, and two of them were wrong on
+paper.** The contract had `transmittance` as `(FT² × 3600 × 1.8) / BTU`, which
+is 0.571, and its reciprocal for `resistance`. The 1.8 divides rather than
+multiplies: a watt is `3600/BTU` Btu/h, a square metre is `1/FT²` square feet
+and a kelvin is 1.8 °F, so W/m²K is `(3600 × FT²)/(BTU × 1.8)` = 0.17611. The
+wrong figure is three times the right one and still looks like a U-factor, which
+is exactly the kind of error a harness of hand-checked anchors exists to catch.
+
+**The SI string of a converting kind must equal the declaration's own**, and
+that single assertion is the whole guarantee that the SI sheet comes back
+character for character. It is also what surfaced every quantity lettered two
+ways: TEDI over a year (`kWh/m²·yr`) against TEDI over one environment
+(`kWh/m²`), outdoor air as `L/s·pp` rather than `L/s`, a swing as `°C` rather
+than `K`. Each is a second kind with the same factor, not a relabelling.
+
+**A change in a temperature is a difference.** `temperature` carries an offset;
+a delta lettered through it takes Fahrenheit's 32 along, so a zone one degree
+warmer than the baseline reads `+33.8 °F`. The schedules therefore declare a
+`deltaKind` beside their `kind`, and a swing has a kind of its own. This is the
+most plausible-looking wrong number the feature could have printed.
+
+**Eleven steps were refined, each to a divisor of its old step.** At the old
+0.5 m, one step of `ctxDistance` is 1.64 ft, so most whole feet could not be
+reached at all and no choice of lettering could invent a position the grid does
+not have. Measured over all eleven — 1,365 old stops walked through `onFace` on
+the new grids — **every old stop is reproduced with zero drift**, so nothing
+narrows, no `LINK_VERSION` bump is owed and `MIGRATIONS` stays empty. Refining a
+step means refining its `digits` with it: `onFace` snaps to the step and then
+rounds to the step's own decimals, so a face still ruled to whole metres on a
+0.25 m grid would hold 40.25 and letter `40 m`, and the margin box could not
+hand back what it was given.
+
+**The two boundaries disagree, which is why no IP grid is stored.** `onFace`
+hard-snaps every typed or dragged value to `min + n·step`; `decodeState` does
+not snap, and `refuses` deliberately does not test step alignment for a scale.
+So a link can carry `width=18.288` and hold it while the reader's next nudge
+snaps it away. Storing IP stops would widen exactly that gap; deriving the
+lettering from the one grid closes it.
+
+**Every IP unit string is a single whitespace-free token**, because `copy.js`
+counts whitespace tokens and throws at module load for the asserted budgets.
+`Btu/h per person` would cost a strip line two words more than `W/pp` did and
+throw the page in a module nobody would think to look in — so `Btu/h·pp`, and
+`Δ°F` rather than `°F difference`. The rule is asserted on converting kinds
+only: an identity kind letters the same string in both systems and so spends
+exactly what it spent before, which is why `× floor` is allowed to stay two
+words.
+
+**An identity kind letters the declaration's own wording**, passed to `letter`
+as a `unit` override and refused on anything that converts. That is what lets
+one `count` kind serve TM59's nights, its share of occupied hours and a pane
+count, without any of them composing a unit a converting figure could inherit.
+
+**`reletterSheet` must never call `applyGeometry`.** That is where studies in
+flight are cancelled against their rest shape, so a reader who switched units
+mid-sweep would lose every sample. The switch re-letters from state already in
+hand, including the finding paragraph, which is held as a **record** of what it
+letters rather than as the closure that drew it: a closure keeps its whole
+enclosing scope alive, and that scope holds the run's IDF text, the entire EPW
+file and the parsed ESO, so the previous run's megabytes stayed pinned under the
+next one to re-letter eight numbers.
+
+**A hand-written list of what to re-letter cannot say when it is incomplete**,
+and this one was: it reached the console, the drawings, the schedules, the bill
+and the register, and missed E-02 entirely — the relief's standing axis, the
+plan's contour labels and the spot figures, every one of them a surface
+`Reading.figure` and `Reading.unitNow` were added for. It also missed the study
+cards, which are lettered when `setStudy` builds them and whose identity guard
+deliberately makes re-issuing the same study a no-op; that needs
+`relettering: true` to get past. Both are fixed, and a registry that made the
+omission throw rather than go quiet is the deeper change still owed.
+
+**What still does not re-letter: a stored label.** `shapeLabel` is called at
+draw time by the traverse buttons, which convert correctly, and is *frozen into*
+seven long-lived objects at creation — study jobs, the bill's pin, the schedule
+baseline. A study card's desk line is one of those, so it letters in whichever
+system the sweep was taken in and then keeps it. Making those convert means
+storing the `params` and lettering at draw time across all seven sites and their
+readers.
+
+**A span is not a value, and the ranking walked straight into it.** E-02's "Room
+left" column letters `control.max - here`, a subtraction along a face. Lettered
+through the control's own `quantityKind` a setpoint's five degrees of room came
+out as `41 °F` — `5 × 1.8 + 32` — which is the offset trap `temperatureDifference`
+was split out for, arriving by a second route a year later. `deltaKindOf` is now
+the one place that rule lives: it maps `temperature` to `temperatureSwing` and
+every other kind to itself, and `Ruled.spanKind` is the face asking it. It maps
+to `temperatureSwing` rather than `temperatureDifference` because a span of a
+Celsius face has always been lettered `°C`, and `K` would be a new string
+standing where the old one stood. The column also keeps a flat two decimals in
+both systems rather than taking the control's IP precision: reachability is an
+argument about positions on a grid, and applied to a span it rounded half a
+degree of room from `0.9` to `1`.
+
+**The one lettering that never converted at all was the one nobody can see.**
+Every Study button's accessible name letters the control's own range — "sweep
+from 10.0 °C to 26.0 °C" — and `studyOffer` set it once at build time and never
+again. Measured on the page, it stayed in SI across a switch while the face
+beside it read 68 °F, and it stayed that way for the life of the session.
+`sync()` does not reach these labels because nothing about them depends on the
+desk's state; they had no reason to be re-read until units gave them one. This is
+worse than a stale visible figure rather than better: for a reader who cannot see
+the face, the label is not a second copy of the reading, it **is** the reading.
+The fix keeps a thunk per key rather than a string, because the two callers name
+their subject differently — a scale passes `control.label`, one wall of a plan
+key passes `labelFor(side.key)` — and only the closure still knows which.
+
+**A converted figure can round away the very thing the sentence is about.**
+`tooShallow` quotes an overhang against the engine's 0.01 m merge tolerance, and
+lettered to the overhang face's own IP precision — one decimal of a foot — a
+0.01 m projection reads `0.0 ft`. The sentence then claims a zero-depth overhang
+would be deleted, which is nonsense, and loses the one figure the reader is there
+to compare against the tolerance. It letters in inches (`lengthSmall`) for that
+reason: this sentence only ever fires at or under the tolerance, so inches is the
+scale it is always read at. `COINCIDENT` itself keeps its metres in both systems,
+being the engine's own constant rather than the reader's measurement — the same
+split `frameCloses` makes between the opening it quotes and the frame that closed
+it.
+
+**Converting a head without its cells is worse than converting neither.** The
+bill's intensity row divides by floor area, and its three columns are identity
+kinds on purpose: kWh at the meter, the tariff's own currency, kgCO₂e. Lettering
+the head through `unitIn(KINDS.area)` made it read `Per ft² of floor, per year`
+over 40.7, 1.42 and 8.4 — the identical figures the `Per m²` row had shown,
+because `bill.intensity` divides by `floorArea` in square metres and no column
+kind could touch that. The head then contradicted every cell under it in the one
+direction that still looks like a plausible reading, and a US reader would have
+taken a per-square-metre intensity for a per-square-foot one, low by a factor of
+eleven. What converts here is the **denominator**: `v / convert(KINDS.area, 1)`,
+which is exactly 1 in SI, giving 3.8 kBtu-equivalent per ft², $0.13 and 0.8.
+Measured on the page, the ratios come back 10.711 and 10.923 against the exact
+10.764, the spread being the display rounding of 3.78 and 0.132.
+
+**A getter that restates a composition rule will drift from it.** `unitNow` was
+written as `unitIn(kind, unit)` — the kind's unit string — while `letter`
+composes a figure as prefix, number, suffix. For the one prefixed kind on the
+roster they disagree: `resistance` letters `R-29.0` in IP and carries nothing
+after the number, so `stopOf` stripped nothing and a survey axis offered to head
+a column of `R-29.0` stops with `h·ft²·°F/Btu`, naming the unit twice for the one
+quantity that already names itself. The fix is not a second test but a shared
+one: `prefixIn` and `suffixIn` are the two halves, `letter` is composed from
+them, and `unitNow` is `suffixIn`. The harness walks all 87 faces in both systems
+asserting `format(v).endsWith(unitNow)`, which is what caught it — the SI walk
+passed, because in SI the prefix does not apply and the two agreed by accident.
+
+**One arrangement written in two places drifts in both.** A survey axis letters
+its unit once on the axis name and leaves every stop bare — `stopOf` strips it
+off the stop, `axisTitle` prints it on the name. The two halves sit a thousand
+lines apart, and fixing only `stopOf` left the plan drawing headed `Width · m`
+over stops reading 13.1 to 131.2 ft: the same defect, surviving one label along.
+A sweep of every remaining `.unit` read found four more of that shape, in rising
+order of harm: `amountOn`, an unconverted number under an SI unit; `within`, a
+tolerance — which is a *difference* of the reading and so needs the delta kind,
+or a hundredth of a degree letters as 32; and `formatEffect`, the worst the
+feature can produce. The pull ranking's Effect column is a change in the reading
+per unit of the control's own travel, so **both** halves convert and neither
+did: the printed figure was not mislabelled but wrong, by whatever `kR / kC`
+happens to be, and still entirely plausible. `relief.js`, `schemes.js` and
+`study.js` came back clean — their `.unit` reads are declarations, or the
+sanctioned identity-kind wording override that `letter` takes.
+
 ## Invariants that fail quietly
 
 - **`Building.north_axis` is ignored** because `GlobalGeometryRules` declares

@@ -66,6 +66,7 @@ import {
   SEASON,
 } from './tm59.js';
 import { PROFILE_IDS, profileFor } from './tm59.data.js';
+import { kindFor, unitIn } from './units.js';
 
 /* ══ what a preset is allowed to touch ═══════════════════════════════════ */
 
@@ -154,9 +155,14 @@ const TARGET_NEEDS = Object.freeze(['run', 'season', 'year']);
  */
 export class Target {
   constructor({
-    id, label, metric, needs = 'year', limit = null, above = null, unit, asks,
+    id, label, metric, needs = 'year', limit = null, above = null, unit, quantityKind, asks,
     note = null, category = null, digits = 1,
   }) {
+    // What the line measures. The board letters the figure and the unit in two
+    // separate cells, which is exactly why the kind has to live here: with the
+    // unit composed at nine call sites, an IP reader would have read a
+    // converted figure under an SI unit at whichever of the nine was missed.
+    this.quantityKind = kindFor(quantityKind, `the target "${id}"`, unit);
     this.id = id;
     this.label = label;
     // How many decimals the board letters this line to. On the declaration
@@ -221,6 +227,19 @@ export class Target {
       );
     }
     Object.freeze(this);
+  }
+
+  /**
+   * How this target's unit reads in the system showing.
+   *
+   * The board letters the figure and the unit in two separate cells, so the
+   * unit half needs a name of its own the way `scoreFigure` is the figure's.
+   * Its two sibling declarations, `BillColumn` and survey's `Reading`, carry
+   * the identical getter; without it the expression was inlined at four render
+   * sites.
+   */
+  get unitNow() {
+    return unitIn(this.quantityKind, this.unit);
   }
 
   /**
@@ -585,6 +604,7 @@ export const PRESETS = Object.freeze([
         metric: 'tedi',
         limit: 15,
         unit: 'kWh/m²·yr',
+        quantityKind: 'energyIntensity',
         asks: '≤ 15 kWh/(m²a)',
       }),
       new Target({
@@ -594,6 +614,7 @@ export const PRESETS = Object.freeze([
         limit: 10,
         above: 25,
         unit: '% of the year',
+        quantityKind: 'count',
         asks: '≤ 10 % of the hours in a year',
         note:
           'Read off the hourly zone mean air temperature. With the System channel in the ' +
@@ -606,6 +627,7 @@ export const PRESETS = Object.freeze([
         label: 'Space cooling demand',
         metric: 'cedi',
         unit: 'kWh/m²·yr',
+        quantityKind: 'energyIntensity',
         asks: 'a building-specific limit',
         note:
           'PHI sets the cooling and dehumidification limit per building and per climate ' +
@@ -619,6 +641,9 @@ export const PRESETS = Object.freeze([
         needs: 'run',
         limit: 10,
         unit: 'W/m²',
+        // A load, so `fluxDensity` (Btu/h·ft²) and not `powerDensity` (W/ft²),
+        // though the two are one string in SI.
+        quantityKind: 'fluxDensity',
         asks: '≤ 10 W/m², the alternative route',
         note:
           'PHI accepts either the demand or the load, not both, so this line and the ' +
@@ -636,6 +661,7 @@ export const PRESETS = Object.freeze([
         metric: 'peakCool',
         needs: 'run',
         unit: 'W/m²',
+        quantityKind: 'fluxDensity',
         asks: 'no published figure',
         note:
           'PHI publishes no single cooling-load limit, so there is nothing to draw a line ' +
@@ -703,6 +729,7 @@ export const PRESETS = Object.freeze([
         metric: 'tedi',
         limit: 25,
         unit: 'kWh/m²·yr',
+        quantityKind: 'energyIntensity',
         asks: '≤ 25 kWh/(m²a)',
       }),
       new Target({
@@ -712,6 +739,7 @@ export const PRESETS = Object.freeze([
         limit: 10,
         above: 25,
         unit: '% of the year',
+        quantityKind: 'count',
         asks: '≤ 10 % of the hours in a year',
       }),
     ],
@@ -753,6 +781,7 @@ export const PRESETS = Object.freeze([
         metric: 'eui',
         limit: 55,
         unit: 'kWh/m²·yr',
+        quantityKind: 'energyIntensity',
         asks: '< 55 kWh/m²/yr for a commercial office',
         note:
           'LETI measures over gross internal area, and against everything the building ' +
@@ -766,6 +795,7 @@ export const PRESETS = Object.freeze([
         metric: 'tedi',
         limit: 15,
         unit: 'kWh/m²·yr',
+        quantityKind: 'energyIntensity',
         asks: '< 15 kWh/m²/yr',
       }),
     ],
@@ -925,6 +955,7 @@ export const PRESETS = Object.freeze([
         category: CATEGORY_BY_ID.I,
         limit: CRITERION_BY_ID.a.limit,
         unit: CRITERION_BY_ID.a.unit,
+        quantityKind: 'count',
         asks: CRITERION_BY_ID.a.asks,
         note:
           `Applies to: ${CRITERION_BY_ID.a.applies} ` +
@@ -941,6 +972,7 @@ export const PRESETS = Object.freeze([
         category: CATEGORY_BY_ID.II,
         limit: CRITERION_BY_ID.a.limit,
         unit: CRITERION_BY_ID.a.unit,
+        quantityKind: 'count',
         asks: CRITERION_BY_ID.a.asks,
         note:
           `Applies to: ${CRITERION_BY_ID.a.applies} ` +
@@ -956,6 +988,7 @@ export const PRESETS = Object.freeze([
         category: CATEGORY_BY_ID.I,
         limit: CRITERION_BY_ID.b.limit,
         unit: CRITERION_BY_ID.b.unit,
+        quantityKind: 'count',
         asks: CRITERION_BY_ID.b.asks,
         note:
           `Applies to: ${CRITERION_BY_ID.b.applies} ` +
@@ -972,6 +1005,7 @@ export const PRESETS = Object.freeze([
         category: CATEGORY_BY_ID.II,
         limit: CRITERION_BY_ID.b.limit,
         unit: CRITERION_BY_ID.b.unit,
+        quantityKind: 'count',
         asks: CRITERION_BY_ID.b.asks,
         note:
           `Applies to: ${CRITERION_BY_ID.b.applies} ` +
@@ -987,6 +1021,7 @@ export const PRESETS = Object.freeze([
         needs: 'season',
         limit: CRITERION_BY_ID.c.limit,
         unit: CRITERION_BY_ID.c.unit,
+        quantityKind: 'count',
         asks: CRITERION_BY_ID.c.asks,
         note:
           `Applies to: ${CRITERION_BY_ID.c.applies} ${CRITERION_BY_ID.c.thresholdFrom} It carries no ` +

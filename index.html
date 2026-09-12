@@ -462,6 +462,55 @@
       }
       .toggle-sub { font-size: 11.5px; line-height: 1.35; color: var(--ink-3); }
 
+      /* Units: the design system's segmented selector, at the stamp's own scale
+         rather than the control row's. No new hue — the active segment is solid
+         --ink on --vellum, which `.segment.here` already carries, and
+         `aria-checked` says the same thing in words so colour is never the only
+         carrier. The restraint here is scale, not contrast: the fill stays,
+         because it is the non-colour carrier, but the whole control is about
+         the width of the `EnergyPlus 26.1.0` it sits under. */
+      .stamp-col {
+        display: grid;
+        gap: 8px;
+        align-content: start;
+        min-width: 210px;
+      }
+      /* A stamp row whose value happens to be operable. `.stamp div` aligns its
+         two cells on the baseline, which is right for a word and wrong for a
+         bordered control — the box would hang below the label's baseline. */
+      .units-row { align-items: center; }
+      .units-seg { border-radius: 3px; }
+      /* Tighter than the console's segments: these two sit in a 8px-padded
+         stamp row, not in a column of sixty controls. Both labels keep their
+         full text at 390px, which the quickstart measures rather than assumes.  */
+      .units-seg .segment {
+        flex: 0 0 auto;
+        padding: 3px 10px;
+        font: 500 9px/1.2 var(--cond);
+        letter-spacing: 0.09em;
+      }
+      /* The aside under the stamp, not a line in it. Sized to the stamp so the
+         column has one edge, and in --ink-3 so the block of facts above it
+         stays the thing the eye lands on. */
+      .units-standing {
+        margin: 0;
+        max-width: 32ch;
+        font-size: 10.5px;
+        line-height: 1.4;
+        color: var(--ink-3);
+      }
+      /* Read aloud, never drawn: the switch is already visible, and a second
+         copy of the sentence on the sheet would be the same fact twice. */
+      .units-said {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+
       /* inputs are inset: darker than the sheet, because they receive content */
 
       /* ── the site picker ────────────────────────────────────────────
@@ -5085,11 +5134,60 @@
              them — it is what parses the model and writes the IDF the engine is
              handed. It also says, without opening a fold, what this page is a
              demo of; the colophon at the foot says who built it. -->
-        <div class="stamp">
-          <div><span>Engine</span><b id="t-engine-version">EnergyPlus 26.1.0</b></div>
-          <div><span>Runtime</span><b>WebAssembly</b></div>
-          <div><span>Toolkit</span><b><a href="https://idfkit.com" target="_blank" rel="noreferrer">idfkit</a></b></div>
-          <div><span>Simulation server</span><b>None</b></div>
+        <div class="stamp-col">
+          <div class="stamp">
+            <div><span>Engine</span><b id="t-engine-version">EnergyPlus 26.1.0</b></div>
+            <div><span>Runtime</span><b>WebAssembly</b></div>
+            <div><span>Toolkit</span><b><a href="https://idfkit.com" target="_blank" rel="noreferrer">idfkit</a></b></div>
+            <div><span>Simulation server</span><b>None</b></div>
+            <!-- Units, as the fifth fact about how this page is read rather
+                 than a control on the desk. It belongs in the stamp for the
+                 reason every other row does: each one states something about
+                 the page itself rather than a reading off the run, and which
+                 system the figures are lettered in is exactly that. It is also
+                 the quietest place the sheet has, which is what a mode that is
+                 set once and then forgotten deserves — in the control row it
+                 sat at the scale of the two buttons that start runs.
+
+                 Still static markup, so it works when main.js never finishes
+                 booting — the same arrangement report-sheet.js relies on — and
+                 still reachable from every state the sheet can be in (FR-001),
+                 which the desk panel is not.
+
+                 A segmented selector and deliberately not the square marker:
+                 that marker means "a step that is armed" and the design system
+                 reserves it for armed states, where a unit system is one of two
+                 modes. -->
+            <div class="units-row" id="units">
+              <span id="units-label">Units</span>
+              <div class="segments units-seg" role="radiogroup" aria-labelledby="units-label" id="units-group">
+                <button type="button" class="segment here" role="radio" aria-checked="true" data-system="si">SI</button>
+                <button type="button" class="segment" role="radio" aria-checked="false" data-system="ip">IP</button>
+              </div>
+            </div>
+          </div>
+          <!-- The naming prose the design system asks for on a control a reader
+               has never met: in place, never on hover. Under the box rather than
+               inside it, so the stamp stays a clean list of facts and the
+               sentence reads as the aside it is. -->
+          <!-- Thirteen words. The contract's own draft of this line ran to
+               sixteen against a fifteen-word budget and threw the page at load,
+               which is the budget assertion working: "on the sheet" is what a
+               line printed on the sheet can leave out. -->
+          <p class="units-standing" id="units-standing">
+            Every number reads in the system you pick. The model stays in SI.
+          </p>
+          <!-- Shown only where the browser refuses to keep the choice, and in
+               place rather than on hover: a switch that quietly forgets itself
+               every visit is worse than one that says it will. -->
+          <p class="units-standing" id="units-forgets" hidden>
+            This browser will not remember the choice.
+          </p>
+          <!-- The switch announced in words. The page has no live region of its
+               own: `#status` is written by `markStale` on every drag transition,
+               so making that one live would speak a stale note each time a
+               slider settles. -->
+          <p class="units-said" id="units-said" role="status"></p>
         </div>
       </header>
 
@@ -5125,6 +5223,12 @@
             <button type="button" class="link" id="download" disabled>
               Download run bundle
             </button>
+            <!-- Said where the files are handed over, not in a fold: the model
+                 EnergyPlus reads is SI whichever system the sheet is lettered
+                 in, and a reader who has been working in feet has every reason
+                 to expect the download to follow them. It does not, because a
+                 model file in two unit systems would be two models. -->
+            <p class="take-note" id="download-note">The model files are in SI, whichever units the sheet shows.</p>
             <button type="button" class="link" id="share">
               Copy scheme link
             </button>

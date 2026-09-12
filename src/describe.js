@@ -32,6 +32,7 @@
 
 import { DEFAULT_BYPASS, DEFAULT_PARAMETERS, controlFor } from './controls.js';
 import { WALLS, geometryFacts, holds } from './model.js';
+import { KINDS, figureIn, unitIn } from './units.js';
 
 /**
  * A quantity, which the sheet letters in its mono face.
@@ -46,7 +47,15 @@ const weigh = (tokens) =>
   tokens.reduce((n, t) => n + (typeof t === 'string' ? t.trim().split(/\s+/).filter(Boolean).length : 1), 0);
 
 /** One control's number, at the digits its own declaration prints it to. */
-const num = (key, value) => q(value.toFixed(controlFor(key).control.digits));
+// Through the control's own `figure`, so the sentence and the face it describes
+// letter one number at one precision in whichever system is showing. The unit
+// word stays in the prose beside it, because that is what makes this a sentence
+// rather than a row of a table.
+const num = (key, value) => q(controlFor(key).control.figure(value));
+
+/** A figure of a named kind, for the quantities measured off the document. */
+const fig = (kind, value, digits, ipDigits = null) =>
+  q(figureIn(kind, value, { digits, ipDigits }));
 
 /** One control's option, as the console letters it. */
 const option = (key, value) => controlFor(key).control.format(value).toLowerCase();
@@ -218,14 +227,19 @@ function massing(facts) {
   // by guessing at the other.
   if (facts.faces.length < 2) throw new Error('the model has fewer than two walls to measure the plan by');
   const [a, b] = [facts.faces[0].length, facts.faces[1].length];
+  // The unit words come from the roster rather than being typed into the
+  // sentence, and every one of them is a single token in both systems, so the
+  // paragraph's sixty-word budget is unmoved by the switch.
+  const L = unitIn(KINDS.length);
+  const A = unitIn(KINDS.area);
   const plan =
     Math.abs(a - b) < 0.005
-      ? [q(a.toFixed(2)), ' m square']
-      : [q(a.toFixed(2)), ' by ', q(b.toFixed(2)), ' m on plan'];
-  const tall = [' and ', q(facts.height.toFixed(2)), facts.storeys > 1 ? ' m to a storey' : ' m tall'];
+      ? [fig(KINDS.length, a, 2), ` ${L} square`]
+      : [fig(KINDS.length, a, 2), ' by ', fig(KINDS.length, b, 2), ` ${L} on plan`];
+  const tall = [' and ', fig(KINDS.length, facts.height, 2), facts.storeys > 1 ? ` ${L} to a storey` : ` ${L} tall`];
   return facts.storeys > 1
-    ? [q(facts.storeys), ' floors of ', q(facts.floor.toFixed(1)), ' m² each, ', plan, tall]
-    : ['A single storey of ', q(facts.floor.toFixed(1)), ' m², ', plan, tall];
+    ? [q(facts.storeys), ' floors of ', fig(KINDS.area, facts.floor, 1), ` ${A} each, `, plan, tall]
+    : ['A single storey of ', fig(KINDS.area, facts.floor, 1), ` ${A}, `, plan, tall];
 }
 
 /**
@@ -253,23 +267,26 @@ function envelope(params, facts) {
   // was: an overhang set on a solid wall reaches no object in the document at
   // all, which is the same fact the Shading strip greys that wall's study for.
   const shaded = facts.faces.filter((f) => f.overhang > 0.005);
+  const L = unitIn(KINDS.length);
   if (shaded.length === 1) {
-    parts.push(' under a ', q(shaded[0].overhang.toFixed(2)), ' m overhang');
+    parts.push(' under a ', fig(KINDS.length, shaded[0].overhang, 2), ` ${L} overhang`);
   } else if (shaded.length > 1) {
     const same = shaded.every((f) => Math.abs(f.overhang - shaded[0].overhang) < 0.005);
     parts.push(
       ' under ',
-      same ? q(shaded[0].overhang.toFixed(2)) : q(Math.max(...shaded.map((f) => f.overhang)).toFixed(2)),
-      same ? ' m overhangs' : ' m of overhang at the deepest',
+      same
+        ? fig(KINDS.length, shaded[0].overhang, 2)
+        : fig(KINDS.length, Math.max(...shaded.map((f) => f.overhang)), 2),
+      same ? ` ${L} overhangs` : ` ${L} of overhang at the deepest`,
     );
   }
-  if (params.fin > 0 && facts.shadeArea > 0) parts.push(', fins ', num('fin', params.fin), ' m at every jamb');
+  if (params.fin > 0 && facts.shadeArea > 0) parts.push(', fins ', num('fin', params.fin), ` ${L} at every jamb`);
 
   if (facts.grossRoofGlazing > 0) {
     parts.push(
       ', and ',
-      q(facts.grossRoofGlazing.toFixed(1)),
-      ' m² of rooflights at SRR ',
+      fig(KINDS.area, facts.grossRoofGlazing, 1),
+      ` ${unitIn(KINDS.area)} of rooflights at SRR `,
       q(facts.srr.toFixed(3)),
     );
   }
@@ -545,7 +562,13 @@ function moves(doc, params, facts, state) {
   } else {
     const slab =
       params.slab !== DEFAULT_PARAMETERS.slab || params.slabMaterial !== DEFAULT_PARAMETERS.slabMaterial
-        ? ['a ', q((params.slab * 1000).toFixed(0)), ' mm ', option('slabMaterial', params.slabMaterial), ' slab']
+        ? [
+          'a ',
+          fig(KINDS.lengthMm, params.slab * 1000, 0, 1),
+          ` ${unitIn(KINDS.lengthMm)} `,
+          option('slabMaterial', params.slabMaterial),
+          ' slab',
+        ]
         : [];
     const inner = params.internalMass > 0 ? ['internal mass at ', num('internalMass', params.internalMass), ' × the floor'] : [];
     say('mass', moved(params, ['slab', 'slabMaterial', 'internalMass']), series([slab, inner].filter((c) => c.length)));
@@ -572,7 +595,7 @@ function moves(doc, params, facts, state) {
       say('glass', moved(params, ['uFactor', 'shgc', 'visT']), [
         'glass at U ',
         num('uFactor', params.uFactor),
-        ' W/m²K and SHGC ',
+        ` ${unitIn(KINDS.transmittance)} and SHGC `,
         num('shgc', params.shgc),
       ]);
     }
@@ -601,19 +624,19 @@ function moves(doc, params, facts, state) {
   if (on('gains')) {
     say('gains', FLIP.gains, [
       'gains of ',
-      q((params.lighting + params.equipment).toFixed(1)),
-      ' W/m² over ',
+      fig(KINDS.powerDensity, params.lighting + params.equipment, 1),
+      ` ${unitIn(KINDS.powerDensity)} over `,
       q(hhmm(params.occFrom)),
       '–',
       q(hhmm(params.occTo)),
       ' at ',
       num('occupancy', params.occupancy),
-      ' m²/person',
+      ` ${unitIn(KINDS.areaPerPerson)}`,
     ]);
   }
 
   if (on('daylight')) {
-    say('daylight', FLIP.daylight, ['the lights dimming to ', num('dlSetpoint', params.dlSetpoint), ' lx']);
+    say('daylight', FLIP.daylight, ['the lights dimming to ', num('dlSetpoint', params.dlSetpoint), ` ${unitIn(KINDS.illuminance)}`]);
   }
 
   if (on('blinds')) {
@@ -622,19 +645,30 @@ function moves(doc, params, facts, state) {
       params.shadeControl === 'AlwaysOn'
         ? [', always down']
         : params.shadeControl === 'OnIfHighSolarOnWindow'
-          ? [' dropping above ', num('shadeSetpoint', params.shadeSetpoint), ' W/m² on the glass']
+          // The blind's setpoint is the one control whose quantity another
+          // control settles — W/m² on the glass, or °C — which is why its own
+          // kind is `unconverted` and its face letters no unit at all. Here,
+          // and only here, the branch has already asked: this sentence knows
+          // which of the two it is saying, so it can letter it as that.
+          ? [
+            ' dropping above ',
+            fig(KINDS.fluxDensity, params.shadeSetpoint, 0),
+            ` ${unitIn(KINDS.fluxDensity)} on the glass`,
+          ]
           : [
-              ' dropping above ',
-              num('shadeSetpoint', params.shadeSetpoint),
-              params.shadeControl === 'OnIfHighZoneAirTemperature' ? ' °C in the zone' : ' °C outdoors',
-            ];
+            ' dropping above ',
+            fig(KINDS.temperature, params.shadeSetpoint, 0),
+            params.shadeControl === 'OnIfHighZoneAirTemperature'
+              ? ` ${unitIn(KINDS.temperature)} in the zone`
+              : ` ${unitIn(KINDS.temperature)} outdoors`,
+          ];
     say('blinds', FLIP.blinds, ['an ', device, ' blind', trigger]);
   }
 
   if (on('system')) {
     say('system', FLIP.system, [
       unit(doc, params),
-      params.setback > 0 ? [', set back ', num('setback', params.setback), ' K out of hours'] : [],
+      params.setback > 0 ? [', set back ', num('setback', params.setback), ` ${unitIn(KINDS.temperatureDifference)} out of hours`] : [],
     ]);
   }
 
