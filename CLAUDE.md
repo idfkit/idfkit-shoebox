@@ -2322,6 +2322,130 @@ the landed index, because finding it by walking a curve of thousands on every
 point is quadratic. Every job leaves out the designs the ledger already holds,
 which is what makes stepping into a measured island free.
 
+**The neighbour budget is staged, and the home world goes first.** The home
+world is measured in two depths from one sequence, 4 bases and 128 designs and
+then 16 and 512, the first a prefix of the second so nothing is thrown away.
+The neighbours' job (32 matched designs per enterable neighbour, then each
+island's own 8 bases and 128 designs, in design-stage order) is **held** until
+the first depth has landed: queued beside it, the round-robin gave the jumps a
+third of every dispatch from the first second and the reader's own world stood
+half drawn while nineteen others were measured. An island's own screening is
+queued only when the reader asks for that island, on every desk, with its runs
+and time lettered on its *Measure this world* button first: queued unasked, a
+step into a world on design days started 8,320 runs, four fifths of them for
+islands nobody had opened, and it now starts 1,632 (the home world's 1,024 and
+the 19 jumps' 608). On a year nothing is queued at all until the reader has read
+the cost (the home world's runs, the jumps' runs, and the seconds at the desk's
+cadence) and asked. The consent is for one world, pair of readings and weather,
+so stepping into another world states its cost afresh.
+
+**The pool is as wide as the machine has cores less two, bounded by half its
+memory, and says which term bound it.** `poolWidth` in `src/pool.js` replaced a
+limit that took a quarter of an assumed 4 GB and capped at six, which held every
+Safari and Firefox visit to three engines and every large Chromium machine to
+six. One core is the main thread's and one is the sheet's own engine, so a drag
+never waits on a sample; *N − 1* was rejected for putting a sample on the
+sheet's core. The main thread's share was measured rather than assumed: one
+design applied and its IDF written is **0.79 ms** (median 0.76, p90 1.07, 64
+designs, full reporting), twice per sample because `buildSample` restores, so a
+pool W wide spends about 3 % × W of the thread building. What keeps a drag live
+is still `paused()` while a hand is on a control, not the width.
+
+| Machine as reported | Width before | Width after | What binds |
+| --- | --- | --- | --- |
+| 4 cores, 8 GB (Chromium) | 2 | 2 | cores |
+| 8 cores, no memory (Safari, Firefox, an iPad) | 3 | 6 | cores |
+| 10 cores, 8 GB | 6 | 8 | cores |
+| 12 cores, 8 GB | 6 | 10 | cores |
+| 16 cores, 8 GB | 6 | 14 | cores |
+| 24 cores, 8 GB | 6 | 15 | memory |
+
+`deviceMemory` is Chromium's and reports at most 8, so fifteen is the ceiling.
+The plan letters `N engines side by side: 12 cores less two` wherever it states
+a cost, because a browser may round `hardwareConcurrency` for privacy and a
+reader on a capped one should see why their plan is slower.
+`verify/pool-width.mjs` holds the table and the invariants.
+
+**The campaign: Pause holds, it does not cancel.** The panel's head carries
+Pause, Resume and Cancel, acting on jobs of origin `'strategy'` only. Pause is
+`scheduler.holdWhere(pred, true)`, a flag `takeNext` skips: a held job keeps its
+`order`, `started` and `curve`, so Resume continues exactly where it stopped,
+where a cancelled job loses its turn and re-queueing rebuilds every design list.
+It is not `paused()`, which would stop every study and the survey too. A queue
+holding only held jobs is **idle**, or the studies' densify pass would wait on
+an `'idle'` that never comes. Cancel keeps every landed run in the ledger and
+queues nothing more for that world; a door opened ends it (it was a decision
+about the world), while a pause survives a door (it was about the reader's
+attention), and plan jobs queued while paused are admitted held. An island's
+*Measure* and the year's consent lift a cancel, since they are asks for runs.
+The gate still cancels outright and leaves the campaign's state alone, which
+`queueStrategy` honours when the gate lifts. Nothing of it rides the link.
+`verify/scheduler-hold.mjs` is the gate.
+
+**The plan is a panel on the left, the console's mirror.** `aside.planner` is
+after `main.sheet` in the DOM and drawn before it with `order: -1`, so focus
+reads sheet, plan, console, and on a phone, where block layout ignores `order`,
+it lands under the sheet and before the console for free. Closing it does not
+close the plan: the readings, the campaign and the strip tags stand until
+*Close the plan*. Both panels stand open wherever 720 + 436 + 436 px and slack
+fit, which is 1,624 px, declared once as `--both` on `body` and read back by
+`bothFit()`; narrower, opening one folds the other to a 168 px rail (its head
+alone: for the plan the readings, the campaign's state and its controls), and
+pressing the rail swaps them. A strip tag opens the panel, unfolding it, before
+it focuses its entry, and pressing two controls in the screening scrolls the
+sheet to the ground it cut, which is no longer beside it.
+
+**A failed run poisons its engine, so the engine is retired, never reused.**
+The worker keeps one WebAssembly module and calls EnergyPlus's `main` on it for
+every run, and `main` is not re-entrant: after a run ends in a fatal or a thrown
+exception, every later run on that module throws a raw C++ exception pointer
+before doing any work, and the worker letters it `Engine crashed: 287468688`.
+The pool used to recycle any instance whose `run()` resolved, and a failure
+resolves, so one setpoint crossing took its engine down for the session.
+Measured driving an annual plan at ten engines: of 1,670 runs, 29 genuine
+failures and 1,512 instant crashes behind them, which is what put "128 failed
+runs, the engine gave no reason" under the Rooflights island. On a design-day
+desk almost nothing fails, which is why no study or survey ever showed it.
+`createEnginePool` now retires an instance after any unsuccessful result but a
+cancel, and the sheet's own engine runs behind a one-wide pool (`sheetPool`) so
+the same rule replaces it, or a desk dragged into a fatal left every later solve
+crashing until a reload. `engineFailure` also reads `fatalError`, the exit code
+and the last console line. And every failure's reason now travels with its
+landing: `runSample` throws the engine's sentence, `buildSample` and the reader
+throw theirs, and the scheduler files the message on the point (`land`), where
+a side map keyed by identity had five writers and a cleanup pass over every
+design of every job.
+`verify/pool-recycle.mjs` is the gate.
+
+**The chooser follows the desk with no plan open.** Which readings are on offer
+turns on the desk (a year puts the annual ones on offer, System and Gains the
+demand and TM59 ones), and `refreshStrategy` and `syncStrategyGate` used to
+return at once without a plan, so the chooser drawn at boot was never redrawn:
+a reader who attached a year met the panel offering High and Low alone, the
+rest refused with "Attach a weather file". `syncStrategyChooser` now redraws it
+from where the offers change, `applyGeometry` and the station gate, behind a
+signature so a drag does not rebuild it every frame. Buried in E-02
+the stale chooser went unseen; as the first thing the panel shows, it was the
+first thing a reader tried. The study status line also letters "Study drawn"
+once no study the reader asked for is running, rather than once the whole queue
+is empty, which a running or paused plan never is: it kept a finished study
+reading "32 of 365 samples solved".
+
+**The plan's gate cancels, it does not merely wait.** Auto-solve off, a link
+attaching or a station attaching cancels every `'strategy'` job and the plan
+says which it is waiting on; the gate lifting re-queues, free wherever the
+ledger already answers. `syncSweepGate` is the hook, because every change to
+`linkAttachPending` passes through it. A reading that stops being on offer
+after the plan opened (Gains patched out under TM59) refuses the plan whole
+with the offer's own reason and fix and queues nothing for it.
+
+**A link's plan is checked before anything of the link is restored.** Whether
+the desk can offer a reading turns on the station just attached, so it is the
+one part of a link that can still be refused that late. `restoreLinked` checks
+it first, then restores the studies, the ground and the plan, and stops at the
+first refusal; checked last, a refusal reverted the desk under studies and a
+ground already restored from the link it had just refused.
+
 **A ledger beside the cache.** The cache is FIFO at 400 and a world at full depth
 is 1,024 runs, so `DesignLedger` keeps every visited world for the session and
 is cleared only where the cache is, on a station change; its epoch drops a run
@@ -2346,13 +2470,20 @@ Node through `verify/reference-plan.mjs`):
 
 | Reading | Two moves | One move | The two strongest single controls | Terrain |
 | --- | --- | --- | --- | --- |
-| Zone high | 76.6 % | 74.4 % | 44.8 % (SHGC and U-factor) | 67.2 % at bandwidth 0.127 |
-| Zone low | 57.3 % | 58.5 % | 5.5 % (U-factor and height) | 48.1 % at bandwidth 0.127 |
+| Zone high | 76.4 % | 74.4 % | 45.8 % (SHGC and U-factor) | 67.2 % at bandwidth 0.127 |
+| Zone low | 57.8 % | 58.0 % | 5.0 % (U-factor and height) | 35.9 % at bandwidth 0.184 |
 
 The high's leading move is *lower U-factor 37 %, higher SHGC 32 %, brighter
 ground 19 %*; the low's is *lower U-factor 49 %, lower storey 16 %*. SC-004
 passed at 16 bases, so the contingency of 32 was not needed. On the low, one
 move scores marginally higher than two, and the plan offers the one-move view.
+
+The shares are scored without the 16 screening bases, which are designs 0 to 15
+of the same sequence and the ones the moves were fitted on; scored with them,
+as they first were, the table read 76.6 and 57.3. The low's terrain stands at
+a wider bandwidth than the high's because the audit also refuses a hollow the
+designs do not support, and on the low the two narrower rungs each dug one:
+held to local bests alone it was drawn at 0.127 and claimed 48.1 %.
 
 **The jumps, measured for the first time** (`verify/jumps.mjs`: 32 matched
 designs per world, one door from the reference desk, 608 runs). Median, and the
@@ -2397,8 +2528,11 @@ is SC-008's record, and it stands whatever it came out as:
 
 | Reading | Two moves | One move | Leading move |
 | --- | --- | --- | --- |
-| Energy use intensity | 54.1 % | 42.6 % | higher equipment 32 %, higher heating setpoint 20 %, narrower plan 17 % |
-| Hours above 25 °C | 79.4 % | 45.5 % | higher cooling setpoint 81 %, deeper setback 17 % |
+| Energy use intensity | 52.7 % | 42.4 % | higher equipment 32 %, higher heating setpoint 20 %, narrower plan 17 % |
+| Hours above 25 °C | 79.0 % | 45.8 % | higher cooling setpoint 81 %, deeper setback 17 % |
+
+Scored, as the reference desk's are, without the screening bases the moves
+were fitted on; with them, the rows first read 54.1 / 42.6 and 79.4 / 45.5.
 
 The count against a threshold explained *more* than the energy reading, not
 less, which is the opposite of what the spec feared. The sweet spots agree with

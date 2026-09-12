@@ -13,72 +13,7 @@ import { createStudyScheduler, makeStudyJob } from '../../../src/scheduler.js';
 import { VARIED, designAt, neighboursOf, worldOf } from '../../../src/space.js';
 import { DesignLedger, Landed, designId } from '../../../src/strategy.js';
 import { finish, ok, throws } from './desk.mjs';
-
-const contents = { serialize: () => 'fake', answers: () => true, size: 0 };
-
-// The cancel point's own arithmetic, restated: `deskKey` in `main.js`.
-const deskKey = (params, patch, omit = []) => {
-  const dropped = new Set(Array.isArray(omit) ? omit : [omit]);
-  return JSON.stringify([Object.fromEntries(Object.entries(params).filter(([key]) => !dropped.has(key))), patch]);
-};
-
-function planJob(id, world, count, { context = (w) => w.signature } = {}) {
-  const designs = Array.from({ length: count }, (_, index) => {
-    const design = designAt(world, index);
-    return { params: design.params, patch: world.patch, context: context(world) };
-  });
-  return makeStudyJob({
-    id,
-    key: null,
-    snapshot: world.desk,
-    patch: world.patch,
-    annual: false,
-    quantity: 'extremes',
-    needed: contents,
-    restShape: deskKey(world.desk, world.patch, VARIED),
-    omits: VARIED,
-    points: designs.map((_, index) => index),
-    order: designs.map((_, index) => index),
-    origin: 'strategy',
-    asked: count,
-    designs,
-  });
-}
-
-function studyJob(key) {
-  const points = [0, 1, 2, 3, 4];
-  return makeStudyJob({
-    key,
-    snapshot: { key },
-    patch: {},
-    annual: false,
-    quantity: 'extremes',
-    needed: contents,
-    restShape: 'rest',
-    points,
-    order: points.map((_, i) => i),
-    origin: 'manual',
-    asked: points.length,
-  });
-}
-
-function fakePool() {
-  const dispatched = [];
-  const waiting = [];
-  return {
-    dispatched,
-    run(built) {
-      dispatched.push(built.id);
-      return new Promise((resolve) => waiting.push(() => resolve({ success: true })));
-    },
-    async settle() {
-      while (waiting.length) {
-        waiting.shift()();
-        for (let n = 0; n < 4; n += 1) await Promise.resolve();
-      }
-    },
-  };
-}
+import { contents, deskKey, fakePool, planJob, studyJob } from './fake-queue.mjs';
 
 function scheduler(pool, { capacity = 4, contexts = [], onPoint = () => {} } = {}) {
   let held = false;

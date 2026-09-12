@@ -942,6 +942,41 @@ reads back. Do not derive a new threshold from an existing one because the
 numbers happen to be close: they are different questions and they will move
 apart.
 
+### A second instrument on the left
+
+The strategy plan is a panel of its own, `aside.planner`, mirroring the model
+console on the right: the same vellum ground, the same sticky column at 16 px
+and at most the viewport less 32 px, scrolling inside itself, with the border
+and radius mirrored (`border-left: 0`, the radius on the right, `margin-right:
+-1px` against the sheet's edge). Its head is `.desk-head`'s grid under another
+name, so the two panels read as one kind of object.
+
+- **Three columns in one flex row, not a grid.** Planner, sheet, desk. The
+  desk's own comment gives the argument, and it applies twice with two panels:
+  free space in a grid is handed to every unfinished track evenly, so the
+  panels' growth would come out of the drawing's width. The sheet keeps
+  `flex: 0 1 1080px` and each open panel takes `flex: 1 0` its own width.
+- **After the sheet in the DOM, before it on screen.** `order: -1` draws it on
+  the left while focus reads sheet, plan, console; on a phone, where block
+  layout ignores `order`, the same DOM order puts it under the sheet and before
+  the console with no rule of its own.
+- **Whether both fit is declared once.** `--sheet-min` (720 px) is the least
+  measure the drawing keeps; `--both` on `body` is 1 where the sheet and both
+  panels at full width fit, which is 1,624 px, flipped by one media query and
+  read back by script. The number appears nowhere else.
+- **Where they do not, one folds to a rail.** `--rail` (168 px, the ledger
+  column's width) is a panel's head alone, stacked: its name, and for the plan
+  its readings, the campaign's state line and its three controls; for the
+  console its actions. The rail still reads, which is the folded strip's rule.
+  The whole head is one press target that swaps the two, with an *Open wide*
+  button inside it for the keyboard.
+- **The campaign's controls live in the head.** Pause, Resume and Cancel, as
+  plain links, shown only where they would do something, beside a state line
+  that says what the plan's runs are doing (*Paused: 412 runs wait. Runs
+  already on an engine finish.*). In the head because the head is what the
+  rail keeps: a control that disappears when its panel folds cannot stop runs
+  the reader can no longer see.
+
 ### Folding a table to stacked rows
 
 The table equivalent of the index sheet. Where a schedule has more columns than

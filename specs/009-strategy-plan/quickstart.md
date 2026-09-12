@@ -22,7 +22,7 @@ Outside the browser, the schema comes from `localBundle()` in `@idfkit/schemas/n
 `node verify/space-roles.mjs`
 
 - Every key in `ALL_KEYS` has exactly one role (SC-011).
-- At the default desk: 32 varied, 20 neighbours, and Blinds listed with its `requires.reason` (SC-006, first half).
+- At the default desk: 32 varied, 19 neighbours, and Blinds listed with its `requires.reason` (SC-006, first half).
 - `DIMENSION_ORDER` matches the frozen copy exactly.
 
 ## Gate 2: designs are deterministic and on the grid (no engine)
@@ -85,8 +85,61 @@ In a **foreground** tab (background tabs clamp timers to about 1 Hz):
 8. Record the ledger's heap size with every island measured on the reference desk (research.md section 9).
 9. Hand the page to someone who has not seen it. Within 3 minutes they name a no-regret move, a trade-off and its lever, enter one world and say what came alive there, and find the trade-off tagged on its strip (SC-012).
 
+## Gate 11: the pool's width (no engine)
+
+`node verify/pool-width.mjs`, asserting contracts/pool-width.md: the six rows of research.md section 17, never below one engine, never more than cores less two, never above 15, and `why` naming the binding term.
+
+## Gate 12: holding the plan's jobs (fake pool, no engine)
+
+`node verify/scheduler-hold.mjs`, asserting contracts/campaign.md: a held job dispatches nothing while a study beside it keeps its turns, runs in flight land, release continues in order, a job admitted held waits, a held-only queue is idle, and cancelling keeps the ledger.
+
+## Gate 13: the panel and the campaign, driven
+
+In a **foreground** tab:
+
+1. The layouts of contracts/planner-panel.md at every width it names, each panel alone and both together, including the fold swap. Nothing crosses the sheet's edge, and no drawing is wider than its host.
+2. The coverage line letters the width and why, and on this machine it matches `poolWidth` for the reported cores and memory.
+3. On a design-day desk, open the plan: the solve counter rises by the home world and the jumps (about 1,632 runs at the default desk) and stops. No island's own screening runs until it is asked for (FR-009a).
+4. Pause mid-campaign: the counter stops within the runs already in flight, and a study opened beside it keeps solving. Resume: it continues, and no design already measured runs again. Cancel: the counter stops, every measured dot stays drawn, and nothing more queues until Resume or a door.
+5. Step 2 of gate 9 again, at this machine's full width: a slider drag on E-01 while the plan measures keeps its cadence within 10 % (SC-002).
+6. With the console open and the panel folded to its rail at 1,440 px, press a strip tag: the panel unfolds and its entry takes focus.
+
 ## Gate 10: budget and the general notes
 
 - `npm run build`, then measure `dist/` against `specs/006-design-space-survey/verify/baseline-size.txt` with the deploy script's brotli settings: the added transfer is under 61,440 bytes (SC-015).
 - `NOTES` in `src/tour.js` gains the plan's step, `TALLY` is extended if the count passes nine, and the storage key moves from `shoebox-general-notes-v4` to `v5` (FR-048).
 - CLAUDE.md gains an architecture section, `.interface-design/system.md` gains the strip tag and the archipelago patterns, and CHANGELOG.md gains one entry in house voice.
+
+## Gate 14: constraints bind the sample (no engine)
+
+`node verify/constraints.mjs`, asserting every item in contracts/constraints.md.
+
+- Every refusal class throws naming what was wrong, and a region narrower than its control's step names the step.
+- Over at least 100 designs and every ruled-out door: every design lies inside the region and every value is on the control's own step grid (SC-016).
+- `designAt` under `Region.EMPTY` and under a narrowing region that still admits the value produce byte-identical `params`, so the cache identity is one string (SC-017).
+- Generating a design, committing a constraint and generating it again returns the constrained value: the `VALUES` memo carries the region.
+- A ruled-out door produces no `Neighbour` and one listed reason, distinct from a world the engine cannot enter.
+- Two regions over one control letter the same words and different numbers, and no constrained figure is lettered without its region (SC-018).
+- `cn` round-trips every entry shape; every refusal class is refused whole; `sv`, `sp` and `cn` together round-trip; a pre-feature corpus decodes byte-identically.
+
+## Gate 15: a re-cut costs only what it has not measured (engine, about 10 minutes)
+
+`node verify/recut.mjs` on the reference desk.
+
+- Measure a region, narrow it, and confirm the solve count rises by exactly the designs the ledger did not already hold (SC-017). Record what share of a typical narrowing was already in hand, which nothing settles on paper (research.md section 27).
+- Designs measured outside the new region stay in the ledger, are stated as ruled out, and are in no figure the panel letters.
+- Widening back to the previous region runs nothing at all.
+
+## Gate 16: the panel, its sequence and the survey inside it, driven
+
+In a **foreground** tab, at 1,920, 1,624, 1,440, 1,180, 900, 780 and 390 px wide and at 1,280 by 600:
+
+1. All six parts stand at every width, in the order FR-001b names, each headed by its question. A part with nothing measured says what it waits on rather than being absent (FR-001a).
+2. The sequence is one column at every width. The ground and the relief stand side by side only above the declared container width, and nothing is wider than its host (FR-046b).
+3. The sheet holds E-01 alone and reaches `--sheet-min` before the panel takes any surplus; the panel stops growing at `--planner-max`.
+4. **The relief after a fold, an unfold and a resize**: it redraws at the host's real size, and never at 1 by 1. Fold the panel to its rail on a finished survey, unfold it, and confirm the relief is correct without a new sample landing (research.md section 21).
+5. Pressing two controls in part 4 cuts the ground in part 5 and scrolls within the panel, not the sheet.
+6. The sentence saying why the ground carries contours and the terrain does not stands where the two meet, in place and not on hover (FR-019a).
+7. Setting, reading and removing a constraint at 390 px with a coarse pointer and from the keyboard, including the summary at the head of part 1 (FR-053, FR-054, US7 scenario 8).
+8. A constraint commit re-letters at once and queues no run; asking for the rest states its count and time first (FR-056).
+9. The general notes' storage key is `shoebox-general-notes-v7`, and the survey step opens the panel.

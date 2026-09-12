@@ -168,10 +168,20 @@ function bindDots(root, points, frame, { onPress, onHover, onCursor, cursorMark 
     }
     return best;
   };
-  const radiusFor = (event) => (event.pointerType === 'mouse' ? 9 : 22);
+  // The click event is the wrong place to ask what pressed it: `pointerType`
+  // on a `click` is missing in Safari and empty for a synthesised one, and a
+  // missing type read as a mouse gave a thumb a nine-unit target. So the type
+  // is taken from the `pointerdown` that began the press, and failing that
+  // from what the stylesheet itself asks, `(pointer: coarse)`.
+  let pressedWith = null;
+  const coarse = () => Boolean(window.matchMedia?.('(pointer: coarse)').matches);
+  const radiusFor = (type) => ((type ? type === 'mouse' : !coarse()) ? 9 : 22);
+  root.addEventListener('pointerdown', (event) => {
+    pressedWith = event.pointerType || null;
+  });
   root.addEventListener('pointermove', (event) => {
     if (event.pointerType !== 'mouse') return;
-    const point = nearest(event, radiusFor(event));
+    const point = nearest(event, radiusFor('mouse'));
     if (point === hovered) return;
     hovered = point;
     onHover?.(point?.dot ?? null);
@@ -182,7 +192,8 @@ function bindDots(root, points, frame, { onPress, onHover, onCursor, cursorMark 
     onHover?.(null);
   });
   root.addEventListener('click', (event) => {
-    const point = nearest(event, radiusFor(event.pointerType ? event : { pointerType: 'mouse' }));
+    const point = nearest(event, radiusFor(pressedWith));
+    pressedWith = null;
     if (!point) return;
     onHover?.(point.dot);
     onPress?.(point.dot);
@@ -303,10 +314,13 @@ export function drawPlan(host, plan, { stance = null, label = '', onPress = null
 /**
  * The reading against the leading move alone (FR-018): dots, and a trend of
  * binned medians drawn dashed and lettered as an estimate.
+ *
+ * Returns a handle, as `drawPlan` does, so the stance line follows a slider
+ * without the drawing being rebuilt (FR-021).
  */
 export function drawOneMove(host, plan, trend, { stance = null, onPress = null, onHover = null } = {}) {
   host.textContent = '';
-  if (!plan.dots.length) return;
+  if (!plan.dots.length) return null;
   const frame = frameFor(host, { tall: 0.42, max: 260 });
   const pw = frame.width - frame.l - frame.r;
   const ph = frame.height - frame.t - frame.b;
@@ -343,13 +357,24 @@ export function drawOneMove(host, plan, trend, { stance = null, onPress = null, 
   const axisX = svg('text', { class: 'plan-axis', x: frame.l + pw, y: frame.height - 6, 'text-anchor': 'end' });
   axisX.textContent = 'Move 1 →';
   root.append(axisX);
-  if (stance && Number.isFinite(stance.x)) {
-    root.append(svg('line', { class: 'plan-stance-line', x1: px(stance.x), x2: px(stance.x), y1: frame.t, y2: frame.t + ph }));
-  }
+  const line = svg('line', { class: 'plan-stance-line', y1: frame.t, y2: frame.t + ph, visibility: 'hidden' });
   const cursorMark = svg('circle', { class: 'plan-cursor', r: 5, visibility: 'hidden' });
-  root.append(cursorMark);
+  root.append(line, cursorMark);
   host.append(root);
   bindDots(root, points, frame, { onPress, onHover, onCursor: onHover, cursorMark });
+  const handle = {
+    setStance(at) {
+      if (!at || !Number.isFinite(at.x)) {
+        line.setAttribute('visibility', 'hidden');
+        return;
+      }
+      line.setAttribute('x1', px(at.x).toFixed(1));
+      line.setAttribute('x2', px(at.x).toFixed(1));
+      line.removeAttribute('visibility');
+    },
+  };
+  handle.setStance(stance);
+  return handle;
 }
 
 /**
@@ -447,7 +472,7 @@ function channelOf(entry) {
  * it pointed one way and what that means in words. A row folds into a block
  * at the schedule breakpoint, every figure keeping its head (`data-head`).
  */
-export function renderScreening(table, entries, { reading, onPick, chosen = [], spots = new Map() }) {
+export function renderScreening(table, entries, { reading, onPick, chosen = [], spots = new Map(), stanceRead = true }) {
   table.textContent = '';
   const heads = ['Control or door', 'Anywhere', 'At the stance', 'Consistency', 'In words'];
   const thead = el('thead');
@@ -481,15 +506,25 @@ export function renderScreening(table, entries, { reading, onPick, chosen = [], 
       } else {
         name.textContent = entry.label;
       }
+      // "Only here" is a comparison with the pull at the stance, so where the
+      // pull has not been read for this reading and this desk the words say
+      // the comparison is missing rather than letting "nowhere" stand for a
+      // question nobody asked (FR-030). A door has no stance column to miss.
+      const said =
+        stanceRead || entry.kind !== 'control'
+          ? entry.words
+          : `${entry.words}, not set against the stance: the pull is not read here`;
       const cells = [
         name,
         el('td', 'num', plain(entry.effect, reading)),
         el('td', 'num', entry.atStance === null ? '—' : plain(Math.abs(entry.atStance), reading)),
-        el('td', 'num', `${entry.consistency.agree} of ${entry.consistency.of} points`),
+        // A door's consistency is over matched designs, one building run in
+        // both worlds, not over screening points.
+        el('td', 'num', `${entry.consistency.agree} of ${entry.consistency.of} ${entry.kind === 'door' ? 'matched designs' : 'points'}`),
         // A sweet spot or a limit rides on the words, labelled an estimate
         // (FR-032a): the best value inside the range, how consistently it held
         // and how much worse the worse end is, or the end it keeps improving to.
-        el('td', null, spots.has(entry.key) ? `${entry.words}; ${spotSentence(spots.get(entry.key))}` : entry.words),
+        el('td', null, spots.has(entry.key) ? `${said}; ${spotSentence(spots.get(entry.key))}` : said),
       ];
       cells.forEach((c, at) => {
         c.dataset.head = heads[at];
@@ -502,7 +537,10 @@ export function renderScreening(table, entries, { reading, onPick, chosen = [], 
   table.setAttribute('role', 'table');
   for (const node of table.querySelectorAll('thead, tbody')) node.setAttribute('role', 'rowgroup');
   for (const node of table.querySelectorAll('tr')) node.setAttribute('role', 'row');
-  for (const node of table.querySelectorAll('th')) node.setAttribute('role', 'columnheader');
+  for (const node of table.querySelectorAll('thead th')) node.setAttribute('role', 'columnheader');
+  // A group row names the rows under it, not a column: read as a column
+  // header it would be announced as the head of every cell in its column.
+  for (const node of table.querySelectorAll('tr.group th')) node.setAttribute('role', 'rowheader');
   for (const node of table.querySelectorAll('td')) node.setAttribute('role', 'cell');
 }
 

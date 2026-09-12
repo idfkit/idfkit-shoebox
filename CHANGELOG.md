@@ -9,11 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **One failed run no longer breaks the engine for every run after it.** A
+  simulation that ended in an EnergyPlus fatal left its engine unable to run
+  again, and the engine was reused anyway, so every later study sample,
+  survey position or plan design handed to it failed with "Engine crashed"
+  and no reason. On an annual plan this turned a few genuine failures into
+  more than a thousand. A failed engine is now replaced, on the sheet and in
+  the pool alike, and a failure the engine cannot explain says what it did
+  report rather than nothing.
 - **The pull lists a control its own precondition has switched off.** It asked
   each control a question none of them answers, so a control greyed on its strip
   (the infiltration coefficients at zero infiltration, a frame's conductance
   with no frame) was probed anyway and ranked as moving the reading by exactly
   nothing. It is now listed with the strip's own reason and costs no run.
+- **A window-to-wall ratio now includes its frame, and a large framed window no
+  longer stops the run.** The ratio is measured over the whole opening, frame
+  included, as ASHRAE 90.1 measures it. A wider frame therefore means less
+  glass, not a bigger hole. Before, a ratio near 0.9 with a wide frame produced
+  a window bigger than its wall, and EnergyPlus stopped before simulating. A
+  small ratio with a frame wide enough to leave no glass is now refused on the
+  plan key, which says why. Desks without a frame produce the same file as
+  before.
+- **Fins, overhangs and curbs 1 cm deep are refused.** At that depth
+  EnergyPlus merges the shade's edges and deletes it, so the run went ahead
+  without a shade that the drawing still showed.
 
 ### Changed
 
@@ -41,15 +60,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **The strategy plan: the whole design space for one reading.** Under the
-  survey's pull, choose a reading and the sheet samples every live control at
-  once, drawing each completed run along the two moves that decide the reading,
-  each lettered as a recipe with how much it explains, over a smoothed terrain
-  that says it is inference. Around it stand the worlds one choice away, each
-  jump measured on the same designs run in both; press a design to step in.
-  Choose two readings and every control and door is sorted into helps both,
-  trade-off, lever or free, printed on its own strip in the console. The plan
-  shares the studies' queue and cache, and a link carries its readings.
+- **The strategy plan: the whole design space for one reading.** It opens in
+  its own panel on the left of the sheet. Choose a reading and the sheet
+  samples every live control at once, drawing each completed run along the two
+  moves that decide the reading, each lettered as a recipe with how much it
+  explains, over a smoothed terrain that says it is inference. Around it stand
+  the worlds one choice away, each jump measured on the same designs run in
+  both; each world's own screening is measured on request, with its cost stated
+  first, and a press on a design steps in. Choose two readings and every control
+  and door is sorted into helps both, trade-off, lever or free, printed on its
+  own strip in the console. Its runs can be paused, resumed or cancelled, and
+  they share the studies' queue and cache, which now runs as many simulations
+  side by side as the machine has cores less two. A link carries its readings.
 
 - **A survey of the design space, on a second drawing.** Choose two controls
   and a reading, and the sheet cuts a ground through the desk as it stands: a
@@ -103,20 +125,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Shared links now carry both the chosen quantity and every open study. Opening
   one recreates the same questions and re-solves them locally; links minted
   before this feature continue to open with no studies, as they did before.
-
-### Fixed
-
-- **A window-to-wall ratio now includes its frame, and a large framed window no
-  longer stops the run.** The ratio is measured over the whole opening, frame
-  included, as ASHRAE 90.1 measures it. A wider frame therefore means less
-  glass, not a bigger hole. Before, a ratio near 0.9 with a wide frame produced
-  a window bigger than its wall, and EnergyPlus stopped before simulating. A
-  small ratio with a frame wide enough to leave no glass is now refused on the
-  plan key, which says why. Desks without a frame produce the same file as
-  before.
-- **Fins, overhangs and curbs 1 cm deep are refused.** At that depth
-  EnergyPlus merges the shade's edges and deletes it, so the run went ahead
-  without a shade that the drawing still showed.
 
 ## [0.3.0] - 2026-09-03
 

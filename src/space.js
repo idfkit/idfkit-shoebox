@@ -311,9 +311,23 @@ const decimalsOf = (step) => (String(step).split('.')[1] ?? '').length;
  * `field.js` keeps, because `0 + 3 · 0.05` is 0.15000000000000002 and that
  * number would ride into the IDF as it stands.
  */
-function snapped(control, u) {
-  const stops = Math.floor((control.max - control.min) / control.step + 1e-9);
-  const at = Math.min(stops, Math.floor(u * (stops + 1)));
+function snapped(control, u, span = null) {
+  // Anchored at `control.min` and **never** at the span's own `from`, which is
+  // what makes a re-cut free (SC-017): every value this returns lies on the
+  // control's one global step grid, so a design measured before a constraint
+  // and the same design measured under it are one desk and therefore one cache
+  // entry. `samplePoints` anchors its grid the same way and for the same
+  // reason (`src/study.js`).
+  const from = span ? span.from : control.min;
+  const to = span ? span.to : control.max;
+  const first = Math.ceil((from - control.min) / control.step - 1e-9);
+  const last = Math.floor((to - control.min) / control.step + 1e-9);
+  // Equal-probability binning over the stops inside the span, offset to the
+  // span's low stop, so the span's own rim is not sampled half as often as its
+  // interior — the same rule this used over a full face, where rounding
+  // `u · range / step` would have given the two end stops half a bin each.
+  const count = last - first + 1;
+  const at = first + Math.min(count - 1, Math.floor(u * count));
   return Number((control.min + at * control.step).toFixed(decimalsOf(control.step)));
 }
 
@@ -447,6 +461,197 @@ export function doorsOf() {
   return DOORS;
 }
 
+/* ══ constraints ═════════════════════════════════════════════════════════ */
+
+/**
+ * What the reader has ruled out of the design space, before anything is run.
+ *
+ * A constraint narrows what is **sampled and run**, not what is drawn
+ * (FR-049). That is the whole difference between this and a filter, and it is
+ * why these types live here beside the sequence rather than in `strategy.js`:
+ * the region binds inside `variedAt`, where a design's values are made, so
+ * every design generated under it lies inside it by construction and there is
+ * nothing left to filter afterwards. Fitting the moves to buildings the reader
+ * has already ruled out is precisely what FR-049 exists to prevent.
+ *
+ * Constraints belong to the **desk** and never to a world (FR-051), so matched
+ * designs and the jumps taken on them still compare like with like across
+ * every world. Two of the four answers below are deliberately *not* refusals,
+ * and both matter: a region that excludes the desk's own stance is kept, with
+ * the stance mark standing outside it and saying so, which is `axisFor`'s own
+ * rule that a reader who constrained past where they are standing has said so;
+ * and a constraint on a control that is dark in this world is kept and states
+ * that it reaches nothing here, so that stepping into another world cannot
+ * quietly widen the region.
+ */
+
+/** How many of a control's own stops lie inside `[from, to]`, inclusive. */
+function stopsWithin(control, from, to) {
+  const first = Math.ceil((from - control.min) / control.step - 1e-9);
+  const last = Math.floor((to - control.min) / control.step + 1e-9);
+  return Math.max(0, last - first + 1);
+}
+
+/**
+ * One numeric range the reader has placed on one control (FR-055).
+ *
+ * `to === from` is accepted: pinning to a single value is the degenerate case
+ * the requirement names, not an error.
+ */
+export class Bound {
+  constructor({ key, from, to }) {
+    const { control, face } = controlFor(key);
+    if (face) {
+      throw new Error(`"${key}" is a boundary, which is a door rather than a range, so it carries no bounds`);
+    }
+    // Only `Ruled` carries `min`, `max` and `step`, so only a Scale or a
+    // Facade side has a range to constrain. A Bearing's and a Profile's own
+    // ranges are literals inside `refuses`, and the faceless kinds have no
+    // numeric face at all: each says so rather than being silently accepted
+    // and then bound against an undefined stop.
+    if (control.kind !== 'scale' && control.kind !== 'facade') {
+      throw new Error(
+        `"${key}" is a ${control.kind} control, which carries no min, max or step of its own, so it cannot be bounded`,
+      );
+    }
+    if (!Number.isFinite(from) || !Number.isFinite(to)) {
+      throw new Error(`the bounds on "${key}" are ${from} and ${to}, and a bound has to be a number`);
+    }
+    if (to < from) throw new Error(`the bounds on "${key}" run ${from} to ${to}, which is not a range`);
+    if (from < control.min || to > control.max) {
+      throw new Error(
+        `the bounds on "${key}" run ${from} to ${to}, outside its own ${control.min} to ${control.max} face`,
+      );
+    }
+    // The one piece of validation that is new rather than a reuse. `refuses`
+    // deliberately does not require step alignment, because several shipped
+    // defaults sit off their own grid, so it will not catch a region with no
+    // position in it. Every value `snapped` can return lies on the control's
+    // own grid, so a region containing none of those positions can never be
+    // sampled: it is refused whole, naming the step, because the step is the
+    // fact the reader needs in order to widen it.
+    const stops = stopsWithin(control, from, to);
+    if (stops < 1) {
+      throw new Error(
+        `nothing on "${key}" can be measured between ${from} and ${to}: it steps by ${control.step}, ` +
+          'and no position on that grid lies inside those bounds',
+      );
+    }
+    this.key = key;
+    this.from = from;
+    this.to = to;
+    this.stops = stops;
+    Object.freeze(this);
+  }
+}
+
+/**
+ * One door's excluded settings (FR-055).
+ *
+ * A ruled-out setting is dropped before a world is ever built for it, so it is
+ * never measured, and it is listed as ruled out **by the reader**, which is a
+ * different sentence from a world the engine cannot enter.
+ */
+export class RuledOut {
+  constructor({ door, settings }) {
+    const list = [];
+    for (const setting of settings) {
+      if (!door.settings.some((own) => own === setting)) {
+        throw new Error(`"${String(setting)}" is not a setting of the door "${door.id}"`);
+      }
+      if (!list.some((seen) => seen === setting)) list.push(setting);
+    }
+    if (!list.length) throw new Error(`the door "${door.id}" is ruled out with no settings named`);
+    // A door with no world left behind it is not a narrower design space, it
+    // is an empty one, so it is refused whole rather than leaving the plan
+    // with a door it can neither enter nor report.
+    if (list.length >= door.settings.length) {
+      throw new Error(
+        `every setting of the door "${door.id}" is ruled out, and a design space with no world in it is not a space`,
+      );
+    }
+    this.door = door;
+    this.settings = Object.freeze(list);
+    Object.freeze(this);
+  }
+}
+
+/**
+ * Every constraint in force, and the arithmetic that binds them.
+ *
+ * `Region.EMPTY` is the unconstrained space, and every function that takes a
+ * region takes one of these, so no call site carries a second path for "no
+ * constraints" that could drift from the constrained one.
+ *
+ * The maps are held on a frozen instance and nothing here mutates them;
+ * `Object.freeze` does not seal a `Map`'s contents, which is why they are
+ * built once in this constructor and never handed anywhere that writes.
+ */
+export class Region {
+  constructor(constraints = []) {
+    const bounds = new Map();
+    const ruled = new Map();
+    for (const constraint of constraints) {
+      if (constraint instanceof Bound) {
+        if (bounds.has(constraint.key)) throw new Error(`"${constraint.key}" is bounded twice`);
+        bounds.set(constraint.key, constraint);
+      } else if (constraint instanceof RuledOut) {
+        if (ruled.has(constraint.door.id)) throw new Error(`the door "${constraint.door.id}" is ruled out twice`);
+        ruled.set(constraint.door.id, constraint);
+      } else {
+        throw new Error('a region is made of Bounds and RuledOuts, and nothing else');
+      }
+    }
+    this.bounds = bounds;
+    this.ruled = ruled;
+    // Stable under the order the constraints were given in, because it joins
+    // both the `VALUES` memo key and the link: two spellings of one region
+    // must not key two identical samples.
+    this.signature = JSON.stringify([
+      [...bounds.keys()].sort().map((key) => [key, bounds.get(key).from, bounds.get(key).to]),
+      [...ruled.keys()].sort().map((id) => [id, [...ruled.get(id).settings].map(String).sort()]),
+    ]);
+    Object.freeze(this);
+  }
+
+  /** The span a control is sampled over: its own face where nothing binds it. */
+  spanOf(key) {
+    const bound = this.bounds.get(key);
+    if (bound) return { from: bound.from, to: bound.to };
+    const { control } = controlFor(key);
+    return { from: control.min, to: control.max };
+  }
+
+  /** Whether one value of one control is inside the region. */
+  admits(key, value) {
+    const bound = this.bounds.get(key);
+    return !bound || (value >= bound.from && value <= bound.to);
+  }
+
+  /** Whether one setting of one door is still a world. */
+  allows(door, setting) {
+    const out = this.ruled.get(door.id);
+    return !out || !out.settings.some((ruled) => ruled === setting);
+  }
+
+  /**
+   * The sentence lettered wherever a figure measured in this region stands
+   * (FR-052, SC-018), or null where nothing binds the control.
+   *
+   * An effect per a constrained span and an effect per a full range must never
+   * read as the same claim, so the span travels with the figure rather than
+   * being stated once at the top and hoped about.
+   */
+  stateOf(key) {
+    const bound = this.bounds.get(key);
+    if (!bound) return null;
+    if (bound.from === bound.to) return `pinned at ${formatValue(key, bound.from)}`;
+    return `over ${formatValue(key, bound.from)} to ${formatValue(key, bound.to)}`;
+  }
+}
+
+Region.EMPTY = new Region([]);
+
 /* ══ worlds ══════════════════════════════════════════════════════════════ */
 
 /** Why a key reaches no object in a world, in the channel's or control's own words. */
@@ -556,13 +761,20 @@ export class Neighbour {
  * `channelState` does — Blinds, while the glazing is a simple rating, is the
  * case US2 scenario 6 names.
  */
-export function neighboursOf(world) {
+export function neighboursOf(world, region = Region.EMPTY) {
   const out = [];
   const state = channelState(world.desk, world.patch);
+  // A setting the reader has ruled out is dropped **before** a world is built
+  // for it, so it is never measured at all (FR-055). It is listed as ruled out
+  // by the reader, which is a different sentence from a world the engine
+  // cannot enter, and both lists stand, because FR-043 has the plan say what
+  // it has not visited.
+  const ruledOut = (door, setting) => !region.allows(door, setting);
   for (const door of DOORS) {
     if (door.kind === 'patch') {
       const from = world.patch[door.channel.id];
       const setting = !from;
+      if (ruledOut(door, setting)) continue;
       const patch = { ...world.patch, [door.channel.id]: setting };
       const there = channelState(world.desk, patch).get(door.channel.id);
       if (!setting && !there.engaged) {
@@ -584,6 +796,9 @@ export function neighboursOf(world) {
     const from = world.desk[door.key];
     for (const setting of door.settings) {
       if (setting === from) continue;
+      // Ruled out by the reader: no world is built for it and it is never
+      // measured, the same skip the patch doors above take (FR-055).
+      if (ruledOut(door, setting)) continue;
       let refusal = null;
       if (here.bypassed) refusal = `Patch ${door.channel.name} in to reach this world.`;
       else if (!here.engaged) refusal = here.blocked;
@@ -595,6 +810,18 @@ export function neighboursOf(world) {
         continue;
       }
       const desk = { ...world.desk, [door.key]: setting, ...door.implied(setting) };
+      // The flip can block the very channel it is a choice on, and the home
+      // desk's state cannot see that: the network air model with fewer than
+      // two ways through the envelope is a channel whose `requires` fails only
+      // once the choice is made. That world writes none of the channel's
+      // objects, so it is not the world the door names, and the channel's own
+      // sentence is the refusal, evaluated on the flipped desk as
+      // `channelState` evaluates it.
+      const there = channelState(desk, world.patch).get(door.channel.id);
+      if (!there.engaged) {
+        out.push(new Neighbour({ door, from, setting, refusal: there.blocked }));
+        continue;
+      }
       out.push(
         new Neighbour({
           door,
@@ -616,14 +843,26 @@ export function neighboursOf(world) {
 const VALUES = new Map();
 const VALUES_LIMIT = 8192;
 
-function variedAt(index) {
-  let values = VALUES.get(index);
+function variedAt(index, region = Region.EMPTY) {
+  // The region joins the memo key, and it is not a nicety. Keyed by the index
+  // alone, a constraint committed after a design had been generated would hand
+  // back the value from the unconstrained space: the design would be drawn
+  // inside the region, keyed as if it were inside the region, and be a
+  // building from outside it, with nothing anywhere reporting the difference.
+  // Principle II is the rule that breaks. Clearing the memo on every commit is
+  // correct too and is coarser: FR-050 makes widening back free, so a reader
+  // alternating two regions would pay to regenerate every world's values each
+  // time, where a signature in the key keeps both.
+  const at = `${index}|${region.signature}`;
+  let values = VALUES.get(at);
   if (values) return values;
   values = {};
-  for (const key of VARIED) values[key] = snapped(controlFor(key).control, unit(index, ROLES.get(key).dimension));
+  for (const key of VARIED) {
+    values[key] = snapped(controlFor(key).control, unit(index, ROLES.get(key).dimension), region.spanOf(key));
+  }
   Object.freeze(values);
   if (VALUES.size >= VALUES_LIMIT) VALUES.delete(VALUES.keys().next().value);
-  VALUES.set(index, values);
+  VALUES.set(at, values);
   return values;
 }
 
@@ -637,26 +876,42 @@ function variedAt(index) {
  * the other.
  */
 export class Design {
-  constructor({ index, world, params, u }) {
+  constructor({ index, world, params, u, region = Region.EMPTY }) {
     this.index = index;
     this.world = world;
+    this.region = region;
     this.params = params;
     this.u = u;
-    this.id = `${world.signature}:${index}`;
+    // The region rides the id for the reason it rides the `VALUES` memo key:
+    // under a constraint, one index in one world is a **different building**,
+    // and the ledger keys its readings by this string. Without it, narrowing a
+    // region would serve the previous building's readings under an identical
+    // key, with nothing reporting the substitution. An unconstrained design's
+    // id is unchanged, so every entry the ledger already holds still answers.
+    this.id = region.signature === Region.EMPTY.signature
+      ? `${world.signature}:${index}`
+      : `${world.signature}:${index}@${region.signature}`;
     Object.freeze(this);
   }
 }
 
-/** Pure function of `(world.held, world.patch, index)`. */
-export function designAt(world, index) {
-  const values = variedAt(index);
+/** Pure function of `(world.held, world.patch, index, region)`. */
+export function designAt(world, index, region = Region.EMPTY) {
+  const values = variedAt(index, region);
   const params = {};
   for (const key of PARAM_ORDER) params[key] = ROLES.get(key).role === 'varied' ? values[key] : world.held[key];
   const u = new Float64Array(world.live.length);
   world.live.forEach((key, at) => {
-    u[at] = controlFor(key).control.fraction(values[key]);
+    // The position within the **span**, not `Ruled.fraction`'s position
+    // within the whole face, because the moves are fitted over this `u` and
+    // FR-052 letters an effect per the constrained span. Missing this site
+    // produces shares and recipes that are arithmetically fine and about the
+    // wrong span, which is the worst shape this defect could take.
+    const span = region.spanOf(key);
+    const width = span.to - span.from;
+    u[at] = width > 0 ? (values[key] - span.from) / width : 0;
   });
-  return new Design({ index, world, params: Object.freeze(params), u });
+  return new Design({ index, world, region, params: Object.freeze(params), u });
 }
 
 /**
@@ -667,10 +922,13 @@ export function designAt(world, index) {
  * key is named in the throw, because a jump taken across two different
  * buildings would be a difference of two things at once lettered as one.
  */
-export function matched(home, neighbour, index) {
+export function matched(home, neighbour, index, region = Region.EMPTY) {
   if (!neighbour.world) throw new Error(`the neighbour through ${neighbour.door.id} was refused, so it has no designs`);
-  const a = designAt(home, index);
-  const b = designAt(neighbour.world, index);
+  // Both sides take the same region, or a pair would compare a design drawn
+  // from the constrained space against one drawn from the whole of it, and the
+  // jump would be a difference of two things at once (FR-051).
+  const a = designAt(home, index, region);
+  const b = designAt(neighbour.world, index, region);
   const door = neighbour.door;
   const allowed = new Set([
     ...(door.key ? [door.key] : []),
@@ -727,17 +985,22 @@ export class Probe {
  * effect at the stance and its effect anywhere are the same measurement taken
  * in different places.
  */
-export function probesAt(world, base) {
+export function probesAt(world, base, region = Region.EMPTY) {
   const params = base.params;
   const state = channelState(params, world.patch);
   return world.live.map((key) => {
     const { control } = controlFor(key);
+    // A twentieth of the **span** rather than of the whole range, with the
+    // room test against the span's own bounds, or a probe would step outside
+    // the region the plan says it measured and its effect would be lettered
+    // per a span the probe had left (FR-052).
+    const span = region.spanOf(key);
     const here = params[key];
-    const size = Math.max(control.step, Math.round((control.max - control.min) / 20 / control.step) * control.step);
+    const size = Math.max(control.step, Math.round((span.to - span.from) / 20 / control.step) * control.step);
     const digits = decimalsOf(control.step);
     const up = Number((here + size).toFixed(digits));
-    const to = up <= control.max ? up : Number((here - size).toFixed(digits));
-    if (!(to >= control.min && to <= control.max && to !== here)) {
+    const to = up <= span.to ? up : Number((here - size).toFixed(digits));
+    if (!(to >= span.from && to <= span.to && to !== here)) {
       return new Probe({
         base,
         key,

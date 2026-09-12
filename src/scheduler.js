@@ -68,6 +68,7 @@ export function makeStudyJob({
   asked,
   openingBasis = null,
   designs = null,
+  held = false,
 }) {
   if (!Array.isArray(points) || !points.length || points.some((v) => !Number.isFinite(v))) {
     throw new Error(`makeStudyJob: the study of ${key ?? id} carries no numeric positions to sample`);
@@ -166,6 +167,10 @@ export function makeStudyJob({
     contexts: designs === null ? null : new Map(),
     done: 0,
     total: points.length,
+    // Held by the reader rather than cancelled (`holdWhere`): the job keeps its
+    // place, its `order`, `started` and `curve`, and dispatches nothing until
+    // released, so a resumed campaign continues exactly where it stopped.
+    held,
     state: 'queued', // -> 'done' | 'cancelled'
     cancelled: false, // false | 'stopped' | 'moved' | 'cleared'
   };
@@ -215,6 +220,10 @@ export function createStudyScheduler({
   let wasIdle = true;
 
   const active = (job) => job.state === 'queued' && !job.cancelled;
+  // What may dispatch now. A held job is still active, so it keeps its identity
+  // in `byKey`, can be cancelled and superseded, and counts in `progress`; it is
+  // only never taken.
+  const takeable = (job) => active(job) && !job.held;
 
   function identities(job, value, carried = job.carried) {
     const identity = keyOf(job, value, carried);
@@ -277,13 +286,19 @@ export function createStudyScheduler({
   const readingOf = (entry, quantity) => entry?.readings?.[quantity] ?? null;
   const drew = (point) => point?.reading != null;
 
-  function land(job, index, sample) {
+  // Why a sample landed as a gap: the message its build, its run or its reader
+  // threw. It travels with the landing, so a job riding another's run is
+  // handed the same reason by the same promise.
+  const reasonOf = (error) => String(error?.message ?? error ?? '') || null;
+
+  function land(job, index, sample, failure = null) {
     if (!active(job)) return; // cancelled while this sample was in flight
     job.curve[index] = {
       value: job.points[index],
       reading: readingOf(sample, job.quantity),
       ...(sample?.readings ?? {}),
       sample,
+      failure,
     };
     job.done += 1;
     // The index rides along for a design-list job's reader, which files each
@@ -333,7 +348,7 @@ export function createStudyScheduler({
    * be served *only*.
    */
   function takeNext() {
-    const live = jobs.filter(active);
+    const live = jobs.filter(takeable);
     if (!live.length) return null;
     if (cursor >= live.length) cursor = 0;
     for (let n = 0; n < live.length; n += 1) {
@@ -371,8 +386,8 @@ export function createStudyScheduler({
           land(job, index, point);
           drain();
         },
-        () => {
-          land(job, index, null);
+        (error) => {
+          land(job, index, null, reasonOf(error));
           drain();
         },
       );
@@ -447,11 +462,12 @@ export function createStudyScheduler({
         land(job, index, sample);
         drain();
       },
-      () => {
-        // The run could not be attempted at all. Same gap as a failed run.
+      (error) => {
+        // The build, the run or the reader threw. Same gap as a failed run,
+        // carrying what was thrown.
         if (pending.get(pendingKey) === promise) pending.delete(pendingKey);
         inFlight -= 1;
-        land(job, index, null);
+        land(job, index, null, reasonOf(error));
         drain();
       },
     );
@@ -472,7 +488,9 @@ export function createStudyScheduler({
       if (!next) break;
       dispatch(next.job, next.index);
     }
-    const idle = inFlight === 0 && !jobs.some(active);
+    // A queue holding only held jobs is idle: nothing will dispatch until the
+    // reader releases them, and the studies' densify pass waits on 'idle'.
+    const idle = inFlight === 0 && !jobs.some(takeable);
     if (idle && !wasIdle) onUpdate(null, 'idle');
     wasIdle = idle;
   }
@@ -532,6 +550,22 @@ export function createStudyScheduler({
       cache.clear();
       compatible.clear();
       for (const job of [...jobs]) cancel(job, reason);
+      drain();
+    },
+
+    /**
+     * Hold or release every active job the predicate matches, then drain.
+     *
+     * The plan's Pause, and deliberately not a cancel: a cancelled job loses
+     * its place in the round-robin and re-queueing it rebuilds its design
+     * lists, where a held one resumes by clearing a flag. Nor is it `paused()`,
+     * which would stop every study and the survey with it. A run already on an
+     * engine is untouched and lands as usual.
+     */
+    holdWhere(pred, held) {
+      for (const job of jobs) {
+        if (active(job) && pred(job)) job.held = held;
+      }
       drain();
     },
 

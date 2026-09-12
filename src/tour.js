@@ -45,7 +45,12 @@ import { fold } from './console.js';
 // eight ticks would meet a sheet of nine with the new one standing unfilled
 // as though skipped — or, if v4 had retired the sheet as all taken, never meet
 // the note about the plan at all.
-const STORE = 'shoebox-general-notes-v5';
+//
+// v6 because the plan moved into its own panel on the left, so its note now
+// points at a different thing: the button that opens the panel, or the panel
+// itself. A tick taken against a note circling a section inside E-02 is a tick
+// against a note the reader would no longer recognise.
+const STORE = 'shoebox-general-notes-v7';
 const VIEWS = ['open', 'folded', 'retired'];
 
 // A sheet counts its own notes in words, and the count is read off the
@@ -60,7 +65,7 @@ const TALLY = Object.freeze([
 ]);
 
 class Note {
-  constructor({ id, title, step, body, target, focus = null, desk = false }) {
+  constructor({ id, title, step, body, target, focus = null, desk = false, planner = false }) {
     // The step is what stands in view: one instruction, held to the step
     // budget below. The body folds under it, so a first reader meets seven
     // lines rather than 340 words, and the reader who wants the why opens it.
@@ -78,6 +83,10 @@ class Note {
     // about, so a keyboard reader lands where the words point.
     this.focus = focus ?? target;
     this.desk = desk;
+    // The plan's panel is the console's mirror, and its note follows the same
+    // arrangement: the button that opens the panel while it is closed, the
+    // panel itself while it is open.
+    this.planner = planner;
     Object.freeze(this);
   }
 }
@@ -172,41 +181,51 @@ export const NOTES = Object.freeze([
   // E-02's own step, and it goes after the board rather than before it for a
   // reason the flow decides: a survey is read *against* something, and the
   // readings it can be cut for are exactly the ones the rest of the sheet has
-  // just taught. It is also the first step whose subject is a second drawing
-  // rather than a panel, which is why the pen circles the whole section.
+  // just taught. Its subject used to be a second drawing on the sheet, which
+  // is why the pen circled the whole section; the ground is now part 5 of the
+  // plan's panel, so it follows the same arrangement the plan's own step and
+  // the console's do — the button that opens the panel while it is closed, and
+  // the panel itself while it is open. Circling `#survey` regardless would
+  // point the pen at a section inside a closed panel, which is nowhere.
   new Note({
     id: 'survey',
     title: 'Survey the design space',
-    step: 'Choose two controls and a reading, and cut a ground of real runs.',
+    step: 'Open the plan, choose two controls and a reading, and cut a ground.',
     body:
       'Choose two controls and a reading, and the sheet cuts a ground through ' +
       'the desk as it stands — one real EnergyPlus run at every position of a ' +
-      'grid, contoured and drawn in relief. The contours between the runs are ' +
-      'interpolation and carry no figure; only the ticks do. Stand on any ' +
-      'measured point and the whole of E-01 becomes that building. Read the ' +
-      'pull first if you do not know which two controls are worth cutting ' +
-      'along: it ranks all ninety by how far each moves the reading here.',
-    target: '#survey',
+      'grid, contoured and drawn in relief. It is part 5 of the strategy ' +
+      'plan\'s panel, directly under the screening that hands it its two ' +
+      'axes, so pressing two controls there cuts it without anything being ' +
+      'retyped. The contours between the runs are interpolation and carry no ' +
+      'figure; only the ticks do. Stand on any measured point and the whole ' +
+      'of E-01 becomes that building.',
+    target: '#planner-open',
     focus: '#survey-choose',
+    planner: true,
   }),
   // The plan's own step, after the survey's because it answers the question
-  // the survey leaves open — which two controls, and what then — and because
-  // it is drawn inside E-02, under the pull. Its square fills when a plan
-  // first stands with its moves fitted, which is the event the note teaches:
-  // the whole desk read at once, not merely a reading chosen.
+  // the survey leaves open — which two controls, and what then. It is drawn in
+  // its own panel on the left of the sheet, so the pen circles the button that
+  // opens it until the panel is open. Its square fills when a plan first
+  // stands with its moves fitted, which is the event the note teaches: the
+  // whole desk read at once, not merely a reading chosen.
   new Note({
     id: 'strategy',
     title: 'Read the whole design space',
-    step: 'Choose a reading under the survey, and read every world one door away.',
+    step: 'Open the strategy plan on the left, and choose a reading to measure.',
     body:
-      'The strategy plan samples every live control at once and draws the designs ' +
+      'The strategy plan opens in its own panel, on the left of the sheet. It ' +
+      'samples every live control at once and draws the designs ' +
       'along the two moves that decide the reading, each lettered as a recipe with ' +
       'how much of the reading it explains. Around it stand the worlds one choice ' +
       'away, each jump measured on the same designs run in both. Choose two ' +
       'readings and every control is sorted into helps both, trade-off, lever or ' +
-      'free, and the kind is printed on its own strip in the console.',
-    target: '#strategy',
+      'free, and the kind is printed on its own strip in the console. Its runs ' +
+      'can be paused, resumed or cancelled from the panel\'s head.',
+    target: '#planner-open',
     focus: '#strategy-readings',
+    planner: true,
   }),
   new Note({
     id: 'link',
@@ -274,7 +293,7 @@ function read() {
   }
 }
 
-export function mountTour({ openDesk } = {}) {
+export function mountTour({ openDesk, openPlanner } = {}) {
   const host = document.getElementById('notesheet');
   if (!host) return null;
 
@@ -307,12 +326,15 @@ export function mountTour({ openDesk } = {}) {
     const n = next();
     if (!n) return;
     const deskOpen = document.body.classList.contains('desk-open');
-    document.querySelector(n.desk && deskOpen ? n.focus : n.target)?.classList.add('guided');
+    const plannerOpen = document.body.classList.contains('planner-open');
+    const subject = n.desk && deskOpen ? n.focus : n.planner && plannerOpen ? '#planner' : n.target;
+    document.querySelector(subject)?.classList.add('guided');
   }
 
   /** Point the reader at the note's subject without doing the step for them. */
   function stage(n) {
     if (n.desk) openDesk?.(true);
+    if (n.planner) openPlanner?.(true);
     const el = document.querySelector(n.focus);
     if (!el) return;
     const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;

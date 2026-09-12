@@ -561,6 +561,14 @@ export function movesOf(world, reading, ledger, { bases, designs = 0, effects = 
       const fm = mean(fs);
       direction = t.reduce((s, tv, i) => s + (tv - tm) * (fs[i] - fm), 0);
     }
+    // With too few designs to correlate over, the gradients themselves say
+    // which way the move raises the reading: the mean of g · w over the
+    // complete bases is the reading's change along it, measured rather than
+    // assumed. Only where that too is exactly zero does the largest weight
+    // decide, which is a convention with nothing left to contradict it.
+    if (direction === 0) {
+      direction = mean(eff.complete.map((b) => eff.g[b].reduce((s, gj, j) => s + gj * w[j], 0)));
+    }
     if (direction === 0) {
       const largest = w.reduce((best, wj, j) => (Math.abs(wj) > Math.abs(w[best]) ? j : best), 0);
       direction = w[largest];
@@ -799,6 +807,12 @@ function latticeAt(points, h, cells) {
  * The audit, as a function so the constructor and the chooser run the same
  * test and a harness can run it a third time independently. Returns null
  * where it holds, and the first failure otherwise.
+ *
+ * FR-019 forbids a rise *or* a hollow the designs do not support, so a local
+ * worst is held to the mirror of the local best's test: the designs within one
+ * bandwidth must read worse than those in the ring around them. Auditing only
+ * the best areas left a smoother free to dig a pit in the terrain's
+ * worst-looking corner, which is the same false claim pointing the other way.
  */
 export function auditTerrain(lattice, cells, h, dots, better) {
   const points = unitSquare(dots);
@@ -809,7 +823,8 @@ export function auditTerrain(lattice, cells, h, dots, better) {
       if (!Number.isFinite(here)) continue;
       let neighbours = 0;
       let best = true;
-      for (let dy = -1; dy <= 1 && best; dy += 1) {
+      let worst = true;
+      for (let dy = -1; dy <= 1 && (best || worst); dy += 1) {
         for (let dx = -1; dx <= 1; dx += 1) {
           if (!dx && !dy) continue;
           const nx = ix + dx;
@@ -818,13 +833,12 @@ export function auditTerrain(lattice, cells, h, dots, better) {
           const there = lattice[ny * cells + nx];
           if (!Number.isFinite(there)) continue;
           neighbours += 1;
-          if (!beats(here, there)) {
-            best = false;
-            break;
-          }
+          if (!beats(here, there)) best = false;
+          if (!beats(there, here)) worst = false;
+          if (!best && !worst) break;
         }
       }
-      if (!best || !neighbours) continue;
+      if ((!best && !worst) || !neighbours) continue;
       const cx = (ix + 0.5) / cells;
       const cy = (iy + 0.5) / cells;
       const inner = [];
@@ -834,8 +848,11 @@ export function auditTerrain(lattice, cells, h, dots, better) {
         if (r <= h) inner.push(p.value);
         else if (r <= 2 * h) ring.push(p.value);
       }
-      if (!inner.length || !ring.length || !beats(mean(inner), mean(ring))) {
+      if (best && (!inner.length || !ring.length || !beats(mean(inner), mean(ring)))) {
         return `the best area at cell ${ix},${iy} holds designs no better than those around it`;
+      }
+      if (worst && (!inner.length || !ring.length || !beats(mean(ring), mean(inner)))) {
+        return `the worst area at cell ${ix},${iy} holds designs no worse than those around it`;
       }
     }
   }
@@ -890,12 +907,53 @@ export function terrainOf(dots, reading) {
  */
 export class Plan {
   constructor(fields) {
+    // The share explained is lettered wherever a plan is drawn (FR-017), so a
+    // plan holds exactly one of a score and the sentence saying why it has
+    // none: a null with no reason would reach the sheet as a bare em dash.
+    if ((fields.explained2 === null) === (fields.scoreAbsence === null)) {
+      throw new Error(
+        `the plan of ${fields.reading.label} carries ${fields.explained2 === null ? 'neither a share explained nor the reason it has none' : 'both a share explained and a reason it has none'}`,
+      );
+    }
+    if (!(fields.spots instanceof Map)) throw new Error(`the plan of ${fields.reading.label} carries its sweet spots as something other than a map`);
     Object.assign(this, fields);
     this.dots = Object.freeze([...fields.dots]);
     this.gaps = Object.freeze([...fields.gaps]);
     this.limits = Object.freeze([...fields.limits]);
+    this.spots = sealed(fields.spots);
     Object.freeze(this);
   }
+}
+
+/**
+ * A map that refuses to change once built. `Object.freeze` on a `Map` freezes
+ * its properties and not its entries, so a frozen plan's spots could still be
+ * `set` by a caller; these throw instead. The flag lives outside the instance
+ * because the `Map` constructor adds its entries through `set` before any
+ * field of a subclass exists.
+ */
+const SEALED = new WeakSet();
+class SealedMap extends Map {
+  set(key, value) {
+    if (SEALED.has(this)) throw new Error(`a plan's sweet spots are sealed; ${String(key)} cannot be set`);
+    return super.set(key, value);
+  }
+
+  delete(key) {
+    if (SEALED.has(this)) throw new Error(`a plan's sweet spots are sealed; ${String(key)} cannot be deleted`);
+    return super.delete(key);
+  }
+
+  clear() {
+    if (SEALED.has(this)) throw new Error("a plan's sweet spots are sealed and cannot be cleared");
+    super.clear();
+  }
+}
+
+function sealed(map) {
+  const out = new SealedMap(map);
+  SEALED.add(out);
+  return Object.freeze(out);
 }
 
 export function planOf(world, reading, ledger, { designs, bases, kind, tau = null }) {
@@ -933,22 +991,32 @@ export function planOf(world, reading, ledger, { designs, bases, kind, tau = nul
   let explained2 = null;
   let explained1 = null;
   let scoreAbsence = null;
+  if (flat) scoreAbsence = 'A reading that does not move has nothing to explain.';
+  else if (!moves) {
+    scoreAbsence = `The moves are fitted from ${MOVES_FROM} complete screening points; ${effects.complete.length} so far.`;
+  }
   if (moves) {
     dots = landed.map((p) => new Dot({ index: p.index, id: p.id, value: p.value, x: moves[0].along(p.u), y: moves[1].along(p.u) }));
-    if (flat) scoreAbsence = 'A reading that does not move has nothing to explain.';
-    else if (landed.length < SCORED_FROM) {
-      scoreAbsence = `Scored from ${SCORED_FROM} measured designs; ${landed.length} so far.`;
-    } else {
-      const indices = landed.map((p) => p.index);
-      const two = new Float64Array(dots.length * 2);
-      const one = new Float64Array(dots.length);
-      dots.forEach((dot, i) => {
+    // FR-017 scores the drawing on designs the moves were not derived from.
+    // The moves are fitted on the screening's gradients, and the screening
+    // bases are designs 0 to bases − 1 of this same sequence, so those designs
+    // are left out of the score entirely: neither scored nor used to predict.
+    const scored = dots.filter((dot) => dot.index >= bases);
+    if (!flat && scored.length < SCORED_FROM) {
+      scoreAbsence = `Scored on ${SCORED_FROM} designs the moves were not fitted from; ${scored.length} so far.`;
+    } else if (!flat) {
+      const indices = scored.map((dot) => dot.index);
+      const two = new Float64Array(scored.length * 2);
+      const one = new Float64Array(scored.length);
+      scored.forEach((dot, i) => {
         two[i * 2] = dot.x;
         two[i * 2 + 1] = dot.y;
         one[i] = dot.x;
       });
-      explained2 = knnShare(two, 2, values, indices);
-      explained1 = knnShare(one, 1, values, indices);
+      const scoredValues = scored.map((dot) => dot.value);
+      explained2 = knnShare(two, 2, scoredValues, indices);
+      explained1 = knnShare(one, 1, scoredValues, indices);
+      if (explained2 === null) scoreAbsence = 'The designs scored so far do not differ enough to be scored.';
     }
   }
   const oneMove = explained1 !== null && explained2 !== null && explained1 >= explained2 - ONE_MOVE.margin;
@@ -1010,13 +1078,15 @@ export function planOf(world, reading, ledger, { designs, bases, kind, tau = nul
  * The share of a reading two chosen controls explain, scored exactly as a plan
  * is (SC-004's comparison): their own normalised positions as the coordinates.
  */
-export function shareAlong(world, reading, ledger, keys, designs) {
+export function shareAlong(world, reading, ledger, keys, designs, bases = 0) {
   const at = keys.map((key) => world.live.indexOf(key));
   if (at.some((j) => j < 0)) throw new Error(`shareAlong: ${keys.join(' and ')} are not all live in this world`);
   const coords = [];
   const values = [];
   const indices = [];
-  for (let index = 0; index < designs; index += 1) {
+  // Over the same designs the plan is scored on, or the comparison would set
+  // two scores on two samples beside each other.
+  for (let index = bases; index < designs; index += 1) {
     const value = valueOf(reading, ledger.get(designId(world, index)));
     if (value === null) continue;
     const { u } = designAt(world, index);
@@ -1067,16 +1137,43 @@ export class MatchedPairs {
   }
 }
 
-/** The difference a door makes to a reading, on matched designs (FR-010, FR-024). */
+/**
+ * The difference a door makes to a reading, on matched designs (FR-010, FR-024).
+ *
+ * Computed here, off its own `MatchedPairs` and the ledger, rather than handed
+ * a list of differences: a constructor that accepted deltas would accept them
+ * from anywhere, and the whole point of the class is that a jump cannot be
+ * built from anything but one building run twice. Only pairs where **both**
+ * runs landed with a reading contribute.
+ *
+ * `aligned` keeps one slot per pair in pair order, NaN where the pair is not
+ * measured, so two readings' jumps through one door line up building by
+ * building; `deltas` is the measured slots alone. `failures` lists every run
+ * of the pairs that failed, with the engine's reason (FR-013, FR-043).
+ */
 export class Jump {
-  constructor({ pairs, reading, deltas, measured }) {
+  constructor({ pairs, reading, ledger }) {
     if (!(pairs instanceof MatchedPairs)) throw new Error('a jump is taken on matched pairs and on nothing else');
+    if (!(ledger instanceof DesignLedger)) throw new Error('a jump reads its pairs off the ledger and off nothing else');
+    const aligned = new Float64Array(pairs.pairs.length).fill(Number.NaN);
+    const failures = [];
+    pairs.pairs.forEach(([a, b], at) => {
+      const la = ledger.get(a);
+      const lb = ledger.get(b);
+      if (la?.failure) failures.push(Object.freeze({ id: a, reason: la.failure }));
+      if (lb?.failure) failures.push(Object.freeze({ id: b, reason: lb.failure }));
+      const fa = valueOf(reading, la);
+      const fb = valueOf(reading, lb);
+      if (fa !== null && fb !== null) aligned[at] = fb - fa;
+    });
     this.door = pairs.neighbour.door;
     this.neighbour = pairs.neighbour;
     this.reading = reading;
-    this.deltas = Float64Array.from(deltas);
-    this.measured = measured;
+    this.aligned = aligned;
+    this.deltas = aligned.filter(Number.isFinite);
+    this.measured = this.deltas.length;
     this.wanted = pairs.pairs.length;
+    this.failures = Object.freeze(failures);
     const sorted = [...this.deltas].sort((l, r) => l - r);
     this.median = quantile(sorted, 0.5);
     this.p10 = quantile(sorted, 0.1);
@@ -1087,16 +1184,44 @@ export class Jump {
   }
 }
 
-/** Only pairs where **both** runs landed with a reading contribute. */
 export function jumpOf(pairs, reading, ledger) {
-  const deltas = [];
-  for (const [a, b] of pairs.pairs) {
-    const fa = valueOf(reading, ledger.get(a));
-    const fb = valueOf(reading, ledger.get(b));
-    if (fa === null || fb === null) continue;
-    deltas.push(fb - fa);
+  return new Jump({ pairs, reading, ledger });
+}
+
+/**
+ * A neighbour as the archipelago draws it: its jump always, and its own plan
+ * once that plan has moves (data-model.md). `depth` follows from which of the
+ * two it has, so an island cannot claim moves it has not measured.
+ *
+ * The plan must be of the neighbour's own world, never the home world's
+ * (FR-026), and `cost` is what measuring its own screening still takes at the
+ * desk's cadence, stated before an annual island is measured on request.
+ * `failures` is every failed run behind it, from its pairs and its own plan.
+ */
+export class Island {
+  constructor({ neighbour, jump, plan = null, cost }) {
+    if (!neighbour?.world) throw new Error(`the neighbour through ${neighbour?.door?.id} was refused, so it is listed, not drawn`);
+    if (!(jump instanceof Jump) || jump.neighbour !== neighbour) throw new Error(`the island ${neighbour.id} carries another door's jump`);
+    if (plan !== null && !(plan instanceof Plan)) throw new Error(`the island ${neighbour.id} carries something other than a plan`);
+    if (plan && plan.world.signature !== neighbour.world.signature) {
+      throw new Error(`the island ${neighbour.id} carries a plan measured in another world`);
+    }
+    if (!(Number.isInteger(cost?.runs) && cost.runs >= 0 && Number.isFinite(cost?.seconds))) {
+      throw new Error(`the island ${neighbour.id} states no cost`);
+    }
+    this.neighbour = neighbour;
+    this.id = neighbour.id;
+    this.label = neighbour.label;
+    this.jump = jump;
+    this.plan = plan?.moves ? plan : null;
+    this.depth = this.plan ? 'plan' : 'jump';
+    this.cost = Object.freeze({ runs: cost.runs, seconds: cost.seconds });
+    const seen = new Set();
+    this.failures = Object.freeze(
+      [...jump.failures, ...(plan?.gaps ?? [])].filter(({ id }) => !seen.has(id) && seen.add(id)),
+    );
+    Object.freeze(this);
   }
-  return new Jump({ pairs, reading, deltas, measured: deltas.length });
 }
 
 /* ══ the screening ═══════════════════════════════════════════════════════ */
@@ -1325,10 +1450,14 @@ export function classifyAll({ pair, effects = null, jumps = [new Map(), new Map(
     const ja = jumps[0].get(neighbour.id);
     const jb = jumps[1].get(neighbour.id);
     if (!ja || !jb || !ja.measured || !jb.measured) continue;
-    // Aligned by pair, and only pairs both readings measured: two readings of
-    // one run, so a pair either landed for both or for neither.
-    if (ja.deltas.length !== jb.deltas.length) continue;
-    const r = rawClassification(pair, ja.deltas, jb.deltas, taus);
+    // Aligned by pair, NaN where a reading has no value, and only pairs both
+    // readings measured go in: `rawClassification` skips a point either side
+    // lacks. The two lists of measured deltas cannot be zipped instead — a
+    // run can answer one reading and not the other (a TM59 criterion outside
+    // the season, a cost with no tariff), and then the i-th delta of one is a
+    // different building from the i-th of the other.
+    if (ja.wanted !== jb.wanted) throw new Error(`the two readings' jumps through ${neighbour.id} were taken on different pairs`);
+    const r = rawClassification(pair, ja.aligned, jb.aligned, taus);
     if (r) raw.push({ key: neighbour.id, label: neighbour.label, stage: neighbour.door.stage, door: true, ...r });
   }
   // A trade-off can be taken either way: for the first reading at the second's
@@ -1374,11 +1503,17 @@ export function oneOrTwo(movesA, movesB) {
 
 const KIND_WORD = Object.freeze({ 'no-regret': 'No-regret', 'trade-off': 'Trade-off', lever: 'Lever', free: 'Free' });
 
-/** A classification's printed form on a control's strip and folded row. */
+/**
+ * A classification's printed form on a control's strip and folded row.
+ * `label` is what the tag is of, in design terms: a control's own label, or a
+ * patch door's world ("With blinds"), which no control declaration names.
+ */
 export class StripTag {
-  constructor({ key, text, free, target, stamp }) {
+  constructor({ key, label, text, free, target, stamp }) {
     if (!stamp) throw new Error(`the tag for ${key} carries no stamp, so its freshness cannot be checked`);
+    if (!(typeof label === 'string' && label)) throw new Error(`the tag for ${key} names nothing it is of`);
     this.key = key;
+    this.label = label;
     this.text = text;
     this.free = Boolean(free);
     this.target = target;
@@ -1394,22 +1529,29 @@ export const stampOf = (world, pair) => `${world.signature}|${pair.map((reading)
 export const targetOf = (key) => `strategy-move-${key.replace(/[^A-Za-z0-9_-]/g, '_')}`;
 
 /**
- * A tag's words, from declared short forms only. A lever names the reading it
- * moves and the one it leaves; a sweet spot takes the lever's second clause,
- * since the spot names its own reading.
+ * A tag's words, from declared short forms only, always naming both readings
+ * it was judged against (FR-038). A lever names the reading it moves and the
+ * one it leaves.
+ *
+ * A sweet spot rides on the reading it is for, joined to that reading's short
+ * form as one token (`High≈0.41`), and the tag closes with `est.` once for all
+ * of them (FR-040a). That is what lets a lever keep both of its readings and a
+ * control carry a spot for each chosen reading inside five words: set apart as
+ * a clause of its own, one spot cost a lever its second reading and a second
+ * spot had nowhere to go at all.
  */
-export function tagText(kind, pair, on = null, spot = null) {
-  const [a, b] = pair.map((reading) => SHORT[reading.id]);
-  let head;
-  if (kind === 'lever') {
-    const moved = SHORT[on.id];
-    const left = on.id === pair[0].id ? b : a;
-    head = spot ? `Lever: ${moved}` : `Lever: ${moved}, not ${left}`;
-  } else {
-    head = `${KIND_WORD[kind]}: ${a}/${b}`;
-  }
-  if (!spot) return head;
-  return `${head}; ${SHORT[spot.reading.id]} ≈${spot.value} est.`;
+export function tagText(kind, pair, on = null, spots = []) {
+  const shown = spots.filter((spot) => pair.some((reading) => reading.id === spot.reading.id));
+  const said = (reading) => {
+    const spot = shown.find((s) => s.reading.id === reading.id);
+    return spot ? `${SHORT[reading.id]}≈${spot.value}` : SHORT[reading.id];
+  };
+  const [a, b] = pair;
+  const head =
+    kind === 'lever'
+      ? `Lever: ${said(on)}, not ${said(on.id === a.id ? b : a)}`
+      : `${KIND_WORD[kind]}: ${said(a)}/${said(b)}`;
+  return shown.length ? `${head} est.` : head;
 }
 
 {
@@ -1423,8 +1565,8 @@ export function tagText(kind, pair, on = null, spot = null) {
       for (const kind of TAG_KINDS) {
         const ons = kind === 'lever' ? pair : [null];
         for (const on of ons) {
-          for (const spotOn of [null, a, b]) {
-            const text = tagText(kind, pair, on, spotOn ? { reading: spotOn, value: '0.41' } : null);
+          for (const spotted of [[], [a], [b], [a, b]]) {
+            const text = tagText(kind, pair, on, spotted.map((reading) => ({ reading, value: '0.41' })));
             if (words(text) > BUDGETS.TAG.words) {
               throw new Error(`the strip tag "${text}" is ${words(text)} words, over the ${BUDGETS.TAG.words}-word TAG budget`);
             }
@@ -1438,10 +1580,15 @@ export function tagText(kind, pair, on = null, spot = null) {
 /**
  * Every tag for one classification, stamped (FR-038, FR-040, FR-040a).
  *
- * `spots` maps a key to the `SweetSpot`s named for it on either reading; the
- * first named value inside the range rides on the tag. A control whose
- * classification is not in hand gets no entry, which the console draws as no
- * tag rather than a stale one. A choice door is tagged on its selector only
+ * `spots` maps a key to the `SweetSpot`s named for it on either reading; each
+ * chosen reading's named value inside the range rides on the tag, so a control
+ * with a spot on both carries both (FR-040a). A control whose classification
+ * is not in hand gets no entry, which the console draws as no tag rather than
+ * a stale one.
+ *
+ * `doors` maps a door's console key to the neighbour ids behind it: a choice
+ * door by its selector's key, a patch door as `patch:<channel>`, which the
+ * console letters on that channel's own strip. A choice door is tagged only
  * where every world behind it is the same kind, because a selector with three
  * worlds of three kinds has no one word to carry.
  */
@@ -1451,17 +1598,35 @@ export function tagsFor(world, pair, classifications, spots = new Map(), doors =
   const byKey = new Map(classifications.map((c) => [c.key, c]));
   for (const c of classifications) {
     if (c.door) continue;
-    const spot = (spots.get(c.key) ?? []).find((s) => s.at !== null) ?? null;
     const { control } = controlFor(c.key);
-    const shown = spot ? { reading: spot.reading, value: spot.at.toFixed(control.digits ?? decimalsOf(control.step)) } : null;
-    tags.set(c.key, new StripTag({ key: c.key, text: tagText(c.kind, pair, c.on, shown), free: c.kind === 'free', target: targetOf(c.key), stamp }));
+    const digits = control.digits ?? decimalsOf(control.step);
+    const shown = [];
+    for (const reading of pair) {
+      const spot = (spots.get(c.key) ?? []).find((s) => s.at !== null && s.reading.id === reading.id);
+      if (spot) shown.push({ reading, value: spot.at.toFixed(digits) });
+    }
+    tags.set(
+      c.key,
+      new StripTag({
+        key: c.key,
+        label: labelFor(c.key),
+        text: tagText(c.kind, pair, c.on, shown),
+        free: c.kind === 'free',
+        target: targetOf(c.key),
+        stamp,
+      }),
+    );
   }
   for (const [key, ids] of doors) {
     const kinds = ids.map((id) => byKey.get(id)).filter(Boolean);
     if (!kinds.length || kinds.length !== ids.length) continue;
     const first = kinds[0];
     if (!kinds.every((c) => c.kind === first.kind && c.on === first.on)) continue;
-    tags.set(key, new StripTag({ key, text: tagText(first.kind, pair, first.on), free: first.kind === 'free', target: targetOf(ids[0]), stamp }));
+    const label = key.startsWith('patch:') ? first.label : labelFor(key);
+    tags.set(
+      key,
+      new StripTag({ key, label, text: tagText(first.kind, pair, first.on), free: first.kind === 'free', target: targetOf(ids[0]), stamp }),
+    );
   }
   return tags;
 }

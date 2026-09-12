@@ -44,3 +44,25 @@ Joe and Kuo direction table for 128 dimensions, carried past the 85 faces the
 desk has today so that appending a control never touches it. No asset, font or
 binary was added, and no new output variable is requested, so the engine's own
 payload is untouched.
+
+────────────────────────────────────────────────────────────────────────────
+After the 2026-09-11 amendment (the pool's width, the campaign, the planner
+panel), same script, same brotli settings:
+
+                                          raw     brotli
+assets/index-*.js                      697995     202423
+index.html                             269915      53890
+----------------------------------------------------------
+TOTAL                                  967910     256313
+
+**Added transfer: 30,754 bytes** against SC-015's ceiling of 61,440 (post-feature
+ceiling 286,999; this build is 256,313). The amendment itself costs 5,695 bytes
+over the feature's first 25,059: the panel's markup and styles, the screening's
+fold by its column's width, the campaign's controls and state line, and the
+prose recording them. Nothing was added to the engine's payload.
+
+────────────────────────────────────────────────────────────────────────────
+After the gate 13 fixes (the retired engines, the failure reasons, the
+chooser redraw, the held-job status, the 1,624px boundary and the
+screening's column fold), same script, same brotli settings: TOTAL brotli
+256,919, **added transfer 31,360 bytes** against the ceiling of 61,440.

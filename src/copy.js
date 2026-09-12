@@ -52,6 +52,14 @@ const roster = [
   // than measured, because a tag that could not fit would have to be cut
   // mid-word on a 390 px strip, and the edge case says it never is.
   new Budget({ id: 'TAG', words: 5, scope: "a strip tag under a control's face", asserted: true }),
+  // One numbered part's heading in the plan's panel: its number and the
+  // question it answers. Twelve words is what the longest of the six needs
+  // ("5 · What does the ground look like along two of them?"), and the
+  // questions are the contract's own wording rather than ours to trim. It is
+  // asserted rather than measured because the headings are declared in the
+  // markup and read back at load, so a heading that grew could be caught
+  // before the sequence is ever drawn.
+  new Budget({ id: 'PART', words: 12, scope: "a numbered part's heading in the plan's panel", asserted: true }),
 ];
 
 export const BUDGETS = Object.freeze(Object.fromEntries(roster.map((b) => [b.id, b])));

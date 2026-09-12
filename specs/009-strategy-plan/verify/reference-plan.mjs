@@ -68,7 +68,7 @@ for (const [reading, floor] of [[high, 0.65], [low, 0.5]]) {
     .filter((entry) => entry.kind === 'control' && entry.effect !== null)
     .sort((l, r) => r.effect - l.effect);
   const top = entries.slice(0, 2).map((entry) => entry.key);
-  const single = shareAlong(world, reading, ledger, top, DESIGNS);
+  const single = shareAlong(world, reading, ledger, top, DESIGNS, BASES);
   const recipe = (m) => m.recipe.map(({ key, word, share }) => `${word} ${key} ${Math.round(share * 100)}%`).join(', ');
   console.log(`       ${reading.label}: two moves ${(plan.explained2 * 100).toFixed(1)} %, one ${(plan.explained1 * 100).toFixed(1)} %; ` +
     `${top.join(' + ')} ${(single * 100).toFixed(1)} %`);

@@ -369,3 +369,274 @@ Following the stacked-PR convention, a change requested on an open story's pull 
 - Every harness prints its assertions and exits non-zero on the first failure.
 - Timings are taken in a foreground tab only.
 - No task adds a run-time dependency, an output request, a channel, a control or a model object.
+
+---
+
+## Phase 10: Convergence
+
+- [X] T079 CRITICAL: Refuse a link whose plan the desk cannot offer whole in `src/main.js`: check the plan before `restoreLinkedStudies` and `restoreLinkedSurvey` restore anything, stop every later restore once `refuseLink` has run, and skip `attachFromLink`'s `updatePermalink()` after a refusal per Constitution II, US5/AC3, FR-045 (contradicts)
+- [X] T080 Cancel every `'strategy'` job in `src/main.js` when auto-solve is switched off or a link or station attach begins, and re-queue when the gate lifts, so the plan never says nothing is measured while runs continue per FR-012 (contradicts)
+- [X] T081 Letter the offer's `fix` beside its `reason` in the plan-link refusal in `src/main.js`, and throw rather than substitute "no such reading is declared" when no offer is found per contracts/permalink-key.md (partial)
+- [X] T082 Clear the strip tags with `desk.setTags(new Map(), '')` in `refreshStrategy`/`queueStrategy` in `src/main.js` as soon as the world signature changes, before the throttled render per FR-040, SC-013 (contradicts)
+- [X] T083 Hold the neighbours job in `src/main.js` until the home world's first depth (4 bases, 128 designs) has landed, so the desk's own world is legible first per FR-009 (partial)
+- [X] T084 On an annual desk, state the home world's and the jumps' run count and time before `queueStrategy` queues anything, and queue only once the reader acknowledges it, in `src/main.js` per FR-006, T031 (partial)
+- [X] T085 Refuse the plan with the offer's own reason and fix when a chosen reading stops being available after opening, and queue no runs for it, in `src/main.js` per FR-002, FR-041 (missing)
+- [X] T086 Evaluate `channelState` on the flipped desk in `neighboursOf` in `src/space.js`, refusing with that channel's `requires.reason` when the door's own flip blocks it (the network air model with fewer than two paths) per US2/AC6, contracts/space-module.md (partial)
+- [X] T087 Align door deltas by pair id, NaN where a reading has no value, before `rawClassification` in `classifyAll` in `src/strategy.js` per FR-033, T059 (contradicts)
+- [X] T088 Extend `auditTerrain` in `src/strategy.js` to refuse an unsupported local worst as well as an unsupported local best per FR-019 (partial)
+- [X] T089 Add the static scan for a combined figure of two readings, and the assertion that `Classification` carries no combined field, to a harness in `specs/009-strategy-plan/verify/` per FR-036, contracts/strategy-module.md (missing)
+- [X] T090 Print a patch door's tag (Shading, Blinds, Skylights, Daylight, Context) on its channel's strip head and folded row in `src/console.js` and `src/main.js` per FR-038, contracts/console-tags.md (partial)
+- [X] T091 Dim each free side of a facade or boundary row, not only rows where every side is free, in `src/console.js` and `index.html` per FR-038, T057 (partial)
+- [X] T092 Letter each tag's own text, free ones included and naming both readings, on the folded index row through the `setReadings` front-text path in `src/console.js` per FR-038, contracts/console-tags.md (partial)
+- [X] T093 Pass the world's label into `letterDesign`, and letter world and completed-run status in the island design list and the complete record, in `src/main.js` per FR-020 (partial)
+- [X] T094 Give the opened island panel the home plan's terrain statement (inference, which way is better, its own share) and both move recipes in `src/main.js` per FR-017, FR-019 (partial)
+- [X] T095 Letter failed-run counts and reasons for each island and each jump in `src/main.js` per FR-043, FR-013 (partial)
+- [X] T096 Keep both judged readings on a lever tag that carries a sweet spot, within the `TAG` budget, in `tagsFor` in `src/strategy.js` per FR-038 (contradicts)
+- [X] T097 Carry a sweet spot for each chosen reading on the strip tag, or state which one rides, in `tagsFor` in `src/strategy.js` per FR-040a (partial)
+- [X] T098 Leave the screening base designs out of the held-out share scoring in `planOf` in `src/strategy.js` per FR-017 (partial)
+- [X] T099 Orient each move by the sign of the mean gradient along it when `movesOf` is called without designs in `src/strategy.js` per FR-016 (partial)
+- [X] T100 Assert in the constructors that `Plan` holds exactly one of `explained2` and `scoreAbsence` with frozen `spots`, have `Jump` compute its deltas from its `MatchedPairs`, and add a frozen `Island` class carrying `neighbour`, `jump`, `plan`, `depth` and `cost`, in `src/strategy.js` and `src/main.js` per Constitution workflow 10, T035 (partial)
+- [X] T101 Print `ONE_MOVE.why` where the one-move offer is lettered and `MARGIN.why` where sweet spots are lettered, in `src/main.js` or `src/strategy-view.js` per plan: research sections 5 and 13 (missing)
+- [X] T102 Say in the screening's words column that the stance comparison is missing when the pull has not been read for this reading and desk, in `src/strategy-view.js` per FR-030 (partial)
+- [X] T103 When every landing is a failure, state that the plan measured nothing and why, instead of the waiting sentence, in `src/main.js` per spec edge case "Every run fails" (partial)
+- [X] T104 Key failure reasons by sample identity rather than by job, and drop them when a job is cancelled, in `src/main.js` per FR-013 (partial)
+- [X] T105 Letter the solve counter's delta beside the screening table rather than only in the coverage line, in `src/main.js` and `index.html` per T049 (partial)
+- [X] T106 Replace `control.inert?.(snapshot)` with `control.idle(snapshot)` in the survey axis chooser in `src/main.js` per plan: research section 3 (partial)
+- [X] T107 Return a handle from `drawOneMove` in `src/strategy-view.js` and move its stance line in `syncStrategyStance` in `src/main.js` per FR-021 (partial)
+- [X] T108 Count refused worlds in the one-door-away total on the islands line in `src/main.js` per FR-027 (partial)
+- [X] T109 Re-render the islands when the `--cards` flag changes on resize in `src/main.js` per T066, FR-046 (partial)
+- [X] T110 Take the pointer type from `pointerdown` or `matchMedia('(pointer: coarse)')` rather than from the click event when choosing the nearest design in `src/strategy-view.js` per US6/AC2 (partial)
+- [X] T111 Say in the screening lede that pressing two controls cuts the ground, hand the plan's reading to the survey, letter door consistency as matched designs rather than points, and drop `columnheader` from group rows, in `src/main.js` and `src/strategy-view.js` per US3/AC6, FR-046 (partial)
+- [X] T112 Rephrase the island lede in `src/main.js` so no em dash stands inside a sentence, leaving the dash only as the lone absent glyph, per plan: T077 (contradicts)
+- [X] T113 Add the staged neighbour budget (home 4/128 then 16/512, 32-design jumps, reduced-depth islands in design-stage order, automatic on design days and on request on a year) to "The strategy plan" in `CLAUDE.md` per T074 (partial)
+- [X] T114 Merge the two `### Fixed` headings under Unreleased in `CHANGELOG.md` into one per T075 (unrequested)
+- [X] T115 Bring `contracts/space-module.md` and `contracts/strategy-module.md` in line with the code: 19 neighbours, the both-ends skip rule, the shipped signatures of `doorsOf`, `probesAt`, `terrainOf`, `jumpOf` and `movesOf`, `classifyAll` in place of `classify`, and `plan.spots` in place of `sweetSpot`, per plan: contracts (contradicts)
+
+---
+
+# Amendment 2026-09-11: width, campaign, panel
+
+**Input**: spec.md *Session 2026-09-11* (FR-001, FR-009a, FR-011a, FR-012a, FR-046a), plan.md *Amendment 2026-09-11*, research.md sections 17 to 20, data-model.md *Added 2026-09-11*, contracts/pool-width.md, contracts/campaign.md, contracts/planner-panel.md, quickstart.md gates 11 to 13.
+
+**Baseline**: this branch after Phase 10 (T079 to T115). Every task below edits code that already exists; read the named function before changing it. The harnesses are constitutional gates written after the code they exercise, as in Phases 1 to 9.
+
+## Phase 11: Foundational (the pool and the queue)
+
+**Purpose**: The two shared mechanisms every later phase leans on. Both are additive: no existing caller changes behaviour except through the width.
+
+- [X] T116 [P] In `src/pool.js`, replace `poolLimit` with `poolWidth({ cores = 4, deviceMemoryGB = null, perInstanceMB = 256 })` returning a frozen `PoolWidth` instance with `cores`, `memoryGB` (reported, capped at 8, or 4 where null), `assumed` (true where null), `byCores = cores − 2`, `byMemory = floor((memoryGB × 1024 / 2 − perInstanceMB) / perInstanceMB)`, `width = max(1, min(byCores, byMemory))` with no fixed cap, and `why` naming the binding term exactly as contracts/pool-width.md words it. Rewrite the doc comment to record why two cores are held back, why half the memory, and the 0.79 ms per-design build measurement from research.md section 17.
+- [X] T117 [P] In `src/scheduler.js`, add `holdWhere(pred, held)` to the returned API: set `job.held = held` on every active job the predicate matches, then `drain()`. Make `takeNext` skip a job whose `held` is true; give `makeStudyJob` a `held = false` option so a job can be admitted already held; and change the idle test in `drain` to "nothing in flight and no active job that is unheld", so a queue of held jobs still fires `'idle'`. Leave `started`, `order` and `curve` untouched by holding (contracts/campaign.md).
+- [X] T118 In `src/main.js`, replace the `poolLimit` import and call with `poolWidth`: keep the result as `const studyWidth = poolWidth({ cores: navigator.hardwareConcurrency ?? 4, deviceMemoryGB: navigator.deviceMemory ?? null })` and set `studyCapacity = studyWidth.width`, so the plan can letter `studyWidth.why` (FR-011a). Depends on T116.
+- [X] T119 Write `specs/009-strategy-plan/verify/pool-width.mjs` (no engine), in the shape of the other harnesses (`ok`, exit non-zero on the first failure): the six rows of research.md section 17's table exactly; `width ≥ 1` over `cores` 1 to 64 and `deviceMemoryGB` in `[null, 0.25, 0.5, 1, 2, 4, 8, 16]`; `width ≤ cores − 2` wherever `cores ≥ 3`; never above 15; and `why` naming the term that is the minimum (quickstart gate 11). Depends on T116.
+- [X] T120 Write `specs/009-strategy-plan/verify/scheduler-hold.mjs` against a fake pool, reusing the fake-pool setup in `specs/009-strategy-plan/verify/scheduler-designs.mjs`, asserting the six items of contracts/campaign.md: a held job dispatches nothing while a study beside it keeps its turns; runs in flight when held land and are cached; release continues the same indices in order with none started twice; a job enqueued held waits; a held-only queue fires `'idle'`; cancelling a held job fires `'cancelled'` and leaves ledger entries in place (quickstart gate 12). Depends on T117.
+
+**Checkpoint**: `node specs/009-strategy-plan/verify/pool-width.mjs` and `scheduler-hold.mjs` pass, and every Phase 1 to 10 harness still passes.
+
+---
+
+## Phase 12: User Story 1, the plan in its own panel (FR-001)
+
+**Goal**: The whole strategy plan lives in a panel on the left of the sheet, mirroring the Model Console on the right, opened from the ledger and from E-02.
+
+**Independent Test**: At 1,920 px, press the ledger's plan button: the panel opens left of the sheet holding the reading chooser, the plan drawing, the islands, the screening and the four kinds, each drawn to the panel's width. Close it: the plan's readings and tags stand. Open it again from E-02's link.
+
+- [X] T121 [US1] In `index.html`, move the whole `section#strategy` block out of `section#survey` into a new `aside.planner#planner` (`aria-label="Strategy plan"`) placed after `main.sheet` and before `aside.desk` in the DOM, and drawn on the left with `order: -1` (so focus order stays sheet, plan, console). Give it a `header.planner-head` mirroring `.desk-head`: the eyebrow and title, the existing `#strategy-scope`, a state line `#campaign-state`, buttons `#campaign-pause`, `#campaign-resume` and `#campaign-cancel` (all `hidden` initially), and `#planner-close`. Keep every existing `strategy-*` id unchanged so `renderStrategy` needs no id changes. Amend the markup line of `specs/009-strategy-plan/contracts/planner-panel.md` to say after the sheet in the DOM, before it on screen.
+- [X] T122 [US1] In `index.html`, add the planner's styles beside the `.desk` rules: a `--planner: 436px` token beside `--desk`; `.planner` sticky at `top: 16px` with `max-height: calc(100vh - 32px)`, scrolling inside itself, on `var(--vellum)`, with `.desk`'s border and radius mirrored (`border-left: 0`, right-hand radius, `margin-right: -1px`) and `display: none`; `body.planner-open .planner { display: flex; flex: 1 0 var(--planner); }`; `body.planner-open` taking `padding-left: 0` and the sheet the same `flex: 0 1 1080px; min-width: 0` that `body.desk-open .sheet` takes; `.planner-head` styled as `.desk-head`; and a `[hidden]` twin for every class here that sets `display`.
+- [X] T123 [US1] In `index.html`, add `#planner-open` to the ledger beside `#desk-open`, using the same `deskbtn` markup with `aria-expanded="false"`, `aria-controls="planner"` and a sub-line `#planner-count`; and add a `button.link#survey-planner` to E-02's head reading *Open the strategy plan*.
+- [X] T124 [US1] In `src/main.js`, add `openPlanner(open)` beside `openDesk`: toggle `body.planner-open`, set `#planner-open`'s `aria-expanded` and its sub-line (*Close the plan* / *The whole design space*), call `tour?.syncGuide()`, and on a short timer call `renderTrace` and `renderStrategySoon`, because both the sheet's and the plan's widths changed. Wire `#planner-open`, `#survey-planner` and `#planner-close` (which returns focus to `#planner-open`).
+- [X] T125 [US1] In `src/main.js`, make the `ctl-tag` listener call `openPlanner(true)` (and unfold the panel once Phase 14 exists) before it scrolls to and focuses its entry; and make `cutFromScreening` scroll the sheet to `#survey` after `cutFromPull`, since the ground is no longer beside the screening.
+- [X] T126 [US1] In `src/main.js`, open the panel when a plan opens, from `toggleStrategyReading` and from `restoreLinked`, and letter in `renderStrategy`'s no-plan lede that the plan's readings are chosen here and measured in this panel. Closing the panel must not call `closeStrategy`: the plan, its campaign and its tags stand until *Close the plan*.
+
+**Checkpoint**: US1's independent test passes at 1,920 px; the E-02 ground still cuts from the screening; nothing crosses the sheet's edge.
+
+---
+
+## Phase 13: User Story 2, a campaign the reader controls (FR-009a, FR-011a, FR-012a)
+
+**Goal**: Stepping into a world starts only that world and its jumps on a design-day desk; each island is measured on request; and the reader can pause, resume or cancel the plan's runs without touching studies.
+
+**Independent Test**: On a design-day desk, open the plan: the solve counter rises by about 1,632 runs and stops. Ask for one island: it rises by about 352. Pause mid-way: it stops within the runs in flight while a study beside it keeps solving; Resume continues with no repeat; Cancel stops it with every dot kept.
+
+- [X] T127 [US2] In `queueStrategy` in `src/main.js`, drop the design-day exception for islands: queue an island's own 8 bases and designs 32 to 127 only when `strategyPlan.asked` holds its neighbour id, on every desk. In `renderStrategy`, show `#strategy-measure` for any island at jump depth not yet asked, on every desk, lettered *Measure this world: about N runs, about S s* from `island.cost` with the run kind named (FR-009a, research.md section 20).
+- [X] T128 [US2] In `src/main.js`, add `campaign: { state: 'running', world: null }` to the object `openStrategy` builds, and a `Campaign` frozen class with a `campaignSnapshot()` that fills `state`, `world`, `waiting` (over `strategyJobs`: `total − done − inFlight`), `inFlight` (`job.started.size − done` per job) and `withheld` (the held neighbours job's design count, from `strategyPlan.held`), per data-model.md.
+- [X] T129 [US2] In `src/main.js`, implement the three controls per contracts/campaign.md: Pause calls `studyScheduler.holdWhere((job) => job.origin === 'strategy', true)` and sets `paused`; Resume either releases with `holdWhere(..., false)` or, from `cancelled`, sets `running` and calls `queueStrategy()`; Cancel calls `cancelStrategyJobs('cancelled')`, sets `cancelled` and records the world signature. Make `queueStrategy` and `releaseNeighbours` admit jobs with `held: true` while `paused`, queue nothing while `cancelled` for the same world signature, and set `running` when the signature differs from the cancelled one. Make `onStrategyUpdate` treat a `'cancelled'` job like `'replaced'` (no `strategyShed`).
+- [X] T130 [US2] In `renderStrategy` in `src/main.js`, letter the campaign in the planner head from `campaignSnapshot()`: the three buttons shown per the contract's table, and the state line *Paused: N runs wait. Runs already on an engine finish.* or *Cancelled: M runs kept, N not run. Resume to measure the rest.*, or the runs to go while running. Add `${studyWidth.width} engines side by side: ${studyWidth.why}` to the coverage line, the annual consent sentence and each island's measure button (FR-011a).
+- [X] T131 [US2] In `src/main.js`, keep the gate distinct from the campaign: `syncStrategyGate` cancels plan jobs without touching `campaign.state`, and when the gate lifts `refreshStrategy` honours it, re-queueing held while `paused` and not at all while `cancelled` for the same world.
+
+**Checkpoint**: US2's independent test passes, `scheduler-hold.mjs` still passes, and a study opened during a paused campaign completes.
+
+---
+
+## Phase 14: User Story 6, two panels and a phone (FR-046a)
+
+**Goal**: The plan's panel and the console stand together where the window allows; elsewhere one folds to its head; on a phone the plan is a page under the sheet.
+
+**Independent Test**: At 1,920 px both panels open at full width. At 1,440 px, opening the console folds the plan to a 168 px rail that still shows its readings, campaign state and controls; pressing the rail swaps them. At 390 × 640 the plan is a page under the sheet with its campaign controls first.
+
+- [X] T132 [US6] In `index.html`, declare `--sheet-min: 720px` and `--rail: 168px` beside `--desk`, `--both: 1` on `body`, and one media query `@media (max-width: 1624px) { body { --both: 0; } }` with a comment deriving 1,624 from 720 + 436 + 436 and the gutters. The number appears nowhere else.
+- [X] T133 [US6] In `index.html`, style `body.planner-folded .planner` and `body.desk-folded .desk` as `flex: 0 0 var(--rail)`, showing only the head: for the planner, the title, `#strategy-scope`, `#campaign-state` and the three campaign buttons stacked, with its body `hidden`; for the console, the `.desk-head` alone. Give every new `display`-setting rule its `[hidden]` twin.
+- [X] T134 [US6] In `src/main.js`, add `bothFit()` reading `--both` with `getComputedStyle(document.body)`, and a `syncFolds(opened)` called from `openPlanner` and `openDesk`: where both panels are open and `bothFit()` is false, fold the one not just opened; a press on a folded panel's head unfolds it and folds the other; a `resize` listener re-runs `syncFolds` when `bothFit()` flips and calls `renderStrategySoon` and `renderTrace`. Complete T125 by unfolding the panel before a strip tag focuses its entry.
+- [X] T135 [US6] In `index.html`'s existing `@media (max-width: 780px), (max-height: 600px)` block, make `.planner` a page under the sheet as `.desk` becomes one: static, full width, no sticky height cap, `order` placing it after `main.sheet` and before `.desk`, its head first so the campaign controls are the first thing the page shows; folds do not apply there.
+
+**Checkpoint**: US6's independent test passes at 1,920, 1,440 and 390 px, and in forced colours the rail's state and controls read as text.
+
+---
+
+## Phase 15: Polish
+
+- [X] T136 [P] In `src/tour.js`, retarget the plan's note in `NOTES`: `target` is `#planner-open` while the panel is closed and `#planner` while it is open (the arrangement the patch note follows with `#desk-open`), its copy says the plan opens in its own panel on the left, and `STORE` becomes `shoebox-general-notes-v6` (FR-048).
+- [X] T137 [P] In `.interface-design/system.md`, add a component pattern *A second instrument on the left*: the planner mirroring the desk, the three-column flex row and why not a grid, `--sheet-min`, `--rail` and `--both`, the fold swap, and the campaign's three controls in the head (constitution gate 8).
+- [X] T138 [P] In `CLAUDE.md`, under "The strategy plan": record the pool's width rule with the research.md section 17 table and the 0.79 ms build measurement; the campaign and why Pause holds rather than cancels; the planner panel and its fold; and replace "On a design-day desk the islands follow automatically" in the staged-budget paragraph with islands on request on every desk.
+- [X] T139 [P] In `CHANGELOG.md`, amend the *Added* entry for the strategy plan to say it opens in its own panel on the left, its runs can be paused, resumed or cancelled, it runs as many simulations side by side as the machine has cores less two, and each neighbouring world is measured on request. Concise, house voice, no hard wrap in any release body drawn from it.
+- [X] T140 Add `pool-width.mjs` and `scheduler-hold.mjs` to the table in `specs/009-strategy-plan/verify/README.md`, then run every engine-free harness in that directory (`space-roles`, `space-designs`, `skip-proof`, `scheduler-designs`, `scheduler-hold`, `pool-width`, `tag-freshness`, `no-combined`, `link-roundtrip`) and `npm run build`; all must pass.
+- [X] T141 Measure the added transfer with `npm run build` and `scripts/deploy.mjs`'s brotli settings, excluding `energyplus/`, `schemas/` and `weather/`, against `specs/009-strategy-plan/verify/baseline-size.txt`; append the figures and assert under 61,440 bytes (SC-015).
+- [ ] T142 Drive quickstart gate 13 in a foreground tab: every layout in contracts/planner-panel.md at every width it names, the width lettered and matching this machine, the design-day campaign stopping after the home world and the jumps, Pause, Resume and Cancel against the solve counter with a study beside them, SC-002 at full width, and a strip tag unfolding the folded panel.
+
+---
+
+## Amendment: dependencies and execution order
+
+- **Phase 11** blocks everything after it. T116 and T117 run in parallel (different files); T118 and T119 follow T116; T120 follows T117.
+- **Phase 12 (US1)** follows T118. T121, T122 and T123 edit `index.html` and run in that order; T124 to T126 edit `src/main.js` and follow T123.
+- **Phase 13 (US2)** follows Phase 11 and T121 (the campaign's buttons live in the planner head). It can run beside Phase 12's `src/main.js` tasks only if one editor holds the file; otherwise after T126.
+- **Phase 14 (US6)** follows Phases 12 and 13, since the rail shows the campaign's controls.
+- **Phase 15**: T136 to T139 run in parallel; T140 and T141 after every code task; T142 last.
+
+## Amendment: parallel example
+
+```bash
+# Phase 11, in separate files:
+Task: "Replace poolLimit with poolWidth in src/pool.js"
+Task: "Add holdWhere to src/scheduler.js"
+# Phase 15, in separate files:
+Task: "Retarget the plan's note in src/tour.js and bump to v6"
+Task: "Add 'A second instrument on the left' to .interface-design/system.md"
+Task: "Record the width, the campaign and the panel in CLAUDE.md"
+Task: "Amend the strategy plan's Added entry in CHANGELOG.md"
+```
+
+## Amendment: implementation strategy
+
+1. Phase 11, then stop if either new harness fails.
+2. Phase 12: the panel alone is the most visible change and is independently shippable as a stacked pull request on this branch.
+3. Phase 13: the campaign and islands on request, which remove most of the unasked-for runs.
+4. Phase 14, then Phase 15, with gate 13 driven before the branch is marked ready.
+
+---
+
+# Amendment 2026-09-11 (second): the survey in the panel, the numbered sequence, and constraints
+
+**Input**: spec.md *Session 2026-09-11* (FR-001 revised, FR-001a, FR-001b, FR-019a, FR-046b, FR-049 to FR-057, US7, SC-016 to SC-018), plan.md *Amendment 2026-09-11 (second)*, research.md sections 21 to 27, data-model.md *Added 2026-09-11 (second)*, contracts/panel-sequence.md, contracts/constraints.md, quickstart.md gates 14 to 16.
+
+**Baseline**: this branch after Phase 15. Every line reference below was taken against it and is a starting point, not a target: read the named function before changing it.
+
+**What is still outstanding from earlier phases** and is not superseded by anything here: T071 and T078 (quickstart gate 9, including steps 9 and 10) and T142 (gate 13). They stay open.
+
+**Two groups.** Phases 16 and 17 are what the panel is now a panel *of*: the survey moves into it, the sequence becomes six numbered parts, and the width and the relief are made to carry two drawings in one column. Phase 18 is the seventh user story, constraining the design space, and it is the only group that touches the sampler.
+
+**No task here adds** a run-time dependency, an output request, a channel, a control or a model object. `LINK_VERSION` stays `v1` and `MIGRATIONS` stays empty.
+
+---
+
+## Phase 16: Foundational (the panel's frame, and the relief's resize path)
+
+**Purpose**: The width machinery and the resize path the survey needs before it can stand in the panel. A relief moved into a panel with no resize path keeps the backing store it was last drawn at, and on a finished survey no further sample ever lands to correct it, so this blocks the move rather than following it.
+
+**CRITICAL**: Phase 17 must not start until T145 and T146 are done, or the first fold of the panel locks a finished relief into a 1 by 1 canvas.
+
+- [X] T143 In `index.html`, give the panel its declared growth: add `--planner-max` beside `--planner`, `--sheet-min` and `--rail` (`index.html:51`), make `--sheet-min` a real `min-width` on `main.sheet` where it is used in no rule today, and change `body.planner-open .planner` (`index.html:2544`) from `flex: 1 0 var(--planner)` to `flex: 1 1 var(--planner); max-width: var(--planner-max)`, so the sheet reaches its own measure before the panel takes any surplus (FR-046b). Comment why `--sheet-min` finally has a job, and give every new `display`-setting rule its `[hidden]` twin.
+- [X] T144 In `index.html`, replace the survey's window query with a container query. `.planner-body` already carries `container-type: inline-size` (`index.html:5034`), so add `--pair` to `.survey-body` (`index.html:4662`) defaulting to 0 with one column, and a `@container` rule taking it to 1 and two columns above a declared container width. Remove the two-column flattening from the `@media (max-width: 900px), (max-height: 620px)` block (`index.html:5320`) and rewrite the `--survey` comment (`index.html:4342`), which records that nothing reads the flag back: `--pair` is read back, and a 436 px panel in a 1,920 px window must not leave two 200 px squares (FR-046b, research.md section 21).
+- [X] T145 In `src/relief.js`, make `resize()` (`src/relief.js:414`) refuse a zero box and keep the last good size, because `body.planner-folded .planner-body` is `display: none` (`index.html:2577`) so a host inside a folded panel measures 0 and the existing `Math.max(1, ...)` floor would lock in a 1 by 1 canvas. Record in the comment that a measurement taken of a hidden element is not a measurement.
+- [X] T146 In `src/main.js`, have `panelsMoved()` (`src/main.js:3505`) reach the relief through `relief.repaint` (`src/relief.js:843`) as it already reaches the plate and the plan, and read `--pair` back where the two drawings are told what width to draw themselves at. One paint per debounced resize, never per frame. Record why a `ResizeObserver` was rejected: it fires through the fold's own transition and the first box it would see is the zero one (research.md section 21, plan.md Complexity Tracking).
+
+**Checkpoint**: At 1,920 px the panel grows to `--planner-max` and no further, the sheet never falls below `--sheet-min`, and folding and unfolding the panel on a finished survey leaves the relief correct with no new sample landing.
+
+---
+
+## Phase 17: User Story 1 - the survey in the panel, as one numbered sequence (Priority: P1)
+
+**Goal**: E-02 leaves the sheet whole and becomes part 5 of the panel, the panel reads as six numbered parts each headed by the question it answers, and no part stands behind a gate or hides a reading.
+
+**Independent Test**: Open the panel with nothing measured. All six parts stand, numbered, in the order FR-001b names, each saying what it waits on. The sheet holds E-01 alone. Cut a ground from part 4 and it appears in part 5, scrolling within the panel.
+
+- [X] T147 [US1] In `index.html`, move the whole `section.survey#survey` block (`index.html:5636` to `:5774`) out of `main.sheet` into `.planner-body` after the strategy section, carrying everything it owns: `#survey-choose`, `section.pull#pull`, `#survey-refusal`, `#survey-drawing` with `#survey-ground` and `#survey-relief`, the ground key, `#survey-spot`, `#survey-coverage`, the traverse, the finding, the `survey:spots` fold and the E-02 stamp. Keep every id unchanged so `renderSurvey` and its helpers need none. Delete `button#survey-planner` (`index.html:5643`): nothing is left on the sheet to open the panel from, and the ledger's `#planner-open` is the route (contracts/panel-sequence.md).
+- [X] T148 [US1] In `index.html`, number the sequence in the markup. Wrap the reading chooser and the campaign state as part 1, the plan drawing and its recipes as part 2, and give the existing `#strategy-islands-title`, `#strategy-screen-title`, the moved survey and `#strategy-moves-title` their numbers 3 to 6, each heading stating the question it answers: what this plan is of, what decides this reading, what is one door away, what pulls anywhere in this world, what the ground looks like along two of them, and what should be decided now. The number and the question are in the markup and never composed at render, so the sequence reads the same with nothing measured as with everything measured (FR-001b, data-model.md `PanelPart`).
+- [X] T149 [US1] In `index.html`, take the `hidden` attribute off the four blocks that are gates today, so each becomes a part that stands: `div.strategy-body#strategy-body` (`index.html:6000`), `section.strategy-part#strategy-moves-part` (`index.html:6055`), `section.survey#survey` and `div.survey-body#survey-drawing` (`index.html:5673`). Part 5 must stand under part 4 in the DOM, because the screening is what hands it its two axes (FR-001a, FR-001b).
+- [X] T150 [US1] In `src/main.js`, letter what each standing part waits on, in `renderStrategy` (`src/main.js:11308`) and `renderSurvey` (`src/main.js:8281`): parts 2 to 4 say what they wait on where a plan does not exist yet, part 6 says it needs a second reading, and part 5 says two controls in part 4 cut it. A part is never absent and never behind a gate, and no reading, share explained, verdict, absence reason or refusal goes into a fold (FR-001a).
+- [X] T151 [US1] In `index.html`, state once at the head of part 5, in place and not on hover, why the ground carries contour lines and a relief block and the plan's terrain carries neither: the ground is measured along two chosen controls, the terrain is inference along moves. Neither drawing is brought to the other's convention (FR-019a, US1 scenario 11).
+- [X] T152 [US1] In `src/main.js`, move the two cross-link scrolls into the panel: `cutFromScreening` (`src/main.js:11751`) no longer scrolls the sheet, since part 5 is a few centimetres below part 4 in the same scroller, and `nameSurveyAxis`'s scroll (`src/main.js:9052`) moves with it (contracts/panel-sequence.md).
+- [X] T153 [US1] Assert the sequence's own copy in `src/main.js` or `index.html` against `src/copy.js`: every part heading and every waiting sentence is within its budget, and the two record folds (`survey:spots` at `index.html:5759` and `strategy:designs` at `index.html:6063`) keep their readings outside them, which is the split FR-001a actually draws, a reading never in a fold and a record allowed in one.
+
+**Checkpoint**: US1's independent test passes. One ground, drawn in one place, and the panel reads as a storyline with nothing measured.
+
+---
+
+## Phase 18: User Story 7 - Constrain the space before it is explored (Priority: P1)
+
+**Goal**: A constraint narrows what is sampled and run, re-letters at once from what the ledger already holds, queues nothing by itself, rides the link, and is typed on the control's own face.
+
+**Independent Test**: Set a range constraint on one control and rule out one door. The panel re-letters from measured designs with the solve counter still. Asking for the rest measures only inside the region. The ruled-out world is never measured, and every design drawn lies inside the constraint.
+
+- [X] T154 [US7] Create the constraint declarations in `src/space.js` beside the roles and the doors: frozen `Bound`, `RuledOut`, `Region` and `Region.EMPTY`, with throwing constructors, per data-model.md and contracts/constraints.md. `Bound` refuses a key that is not a `Scale` or a `Facade` side, naming that only `Ruled` carries `min`, `max` and `step` (`src/controls.js:316`); refuses a non-finite or off-face bound; accepts `to === from` as pinning; and throws naming the step where **no position on the control's own step grid** lies inside the range, which is new validation because `refuses` deliberately does not test step alignment (`src/controls.js:1589`). `RuledOut` throws when a setting is not the door's own and when every setting is named. `Region` carries `bounds`, `ruled`, `signature`, `spanOf`, `admits`, `allows` and `stateOf`, and every function below takes a `Region` so no call site has a second path for no constraints.
+- [X] T155 [US7] Bind the region at all three sites in `src/space.js`, per contracts/constraints.md. `snapped(control, u, span)` (`src/space.js:314`) bins inside the span with the same equal-probability rule offset to the span's low stop, and **every value it returns still lies on the control's own global step grid anchored at `control.min`**, never at `span.from`, which is what `samplePoints` already does (`src/study.js:140`) and what makes SC-017 true. `designAt`'s normalisation (`src/space.js:669`) sets `u[at]` to the position within the span rather than `Ruled.fraction`'s position within the face (`src/controls.js:339`), because FR-052 letters an effect per the constrained span and the moves are fitted over this `u`. `probesAt`'s step (`src/space.js:742`) is a twentieth of the span with the room test against the span's bounds. Missing any one produces figures that are arithmetically correct and about the wrong span.
+- [X] T156 [US7] Join `region.signature` to the `VALUES` memo key in `src/space.js` (`src/space.js:628`), which is keyed by design index alone today. Without it a constraint committed after a design was generated hands back the unconstrained value with no symptom anywhere: the design is drawn inside the region, keyed as if it were inside the region, and is a building from outside it. Record in the comment that Principle II is the rule this breaks, and why clearing the memo per commit was rejected as coarser (plan.md Complexity Tracking).
+- [X] T157 [US7] Take the region in `neighboursOf(world, region)` in `src/space.js` (`src/space.js:559`) and drop a ruled-out door setting **before** a world is built for it, so it is never measured. List it as ruled out **by the reader**, which is a different sentence from a world the engine cannot enter, and keep both lists standing (FR-055, FR-043, US7 scenario 3).
+- [ ] T158 [US7] Carry the region beside every figure in `src/strategy.js`: the moves, the shares explained, the screening, the terrain and the sweet spots each letter `Region.stateOf` wherever they are lettered, so two plans carrying the same words cannot carry different numbers, and an effect per a constrained span is never presented in the words of one per a full range (FR-052, SC-018).
+- [ ] T159 [US7] Implement the frozen `Binding` class in `src/strategy.js` per data-model.md: `key`, `end`, `share` read off the best tenth of measured designs inside the region so that saying a constraint binds is always honest, and exactly one of `worth` and `absence`, where `worth` is lettered **only** from completed runs outside the region the ledger already holds and `absence` carries the offer to measure a probe just outside with its cost stated first. Never extrapolate, infer or estimate it from designs inside the region (FR-057, US7 scenario 6).
+- [ ] T160 [US7] Add the reserved key `cn` to `src/permalink.js`: extend `RESERVED` (`src/permalink.js:98`) to nine entries keeping its load-time assertion against `ALL_KEYS`, and read `cn` in `decodeState` **beside `sv` and `sp`** (`src/permalink.js:582`), above everything `readValue` does, because the numeric regex runs before the per-kind switch (`src/permalink.js:448`) and the single-claim loop skips `RESERVED` before calling `readValue`. Write it in `encodeState` beside `sv` and `sp` (`src/permalink.js:252`) only where a constraint is in force, re-serialising what was read. Implement the grammar in contracts/constraints.md, assert at load that no door setting is a bare number and none contains `_`, and spell a patch door by its channel id alone, since its internal id is `patch:<channelId>` (`src/space.js:432`) and `:` is escaped. Refuse whole: an unknown key or setting, a bound failing `Bound`'s rules, a door with every setting ruled out, a malformed entry, and a key the desk does not own.
+- [ ] T161 [US7] Restore a linked region in `src/main.js` in `restoreLinked` (`src/main.js:4439`) before anything else of the link is restored, by the rule T079 already established for the plan, and add `cn` to `schemeHash` so a copied link reproduces the region (FR-051, US7 scenario 7).
+- [ ] T162 [US7] Put typed bounds on the control's own face in `src/console.js`, in `buildScale` (`src/console.js:614`) and in the facade and boundary rows, through `quantityField` (`src/field.js:33`) exactly as the survey's extent boxes do (`src/main.js:8905`), each calling its own `show()` because a field built and appended alone stands empty. Draw the disallowed part of the face as disallowed, beside `.ctl-derived` (`src/console.js:664`), and add the styles with their `[hidden]` twins to `index.html`. It is not a hover state: `pointer: coarse` has no hover (FR-053).
+- [ ] T163 [US7] Draw the summary of every active constraint at the head of part 1 in `src/main.js`, each naming its control and its bounds, each removable there and all removable at once, so a constraint reads in both places (FR-054). Guard the redraw with a signature as `renderSurveyChoose` already does (`src/main.js:8942`), because `host.textContent = ''` destroys the node the reader is typing into and a bound typed while the ground fills would lose its keystrokes silently.
+- [ ] T164 [US7] Make the commit a re-cut rather than a filter in `src/main.js`: committing, changing or removing a constraint re-letters every figure at once from the designs the ledger already holds inside the new region, **queues no run by itself**, offers the runs that would fill the region with their count and their time by the consent pattern the annual cost and each island's *Measure this world* already use, and keeps every design measured outside the region in the ledger, stated as ruled out and left out of every figure. Keep the two deliberate non-refusals: a region excluding the desk's own stance stands with the stance mark outside it saying so, which is `axisFor`'s own rule (`src/survey.js:306`), and a constraint on a control dark in this world is kept and stated as reaching nothing here (FR-050, FR-056).
+- [ ] T165 [US7] Write `specs/009-strategy-plan/verify/constraints.mjs` (quickstart gate 14, no engine), asserting all seven items of contracts/constraints.md: every refusal class throws naming what was wrong and a sub-step region names the step; every design of a constrained region lies inside it over at least 100 designs and every ruled-out door, with every value on the control's own step grid (SC-016); `designAt` under `Region.EMPTY` and under a narrowing region that still admits the value give byte-identical `params` so the cache identity is one string (SC-017); the memo carries the region; a ruled-out door produces no `Neighbour` and one listed reason; `cn` round-trips every entry shape with every refusal class refused whole, `sv`, `sp` and `cn` together round-trip, and a pre-feature corpus decodes byte-identically; and two regions over one control letter the same words and different numbers with neither lettered without `stateOf` (SC-018).
+- [ ] T166 [US7] Write and run `specs/009-strategy-plan/verify/recut.mjs` (quickstart gate 15, engine, about 10 minutes) on the reference desk: measure a region, narrow it, and confirm the solve count rises by exactly the designs the ledger did not already hold; designs outside the new region stay in the ledger, are stated as ruled out and are in no figure; and widening back runs nothing at all. Record what share of a typical narrowing was already in hand, which nothing settles on paper (research.md section 27).
+
+**Checkpoint**: US7's independent test passes, and gates 14 and 15 pass. The moves are fitted to the building the reader can actually build.
+
+---
+
+## Phase 19: Polish for this amendment
+
+- [X] T167 [P] In `src/tour.js`, retarget the survey step (`src/tour.js:198`) at a part inside the panel so it opens the panel first, as the `strategy` step already does, and move `STORE` (`src/tour.js:53`) from `shoebox-general-notes-v6` to `shoebox-general-notes-v7`, because the step's subject moved (FR-048, constitution gate 6).
+- [ ] T168 [P] In `.interface-design/system.md`, record two component patterns: *A constrained face* (typed bounds through `quantityField`, the disallowed part drawn as disallowed, never on hover) and *A numbered sequence of parts* (six parts, numbered in the markup, each headed by its question, a part that stands and says what it waits on, and the record fold against the reading that may never be folded). Record `--planner-max`, `--pair` and `--sheet-min`'s new job as layout thresholds (constitution gate 8).
+- [ ] T169 [P] In `CLAUDE.md`, extend *The strategy plan*: the survey moving whole into the panel and the sheet keeping E-01 alone, the six numbered parts and why no part is a gate, the two drawings' opposite conventions stated once where they meet, the relief's resize path and why a zero box is refused, the container query as the first in the stylesheet, and constraints, being the three binding sites, the region in the memo key, the min-anchored grid that makes a re-cut free, and the `cn` key as the fourth meeting with the `readValue` trap. Add gate 15's measured share of a typical narrowing once T166 has run.
+- [ ] T170 [P] In `CHANGELOG.md`, amend the strategy plan's *Added* entry to say the survey now stands in the panel with the plan, the panel reads as six numbered parts, and the design space can be constrained before it is explored. Concise, house voice, no hard wrapping in any release body drawn from it.
+- [ ] T171 Add `constraints.mjs` and `recut.mjs` to the table in `specs/009-strategy-plan/verify/README.md`, then run every engine-free harness in that directory (`space-roles`, `space-designs`, `skip-proof`, `scheduler-designs`, `scheduler-hold`, `pool-width`, `pool-recycle`, `tag-freshness`, `no-combined`, `link-roundtrip`, `constraints`) and `npm run build`. All must pass.
+- [ ] T172 Measure the added transfer with `npm run build` and `scripts/deploy.mjs`'s brotli settings, excluding `energyplus/`, `schemas/` and `weather/`, against `specs/009-strategy-plan/verify/baseline-size.txt`; append the figures and assert the feature's total is under 61,440 bytes. The feature and its first amendment have spent 31,360 bytes, so about 30 KB remains for everything in this amendment (SC-015, plan.md).
+- [ ] T173 Run a copy-budget and em-dash sweep over every always-visible string this amendment declares, in `src/space.js`, `src/strategy.js`, `src/console.js`, `src/main.js` and `index.html`, against `src/copy.js`. Keep readings, verdicts, absence reasons, blocking reasons and refusals out of any fold, and leave the dash only as the lone absent glyph.
+- [ ] T174 [US6] Drive quickstart gate 16 in a foreground tab, at 1,920, 1,624, 1,440, 1,180, 900, 780 and 390 px wide and at 1,280 by 600: all six parts standing in order at every width each headed by its question, a part with nothing measured saying what it waits on, the sequence one column throughout, the ground and the relief side by side only above the declared container width with nothing wider than its host, the sheet holding E-01 alone and reaching `--sheet-min` before the panel takes surplus, the panel stopping at `--planner-max`, the relief correct after a fold, an unfold and a resize on a finished survey with no new sample landing, two controls in part 4 cutting the ground in part 5 and scrolling within the panel, the two-drawings sentence in place and not on hover, a constraint set, read and removed at 390 px with a coarse pointer and from the keyboard including the summary at the head of part 1, a commit re-lettering at once and queueing no run, and the notes' key reading `shoebox-general-notes-v7` (FR-001a, FR-001b, FR-019a, FR-046b, FR-053, FR-054, FR-056, US7 scenario 8).
+
+---
+
+## Second amendment: dependencies and execution order
+
+- **Phase 16** blocks Phase 17. T143 and T144 both edit `index.html` and run in that order; T145 is in `src/relief.js` and runs in parallel with either; T146 follows T144 and T145.
+- **Phase 17 (US1)** follows Phase 16. T147, T148, T149 and T151 edit `index.html` and run in that order; T150, T152 and T153 follow them in `src/main.js`.
+- **Phase 18 (US7)** follows Phase 17 only for T163 and T164, which letter into part 1 and the panel's consent line. Its arithmetic (T154 to T159) depends on nothing in Phases 16 and 17 and can be built in parallel with them, which is what keeps it the separately shippable chunk plan.md's sequencing calls for. Within it: T154 first, then T155, T156 and T157 in parallel, then T158 and T159; T160 and T161 are independent of the arithmetic in their own files; T165 follows T160, and T166 follows T164.
+- **Phase 19**: T167 to T170 run in parallel in four different files. T171 and T172 follow every code task. T173 follows the code and precedes T174. T174 is last and is driven, not harnessed.
+- **Still open from earlier phases**, and not superseded: T071, T078 and T142.
+
+## Second amendment: parallel example
+
+```bash
+# Phase 16, in separate files:
+Task: "Declare --planner-max and make --sheet-min a real min-width in index.html"
+Task: "Make resize() refuse a zero box in src/relief.js"
+# Phase 18's arithmetic, after T154, in one file but separate functions:
+Task: "Bind the region at the three sites in src/space.js"
+Task: "Join region.signature to the VALUES memo key in src/space.js"
+Task: "Add the reserved key cn to src/permalink.js"
+# Phase 19, in separate files:
+Task: "Retarget the survey step in src/tour.js and bump to v7"
+Task: "Record a constrained face and a numbered sequence in .interface-design/system.md"
+Task: "Extend The strategy plan in CLAUDE.md"
+Task: "Amend the Added entry in CHANGELOG.md"
+```
+
+## Second amendment: implementation strategy
+
+1. **Phase 16, then Phase 17**: the survey's move with the numbered sequence and the width, which is the most visible change and the one that unblocks the rest. Independently shippable as a stacked pull request on this branch, and stop if the relief is wrong after a fold.
+2. **Phase 18**: constraints, the only chunk that touches the sampler. Stop if T165 finds a design outside its region or a re-cut that is not free, because both are Principle II rather than a feature defect.
+3. **Phase 19**, with gate 16 driven before the branch is marked ready.
+
+**A gap carried rather than filled.** FR-001a, FR-001b, FR-019a and FR-046b have no success criterion of their own, where the constraints work has SC-016 to SC-018. They are covered by the driven gate 16 and by contracts/panel-sequence.md, which is enough to build against, but nothing measurable in the spec will fail if the sequence regresses. Adding one belongs in the spec, not here (plan.md).

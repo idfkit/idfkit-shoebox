@@ -89,8 +89,11 @@ import {
   DesignLedger,
   FREE,
   Landed,
+  Island,
+  MARGIN,
   MatchedPairs,
   MOVES_FROM,
+  ONE_MOVE,
   SAME_MOVE,
   classifyAll,
   designId,
@@ -119,7 +122,7 @@ import {
   renderScreening,
   signed,
 } from './strategy-view.js';
-import { createEnginePool, poolLimit } from './pool.js';
+import { createEnginePool, poolWidth } from './pool.js';
 import { createStudyScheduler, makeStudyJob } from './scheduler.js';
 import { runBundle } from './bundle.js';
 import { REVISION, revisionHref } from './version.js';
@@ -211,9 +214,74 @@ const FOLD = Object.freeze(
   ),
 );
 
+// What a part of the plan's panel says while it has nothing measured in it
+// yet (FR-001a). These are blocking reasons, which is the budget they are held
+// to: a part that stands and cannot say briefly what it waits on is no better
+// than the gate it replaced. Declared up here with `FOLD` for the same reason
+// that one is — the boot awaits run the renderers before the lower half of
+// this module is evaluated, and a `const` in its temporal dead zone throws.
+const WAITING = Object.freeze(
+  Object.fromEntries(
+    Object.entries({
+      noPlan: 'Choose a reading above, and this is drawn from completed runs.',
+      refused: 'This plan is refused: the reason and its fix stand above.',
+      islands: 'The worlds one door away are measured once a plan is open.',
+      screening: 'What pulls anywhere is read from the same runs as the plan above.',
+      moves: 'Choose two readings, and every control and door is sorted into four kinds.',
+      movesOne: 'Choose a second reading, and every control and door is sorted into four kinds.',
+    }).map(([key, text]) => [key, withinBudget(BUDGETS.STANDING, `part waiting on ${key}`, text)]),
+  ),
+);
+
 const ENERGYPLUS_VERSION = '26.1.0';
 
 const $ = (id) => document.getElementById(id);
+
+/**
+ * The panel's numbered sequence, held to itself at load (FR-001a, FR-001b).
+ *
+ * The six parts are declared in the markup, so this **reads them back** rather
+ * than restating them. A table here naming the same numbers and the same
+ * questions would be the second source of truth the declare-once rule exists
+ * to prevent, and FR-001b is explicit that the numbering lives in the markup
+ * so that the sequence reads the same with nothing measured as with
+ * everything. What is asserted is what a reader can check: that all six stand,
+ * in order, each opening with its own number, each within its budget.
+ *
+ * The readings are the other half, and it is a structural claim rather than a
+ * copy one. FR-001a forbids a reading, a share explained, a verdict, an
+ * absence reason or a refusal in a fold; the two `<details>` in this panel
+ * hold the complete *record*, which is a different thing. So none of these may
+ * sit inside a `<details>` at all, which is a rule a later edit cannot quietly
+ * break by moving one line of markup.
+ */
+const PANEL_PARTS = Object.freeze([
+  'strategy-reading-title',
+  'strategy-plan-title',
+  'strategy-islands-title',
+  'strategy-screen-title',
+  'survey-title',
+  'strategy-moves-title',
+]);
+
+PANEL_PARTS.forEach((id, at) => {
+  const heading = $(id);
+  if (!heading) throw new Error(`the plan's panel has no part ${at + 1}: "#${id}" is not in the markup`);
+  const text = heading.textContent.trim();
+  if (!text.startsWith(`${at + 1} ·`)) {
+    throw new Error(`part ${at + 1} of the plan's panel is headed "${text}", which does not open with its number`);
+  }
+  withinBudget(BUDGETS.PART, `plan panel part ${at + 1} heading`, text);
+});
+
+for (const id of [
+  'survey-spot', 'survey-coverage', 'survey-finding', 'survey-refusal',
+  'strategy-share', 'strategy-coverage', 'strategy-spot', 'strategy-screen-runs', 'strategy-waiting',
+]) {
+  if ($(id)?.closest('details')) {
+    throw new Error(`"#${id}" is a reading and stands inside a fold, which FR-001a forbids`);
+  }
+}
 
 /* ══ the signature ═══════════════════════════════════════════════════════ */
 
@@ -2185,9 +2253,13 @@ let strategyShown = null; // the Plan that handle drew
 let strategyDrawn = null; // what the handle drew, as a key
 let strategyTimer = 0;
 let strategyRenderMs = 0; // how long the last redraw took, which paces the next
+let strategyOneHandle = null; // the one-move view, so a drag moves only its stance line
+let strategyTagged = null; // the stamp the strips were last tagged under, so a world change clears them at once
+let strategyCards = null; // whether the islands were last drawn as cards, read back off `--cards`
+let linkRefused = false; // set by `refuseLink`, so no later restore half-loads a link already refused
 let pricingVersion = 0; // bumped by a reprice, so a cost plan re-letters from the ledger
 const worldVersion = new Map(); // world signature -> landings filed, for the plan caches
-const failureReasons = new Map(); // `${job id}:${index}` -> the engine's reason, for a run that failed
+let strategyChooserDrawn = null; // what the reading chooser was last drawn for, so a desk change redraws it only when that moves
 const studies = new Map(); // parameter key -> the study drawn under that control
 let studyQuantity = null; // initialized once, shared by every open study
 const openStudies = new Set(); // includes queued cards before their curves land
@@ -2437,6 +2509,8 @@ function applyGeometry() {
   // A varied control moves the plan's stance mark and invalidates nothing:
   // the sample does not depend on where the varied controls stand.
   syncStrategyStance();
+  // Which readings the plan can offer does depend on the desk.
+  syncStrategyChooser();
 }
 
 /**
@@ -3464,19 +3538,171 @@ function openDesk(open) {
   deskButton.setAttribute('aria-expanded', String(open));
   $('desk-count').textContent = open ? 'Close the desk' : 'Every control on the desk';
   if (open) tour?.note('desk');
+  syncFolds(open ? 'desk' : null);
   // The patch note's subject moves with the desk: the first patch button when
   // the console is open, the button that opens it when it is not.
   tour?.syncGuide();
-  // The plate is inside a column that just changed width.
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(renderTrace, 60);
+  panelsMoved();
 }
 
-deskButton.addEventListener('click', () => openDesk(!document.body.classList.contains('desk-open')));
+/**
+ * The strategy plan's own panel, the console's mirror on the left (FR-001).
+ *
+ * Closing it does not close the plan: the readings, the campaign and the tags
+ * on the strips stand until *Close the plan* inside it, because the panel is
+ * how the plan is being looked at and not what it is — the same rule that
+ * keeps the console's controls where they were when it is closed.
+ */
+const plannerButton = $('planner-open');
+function openPlanner(open) {
+  document.body.classList.toggle('planner-open', open);
+  plannerButton.setAttribute('aria-expanded', String(open));
+  $('planner-count').textContent = open ? 'Close the plan' : 'The whole design space';
+  syncFolds(open ? 'planner' : null);
+  tour?.syncGuide();
+  panelsMoved();
+}
+
+/**
+ * Both the sheet's and the plan's widths have just changed: the plate is
+ * inside one column and the plan's drawings size themselves off the other.
+ *
+ * The relief is reached here too, and it is the one drawing that cannot fix
+ * itself. `createRelief` takes its size from its host on every paint, and
+ * `paint()` runs on a draw, a viewpoint change, a step or a theme change: on a
+ * finished survey none of those ever happens again, so a relief whose column
+ * changed width would keep the backing store it was last drawn at for the rest
+ * of the session. `repaint` is a no-op until a ground has been drawn, so this
+ * costs nothing before there is one.
+ *
+ * One paint per debounced resize, never one per frame. A `ResizeObserver` on
+ * the host was the alternative and is worse here: it fires through the fold's
+ * own transition, and the first box it would see is the zero one, which is
+ * exactly the measurement `resize()` now refuses.
+ */
+function panelsMoved() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    renderTrace();
+    renderStrategySoon();
+    relief?.repaint();
+  }, 60);
+}
+
+/**
+ * Whether both panels stand open at full width, read back off the stylesheet
+ * (`--both` on `body`), which is where the 1,624px is declared and the only
+ * place it is. A `matchMedia` twin would be a second statement of the number.
+ */
+function bothFit() {
+  return cssFlag(document.body, '--both');
+}
+
+/**
+ * Whether the ground and the relief stand side by side, read back off
+ * `--pair` on `.survey-body` (FR-046b).
+ *
+ * It is a **container** query, not a window one, because the panel's width is
+ * not the window's: at 436px inside a 1,920px window a viewport query never
+ * fires, and the two squares would each draw themselves about 200px wide.
+ */
+function pairFit() {
+  return cssFlag($('survey-drawing'), '--pair');
+}
+
+/** A layout flag the stylesheet declares and script reads back: `--fold`, `--both`, `--cards`. */
+function cssFlag(el, name) {
+  return getComputedStyle(el).getPropertyValue(name).trim() === '1';
+}
+
+// Which panel the reader opened last, so a window narrowed across the line
+// folds the other one and not whichever happens to be first in a list.
+let widePanel = 'desk';
+
+/**
+ * Where both panels are open and do not fit, the one not just opened folds to
+ * its head: a rail that still letters its readings and, for the plan, its
+ * campaign's state and controls (FR-046a). Pressing a rail swaps the two.
+ */
+function syncFolds(opened = null) {
+  const list = document.body.classList;
+  if (opened) widePanel = opened;
+  if (!(list.contains('planner-open') && list.contains('desk-open')) || bothFit()) {
+    list.remove('planner-folded', 'desk-folded');
+    return;
+  }
+  list.toggle('planner-folded', widePanel !== 'planner');
+  list.toggle('desk-folded', widePanel !== 'desk');
+}
+
+function unfoldPanel(which) {
+  syncFolds(which);
+  panelsMoved();
+}
+
+/** A ledger opener: opens or closes its panel, and unfolds it where it stands open as a rail. */
+function pressOpener(which) {
+  const list = document.body.classList;
+  const open = list.contains(`${which}-open`);
+  if (open && list.contains(`${which}-folded`)) unfoldPanel(which);
+  else (which === 'desk' ? openDesk : openPlanner)(!open);
+}
+
+deskButton.addEventListener('click', () => pressOpener('desk'));
 $('desk-revert').addEventListener('click', () => revert());
 $('desk-close').addEventListener('click', () => {
   openDesk(false);
   deskButton.focus();
+});
+plannerButton.addEventListener('click', () => pressOpener('planner'));
+$('planner-close').addEventListener('click', () => {
+  openPlanner(false);
+  plannerButton.focus();
+});
+// E-02 has no way in of its own any more, and needs none: the ground is part
+// 5 of this panel, so there is nothing left on the sheet to open it from and
+// the ledger's own button is the one route (contracts/panel-sequence.md).
+$('planner-unfold').addEventListener('click', () => unfoldPanel('planner'));
+$('desk-unfold').addEventListener('click', () => unfoldPanel('desk'));
+// A rail is one press target, its own buttons apart: the whole head is what
+// the folded panel is, so the whole head is what unfolds it.
+for (const [which, head] of [
+  ['planner', $('planner-head')],
+  ['desk', document.querySelector('#desk .desk-head')],
+]) {
+  head.addEventListener('click', (event) => {
+    if (document.body.classList.contains(`${which}-folded`) && !event.target.closest('button, a, summary')) {
+      unfoldPanel(which);
+    }
+  });
+}
+// One listener for the two flags a resize can flip in the plan's panel. Across
+// the stylesheet's 1,624px line the folds are recomputed. Across the index
+// threshold the islands change between a ring and cards, and a finished plan
+// would otherwise draw neither until a run landed, which on a finished plan is
+// never.
+let bothWas = null;
+let pairWas = null;
+window.addEventListener('resize', () => {
+  const both = bothFit();
+  if (both !== bothWas) {
+    bothWas = both;
+    syncFolds();
+    panelsMoved();
+  } else if (strategyPlan && cardsFlag() !== strategyCards) {
+    renderStrategySoon();
+  }
+  // The third flag, and the only one whose drawing cannot recover on its own.
+  // The panel grows with the window, so `--pair` can be crossed by a drag that
+  // never crosses the 1,624px line above: the survey's two drawings go from a
+  // column each to one under the other, and the relief takes its size from its
+  // host only when it paints. `panelsMoved` is the debounced repaint, and
+  // calling it here coalesces with the call above rather than painting twice.
+  const pair = pairFit();
+  if (pair !== pairWas) {
+    pairWas = pair;
+    panelsMoved();
+  }
 });
 
 /* ══ the general notes ═══════════════════════════════════════════════════ */
@@ -3486,7 +3712,7 @@ $('desk-close').addEventListener('click', () => {
 // notes decide whether it fills a square. Mounted after the console so the
 // patch note can point at a real patch button, and handed `openDesk` so a
 // note whose subject lives on the console can stage it.
-const tour = mountTour({ openDesk });
+const tour = mountTour({ openDesk, openPlanner });
 // The two carry-away paths are one step: either proves the scheme leaves the
 // page. The buttons keep their own handlers; the note is a second listener.
 $('share').addEventListener('click', () => tour?.note('link'));
@@ -3619,6 +3845,10 @@ autoBox.addEventListener('change', () => {
     // backlog goes with it — but a study the reader asked for by name keeps
     // running, the way the sheet keeps the result it already has.
     studyScheduler?.cancelWhere((job) => job.origin === 'refresh', 'shed');
+    // The plan is gated on this toggle outright (FR-012), and it says so; its
+    // jobs go too, or the sentence "nothing is measured" would stand over a
+    // queue still turning the solve counter.
+    syncStrategyGate();
   }
 });
 
@@ -3641,6 +3871,10 @@ function syncSweepGate() {
       ? 'The linked weather station is still being fetched.'
       : 'The engine is still arriving.',
   );
+  // Every change to `linkAttachPending` passes through here, which makes it
+  // the plan's gate too. Safe during the boot awaits: it returns before
+  // touching anything at the foot of the file while no plan is open.
+  syncStrategyGate();
 }
 
 /* ── picking a weather location ──────────────────────────────────────────
@@ -3925,10 +4159,12 @@ async function choose(row, pick, sizing = 'No') {
   // eventually left set at the sixth, which would gate the descent shut for
   // the rest of the session with nothing anywhere saying why.
   stationAttaching = true;
+  syncStrategyGate();
   try {
     return await attach(row, pick, sizing);
   } finally {
     stationAttaching = false;
+    syncStrategyGate();
   }
 }
 
@@ -4249,6 +4485,7 @@ function updatePermalink() {
  */
 let refusalNote = null;
 function refuseLink(message) {
+  linkRefused = true;
   linkAttachPending = false;
   syncSweepGate();
   stopAuto();
@@ -4276,10 +4513,6 @@ let linkedStudiesRestored = false;
  * was loaded — so what is left here is to name it and let the ground fill.
  */
 function restoreLinkedSurvey(state) {
-  // The plan rides the same restore: after the studies and after any station,
-  // for the survey's reason — it queues runs, and a sample built before the
-  // station landed would fatal on zero environments.
-  restoreLinkedPlan(state);
   if (!state?.survey) return;
   const { x, y, readings, extents } = state.survey;
   // The link's extents come back into the chooser too, or the boxes would
@@ -4287,6 +4520,35 @@ function restoreLinkedSurvey(state) {
   surveyChoice = { x, y, readings: [...readings], extents: { ...extents } };
   syncSurveyAxes();
   openSurvey({ xKey: x, yKey: y, readingIds: readings, extents });
+}
+
+/**
+ * Everything a link restores once its station has landed, in one place and in
+ * one order, so a link is refused whole or honoured whole (Principle II).
+ *
+ * The plan is checked **first**, before the studies or the ground load
+ * anything, because it is the one part of a link that can still be refused
+ * this late: whether the desk can offer a reading turns on the station just
+ * attached. Checked last, as it used to be, a refusal came after the studies
+ * had queued and the ground had been cut — `refuseLink` then reverted the
+ * desk under a sheet still showing both, which is a half-loaded link with a
+ * sentence claiming the opposite. And once anything refuses, nothing after it
+ * restores. The plan opens last for the survey's reason: it queues runs, and a
+ * sample built before the station landed would fatal on zero environments.
+ */
+function restoreLinked(state) {
+  if (linkRefused) return false;
+  const refusal = linkedPlanRefusal(state);
+  if (refusal) {
+    refuseLink(refusal);
+    return false;
+  }
+  restoreLinkedStudies(state);
+  if (linkRefused) return false;
+  restoreLinkedSurvey(state);
+  if (linkRefused) return false;
+  if (state?.plan) openStrategy(state.plan);
+  return !linkRefused;
 }
 
 function restoreLinkedStudies(state) {
@@ -4396,10 +4658,11 @@ async function attachFromLink(linked) {
     linkAttachPending = false;
     syncSweepGate();
   }
-  restoreLinkedStudies(linked);
-  // The ground last, and only now: it queues thirty-six runs, and a sample
-  // built before the station landed would fatal on zero environments.
-  restoreLinkedSurvey(linked);
+  // The ground and the plan last, and only now: they queue runs, and a sample
+  // built before the station landed would fatal on zero environments. A link
+  // refused on the way leaves the address as `refuseLink` set it, cleared:
+  // rewriting it now would letter the defaults as though they were the link.
+  if (!restoreLinked(linked)) return;
   // The attach held the address still; now that the station is real, one
   // rewrite brings the bar back to lettering the desk.
   updatePermalink();
@@ -5123,7 +5386,7 @@ let registerFolded = null;
 function relayoutRegister() {
   const host = document.querySelector('.presets');
   if (!host) return;
-  const fold = getComputedStyle(host).getPropertyValue('--fold').trim() === '1';
+  const fold = cssFlag(host, '--fold');
   if (fold === registerFolded) return;
   registerFolded = fold;
   host.open = !fold;
@@ -6329,18 +6592,22 @@ mountChangelog($('changelog-body'), CHANGELOG_SOURCE);
 // — impossible to read at all.
 let quiet = false;
 
-const enginePromise = createEnergyPlus({
-  // `BASE_URL` rather than a leading slash: a PR preview is built with
-  // `--base=/<pr>/` and served from that subdirectory, and an absolute path
-  // would have it download the published site's engine. See `weather.js`.
-  assetBaseUrl: `${import.meta.env.BASE_URL}energyplus`,
-  onConsole: log,
-  onProgress: ({ phase, message }) => {
-    if (quiet) return;
-    setPhase(phase);
-    statusEl.textContent = message;
-  },
-});
+// A function rather than one call, because the sheet's engine can need
+// replacing mid-session: see `sheetPool`.
+const sheetEngine = () =>
+  createEnergyPlus({
+    // `BASE_URL` rather than a leading slash: a PR preview is built with
+    // `--base=/<pr>/` and served from that subdirectory, and an absolute path
+    // would have it download the published site's engine. See `weather.js`.
+    assetBaseUrl: `${import.meta.env.BASE_URL}energyplus`,
+    onConsole: log,
+    onProgress: ({ phase, message }) => {
+      if (quiet) return;
+      setPhase(phase);
+      statusEl.textContent = message;
+    },
+  });
+const enginePromise = sheetEngine();
 
 // `predev`/`prebuild` stage the bundle into `public/schemas/`; `httpSource`
 // resolves the path against the document and inflates the `.gz` files, or not,
@@ -6400,7 +6667,30 @@ new ResizeObserver(() => {
   resizeTimer = setTimeout(renderTrace, 80);
 }).observe($('trace'));
 
-const ep = await enginePromise;
+await enginePromise;
+
+/**
+ * The sheet's engine, behind the same pool the studies use, one wide.
+ *
+ * So it is retired by the same rule and in one place. The worker keeps one
+ * WebAssembly module and calls EnergyPlus's `main` on it for every run, and
+ * `main` is not re-entrant: once a run ends in a fatal or a thrown exception,
+ * every later run on that module throws a raw C++ exception pointer before
+ * doing any work (see `createEnginePool`). A desk that fataled once, a heating
+ * setpoint dragged past the cooling one, used to leave every solve after it
+ * failing as "Engine crashed" until the page was reloaded, including the solve
+ * of the desk dragged straight back. The first instance is the one boot has
+ * just compiled; a replacement compiles from a binary the HTTP cache holds.
+ */
+let bootEngine = enginePromise;
+const sheetPool = createEnginePool({
+  createEngine: () => {
+    const next = bootEngine ?? sheetEngine();
+    bootEngine = null;
+    return next;
+  },
+  limit: 1,
+});
 
 engineReady = true;
 runBtn.disabled = false;
@@ -6514,7 +6804,7 @@ async function solve() {
 
   let result;
   try {
-    result = await ep.run({ idf, epw: epwText });
+    result = await sheetPool.run({ idf, epw: epwText });
   } catch (error) {
     solvedShape = shape;
     stopAuto();
@@ -6950,10 +7240,13 @@ runBtn.addEventListener('click', () => {
  * samples already on an engine land into nothing.
  */
 
-const studyCapacity = poolLimit({
+// The whole `PoolWidth` is kept, not only its number, so the plan can letter
+// which term bound it wherever it states a cost (FR-011a).
+const studyWidth = poolWidth({
   cores: navigator.hardwareConcurrency ?? 4,
   deviceMemoryGB: navigator.deviceMemory ?? null,
 });
+const studyCapacity = studyWidth.width;
 
 const studyPool = createEnginePool({
   // Born silent: no console, no progress. The pump's engine narrates the
@@ -7038,9 +7331,16 @@ function landedFrom(eso, job, built) {
     const total = meterTotal(eso, use.meter, environments);
     if (total != null) series.set(use.meter, total);
   }
-  const sampleParams = { ...job.snapshot, [job.key]: built.value };
+  // The sample's own desk, never the job's snapshot with the value overlaid.
+  // For a study the two are the same thing; for a plan design they are not,
+  // since a design moves every varied control at once and may stand in
+  // another world, with its own patch. Read off the snapshot, a design in the
+  // Rooflights world was judged against the home world's patch bay, which has
+  // no Skylights channel engaged, and against a `null` key set to its index.
+  const sample = sampleDesk(job, built.value);
+  const sampleParams = sample.params;
   const engaged = new Set(
-    [...channelState(sampleParams, job.patch)].filter(([, state]) => state.engaged).map(([id]) => id),
+    [...channelState(sampleParams, sample.patch)].filter(([, state]) => state.engaged).map(([id]) => id),
   );
   const basis = new MeterBasis({
     series,
@@ -7205,10 +7505,13 @@ function buildSample(job, value) {
     // Each sample's intensity divides by that sample's own floor, which the
     // swept key may itself be moving — the same live read the bill takes.
     const floorArea = geometryFacts(model).grossFloor;
-    // `jobKey` names the sample for the one caller that needs a failure's
-    // reason back: a plan design is recorded with the engine's own sentence
-    // rather than as a bare gap (FR-013).
-    return { idf: writeIdf(model), epw: job.epw, floorArea, carried: job.carried, value, jobKey: `${job.id}:${value}` };
+    return { idf: writeIdf(model), epw: job.epw, floorArea, carried: job.carried, value };
+  } catch (failure) {
+    // Said as what it is. This runs inside the scheduler's promise, and the
+    // message is the reason the gap carries (`land` in scheduler.js), so a
+    // design that cannot be written is not reported as a run the engine gave
+    // no reason for, about a run the engine never saw.
+    throw new Error(`The design could not be written for the engine: ${failure.message}`, { cause: failure });
   } finally {
     applyModel(model, params, patching());
     setAnnual(model, annual());
@@ -7243,12 +7546,24 @@ studyScheduler = createStudyScheduler({
   // deliberately absent, which is why a station change clears the cache.
   keyOf: sampleIdentity,
   buildSample,
-  runSample: async ({ idf, epw, jobKey }) => {
-    const result = await studyPool.run({ idf, epw });
-    if (!result?.success && jobKey?.startsWith('strategy:')) failureReasons.set(jobKey, engineFailure(result));
+  // A run that did not succeed throws its reason, and the scheduler carries the
+  // message with the gap it lands as: one path for every way a sample fails,
+  // where a side map keyed by the sample's identity had five writers, a
+  // cleanup pass over every design of every job, and a class of failures that
+  // reached it with nothing filed.
+  runSample: async ({ idf, epw }) => {
+    let result;
+    try {
+      result = await studyPool.run({ idf, epw });
+    } catch (failure) {
+      // The run could not be attempted at all: the worker died or the runtime
+      // never loaded. Said as that, not as a run the engine gave no reason for.
+      throw new Error(`The engine could not run it: ${failure?.message ?? failure}`, { cause: failure });
+    }
     // The counter counts engine runs, so cache hits — honestly — do not turn it.
     runCount += 1;
     $('runs').textContent = String(runCount);
+    if (!result?.success) throw new Error(engineFailure(result));
     return result;
   },
   // The reader off the declaration too, and for the same reason the profile
@@ -7261,26 +7576,35 @@ studyScheduler = createStudyScheduler({
   // resolved once for the whole sweep; each reader takes the pair and helps
   // itself to the half it needs.
   readPoint: (job, result, built, context = job.context) => {
-    if (!result.eso) return null;
-    const { landed, basis } = landedFrom(result.eso, job, built);
-    const readings = {};
-    // The context the scheduler resolved for *this* sample: a study's one, or
-    // a design-list job's for the world this design is in.
-    const deskContext = {
-      runningMean: context?.runningMean ?? null,
-      occupiedFloor: context?.occupiedFloor,
-    };
-    for (const quantity of QUANTITIES) {
-      const needed = contentsFor(quantity, basis.engaged);
-      if (!built.carried.answers(needed)) continue;
-      const context = quantity.context ? quantity.context(deskContext) : null;
-      readings[quantity.id] = quantity.read(landed, { built, context });
+    if (!result.eso) throw new Error('The run completed but handed back no ESO to read.');
+    try {
+      const { landed, basis } = landedFrom(result.eso, job, built);
+      const readings = {};
+      // The context the scheduler resolved for *this* sample: a study's one,
+      // or a design-list job's for the world this design is in.
+      const deskContext = {
+        runningMean: context?.runningMean ?? null,
+        occupiedFloor: context?.occupiedFloor,
+      };
+      for (const quantity of QUANTITIES) {
+        const needed = contentsFor(quantity, basis.engaged);
+        if (!built.carried.answers(needed)) continue;
+        const context = quantity.context ? quantity.context(deskContext) : null;
+        readings[quantity.id] = quantity.read(landed, { built, context });
+      }
+      return Object.freeze({
+        carried: built.carried,
+        readings: Object.freeze(readings),
+        meterBasis: basis,
+      });
+    } catch (failure) {
+      // A reader that throws rejects the sample, and a rejection lands as a
+      // gap; a completed run misread is a defect in this page, and saying so
+      // with the reader's own message is what makes it findable rather than
+      // "the engine gave no reason", about a run the engine finished.
+      console.error(failure);
+      throw new Error(`The run completed, but its reading could not be taken: ${failure.message}`, { cause: failure });
     }
-    return Object.freeze({
-      carried: built.carried,
-      readings: Object.freeze(readings),
-      meterBasis: basis,
-    });
   },
   /**
    * The facts a sample's reader needs that the sweep itself does not change.
@@ -7653,7 +7977,11 @@ function syncStudyStatus(finalLine = null, { quietly = false } = {}) {
   if (p.manual > 0) {
     statusEl.className = 'status';
     statusEl.textContent = `Study — ${p.done} of ${p.total} samples solved.`;
-  } else if (p.jobs === 0 && finalLine) {
+  } else if (finalLine) {
+    // Once no study the reader asked for is running, whatever else the queue
+    // holds. The line is about the study; a plan, a survey or a pull, running
+    // or paused, used to keep it at "32 of 365 samples solved" over a study
+    // that had finished.
     statusEl.className = 'status';
     statusEl.textContent = finalLine;
   }
@@ -8240,8 +8568,8 @@ function axisOffers(snapshot = params, patch = patching()) {
           ? null
           : !engaged
             ? `Patch ${channel.name} in; with it out of the path this control reaches no object.`
-            : control.inert?.(snapshot)
-              ? control.note
+            : control.idle(snapshot)
+              ? (control.note ?? 'Set, but reaching no object at this desk.')
               : side && !side.reaches(snapshot)
                 ? side.reasonFor(snapshot)
                 : null;
@@ -10210,17 +10538,28 @@ const strategyReadings = () => (strategyPlan ? strategyPlan.readingIds.map((id) 
 function engineFailure(result) {
   // The worker hands the error file back parsed, as the sheet's own solve
   // reads it: entries with a severity and the engine's message.
+  // A run stopped by `cancel()` resolves as `success: false` with no severe
+  // line at all, and the engine's own contract says to check for it before
+  // treating the failure as a modelling problem.
+  if (result?.cancelled) return 'The run was cancelled before it finished, so it says nothing about the design.';
   const entries = result?.err?.entries ?? [];
   const first = entries.find((entry) => entry.severity === 'severe') ?? entries.find((entry) => entry.severity === 'fatal');
   if (first?.message) return String(first.message).trim();
-  return 'The run did not complete, and the engine gave no reason this sheet could read.';
-}
-
-function takeFailure(job, index) {
-  const key = `${job.id}:${index}`;
-  const reason = failureReasons.get(key);
-  failureReasons.delete(key);
-  return reason ?? 'The run did not complete, and the engine gave no reason this sheet could read.';
+  // "Engine crashed: 287468688" is the worker lettering a thrown C++
+  // exception, and the number is a pointer: nothing a reader can use. It is
+  // said in words, and it is rare now that the pool retires a poisoned
+  // instance rather than handing it the next design.
+  if (/^Engine crashed: \d+$/.test(String(result?.fatalError ?? '').trim())) {
+    return 'EnergyPlus stopped abruptly, throwing an exception with no message, and wrote no severe error.';
+  }
+  if (result?.fatalError) return String(result.fatalError).trim();
+  // Nothing parsed out of the error file: say what the engine did say, its
+  // exit code and its last line of output, rather than nothing at all.
+  const last = (result?.consoleOutput ?? []).map((line) => String(line).trim()).filter(Boolean).at(-1);
+  return (
+    `The run did not complete (exit ${result?.exitCode ?? 'unknown'}), and its error file names no severe error` +
+    `${last ? `; the engine's last line was "${last.slice(0, 160)}"` : ''}.`
+  );
 }
 
 /** Whether the ledger already answers this design for every reading chosen. */
@@ -10301,30 +10640,246 @@ function cancelStrategyJobs(reason) {
 }
 
 /**
- * Queue what the ledger does not yet hold (FR-009, FR-011, FR-014).
+ * The plan's queued runs, as the reader controls them (FR-012a), handed to
+ * the head frozen. `waiting` is queued and not started, held or not;
+ * `inFlight` is on an engine now and lands whatever the state; `withheld` is
+ * the neighbours' job, held back until the home world's first depth lands.
+ * `kept` and `notRun` are what a Cancel left, counted at the press.
+ */
+class Campaign {
+  constructor({ state, waiting, inFlight, withheld, kept = 0, notRun = 0 }) {
+    if (!['running', 'paused', 'cancelled'].includes(state)) throw new Error(`a campaign cannot be "${state}"`);
+    for (const [name, n] of Object.entries({ waiting, inFlight, withheld, kept, notRun })) {
+      if (!Number.isInteger(n) || n < 0) throw new Error(`a campaign's ${name} is ${n}, which counts no runs`);
+    }
+    Object.assign(this, { state, waiting, inFlight, withheld, kept, notRun });
+    Object.freeze(this);
+  }
+
+  /** Runs not yet on an engine, whether the queue holds them or the plan does. */
+  get queued() {
+    return this.waiting + this.withheld;
+  }
+}
+
+function campaignSnapshot() {
+  if (!strategyPlan) return null;
+  let waiting = 0;
+  let inFlight = 0;
+  for (const job of strategyJobs.values()) {
+    // `started` holds every index dispatched, and a cache hit lands in the
+    // same breath, so what is started and not yet done is on an engine.
+    const flying = job.started.size - job.done;
+    inFlight += flying;
+    waiting += job.total - job.done - flying;
+  }
+  const { state, kept, notRun } = strategyPlan.campaign;
+  return new Campaign({ state, waiting, inFlight, withheld: strategyPlan.held?.job.total ?? 0, kept, notRun });
+}
+
+const isPlanJob = (job) => job.origin === 'strategy';
+
+/**
+ * Pause holds every plan job rather than cancelling it (research.md section
+ * 18). A cancelled job loses its place in the round-robin and re-queueing it
+ * rebuilds every design list; a held one keeps its order and its `started`
+ * set, so Resume continues exactly where it stopped. Nor is it the
+ * scheduler's `paused()`, which would stop every study and the survey with it
+ * (FR-012a). Runs already on an engine land and are filed as usual.
+ */
+function pauseCampaign() {
+  if (!strategyPlan) return;
+  strategyPlan.campaign.state = 'paused';
+  studyScheduler?.holdWhere(isPlanJob, true);
+  renderCampaign();
+  renderStrategySoon();
+}
+
+function resumeCampaign() {
+  const campaign = strategyPlan?.campaign;
+  if (!campaign) return;
+  const was = campaign.state;
+  campaign.state = 'running';
+  if (was === 'paused') studyScheduler?.holdWhere(isPlanJob, false);
+  // From a cancel the queue is empty, and `queueStrategy` queues only what the
+  // ledger does not already hold, so nothing measured is measured twice.
+  else if (was === 'cancelled') queueStrategy();
+  renderCampaign();
+  renderStrategySoon();
+}
+
+/**
+ * Cancel stops the plan's runs for this world, and keeps every one that
+ * landed: the ledger is untouched. It is a decision about the world being
+ * measured, so a door opened ends it, where a pause is about the reader's
+ * attention and survives one (data-model.md, the campaign).
+ */
+function cancelCampaign() {
+  if (!strategyPlan) return;
+  const before = campaignSnapshot();
+  cancelStrategyJobs('cancelled');
+  strategyPlan.held = null;
+  // Kept is every run this campaign landed in this world, not what the jobs
+  // standing at the press had done: a finished job has already left the queue.
+  Object.assign(strategyPlan.campaign, {
+    state: 'cancelled',
+    world: strategyWorld().signature,
+    kept: strategyPlan.campaign.landed,
+    notRun: before.queued,
+  });
+  renderCampaign();
+  renderStrategySoon();
+}
+
+/**
+ * An explicit ask for runs (an island's measure button, the weather year's
+ * consent) is the reader asking to measure, so it lifts a cancel as Resume
+ * does; left cancelled, the press would state a cost and spend nothing.
+ */
+function askCampaign() {
+  if (strategyPlan?.campaign.state === 'cancelled') strategyPlan.campaign.state = 'running';
+}
+
+/** How wide the pool runs and which term bound it, wherever the plan states a cost (FR-011a). */
+function enginesLine() {
+  const n = studyWidth.width;
+  return `${n} engine${n === 1 ? '' : 's'} side by side: ${studyWidth.why}`;
+}
+
+/** The campaign in the panel's head, which is also what the folded rail shows. */
+function renderCampaign() {
+  const block = $('campaign');
+  const snap = campaignSnapshot();
+  block.hidden = !snap;
+  if (!snap) return;
+  const queued = snap.queued;
+  $('campaign-pause').hidden = !(snap.state === 'running' && queued > 0);
+  $('campaign-resume').hidden = snap.state === 'running';
+  $('campaign-cancel').hidden = !(snap.state !== 'cancelled' && queued > 0);
+  $('campaign-state').textContent =
+    snap.state === 'paused'
+      ? `Paused: ${queued} runs wait. Runs already on an engine finish.`
+      : snap.state === 'cancelled'
+        ? `Cancelled: ${snap.kept} runs kept, ${snap.notRun} not run. Resume to measure the rest.`
+        : (strategyWaitingReason() ??
+          (queued + snap.inFlight
+            ? `${queued + snap.inFlight} runs to go, ${snap.inFlight} on an engine now.`
+            : 'Nothing queued.'));
+}
+
+/**
+ * Queue what the ledger does not yet hold (FR-009, FR-009a, FR-011, FR-014).
  *
  * The home world's designs in natural order, which is progressive by itself:
  * the first 128 are a balanced Sobol prefix, and the full 512 extend it. Its
  * probes base-major, so four whole bases land before a fifth begins and the
  * moves can be fitted early. Then every neighbour's 32 matched designs, in
- * design-stage order; then each island's own reduced-depth screening, at once
- * on a design-day desk and only on request on an annual one, where the cost is
- * stated before it is spent (clarified 2026-09-10).
+ * design-stage order. An island's own reduced-depth screening is queued only
+ * once the reader has asked for that island, on every desk, with its runs and
+ * time stated on the button first (amended 2026-09-11): queued unasked on a
+ * design-day desk, a step into a world started 8,320 runs, four fifths of them
+ * for islands nobody had opened.
+ *
+ * The campaign decides how they are admitted: held while it is paused, not at
+ * all while it is cancelled for this same world.
  *
  * Every design the ledger already answers is left out, which is what makes
  * stepping into a world free where its island was measured (FR-025).
  */
+/** What one queue of the plan is for: its world, readings, run kind, the islands asked for, the ledger's epoch. */
+function strategyKey(world, { asked = true } = {}) {
+  const parts = [world.signature, strategyPlan.readingIds.join('.'), strategyKind(), ledger.epoch];
+  if (asked) parts.push([...strategyPlan.asked].join(','));
+  return parts.join('|');
+}
+
+/** Take every tag off the strips, and forget the stamp they were drawn under. */
+function untagStrips() {
+  desk?.setTags(new Map(), '');
+  strategyTagged = null;
+}
+
+/**
+ * Take the strip tags down the moment the desk is in another world or the
+ * readings have changed, before the throttled redraw classifies anything
+ * (FR-040, SC-013). Their stamp already makes a stale tag undrawable, but only
+ * on the next `setTags`; between a door opening and the next redraw, a
+ * quarter second or a whole annual run later, the strips went on printing the
+ * old world's kinds.
+ */
+function clearStaleTags(world) {
+  if (strategyTagged && strategyTagged !== stampOf(world, strategyReadings())) untagStrips();
+}
+
+/**
+ * Whether a chosen reading has stopped being on offer since the plan opened,
+ * as the offer's own reason and fix (FR-002, FR-041). Patching Gains out under
+ * a TM59 plan, or System out under a peak-load plan, leaves a plan that cannot
+ * be measured; it is refused whole and queues nothing, rather than spending
+ * runs whose readings are empty.
+ */
+function strategyRefusal(offers = surveyReadingOffers()) {
+  if (!strategyPlan) return null;
+  const refused = readingOffersFor(strategyPlan.readingIds, offers).filter((offer) => !offer.available);
+  if (!refused.length) return null;
+  return (
+    `The plan of ${refused.map((offer) => offer.reading.label.toLowerCase()).join(' and ')} is refused at this desk, ` +
+    `and nothing is measured for it: ${refused.map((offer) => offer.reason).join(' ')}`
+  );
+}
+
+/**
+ * The offer behind each reading id, in order. A plan or a link names only
+ * readings `decodeState` and the chooser let through, so an id with no offer
+ * is a roster that let an undeclared reading past, and that throws rather than
+ * refusing the reader with a sentence about a reading they never named.
+ */
+function readingOffersFor(ids, offers = surveyReadingOffers()) {
+  return ids.map((id) => {
+    const offer = offers.find((candidate) => candidate.reading.id === id);
+    if (!offer) throw new Error(`"${id}" is not a reading the roster offers; decodeState should have refused it`);
+    return offer;
+  });
+}
+
+/** The home world's first depth: the designs and screening probes that make it legible (FR-009). */
+function firstDepthIds(world) {
+  const ids = [];
+  for (let index = 0; index < DEPTH.first.designs; index += 1) ids.push(designId(world, index));
+  for (let base = 0; base < DEPTH.first.bases; base += 1) {
+    for (const probe of probesAt(world, designAt(world, base))) if (!probe.skip) ids.push(probe.id);
+  }
+  return ids;
+}
+
 function queueStrategy() {
   if (!strategyPlan || !studyScheduler) return;
   const world = strategyWorld();
   const kind = strategyKind();
-  const key = [world.signature, strategyPlan.readingIds.join('.'), kind, [...strategyPlan.asked].join(','), ledger.epoch].join('|');
-  if (strategyWaitingReason()) {
+  const key = strategyKey(world);
+  clearStaleTags(world);
+  strategyPlan.held = null;
+  strategyPlan.pending = null;
+  const campaign = strategyPlan.campaign;
+  // A door opened ends a cancel, which was about the world being measured;
+  // this is another world and another campaign. A pause survives it.
+  if (campaign.state === 'cancelled' && campaign.world !== world.signature) campaign.state = 'running';
+  if (strategyWaitingReason() || strategyRefusal()) {
     cancelStrategyJobs('replaced');
     strategyPlan.queuedFor = null;
     renderStrategySoon();
     return;
   }
+  if (campaign.state === 'cancelled') {
+    // Nothing queued, and recorded as queued for this key so the next
+    // refresh does not come back here on every render.
+    strategyPlan.queuedFor = key;
+    renderStrategySoon();
+    return;
+  }
+  if (campaign.world !== world.signature) campaign.landed = 0;
+  campaign.world = world.signature;
+  const admitHeld = campaign.state === 'paused';
   const readings = strategyReadings();
   const quantities = [...new Set(readings.map((reading) => reading.quantity.id))];
   const annualDesk = kind === 'annual';
@@ -10355,7 +10910,7 @@ function queueStrategy() {
     }
   }
   for (const neighbour of enterable) {
-    if (annualDesk && !strategyPlan.asked.has(neighbour.id)) continue;
+    if (!strategyPlan.asked.has(neighbour.id)) continue;
     const other = neighbour.world;
     for (let base = 0; base < DEPTH.island.bases; base += 1) {
       for (const probe of probesAt(other, designAt(other, base))) {
@@ -10366,6 +10921,28 @@ function queueStrategy() {
       const design = designAt(other, index);
       add(lists.neighbours, other, design.params, design.id);
     }
+  }
+  // FR-006: on a weather year the cost is stated before any of it is spent.
+  // An annual run is fourteen design days, and the home world with its jumps
+  // is a thousand of them and more, so nothing is queued until the reader has
+  // read the figure and asked. The consent is for this world, these readings
+  // and this weather: stepping into another world states its cost afresh. An
+  // island measured on request carries its own figure on its own button.
+  const consent = strategyKey(world, { asked: false });
+  const home = lists.designs.length + lists.probes.length;
+  const runs = home + lists.neighbours.length;
+  if (annualDesk && runs && strategyPlan.consented !== consent) {
+    cancelStrategyJobs('replaced');
+    strategyPlan.queuedFor = null;
+    strategyPlan.pending = Object.freeze({
+      key: consent,
+      runs,
+      home,
+      jumps: lists.neighbours.length,
+      seconds: Math.round((runs * STRATEGY_CADENCE.annual) / Math.max(1, studyCapacity)),
+    });
+    renderStrategySoon();
+    return;
   }
   cancelStrategyJobs('replaced');
   strategyGeneration += 1;
@@ -10390,15 +10967,93 @@ function queueStrategy() {
         origin: 'strategy',
         asked: list.length,
         designs: list,
+        held: admitHeld,
       });
       job.ledgerEpoch = ledger.epoch;
-      strategyJobs.set(job.id, job);
       return job;
     });
+  // FR-009: the desk's own world legible first. The neighbours' job is held
+  // back until the home world's first depth (four whole screening bases and
+  // 128 designs) has landed; queued beside it, the round-robin gave the jumps
+  // a third of every dispatch from the first second, and the reader's own
+  // world stood half drawn while nineteen others were being measured.
+  const first = firstDepthIds(world);
+  const neighboursJob = jobs.find((job) => job.id.startsWith('strategy:neighbours:')) ?? null;
+  const holding = Boolean(neighboursJob) && !first.every((id) => strategyHas(id, quantities));
+  const now = holding ? jobs.filter((job) => job !== neighboursJob) : jobs;
+  for (const job of now) strategyJobs.set(job.id, job);
+  strategyPlan.held = holding ? { job: neighboursJob, first, quantities, at: 0 } : null;
   strategyShed = null;
   strategyPlan.queuedFor = key;
-  if (jobs.length) studyScheduler.enqueueAll(jobs);
+  if (now.length) studyScheduler.enqueueAll(now);
   renderStrategySoon();
+}
+
+/** Let the neighbours' job go once the home world's first depth has landed (FR-009). */
+function releaseNeighbours() {
+  const held = strategyPlan?.held;
+  if (!held) return;
+  // A cursor rather than a rescan on every landing: an id once answered stays
+  // answered until the ledger's epoch moves, and a new epoch cancels this job.
+  while (held.at < held.first.length && strategyHas(held.first[held.at], held.quantities)) held.at += 1;
+  if (held.at < held.first.length) return;
+  strategyPlan.held = null;
+  // Admitted held if the reader paused while it waited: the pause is on the
+  // plan's runs, and these are the plan's runs too.
+  held.job.held = strategyPlan.campaign.state === 'paused';
+  strategyJobs.set(held.job.id, held.job);
+  studyScheduler.enqueueAll([held.job]);
+}
+
+/**
+ * The plan's gate (FR-012): auto-solve, a link attaching, a station attaching.
+ * While any of them holds, every plan job is cancelled, not merely left to
+ * run, since a sentence saying nothing is measured over a queue still turning
+ * the solve counter is the plan contradicting itself. When the gate lifts the
+ * plan re-queues, answering everything the ledger already holds for free.
+ *
+ * The gate and the campaign are kept apart (FR-012a): the gate cancels without
+ * touching the campaign's state, and when it lifts `queueStrategy` honours
+ * that state, admitting held while paused and queueing nothing while cancelled
+ * for the same world.
+ */
+function syncStrategyGate() {
+  // A station attaching is one of the two things that change which readings
+  // are on offer, so the chooser follows it here as it follows the desk in
+  // `applyGeometry`, plan or no plan.
+  syncStrategyChooser();
+  // While the gate holds, `queueStrategy` cancels and says why; once it
+  // lifts, the refresh re-queues where the world has moved.
+  if (strategyWaitingReason()) queueStrategy();
+  else refreshStrategy();
+}
+
+/**
+ * The reading chooser, drawn for the offers it shows.
+ *
+ * Which readings are on offer turns on the desk and the weather: a year puts
+ * the annual ones on offer, System and Gains the demand and TM59 ones. So it
+ * follows the two places those change, `applyGeometry` and the station gate,
+ * rather than the plan's own queue, which with no plan open never ran: a
+ * reader who attached a year met the panel offering High and Low alone, the
+ * rest refused with a reason that was no longer true. Only while the panel is
+ * open, since opening it redraws the whole plan anyway, and only when what the
+ * chooser stands on has moved, since `applyGeometry` runs on every frame of a
+ * drag.
+ */
+function syncStrategyChooser() {
+  if (!document.body.classList.contains('planner-open')) return;
+  if (chooserStanding() === strategyChooserDrawn) return;
+  drawStrategyChooser(surveyReadingOffers());
+}
+
+function chooserStanding() {
+  return `${shapeKey(params)}|${Boolean(epwText)}|${strategyPlan?.readingIds.join('.') ?? ''}`;
+}
+
+function drawStrategyChooser(offers) {
+  renderReadingChooser($('strategy-readings'), offers, strategyPlan?.readingIds ?? [], toggleStrategyReading);
+  strategyChooserDrawn = chooserStanding();
 }
 
 /**
@@ -10408,7 +11063,8 @@ function queueStrategy() {
 function refreshStrategy({ force = false } = {}) {
   if (!strategyPlan || !studyScheduler) return;
   const world = strategyWorld();
-  const key = [world.signature, strategyPlan.readingIds.join('.'), strategyKind(), [...strategyPlan.asked].join(','), ledger.epoch].join('|');
+  clearStaleTags(world);
+  const key = strategyKey(world);
   if (!force && strategyPlan.queuedFor === key) {
     renderStrategySoon();
     return;
@@ -10431,22 +11087,36 @@ function onStrategyUpdate(job, event, index) {
           readings: prior?.readings ? Object.freeze({ ...prior.readings, ...sample.readings }) : sample.readings,
           meterBasis: sample.meterBasis ?? prior?.meterBasis ?? null,
         })
-      : new Landed({ failure: takeFailure(job, index) });
+      : new Landed({
+          // The reason travels with the landing (`land` in scheduler.js). A
+          // gap with none is a sample that resolved without a result and
+          // threw nothing, which is a defect in this page, not in the engine.
+          failure: job.curve[index]?.failure ?? 'No reason was recorded for this run, so this sheet cannot say why it failed.',
+        });
     if (ledger.land(entry.id, landed, job.ledgerEpoch)) {
       worldVersion.set(entry.context, (worldVersion.get(entry.context) ?? 0) + 1);
     }
+    if (strategyPlan) strategyPlan.campaign.landed += 1;
+    if (strategyPlan?.held) releaseNeighbours();
     renderStrategySoon();
     return true;
   }
   if (event === 'done' || event === 'failed') {
     strategyJobs.delete(job.id);
+    // The head at once rather than on the plan's throttle: a Pause or a
+    // Cancel must never stand over a queue that has already drained.
+    renderCampaign();
+    if (strategyPlan?.held) releaseNeighbours();
     renderStrategySoon();
     return true;
   }
   if (event === 'cancelled') {
     if (strategyJobs.get(job.id) === job) strategyJobs.delete(job.id);
+    renderCampaign();
     // A global Set-aside suppresses the plan until the desk next moves, the
-    // way it suppresses a study, or the next release would restart it.
+    // way it suppresses a study, or the next release would restart it. The
+    // campaign's own Cancel ('cancelled') is like 'replaced' here: it
+    // suppresses nothing, since the campaign's state already says not to queue.
     if (job.cancelled === 'shed') strategyShed = deskKey(params, patching(), VARIED);
     if (job.cancelled === 'moved' && strategyPlan) strategyPlan.queuedFor = null;
     renderStrategySoon();
@@ -10456,6 +11126,10 @@ function onStrategyUpdate(job, event, index) {
 }
 
 function openStrategy(readingIds) {
+  // A plan is measured in its panel, so opening one opens the panel: from the
+  // chooser inside it this changes nothing, and from a link it is the only
+  // way the reader would learn the plan is there.
+  openPlanner(true);
   strategyPlan = {
     readingIds: [...readingIds],
     view: 0,
@@ -10466,6 +11140,13 @@ function openStrategy(readingIds) {
     focused: null,
     asked: new Set(),
     queuedFor: null,
+    pending: null, // an annual cost stated and not yet asked for
+    consented: null, // the world, readings and weather the reader asked to have measured
+    held: null, // the neighbours' job, waiting on the home world's first depth
+    // How the plan is being run, not what it is: kept off the link by the
+    // chase pin's rule. `world` is the signature last queued for, or at a
+    // Cancel the one cancelled.
+    campaign: { state: 'running', world: null, landed: 0, kept: 0, notRun: 0 },
   };
   queueStrategy();
   renderStrategy();
@@ -10476,9 +11157,10 @@ function closeStrategy() {
   cancelStrategyJobs('cleared');
   strategyPlan = null;
   strategyHandle = null;
+  strategyOneHandle = null;
   strategyShown = null;
   strategyDrawn = null;
-  desk?.setTags(new Map(), '');
+  untagStrips();
   renderStrategy();
   updatePermalink();
 }
@@ -10499,7 +11181,7 @@ function toggleStrategyReading(id) {
   }
   // The tags come down before the new classification lands, so no strip ever
   // carries a kind judged against a pair of readings no longer chosen (FR-040).
-  desk?.setTags(new Map(), '');
+  untagStrips();
   strategyPlan.readingIds = ids;
   strategyPlan.view = 0;
   queueStrategy();
@@ -10507,21 +11189,21 @@ function toggleStrategyReading(id) {
   updatePermalink();
 }
 
-/** Restore a plan a link carried, refusing the link whole where it cannot be drawn. */
-function restoreLinkedPlan(state) {
-  if (!state?.plan) return;
-  const offers = surveyReadingOffers();
-  for (const id of state.plan) {
-    const offer = offers.find((candidate) => candidate.reading.id === id);
-    if (!offer?.available) {
-      refuseLink(
-        `This link asks for a strategy plan of ${READING_BY_ID[id].label.toLowerCase()}, which this desk cannot ` +
-          `offer: ${offer?.reason ?? 'no such reading is declared'}`,
-      );
-      return;
-    }
-  }
-  openStrategy(state.plan);
+/**
+ * Why a plan a link carried cannot be drawn at this desk, or null. The offer's
+ * `reason` already carries its fix ("… Attach a weather file."), so the
+ * refusal letters both. An id with no offer at all is not a desk that cannot
+ * honour the link but a codec that let an undeclared reading through, since
+ * `decodeState` refuses every id outside the roster: that throws, rather than
+ * refusing the reader's link with a sentence about a reading it never named.
+ */
+function linkedPlanRefusal(state) {
+  if (!state?.plan) return null;
+  const offer = readingOffersFor(state.plan).find((candidate) => !candidate.available);
+  return offer
+    ? `This link asks for a strategy plan of ${offer.reading.label.toLowerCase()}, which this desk cannot offer: ` +
+        `${offer.reason} The link was set aside, and the sheet is at its defaults.`
+    : null;
 }
 
 /**
@@ -10583,21 +11265,70 @@ function stanceOn(plan) {
 }
 
 function syncStrategyStance() {
-  if (!strategyHandle || !strategyShown) return;
-  const here = worldOf(params, patching()).signature === strategyShown.world.signature;
-  strategyHandle.setStance(here ? stanceOn(strategyShown) : null);
+  if (!strategyPlan) return;
+  const world = worldOf(params, patching());
+  // A door opened by a gesture passes through here before the gesture ends,
+  // which is the earliest the old world's tags can come down.
+  clearStaleTags(world);
+  if (!strategyShown) return;
+  const at = world.signature === strategyShown.world.signature ? stanceOn(strategyShown) : null;
+  strategyHandle?.setStance(at);
+  // The one-move view marks the stance too, and has to move with it (FR-021).
+  strategyOneHandle?.setStance(at);
 }
 
-/** One design, lettered in full: its reading, its world, its place and that it ran. */
-function letterDesign(plan, dot) {
+/**
+ * One design, lettered in full: its reading, its world, its place and that it
+ * ran (FR-020). `where` names the world, since an island's designs are in
+ * another world from the desk's and the readout is the only text saying so.
+ */
+function letterDesign(plan, dot, where = 'this world') {
   const line = $('strategy-spot');
   if (!dot) {
     line.textContent = '';
     return;
   }
   line.textContent =
-    `Design ${dot.index}: ${plan.reading.format(dot.value)}, a completed ${plan.kind} run in this world, ` +
+    `Design ${dot.index}: ${plan.reading.format(dot.value)}, a completed ${plan.kind} run in ${where}, ` +
     `at ${dot.x.toFixed(2)} along move 1 and ${dot.y.toFixed(2)} along move 2. Press it to stand on it.`;
+}
+
+/** Failed runs grouped by the engine's own reason, each with its count. */
+function reasonsOf(failures) {
+  const reasons = new Map();
+  for (const { reason } of failures) reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+  return [...reasons].map(([reason, n]) => `${reason} (${n})`).join('; ');
+}
+
+/** The share explained, or the em dash and the reason there is none (FR-017, FR-042). */
+function shareSentence(plan) {
+  return plan.explained2 !== null
+    ? `Share explained: ${percent(plan.explained2)} along two moves` +
+        `${plan.oneMove ? `, ${percent(plan.explained1)} along the first alone` : ''}, scored on designs the ` +
+        'moves were not fitted from.'
+    : `Share explained: — ${plan.scoreAbsence}`;
+}
+
+/**
+ * What the shading under a plan's dots is: inference, which way is better,
+ * and its own share (FR-019). One function for the home plan and an opened
+ * island, so the island is not the one drawing on the sheet that goes without.
+ */
+function terrainSentence(plan, reading) {
+  const better =
+    reading.better === 'lower'
+      ? `lower is better for ${reading.label.toLowerCase()}, so the best designs are the pale low ground`
+      : `higher is better for ${reading.label.toLowerCase()}, so the best designs are the dark high ground`;
+  return plan.terrain?.lattice
+    ? `The shading under them is inference, smoothed so it shows no rise or hollow the dots do not support, left ` +
+        `bare where they are sparse, and never read for a figure; ${better}. It explains ` +
+        `${percent(plan.terrain.explained)} on its own.`
+    : `${plan.terrain?.refused ?? 'No terrain is drawn until the moves are fitted.'} ${better[0].toUpperCase()}${better.slice(1)}.`;
+}
+
+/** Whether the islands are drawn as cards, read back off the stylesheet rather than restating its breakpoint. */
+function cardsFlag() {
+  return cssFlag($('strategy'), '--cards');
 }
 
 /** A move's recipe, lettered under its axis. */
@@ -10613,7 +11344,7 @@ function axisLine(host, move, reading, n) {
   );
 }
 
-/** The islands around this world for one reading, in design-stage order. */
+/** The islands around this world for one reading, in design-stage order, each an `Island`. */
 function islandsOf(world, reading) {
   const islands = [];
   const same = [];
@@ -10624,27 +11355,41 @@ function islandsOf(world, reading) {
       same.push(neighbour);
       continue;
     }
-    const plan = planFor(neighbour.world, reading, DEPTH.island);
-    const depth = plan.moves ? 'plan' : 'jump';
-    islands.push({
-      id: neighbour.id,
-      neighbour,
-      jumpObj: jump,
-      plan,
-      depth,
-      label: neighbour.label,
-      edge: jump.measured ? signed(jump.median, reading) : '—',
-      jump: jump.measured
-        ? `Jump ${signed(jump.median, reading)}, p10 ${signed(jump.p10, reading)} to p90 ${signed(jump.p90, reading)}; ` +
-          `${jump.consistency.agree} of ${jump.consistency.of} one way`
-        : 'Jump not yet measured',
-      detail:
-        depth === 'plan'
-          ? `Its own moves measured; explains ${percent(plan.explained2)}`
-          : `${jump.measured} of ${jump.wanted} pairs measured; its moves not yet measured`,
-    });
+    islands.push(
+      new Island({
+        neighbour,
+        jump,
+        plan: planFor(neighbour.world, reading, DEPTH.island),
+        cost: islandCost(neighbour.world),
+      }),
+    );
   }
   return { islands, same };
+}
+
+/**
+ * One island as the ring and the cards letter it: its jump in the reading's
+ * own units, its depth, and how many of its runs failed (FR-043). The view
+ * draws these strings and nothing else, so the `Island` stays the arithmetic.
+ */
+function cardOf(island, reading) {
+  const { jump } = island;
+  const failed = island.failures.length ? ` · ${island.failures.length} failed` : '';
+  return Object.freeze({
+    id: island.id,
+    label: island.label,
+    depth: island.depth,
+    island,
+    edge: jump.measured ? signed(jump.median, reading) : '—',
+    jump: jump.measured
+      ? `Jump ${signed(jump.median, reading)}, p10 ${signed(jump.p10, reading)} to p90 ${signed(jump.p90, reading)}; ` +
+        `${jump.consistency.agree} of ${jump.consistency.of} matched designs one way`
+      : 'Jump not yet measured',
+    detail:
+      island.depth === 'plan'
+        ? `Its own moves measured; explains ${percent(island.plan.explained2)}${failed}`
+        : `${jump.measured} of ${jump.wanted} pairs measured; its moves not yet measured${failed}`,
+  });
 }
 
 /** The runs one island's own screening still wants, and what they cost here. */
@@ -10660,30 +11405,93 @@ function islandCost(world) {
  * and a reader can only read the last. A varied slider does not come through
  * here at all; `syncStrategyStance` moves the one mark that changes.
  */
+/**
+ * Every part of the sequence stands, and says what it is waiting on (FR-001a).
+ *
+ * A part that disappeared until something had landed was a gate of exactly the
+ * kind the numbered sequence forbids, and worse than merely absent: a reader
+ * cannot be told what a part they cannot see is waiting for. So the parts stay
+ * and their ledes carry the reason, while the *drawings* inside them come
+ * down — an empty framed box under a "Fig. 4" caption is furniture, not a
+ * reading, which is the same call the survey's own two drawing frames make.
+ *
+ * It also clears what a previous plan left behind, which hiding the body used
+ * to do for free. Now that the parts stand, stale islands under a closed plan
+ * would be one world's measurements lettered under another's.
+ */
+function strategyWaiting(reason) {
+  $('strategy-plan-lede').textContent = reason;
+  $('strategy-plan').closest('figure').hidden = true;
+  for (const id of ['strategy-one', 'strategy-limits', 'strategy-same', 'strategy-refused', 'strategy-island']) {
+    $(id).hidden = true;
+  }
+  for (const id of [
+    'strategy-views', 'strategy-axis-x', 'strategy-axis-y', 'strategy-share', 'strategy-coverage',
+    'strategy-spot', 'strategy-ring', 'strategy-cards', 'strategy-screen', 'strategy-screen-runs',
+    'strategy-inert', 'strategy-moves', 'strategy-designs', 'strategy-designs-scope',
+    'strategy-islands-scope', 'strategy-screen-scope', 'strategy-moves-scope',
+  ]) {
+    $(id).textContent = '';
+  }
+  $('strategy-islands-lede').textContent = WAITING.islands;
+  $('strategy-screen-lede').textContent = WAITING.screening;
+  $('strategy-moves-lede').textContent = WAITING.moves;
+}
+
 function renderStrategy() {
   if (!$('strategy')) return;
+  renderCampaign();
   const offers = surveyReadingOffers();
-  renderReadingChooser($('strategy-readings'), offers, strategyPlan?.readingIds ?? [], toggleStrategyReading);
+  drawStrategyChooser(offers);
   $('strategy-close').hidden = !strategyPlan;
-  const body = $('strategy-body');
   if (!strategyPlan) {
-    body.hidden = true;
     $('strategy-scope').textContent = '';
     $('strategy-entered').hidden = true;
     strategySay(null);
     $('strategy-lede').textContent =
-      'Choose one reading or two: each dot is a completed run, placed along the two moves that decide it, ' +
-      'with the worlds one door away.';
+      'Choose one reading or two here, and the plan is measured in this panel: each dot is a completed run, ' +
+      'placed along the two moves that decide it, with the worlds one door away.';
+    strategyWaiting(WAITING.noPlan);
     return;
   }
 
   const world = strategyWorld();
   const readings = strategyReadings();
   const kind = strategyKind();
+  // A reading that stopped being on offer refuses the plan whole, with the
+  // offer's own reason and fix, and nothing of the plan is drawn under it.
+  const refusal = strategyRefusal(offers);
+  const go = $('strategy-go');
+  go.hidden = true;
+  if (refusal) {
+    $('strategy-scope').textContent = ` ${readings.map((r) => r.label).join(' and ')} · refused`;
+    strategySay(refusal);
+    // The parts stand and name the refusal rather than vanishing under it. The
+    // refusal itself is lettered whole by `strategySay`, in place and outside
+    // any fold, which is where a reader looks for the reason and the fix.
+    strategyWaiting(WAITING.refused);
+    untagStrips();
+    return;
+  }
+  // On a weather year the cost is stated and nothing runs until it is asked
+  // for (FR-006): the figure, and the one press that spends it.
+  const pending = strategyPlan.pending;
+  if (pending && !strategyWaitingReason()) {
+    go.hidden = false;
+    go.textContent = `Measure on the weather year: ${pending.runs} annual runs, about ${pending.seconds} s`;
+    go.onclick = () => {
+      strategyPlan.consented = pending.key;
+      askCampaign();
+      queueStrategy();
+    };
+  }
   const view = Math.min(strategyPlan.view, readings.length - 1);
   const reading = readings[view];
   const plan = planFor(world, reading, DEPTH.home);
-  body.hidden = false;
+  // Part 2 carries its drawing again, and its lede goes quiet: with a plan
+  // standing, the share explained and the coverage line are the reading.
+  $('strategy-plan').closest('figure').hidden = false;
+  $('strategy-plan-lede').textContent = '';
   $('strategy-scope').textContent = ` ${readings.map((r) => r.label).join(' and ')} · ${kind} runs`;
   $('strategy-lede').textContent =
     'System, Plant and Tariff are not doors: they change what a reading means or costs, not what the building is.';
@@ -10707,6 +11515,12 @@ function renderStrategy() {
 
   const waiting =
     strategyWaitingReason() ??
+    (pending
+      ? `On a weather year the plan states its cost before spending it: ${pending.home} runs for this world and ` +
+        `${pending.jumps} for the jumps one door away, about ${pending.seconds} s at this desk's cadence, ` +
+        `${enginesLine()}. ` +
+        'Nothing is measured until you ask.'
+      : null) ??
     (gesture && strategyJobs.size ? 'Measurement pauses while a control is held, and resumes on release.' : null);
   if (waiting || !$('strategy-waiting').textContent.startsWith('That position')) strategySay(waiting);
 
@@ -10739,9 +11553,14 @@ function renderStrategy() {
   const host = $('strategy-plan');
   const drawKey = `${world.signature}|${reading.id}|${plan.dots.length}|${ledger.epoch}|${pricingVersion}|${worldVersion.get(world.signature) ?? 0}`;
   if (!plan.moves) {
+    // Where every run that has landed failed, the plan has measured nothing,
+    // and "fitted from four screening points; 0 so far" would be waiting on
+    // runs that have already come back. It says what happened and why.
     host.textContent = plan.flat
       ? plan.flat
-      : `The moves are fitted from four complete screening points; ${plan.effects.complete.length} so far.`;
+      : plan.coverage.measured === 0 && plan.gaps.length
+        ? `Every run that has landed failed, so the plan has measured nothing: ${reasonsOf(plan.gaps)}.`
+        : `The moves are fitted from ${MOVES_FROM} complete screening points; ${plan.effects.complete.length} so far.`;
     strategyHandle = null;
     strategyShown = null;
     strategyDrawn = null;
@@ -10762,47 +11581,32 @@ function renderStrategy() {
   axisLine($('strategy-axis-x'), plan.moves?.[0], reading, 1);
   axisLine($('strategy-axis-y'), plan.moves?.[1], reading, 2);
 
-  const better =
-    reading.better === 'lower'
-      ? `lower is better for ${reading.label.toLowerCase()}, so the best designs are the pale low ground`
-      : `higher is better for ${reading.label.toLowerCase()}, so the best designs are the dark high ground`;
   $('strategy-plan-cap').textContent =
     `Dots are completed runs, darker where ${reading.label.toLowerCase()} is higher; the square is where the desk ` +
-    `stands. ${
-      plan.terrain?.lattice
-        ? `The shading under them is inference, smoothed so it shows no best area the dots do not support, left ` +
-          `bare where they are sparse, and never read for a figure; ${better}. It explains ` +
-          `${percent(plan.terrain.explained)} on its own.`
-        : `${plan.terrain?.refused ?? 'No terrain is drawn until the moves are fitted.'} ${better[0].toUpperCase()}${better.slice(1)}.`
-    }`;
+    `stands. ${terrainSentence(plan, reading)}`;
 
-  $('strategy-share').textContent =
-    plan.explained2 !== null
-      ? `Share explained: ${percent(plan.explained2)} along two moves` +
-        `${plan.oneMove ? `, ${percent(plan.explained1)} along the first alone` : ''}, scored on designs the ` +
-        'moves were not fitted from.'
-      : `Share explained: — ${plan.scoreAbsence ?? 'The moves are not yet fitted.'}`;
+  $('strategy-share').textContent = shareSentence(plan);
 
   const c = plan.coverage;
-  const remaining = [...strategyJobs.values()].reduce((sum, job) => sum + job.total - job.done, 0);
+  // The campaign's own count, so the coverage line and the head cannot disagree.
+  const snap = campaignSnapshot();
+  const remaining = snap.waiting + snap.inFlight;
   const seconds = Math.round((remaining * STRATEGY_CADENCE[kind]) / Math.max(1, studyCapacity));
   $('strategy-coverage').textContent =
     `${c.measured} of ${c.wanted} designs measured${c.gaps ? `, ${c.gaps} failed` : ''} · ` +
     `${plan.effects.complete.length} of ${DEPTH.home.bases} screening points · ${kind} runs · ` +
     `${remaining ? `${remaining} runs to go, about ${seconds} s at this desk's cadence` : 'nothing queued'} · ` +
-    `${runCount - strategyPlan.runsAt} engine runs spent since the plan opened`;
+    `${enginesLine()} · ${runCount - strategyPlan.runsAt} engine runs spent since the plan opened`;
 
   const notes = [];
-  if (plan.gaps.length) {
-    const reasons = new Map();
-    for (const gap of plan.gaps) reasons.set(gap.reason, (reasons.get(gap.reason) ?? 0) + 1);
-    notes.push(`Failed runs, never drawn: ${[...reasons].map(([reason, n]) => `${reason} (${n})`).join('; ')}.`);
-  }
+  if (plan.gaps.length) notes.push(`Failed runs, never drawn: ${reasonsOf(plan.gaps)}.`);
   if (plan.limits.length) {
+    // The rim is decided by the same margin a sweet spot is refused by, so
+    // the convention is printed where it is used.
     notes.push(
       `The best designs here stand at the rim: ${plan.limits
         .map(({ key, end }) => `${labelFor(key)} at its ${end === 'min' ? 'lowest' : 'highest'} setting`)
-        .join(', ')}. No best region inside the world is implied.`,
+        .join(', ')}. No best region inside the world is implied. ${MARGIN.why}`,
     );
   }
   const tau = strategyTau(reading);
@@ -10816,7 +11620,7 @@ function renderStrategy() {
   one.hidden = !plan.oneMove;
   if (plan.oneMove) {
     const trend = trendOf(plan);
-    drawOneMove($('strategy-one-plot'), plan, trend, {
+    strategyOneHandle = drawOneMove($('strategy-one-plot'), plan, trend, {
       stance: stanceOn(plan),
       onPress: (dot) => standOnDesign(world, dot.index),
       onHover: (dot) => letterDesign(plan, dot),
@@ -10825,27 +11629,34 @@ function renderStrategy() {
     $('strategy-one-cap').textContent =
       `${reading.label} against move 1 alone, which explains nearly as much as two. The dashed trend is an ` +
       `estimate, the median of ten equal bins; the spread around it, about ${plain(spread, reading)} between the ` +
-      'tenth and ninetieth percentiles, is what the other controls decide.';
+      `tenth and ninetieth percentiles, is what the other controls decide. ${ONE_MOVE.why}`;
+  } else {
+    strategyOneHandle = null;
   }
 
   // The archipelago (FR-023 to FR-027).
   const { islands, same } = islandsOf(world, reading);
+  const cards = islands.map((island) => cardOf(island, reading));
   const neighbours = neighboursFor(world);
   const refused = neighbours.filter((neighbour) => !neighbour.world);
-  const measured = islands.filter((island) => island.jumpObj.measured === island.jumpObj.wanted).length + same.length;
+  const measured = islands.filter((island) => island.jump.measured === island.jump.wanted).length + same.length;
+  // Every world one door away is in the total, the refused ones too (FR-027):
+  // counted without them, the line claimed fewer doors than the desk has, and
+  // "36 not entered" then stood beside "19 worlds" as if it were a part of it.
   $('strategy-islands-scope').textContent =
-    ` ${islands.length + same.length} worlds one door away · ${measured} measured · ${refused.length} not entered from here`;
+    ` ${neighbours.length} worlds one door away · ${measured} measured · ${refused.length} not entered from here`;
   $('strategy-islands-lede').textContent =
     'Each island is a world one choice away, its jump measured on matched designs. Positions are schematic: ' +
     'distance means nothing.';
-  const cards = getComputedStyle($('strategy')).getPropertyValue('--cards').trim() === '1';
+  const asCards = cardsFlag();
+  strategyCards = asCards;
   const openIsland = (id) => {
     strategyPlan.focused = strategyPlan.focused === id ? null : id;
     renderStrategy();
   };
-  $('strategy-ring').hidden = cards;
-  if (!cards) drawArchipelago($('strategy-ring'), islands, { chosen: strategyPlan.focused, onOpen: openIsland });
-  renderIslandCards($('strategy-cards'), islands, { chosen: strategyPlan.focused, onOpen: openIsland });
+  $('strategy-ring').hidden = asCards;
+  if (!asCards) drawArchipelago($('strategy-ring'), cards, { chosen: strategyPlan.focused, onOpen: openIsland });
+  renderIslandCards($('strategy-cards'), cards, { chosen: strategyPlan.focused, onOpen: openIsland });
   const sameLine = $('strategy-same');
   sameLine.hidden = !same.length;
   sameLine.textContent = same.length
@@ -10863,46 +11674,74 @@ function renderStrategy() {
     : '';
 
   // One island, opened.
-  const island = islands.find((candidate) => candidate.id === strategyPlan.focused) ?? null;
+  const card = cards.find((candidate) => candidate.id === strategyPlan.focused) ?? null;
+  const island = card?.island ?? null;
   const panel = $('strategy-island');
   panel.hidden = !island;
   if (island) {
     const other = island.neighbour.world;
+    const where = `the neighbouring world (${island.label})`;
     $('strategy-island-title').textContent = island.label;
     const measure = $('strategy-measure');
     const asked = strategyPlan.asked.has(island.id);
-    measure.hidden = !(kind === 'annual' && island.depth === 'jump' && !asked);
+    // On request on every desk (FR-009a): its runs and time are stated on the
+    // button, and nothing of this world's own screening runs until it is pressed.
+    measure.hidden = !(island.depth === 'jump' && !asked);
     if (!measure.hidden) {
-      const cost = islandCost(other);
-      measure.textContent = `Measure this world: about ${cost.runs} annual runs, about ${cost.seconds} s`;
+      measure.textContent =
+        `Measure this world: about ${island.cost.runs} ${kind} runs, about ${island.cost.seconds} s, ` +
+        `${enginesLine()}`;
       measure.onclick = () => {
         strategyPlan.asked.add(island.id);
+        askCampaign();
         queueStrategy();
       };
     }
-    if (island.depth === 'plan') {
+    // What failed behind this world, from its pairs and its own screening,
+    // stated wherever the world is (FR-013, FR-043).
+    const failed = $('strategy-island-failed');
+    failed.hidden = !island.failures.length;
+    failed.textContent = island.failures.length
+      ? `${island.failures.length} failed runs behind this world, never drawn: ${reasonsOf(island.failures)}.`
+      : '';
+    // An island at plan depth is a plan like the home one, and says what the
+    // home one says: both moves as recipes, its share explained, and what its
+    // terrain is (FR-017, FR-019), all measured in this world alone (FR-026).
+    const planned = island.depth === 'plan';
+    const axes = [$('strategy-island-axis-x'), $('strategy-island-axis-y')];
+    const cap = $('strategy-island-cap');
+    for (const line of axes) line.hidden = !planned;
+    cap.hidden = !planned;
+    if (planned) {
       $('strategy-island-lede').textContent =
-        `${island.jump}. Its own moves: ${recipeText(island.plan.moves[0])}. Explains ` +
-        `${percent(island.plan.explained2)}, measured in this world alone; press a design to step in.`;
+        `${card.jump}. ${shareSentence(island.plan)} Its moves and terrain are this world's own; press a design to ` +
+        'step in.';
       $('strategy-island-designs').textContent = '';
       drawPlan($('strategy-island-plan'), island.plan, {
-        label: `${reading.label} in the world ${island.label}`,
+        label: `${reading.label} in ${where}`,
         onPress: (dot) => standOnDesign(other, dot.index, island.label),
-        onHover: (dot) => letterDesign(island.plan, dot),
-        onCursor: (dot) => letterDesign(island.plan, dot),
+        onHover: (dot) => letterDesign(island.plan, dot, where),
+        onCursor: (dot) => letterDesign(island.plan, dot, where),
       });
+      axisLine(axes[0], island.plan.moves[0], reading, 1);
+      axisLine(axes[1], island.plan.moves[1], reading, 2);
+      cap.textContent = `Dots are completed runs in this world. ${terrainSentence(island.plan, reading)}`;
     } else {
       $('strategy-island-plan').textContent = '';
+      for (const line of axes) line.textContent = '';
+      cap.textContent = '';
+      // The em dash stands alone as the absent share, and the sentence after
+      // it says why: never a dash inside a sentence (T077).
       $('strategy-island-lede').textContent =
-        `${island.jump}. Its moves are not yet measured, so its share explained is — until its own screening ` +
-        `lands${kind === 'annual' && !asked ? ', which on a weather year waits to be asked for' : ''}. ` +
+        `${card.jump}. Share explained: — Its moves are not yet measured, and are once its own screening lands` +
+        `${asked ? '' : ', which waits to be asked for'}. ` +
         'Its matched designs, by reading; press one to step in.';
       const rows = [];
-      for (const [, id] of island.jumpObj.neighbour ? pairsFor(world, island.neighbour).pairs : []) {
+      for (const [, id] of pairsFor(world, island.neighbour).pairs) {
         const value = reading.valueOf(ledger.get(id)?.readings);
         if (!Number.isFinite(value)) continue;
         const index = Number(id.slice(id.lastIndexOf(':') + 1));
-        rows.push({ index, value, text: `Design ${index}: ${reading.format(value)}` });
+        rows.push({ index, value, text: `Design ${index}: ${reading.format(value)} · a completed ${kind} run in ${where}` });
       }
       rows.sort((l, r) => l.value - r.value || l.index - r.index);
       renderDesignList($('strategy-island-designs'), rows, (row) => standOnDesign(other, row.index, island.label));
@@ -10918,6 +11757,7 @@ function renderStrategy() {
     $('strategy-screen').textContent = '';
     $('strategy-inert').textContent = '';
     $('strategy-screen-scope').textContent = '';
+    $('strategy-screen-runs').textContent = '';
   } else {
     const pulled =
       pullStance && pullStance.reading.id === reading.id && deskKey(pullStance.stance, pullStance.patch) === deskKey(params, patching())
@@ -10928,19 +11768,32 @@ function renderStrategy() {
     $('strategy-screen-scope').textContent = ` ${scored} measured · ${entries.length - scored} listed with reasons`;
     $('strategy-screen-lede').textContent =
       `Effects across each control's full range, at up to ${DEPTH.home.bases} points over this world, beside the ` +
-      `pull at the stance. Free below ${plain(tau.tau, reading)}.${pulled.size ? '' : ' Read the pull to fill the stance column.'}`;
+      `pull at the stance. Free below ${plain(tau.tau, reading)}. Press two controls to cut the ground along them.` +
+      `${pulled.size ? '' : ' Read the pull to fill the stance column.'}` +
+      `${plan.spots.size ? ` Sweet spots are estimates. ${MARGIN.why}` : ''}`;
     renderScreening($('strategy-screen'), entries, {
       reading,
       spots: plan.spots,
-      onPick: (key) => cutFromPull(key, entries),
+      stanceRead: pulled.size > 0,
+      onPick: (key) => cutFromScreening(key, entries, reading),
       chosen: [surveyChoice.x, surveyChoice.y].filter(Boolean),
     });
     renderInert($('strategy-inert'), entries);
+    // The solve counter's own delta, beside the table it paid for (FR-011):
+    // a count of runs spent rather than a claimed count of cache hits, which
+    // this sheet has no honest way to take.
+    $('strategy-screen-runs').textContent =
+      `${runCount - strategyPlan.runsAt} engine runs spent since the plan opened. A design the studies, the pull ` +
+      'or the survey had already measured is answered from the cache and turns none.';
   }
 
-  // The four kinds, and the tags on the strips (FR-033 to FR-040a).
-  const movesPart = $('strategy-moves-part');
-  movesPart.hidden = readings.length !== 2;
+  // The four kinds, and the tags on the strips (FR-033 to FR-040a). Part 6
+  // stands whatever has landed and says what it waits on, rather than being
+  // hidden until a second reading is chosen (FR-001a).
+  if (readings.length !== 2) {
+    $('strategy-moves-lede').textContent = WAITING.movesOne;
+    $('strategy-moves').textContent = '';
+  }
   if (readings.length === 2) {
     const taus = readings.map((r) => strategyTau(r));
     const absent = taus.find((t) => t.tau === null);
@@ -10949,7 +11802,7 @@ function renderStrategy() {
     if (absent) {
       $('strategy-moves-lede').textContent = absent.absence;
       $('strategy-moves').textContent = '';
-      desk?.setTags(new Map(), '');
+      untagStrips();
     } else if (complete < MOVES_FROM) {
       // A kind read off one screening point is a guess about the design
       // space, not a reading of it; the same four points fit the moves.
@@ -10957,7 +11810,7 @@ function renderStrategy() {
       $('strategy-moves-lede').textContent =
         `The four kinds are read once ${MOVES_FROM} screening points are complete for both readings; ${complete} so far.`;
       $('strategy-moves').textContent = '';
-      desk?.setTags(new Map(), '');
+      untagStrips();
     } else {
       const enterable = neighbours.filter((n) => n.world);
       const pairJumps = readings.map((r) => new Map(enterable.map((n) => [n.id, jumpOf(pairsFor(world, n), r, ledger)])));
@@ -10983,38 +11836,74 @@ function renderStrategy() {
       // A choice door is tagged on its selector only where every world behind
       // it has been measured, so one word can speak for all of them.
       const doors = new Map();
+      // A patch door has no selector, so it is tagged under `patch:<channel>`
+      // and the console letters it on that channel's own strip (FR-038).
       for (const neighbour of neighbours) {
-        const key = neighbour.door.key;
-        if (!key) continue;
+        const key = neighbour.door.key ?? neighbour.door.id;
         if (!doors.has(key)) doors.set(key, { ids: [], whole: true });
         const entry = doors.get(key);
         if (neighbour.world) entry.ids.push(neighbour.id);
         else entry.whole = false;
       }
       const doorIds = new Map([...doors].filter(([, entry]) => entry.whole && entry.ids.length).map(([key, entry]) => [key, entry.ids]));
-      desk?.setTags(tagsFor(world, readings, classes, spots, doorIds), stampOf(world, readings));
+      strategyTagged = stampOf(world, readings);
+      desk?.setTags(tagsFor(world, readings, classes, spots, doorIds), strategyTagged);
     }
   } else {
-    desk?.setTags(new Map(), '');
+    untagStrips();
   }
 
   // The complete record of this world's measured designs.
   const rows = plan.dots
-    .map((dot) => ({ index: dot.index, value: dot.value, text: `Design ${dot.index}: ${reading.format(dot.value)}` }))
+    .map((dot) => ({
+      index: dot.index,
+      value: dot.value,
+      text: `Design ${dot.index}: ${reading.format(dot.value)} · a completed ${kind} run in this world`,
+    }))
     .sort((l, r) => l.index - r.index);
   $('strategy-designs-scope').textContent = ` · ${rows.length}`;
   renderDesignList($('strategy-designs'), rows, (row) => standOnDesign(world, row.index));
 }
 
 $('strategy-close').addEventListener('click', () => closeStrategy());
+$('campaign-pause').addEventListener('click', () => pauseCampaign());
+$('campaign-resume').addEventListener('click', () => resumeCampaign());
+$('campaign-cancel').addEventListener('click', () => cancelCampaign());
 // A strip tag leads to its entry among the kinds of move, readable without
 // hovering (FR-039). The console raises the event; the entry is found here.
 document.addEventListener('ctl-tag', (event) => {
   const target = document.getElementById(event.detail.target);
   if (!target) return;
+  // The entry is inside the plan's panel, so the panel opens, and a folded
+  // one unfolds, before anything is scrolled to: an entry in a hidden body
+  // has no box to bring into view.
+  const list = document.body.classList;
+  if (!list.contains('planner-open')) openPlanner(true);
+  else if (list.contains('planner-folded')) unfoldPanel('planner');
   target.scrollIntoView({ block: 'center' });
   target.focus({ preventScroll: true });
 });
+
+/**
+ * Two controls pressed in the screening cut the ground along them, for the
+ * reading the screening was read for (FR-032, US3 scenario 6). Without the
+ * reading handed over, two axes arrived at E-02 with no reading chosen and the
+ * ground waited on a choice the reader had already made up here.
+ */
+function cutFromScreening(key, entries, reading) {
+  if (!surveyChoice.readings.includes(reading.id)) surveyChoice = { ...surveyChoice, readings: [reading.id] };
+  cutFromPull(key, entries);
+  // Part 5 stands directly under the screening that hands it its two axes, so
+  // the cut is followed **within the panel** and no longer across the page:
+  // `scrollIntoView` moves the nearest scrolling ancestor, which is now
+  // `.planner-body` rather than the window. The part itself always stands
+  // (FR-001a), so there is nothing left to test but whether there is a ground
+  // to scroll to.
+  if (surveyChoice.x && surveyChoice.y) {
+    const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    $('survey').scrollIntoView({ block: 'start', behavior: calm ? 'auto' : 'smooth' });
+  }
+}
 
 /** One effect, per unit of the control's own travel and in the reading's units. */
 function formatEffect(entry, reading) {
@@ -11522,11 +12411,8 @@ if (linkError) {
   statusEl.className = 'status bad';
   statusEl.textContent =
     'This scheme skips the sizing days but attaches no weather, so there is nothing to solve. Set Design days to Run on the Run strip, or pick a station.';
-} else if (autoOn()) {
-  restoreLinkedStudies(linked);
-  restoreLinkedSurvey(linked);
+} else if (restoreLinked(linked) && autoOn()) {
+  // A refusal inside the restore has already stopped auto-solve and said why;
+  // only a link honoured whole is solved.
   pump();
-} else {
-  restoreLinkedStudies(linked);
-  restoreLinkedSurvey(linked);
 }

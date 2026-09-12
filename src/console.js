@@ -368,6 +368,15 @@ export function mountConsole({
     // line arrives with the controls when the strip is opened.
     const stripFold = el('div', 'strip-fold');
     stripFold.id = `strip-fold-${channel.id}`;
+    // A patch door is classified as a control is (a door is also a move), and
+    // the strip that is the door is where its tag belongs: no control on the
+    // strip stands for "patched in or out". At the head of the fold, so the
+    // folded index row carries it in its tag line instead of twice.
+    const headTags = channel.bypassable ? el('div', 'ctl-tags strip-head-tags') : null;
+    if (headTags) {
+      headTags.hidden = true;
+      stripFold.append(headTags);
+    }
     stripFold.append(
       el('p', 'strip-line', channel.line),
       fold(`strip:${channel.id}`, SUMMARY.channel, { label: `About ${channel.name}` }, el('p', 'strip-blurb', channel.blurb)),
@@ -389,7 +398,7 @@ export function mountConsole({
     strip.append(stripFold);
 
     strips.set(channel.id, {
-      strip, note, patch, solo: soloBtn, meter, readout, body, toggle, read, tagline, fold: stripFold,
+      strip, note, patch, solo: soloBtn, meter, readout, body, toggle, read, tagline, headTags, fold: stripFold,
       mark: channel.bypassable ? mark : null,
     });
     return strip;
@@ -958,6 +967,9 @@ export function mountConsole({
         onEnd: () => onChange(side.key, params[side.key], true),
       });
 
+      // What `setTags` dims when this one wall is free for the two readings
+      // and its neighbours are not: the wall's bar is its face.
+      g.setAttribute('data-tag-key', side.key);
       return { side, group: g, filled, cap, place, marks };
     });
 
@@ -1183,6 +1195,7 @@ export function mountConsole({
       g.append(grab);
 
       (place ? turning : root).append(g);
+      g.setAttribute('data-tag-key', face.key);
       return { face, group: g, open, shut, cap, capY, place };
     });
 
@@ -2456,38 +2469,71 @@ export function mountConsole({
      * readings is not reaching nothing, and must not look like `.idle`.
      */
     setTags(tags, stamp) {
+      const fresh = (key) => {
+        const tag = tags.get(key);
+        return tag && stamp && tag.stamp === stamp ? tag : null;
+      };
+      const button = (tag, prefix) => {
+        const node = el('button', 'ctl-tag', prefix ? `${prefix} · ${tag.text}` : tag.text);
+        node.type = 'button';
+        node.setAttribute('aria-label', `${tag.label}: ${tag.text}. Go to its entry among the kinds of move.`);
+        node.addEventListener('click', () => {
+          node.dispatchEvent(new CustomEvent('ctl-tag', { bubbles: true, detail: { target: tag.target, key: tag.key } }));
+        });
+        return node;
+      };
       const byChannel = new Map();
+      const letter = (channel, tag) => {
+        if (!byChannel.has(channel.id)) byChannel.set(channel.id, []);
+        byChannel.get(channel.id).push(tag);
+      };
+      // A patch door first, on its channel's own strip: it is the strip.
+      for (const channel of CHANNELS) {
+        const host = strips.get(channel.id).headTags;
+        if (!host) continue;
+        host.textContent = '';
+        const tag = fresh(`patch:${channel.id}`);
+        host.hidden = !tag;
+        if (!tag) continue;
+        host.append(button(tag, tag.label));
+        letter(channel, tag);
+      }
       for (const { row, host, keys, channel } of tagRows) {
         host.textContent = '';
+        // A plan key's walls, or a boundary's six faces, are one row with a
+        // face per key, and they are free or not one by one: the south wall
+        // can be free for two readings while the west wall trades them. So
+        // each free side dims its own face, and the row-wide `.free` is kept
+        // for a row whose one face is the whole control.
+        const multi = keys.length > 1;
         let any = false;
         let freeAll = true;
         for (const { key, prefix } of keys) {
-          const tag = tags.get(key);
-          if (!tag || !stamp || tag.stamp !== stamp) {
+          const tag = fresh(key);
+          if (multi) {
+            for (const face of row.querySelectorAll(`[data-tag-key="${key}"]`)) face.classList.toggle('free', Boolean(tag?.free));
+          }
+          if (!tag) {
             freeAll = false;
             continue;
           }
           any = true;
           if (!tag.free) freeAll = false;
-          const button = el('button', 'ctl-tag', prefix ? `${prefix} · ${tag.text}` : tag.text);
-          button.type = 'button';
-          button.setAttribute('aria-label', `${labelFor(key)}: ${tag.text}. Go to its entry among the kinds of move.`);
-          button.addEventListener('click', () => {
-            button.dispatchEvent(new CustomEvent('ctl-tag', { bubbles: true, detail: { target: tag.target, key } }));
-          });
-          host.append(button);
-          if (!byChannel.has(channel.id)) byChannel.set(channel.id, []);
-          byChannel.get(channel.id).push({ key, tag });
+          host.append(button(tag, prefix));
+          letter(channel, tag);
         }
         host.hidden = !any;
-        row.classList.toggle('free', any && freeAll);
+        row.classList.toggle('free', !multi && any && freeAll);
       }
+      // The folded index row letters every tag's own text, free ones included,
+      // each naming both readings it was judged against (FR-038): on a phone
+      // that row is the whole of the strip, and "3 free" said nothing about
+      // which three or against what. It rides its own wrapping line under the
+      // row rather than inside `.strip-read`, which is one unbroken line of
+      // mono figures and would push five words per tag off the side of 390 px.
       for (const channel of CHANNELS) {
         const here = strips.get(channel.id);
-        const list = byChannel.get(channel.id) ?? [];
-        const named = list.filter(({ tag }) => !tag.free).map(({ key, tag }) => `${labelFor(key)} ${tag.text}`);
-        const free = list.filter(({ tag }) => tag.free).length;
-        const said = [...named, ...(free ? [`${free} free`] : [])].join(' · ');
+        const said = (byChannel.get(channel.id) ?? []).map((tag) => `${tag.label}: ${tag.text}`).join(' · ');
         here.tagline.textContent = said;
         here.tagline.hidden = !said;
       }

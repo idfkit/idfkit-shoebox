@@ -120,7 +120,7 @@ The same rule is applied to each base alone, and **consistency** is the share of
 
 1. **The home world**, progressively: 4 bases and 128 designs (a first plan), then 16 bases and 512 designs.
 2. **Every neighbour's jump**, automatically, on 32 matched designs each.
-3. **Every island's own plan at reduced depth** (8 bases, 128 designs, of which the first 32 are the matched designs already run), in design-stage order. Automatic on a design-day desk. On an annual desk, measured when the reader asks for that island, with its run count and estimated time stated before anything is spent.
+3. **Every island's own plan at reduced depth** (8 bases, 128 designs, of which the first 32 are the matched designs already run), in design-stage order, measured when the reader asks for that island, with its run count and estimated time stated before anything is spent. *Amended 2026-09-11 (section 20): this was automatic on a design-day desk, and is now on request on every desk.*
 
 Until its plan is measured, an island shows its matched designs ordered by reading, carries its jump, and says in place that its moves are not yet measured. Its share explained is then an em dash with the reason, not a zero.
 
@@ -206,3 +206,183 @@ Three figures no amount of reading can settle, each with a gate that measures it
 - **SC-004 at 16 bases on the page's own engine**: quickstart gate 6.
 - **SC-008, the share explained on two year-long readings**, one of them a count against a threshold. It is recorded in CLAUDE.md whatever it comes out as: quickstart gate 7.
 - **The jump sizes and their consistency on the reference desk**, which nothing has measured yet (the spec's *What the evidence does not yet cover*): quickstart gate 5.
+
+---
+
+# Amendment 2026-09-11: width, campaign, panel
+
+Four decisions from the 2026-09-11 clarifications, taken against the branch as it stands after the convergence phase (T079 to T115).
+
+## 17. The pool's width: cores less two, bounded by half the memory
+
+**Decision.** `src/pool.js` replaces `poolLimit` with `poolWidth({ cores, deviceMemoryGB, perInstanceMB = 256 })`, returning a frozen `PoolWidth` (data-model.md) whose `width` is
+
+    max(1, min(cores − 2, floor((min(memory, 8) × 1024 / 2 − 256) / 256)))
+
+where `memory` is `navigator.deviceMemory` or, where the browser does not report it, 4 GB. There is no fixed cap. The two cores held back are the page's main thread and the sheet's own engine; the 256 MB taken off the memory budget before dividing is that engine's heap. `deviceMemory` is Chromium's, and Chromium reports at most 8, so the memory term tops out at 15 engines (FR-011a).
+
+**What it changes, as each browser reports the machine:**
+
+| Machine as reported | Width before | Width after | What binds after |
+| --- | --- | --- | --- |
+| 4 cores, 8 GB (Chromium) | 2 | 2 | cores |
+| 8 cores, no memory reported (Safari, Firefox, an iPad) | 3 | 6 | cores |
+| 10 cores, 8 GB (Chromium) | 6 | 8 | cores |
+| 12 cores, 8 GB (Chromium) | 6 | 10 | cores |
+| 16 cores, 8 GB (Chromium) | 6 | 14 | cores |
+| 24 cores, 8 GB (Chromium) | 6 | 15 | memory |
+
+Before, the binding term was almost never the cores: a quarter of an assumed 4 GB held every Safari and Firefox visit to 3, and the cap of 6 held every larger Chromium machine to 6.
+
+**The main thread's share, measured.** Every sample is built on the main thread before an engine can take it. Applying one design to the reference desk and writing its IDF takes **0.79 ms** on average (median 0.76 ms, 90th percentile 1.07 ms, 64 designs, full reporting profile, Node 22 on the same V8 the page runs). `buildSample` applies twice, the design and then the live desk put back, so a run costs about 1.5 ms of main thread. At about 50 ms per design-day run, a pool W wide spends about 3 % × W of the main thread building: 30 % at 10 engines, 45 % at 15. That does not saturate the thread, and it is not free. What keeps SC-002 is the scheduler's existing `paused()` while a hand is on a control, not the width; quickstart gate 9 step 2 is taken again at the new width, on the widest machine available.
+
+**Stated, not hidden.** A browser may round or cap `hardwareConcurrency` for privacy, and not every browser reports memory. The plan letters the width it got and which term bound it ("10 engines side by side: 12 cores less two"), where it states a cost (FR-011a), so a reader on a capped browser sees why their plan is slower. The width changes when runs land, never what they read: nothing about it reaches the IDF or the link (Principle II).
+
+**Alternatives rejected.** *N − 1* puts a sample on the sheet's own core, and a drag slows while the plan measures (SC-002). *Keeping the quarter-memory guard* leaves Safari at 3, the case the reader raised. *A reader-chosen width* was declined in clarification.
+
+## 18. The campaign: pause, resume and cancel
+
+**Decision.** The scheduler gains one additive operation, `holdWhere(pred, held)`, which sets a `held` flag on every active job the predicate matches. `takeNext` skips a held job; a run already on an engine is untouched and lands as usual; the scheduler is idle when nothing is in flight and no active job is unheld. The plan keeps a `Campaign` (data-model.md) in `main.js` whose state is `running`, `paused` or `cancelled`, and its three controls act on jobs of origin `'strategy'` only (FR-012a):
+
+- **Pause** holds every plan job, and any plan job queued while paused (a door opened, an island asked for) is admitted held. The head says it is paused and how many runs wait.
+- **Resume** releases them and drains. The queue continues exactly where it stopped, in the same order, because a held job keeps its `started` set.
+- **Cancel** cancels every plan job as `'cancelled'`. Every completed run stays in the ledger. The plan queues nothing more until the reader presses Resume (which re-queues only what the ledger does not hold) or opens a door, which is a new world and a new campaign.
+
+A pause survives a door: "not now" is about the reader's attention, not about the world. A cancel does not: it was a decision about the world being measured.
+
+**Why hold rather than cancel and re-queue for Pause.** A cancelled job loses its place in the round-robin and its dispatch order, and re-queueing rebuilds its design lists (probes at every base, neighbours' pairs); a held job is resumed by clearing one flag. Pausing the whole scheduler through `paused()` was rejected: it would stop every study and the survey, which FR-012a forbids.
+
+**The gate still governs.** Auto-solve off, a link attaching or a station attaching still cancels the plan's jobs (FR-012). When the gate lifts, the campaign's own state is honoured: a paused campaign comes back held, a cancelled one does not come back.
+
+## 19. The panel on the left
+
+**Decision.** `section#strategy` moves out of `section#survey` into `aside.planner#planner`, placed before `main.sheet` in the body. It mirrors `.desk` exactly: sticky at 16 px, at most the viewport less 32 px tall, scrolling inside itself, on the vellum ground, with the border and radius mirrored. `body.planner-open` shows it at `flex: 1 0 var(--planner)`, a new token at 436 px beside `--desk`, so the body's flex row is planner, sheet, desk (FR-001).
+
+**The fit test is declared once, in the stylesheet.** The sheet keeps a minimum measure of 720 px (`--sheet-min`). Both panels stand open at full width wherever the window carries 720 + 436 + 436 px and the gutters, which is 1,624 px: a media query at that width sets `--both: 0` on the body and script reads the flag back, as `--index` and `--fold` are read today (Principle VII). Where `--both` is 0, opening one panel folds the other to its head: a 168 px rail (`--rail`, the ledger column's own width) carrying the panel's name, and for the plan its reading, its campaign state and its three controls, stacked. Below the index threshold (780 px wide or 600 px tall), the plan becomes its own page under the sheet and before the console, as the console already does (FR-046a).
+
+**Where it is opened.** A button in the ledger beside the console's (`#planner-open`, mirroring `#desk-open`) and a link at the head of E-02 (FR-001). A strip tag's button opens the panel before focusing its entry, since the entry is now inside it. Pressing two controls in the screening still cuts the E-02 ground and scrolls the sheet to it.
+
+**The drawings follow the column.** The plan, the one-move view and the ring size themselves off their host's width, which is now the panel's, so opening, folding or resizing a panel calls `renderStrategySoon`, as `openDesk` calls `renderTrace`.
+
+**The general notes.** The plan's note targets `#planner` and its opener rather than `#strategy`, which changes what the step points at, so the storage key moves to `shoebox-general-notes-v6` (FR-048).
+
+**Alternatives rejected.** An overlay drawer and one panel at a time were both declined in clarification. A grid for the three columns was rejected for the reason the desk's own comment gives: free space in a grid is handed to every unfinished track evenly, which would take the panels' growth out of the drawing's width.
+
+## 20. What starts on its own (supersedes section 7, item 3)
+
+**Decision** (FR-009a). On a design-day desk, opening the plan or stepping into a world starts that world's own designs and screening and every neighbour's jump, and nothing else. Each island's own screening starts only when the reader asks for that island, on every desk, with its runs and time stated first. On a weather year nothing starts until asked, as the convergence phase already built.
+
+**What that does to a step into a world**, at the default desk's 32 varied controls and 19 neighbours, on design days:
+
+| Stage | Runs | At width 4 | At width 10 |
+| --- | --- | --- | --- |
+| Home world, full | 1,024 | 12.8 s | 5.1 s |
+| All 19 jumps | 608 | 7.6 s | 3.0 s |
+| **Starts on its own** | **1,632** | **20.4 s** | **8.2 s** |
+| One island's own screening, on request | 352 | 4.4 s | 1.8 s |
+| All 19 islands, were every one asked for | 6,688 | 84 s | 33 s |
+
+Before, a step started all 8,320 runs. It now starts a fifth of them, and the rest are the reader's to spend island by island.
+
+---
+
+# Amendment 2026-09-11 (second): the survey in the panel, the numbered sequence, and constraints
+
+The 2026-09-11 clarification session settled thirteen questions. The first amendment above answered four of them. These sections answer the other nine, which fall into two groups: what the panel is now a panel *of* (FR-001 as revised, FR-001a, FR-001b, FR-019a, FR-046b), and the seventh user story, constraining the design space (FR-049 to FR-057). Every count and every line reference below was taken against the branch as it stands after Phase 15.
+
+## 21. The survey moves whole into the panel
+
+**Decision** (FR-001). `section.survey#survey` leaves `main.sheet` and becomes part 5 of the panel's sequence, carrying everything it owns: the axis chooser, the pull's own table, the ground, the relief, the spot readout, the coverage line, the ground key, the traverse, the finding, the schedule of spot heights and the E-02 stamp. The sheet keeps E-01 alone, and the panel's head carries the E-02 title. One ground, drawn in one place.
+
+Today that section sits at `index.html:5636`, four levels inside the sheet (`main.sheet` to `div.body` to `div.field`). Moving it is mostly markup, and three things measured on the recon are not.
+
+**The relief has no resize path, and inside a panel it needs one.** `createRelief(host)` makes its own canvas and takes its size from the host on every paint: `resize()` at `src/relief.js:414` reads `host.clientWidth` and `host.clientHeight`, and it is called only from `paint()` (`src/relief.js:440`), which runs on a draw, a viewpoint change, a step and a theme change. There is no `ResizeObserver` in the module, and `relief.repaint` is never called from `src/main.js` at all. The only window resize listener that knows about panels is `panelsMoved()` (`src/main.js:3505`), and it calls `renderTrace` and `renderStrategySoon` and nothing else. So a relief in the panel would keep whatever backing store it had when it was last drawn, and on a finished survey, where no further sample lands, that is for ever.
+
+The fold makes it worse rather than merely stale. `body.planner-folded .planner-body` is `display: none` (`index.html:2577`), so a host inside the folded panel has `clientWidth === 0`, and `resize()`'s own `Math.max(1, ...)` floor turns that into a 1 by 1 canvas. Two changes, and both are needed:
+
+- `resize()` refuses a zero box and keeps the last good size, because a measurement taken of a hidden element is not a measurement.
+- `panelsMoved()` reaches the relief, as it already reaches the plate and the plan. A `ResizeObserver` was the alternative and is worse here: it fires through the fold's own transition, and the first frame it would see is the zero box.
+
+**The two squares are laid out against the window, not against their container.** `.survey-body` is two equal columns (`index.html:4661`), flattened to one only under `@media (max-width: 900px), (max-height: 620px)` (`index.html:5320`). That is a window query, so in a 436 px panel on a 1,920 px window the ground and the relief would each stand about 200 px wide with `aspect-ratio: 1 / 1`, which is FR-046b's "one column at every width" broken by a media query that cannot see the panel. The fix is a **container query**: `container-type: inline-size` on `.planner-body`, and `.survey-body` going to two columns only above a declared container width. A container query is a platform API, which Principle V prefers to any script that would measure the panel and set a class.
+
+`--survey` (`index.html:4360`) is the flag that query sets today, and its own comment records that nothing reads it back. FR-046b wants the side-by-side threshold declared once and read back, so it stops being write-only and joins `--index`, `--both` and `--cards` as a flag script asks about, for the one thing CSS cannot do: telling the two drawings what width to draw themselves at.
+
+**What does not change.** `drawGround` writes a fixed `viewBox 0 0 320 320` (`src/main.js:9117`), so the plan scales into any column without being told. The SVG drawings in the panel already size off `host.clientWidth` through `frameFor` (`src/strategy-view.js:76`).
+
+## 22. The numbered sequence, and the gates that have to stop being gates
+
+**Decision** (FR-001a, FR-001b). The panel is one vertical sequence of six numbered parts, each headed by the question it answers: **1** the reading, **2** the plan and its moves, **3** the worlds one door away, **4** what pulls anywhere, **5** the ground cut along two of them, **6** the four kinds. The ground stands directly under the screening that hands it its axes, and the sequence closes on the decisions.
+
+Four blocks are `hidden` today until something has been measured, and each is a gate of exactly the kind FR-001a forbids, because a part that is absent cannot say what it is waiting on:
+
+| Block | Line | Hidden until | Becomes |
+| --- | --- | --- | --- |
+| `div.strategy-body#strategy-body` | `index.html:6000` | a plan exists | parts 2 to 4, each standing and saying what it waits on |
+| `section.strategy-part#strategy-moves-part` | `index.html:6055` | two readings are chosen | part 6, standing, saying it needs a second reading |
+| `section.survey#survey` | `index.html:5636` | a ground is cut | part 5, standing, saying two controls cut it |
+| `div.survey-body#survey-drawing` | `index.html:5673` | a ground is cut | the drawings inside part 5, same rule |
+
+**The two existing folds stay, and the rule is why.** There is exactly one `<details>` in the survey (`survey:spots`, the schedule of spot heights, `index.html:5759`) and exactly one in the panel (`strategy:designs`, every measured design, `index.html:6063`). Both hold the complete *record*; the readings themselves (`#survey-spot`, `#survey-coverage`, `#strategy-share`, the figures on both drawings) stand outside any fold already. That is the split the TM59 qualifications block and the survey's own schedule are both built on, and FR-001a's prohibition is on a reading in a fold, not on a record in one. Neither is a tab, an accordion or a wizard step, and neither shows one part at a time.
+
+**Numbering is in the markup, not composed at render.** Each part carries its number in its heading, so the sequence reads the same with nothing measured as with everything measured, and a part cannot be renumbered by what has landed.
+
+## 23. The panel's width, and the sheet's minimum
+
+**Decision** (FR-046b). `--planner` (436 px) stays the base width and gains `--planner-max`; the sheet holds `min-width: var(--sheet-min)` so flex cannot take it below its own measure; the panel grows into what is left with `flex: 1 1 var(--planner); max-width: var(--planner-max)`.
+
+`--sheet-min: 720px` is declared today at `index.html:52` and used in no rule at all: it exists to document the arithmetic behind the 1,624 px boundary in the comment at `index.html:2559`. FR-046b is what finally gives it a job, and it is the half that matters, because "the sheet MUST reach its own minimum before the panel takes any surplus" is a statement about the sheet's `min-width`, not about the panel's growth.
+
+The sequence stays one column at every width for free: `.strategy-body` is already `grid-template-columns: minmax(0, 1fr)` (`index.html:5001`). The only two-column thing in the panel is the survey's own pair of drawings, which is section 21's container query.
+
+`--planner-max` is declared, not measured, and it is the one number here that the driven gate has to confirm rather than derive. It is set so that the ground and the relief can stand side by side inside the panel at all, which needs two squares and the gap between them clear of the panel's padding. Gate 16 is what says whether the value chosen holds at the widths it claims.
+
+## 24. Where a constraint binds, and why the re-cut is free
+
+**Decision** (FR-049, FR-050). A constraint narrows the sequence itself. The Sobol coordinate is mapped into the constrained span rather than the control's full face, so every design generated after a constraint lies inside the region by construction, and there is nothing to filter afterwards.
+
+There is exactly one place that mapping lives. `snapped(control, u)` (`src/space.js:314`) is called once, from `variedAt(index)` (`src/space.js:635`), which is itself called only from `designAt`. So the region binds there and nowhere else. Three things that follow are not obvious, and the third is a determinism hazard rather than a bug in waiting.
+
+**The memo key has no region in it.** `variedAt` is memoised in `VALUES`, keyed by the design index alone (`src/space.js:628`, capped at 8,192). A constraint committed after a design had been generated would hand back the value from the unconstrained space, with nothing anywhere reporting the difference: the design would be drawn inside the region, keyed as if it were inside the region, and be a building from outside it. Principle II forbids exactly this, so the region joins the memo key.
+
+**The moves are fitted over a normalisation that is still the full face.** `designAt` sets `u[at] = control.fraction(values[key])` (`src/space.js:669`), and `Ruled.fraction` divides by the control's whole range (`src/controls.js:339`). FR-052 requires an effect to be lettered per the constrained span, so the normalisation takes the region too. This is the second binding site, and missing it would produce shares and recipes that are arithmetically fine and about the wrong span.
+
+**The probe step is sized off the full range as well.** `probesAt` takes `max(step, round(range / 20 / step) · step)` and steps up unless there is no room on the face (`src/space.js:748`). Under a constraint the twentieth is of the constrained span, and the room test is against the region's own bounds, or a probe would step out of the region the plan says it measured.
+
+**Why SC-017 holds, and it is the survey's trick rather than a new one.** `samplePoints` anchors its grid at `control.min` and never at the extent's `from` (`src/study.js:140`), which is precisely what makes a narrowed survey axis land on bit-identical numbers and a re-cut cost nothing. `snapped` keeps the same property: it bins inside the region, but every value it returns is on the control's own global step grid, so one design measured before a constraint and the same design measured under it are one cache entry. Nothing else has to change for the re-cut to be free, because `deskKey` and `sampleIdentity` (`src/main.js:2288`, `:7433`) carry no notion of a bound at all: a sample's identity is the desk it built, and two identical desks are identical however the reader arrived at them.
+
+Binning inside the region uses the same equal-probability rule `snapped` already uses over a full face (`src/space.js:304`), offset to the region's low stop, so the region's own rim stops are not sampled half as often as its interior.
+
+## 25. What can be constrained, and what is refused
+
+**Decision** (FR-055). A range constraint binds a `Scale` or a `Facade` side, pinning to one value being the degenerate case. A door constraint rules out settings: options of a `Selector`, or the in-or-out state of one of the five design-element channels.
+
+**Only `Ruled` has a range to constrain.** `min`, `max` and `step` are fields of `Ruled` (`src/controls.js:316`) and therefore of `Scale` and `Facade` alone. `Bearing` and `Profile` carry no such fields: their ranges are literals inside `refuses` (0 to 360 at `src/controls.js:1631`, 0 to 24 at `:1634`). They are listed as not constrainable with that reason, which is the same shape of answer the plan already gives for a faceless kind. `Pattern`, `Days` and `Calendar` have no numeric face and are held already.
+
+**A constraint cannot be hung on a control.** Every control is frozen in its own constructor (`src/controls.js:433` and the eight beside it). Constraints therefore live in a frozen map keyed by control key, owned by the desk, which is also what FR-051 asks for: they belong to the desk rather than to a world, so matched designs and the jumps taken on them still compare like with like.
+
+**Four refusals, and the first is new validation rather than a reuse.** `refuses(control, value)` deliberately does not require step alignment (`src/controls.js:1622`), so it will not catch a region with no position in it:
+
+| Case | Answer |
+| --- | --- |
+| A region narrower than the control's own step | Refused whole, naming the step, because no position on that control's grid lies inside it (spec edge case) |
+| Every option of a door ruled out | Refused whole, naming the door. A design space with no world in it is not a space |
+| A region excluding the desk's own stance | Kept. The stance mark stands outside it and says so, and the region is never widened to take it back in, which is `axisFor`'s own rule (`src/survey.js:306`) |
+| A constraint on a control dark in this world | Kept, and stated as reaching nothing here, exactly as a dark control's effect is. It binds again wherever the control comes alive |
+
+**A ruled-out door is never measured** (FR-055). It is dropped before `neighboursOf` (`src/space.js:559`) builds a world for it, and it is listed as ruled out **by the reader**, which is a different sentence from a world the engine cannot enter. Both lists stand, because FR-043 requires the plan to say what it has not visited.
+
+## 26. The constraints link key
+
+**Decision** (FR-051). One new reserved key, `cn`, read in `decodeState` beside `sv` and `sp`.
+
+This is the fourth time this codebase has met the same trap, and the third time it has been written down before it was hit rather than after. `readValue`'s numeric regex runs before its per-kind switch (`src/permalink.js:448`), and the single-claim loop skips `RESERVED` before it ever calls `readValue` (`:594`), so a reserved key read in the right place is unreachable by the regex and a branch written inside the switch would be unreachable by the link. `RESERVED` becomes nine entries and keeps its load-time assertion against `ALL_KEYS` (`src/permalink.js:98`).
+
+**The grammar is `sv`'s, because the escaping rules are the same.** `URLSearchParams` leaves only `*`, `.`, `-` and `_` unescaped; `-` cannot separate anything here because a bound may be negative, and `.` is spent on the decimal point inside a bound. One consequence is worth recording: a patch door's internal id is `patch:<channelId>` (`src/space.js:66`), and `:` is escaped, so that id cannot ride the link verbatim. The channel id alone is the link's spelling, asserted at load not to collide with any control key. The grammar is in contracts/constraints.md.
+
+`LINK_VERSION` stays `v1` and `MIGRATIONS` stays empty: adding a reserved key is free under delta encoding, and a link with no `cn` decodes exactly as it did before (US5 scenario 4, US7 scenario 7).
+
+## 27. What these sections cannot settle until they are built
+
+- **`--planner-max`**, which is declared rather than derived: gate 16.
+- **Whether the moves are worth refitting under a constraint**, or whether the region's own sample is too small to fit them at the depths `DEPTH` declares. The arithmetic is unchanged, but a region a tenth of the face wide is a different sample, and SC-018's requirement that a constrained figure state its region is what keeps the answer honest either way: gate 14 step 6.
+- **The cost of a re-cut in practice.** SC-017 says a narrower region runs nothing it already holds, which the min-anchored grid guarantees design by design. What no reading of the code settles is how much of a *typical* narrowing is already in the ledger: gate 15.
