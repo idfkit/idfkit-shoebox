@@ -149,7 +149,16 @@
         border-radius: var(--r);
         min-width: 210px;
       }
-      .stamp div {
+      /* `>` rather than a descendant selector, and that is a fix rather than a
+         tidy-up. This is the stamp's *row* styling, and the units row carries a
+         nested `div.segments` that was picking up every line of it: 8px of
+         padding, `baseline` where a flex box wants `stretch`, and — as the last
+         div inside its row — `border-bottom: 0` from the rule below, which
+         quietly took one side off the segmented control's own border. Measured,
+         that made a 17.5px control into a 34.5px box and its row 42.5px against
+         the 28.5px of the four rows above it. A row is a child of the stamp;
+         nothing nested inside one is. */
+      .stamp > div {
         display: flex;
         justify-content: space-between;
         gap: 20px;
@@ -157,7 +166,7 @@
         padding: 8px 12px;
         border-bottom: 1px solid var(--rule-soft);
       }
-      .stamp div:last-child { border-bottom: 0; }
+      .stamp > div:last-child { border-bottom: 0; }
       .stamp span {
         font: 500 10px/1 var(--cond);
         text-transform: uppercase;
@@ -475,18 +484,43 @@
         align-content: start;
         min-width: 210px;
       }
-      /* A stamp row whose value happens to be operable. `.stamp div` aligns its
-         two cells on the baseline, which is right for a word and wrong for a
-         bordered control — the box would hang below the label's baseline. */
-      .units-row { align-items: center; }
-      .units-seg { border-radius: 3px; }
-      /* Tighter than the console's segments: these two sit in a 8px-padded
-         stamp row, not in a column of sixty controls. Both labels keep their
-         full text at 390px, which the quickstart measures rather than assumes.  */
+      /* A stamp row whose value happens to be operable, and which has to stand
+         exactly as tall as the four rows of plain text above it.
+
+         Two things, once the leak above is stopped. `align-items: center`,
+         because a bordered control aligned on a text baseline sits low and
+         drags the row down; and written `.stamp > div.units-row` because
+         `.stamp > div` is (0,1,1) and a bare `.units-row` is (0,1,0), so the
+         shorter selector loses and the rule silently does nothing.
+
+         Then the control is sized to the line it stands on rather than to a
+         padding that happens to fit: 11.5px, the line-height `.stamp b` letters
+         every value in this table on. That is 3 + 11.5 + 3 inside a 1px box,
+         19.5px, and with 4 + 4 of row padding and the 1px rule under it the row
+         comes to 28.5px — what the four rows above it measure. */
+      .stamp > div.units-row {
+        align-items: center;
+        padding-block: 4px;
+      }
+      /* `.stamp` on the front so this beats `.segments`, which is declared two
+         thousand lines further down and wins on source order at equal
+         specificity — the same trap the row rule above falls into.
+
+         No `overflow` override here, and the absence is the finding: a first cut
+         set `clip` on the theory that the box was reserving a scrollbar gutter,
+         and the measurement said otherwise. The extra height was `.stamp div`
+         leaking its padding in, which is fixed where it is caused. Two segments
+         of two letters cannot overflow anyway, and if they ever did, scrolling
+         is what `.segments` deliberately chose over shrinking a label. */
+      .stamp .units-seg { border-radius: 3px; }
+      /* Tighter than the console's segments: these two sit in a stamp row, not
+         in a column of sixty controls, and their line is the stamp's own 11.5px
+         so the row stands level with the four above it. Both labels keep their
+         full text at 390px, which the quickstart measures rather than assumes. */
       .units-seg .segment {
         flex: 0 0 auto;
         padding: 3px 10px;
-        font: 500 9px/1.2 var(--cond);
+        font: 500 9px/11.5px var(--cond);
         letter-spacing: 0.09em;
       }
       /* The aside under the stamp, not a line in it. Sized to the stamp so the
