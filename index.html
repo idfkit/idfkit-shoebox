@@ -506,22 +506,68 @@
          thousand lines further down and wins on source order at equal
          specificity — the same trap the row rule above falls into.
 
-         No `overflow` override here, and the absence is the finding: a first cut
-         set `clip` on the theory that the box was reserving a scrollbar gutter,
-         and the measurement said otherwise. The extra height was `.stamp div`
-         leaking its padding in, which is fixed where it is caused. Two segments
-         of two letters cannot overflow anyway, and if they ever did, scrolling
-         is what `.segments` deliberately chose over shrinking a label. */
-      .stamp .units-seg { border-radius: 3px; }
+         `overflow: visible`, and it took two wrong reasons to arrive at the
+         right one. A first cut set `clip` on the theory that the box reserved a
+         scrollbar gutter; the measurement said otherwise, and the extra height
+         was `.stamp > div` leaking padding in. The real reason is the hit target
+         below: `overflow-x: auto` makes this a scroll container, a scroll
+         container clips what overflows it, and the `::after` that extends the
+         thumb target beyond the painted box is exactly that. Measured with
+         `elementFromPoint`, a point ten pixels above the button returned the row
+         behind it rather than the button.
+
+         Two segments of two letters cannot overflow, so nothing is lost;
+         scrolling is what `.segments` chose over shrinking a label, and that
+         choice is about strips with a dozen options, not about this pair. */
+      .stamp .units-seg { border-radius: 3px; overflow: visible; }
+      /* With the clipping gone the corners have to be cut on the segments
+         themselves, or the active segment's solid fill paints square over the
+         container's rounded border. 2px against the container's 3px, which is
+         the radius less the 1px border it sits inside. */
+      .units-seg .segment:first-child { border-radius: 2px 0 0 2px; }
+      .units-seg .segment:last-child { border-radius: 0 2px 2px 0; }
       /* Tighter than the console's segments: these two sit in a stamp row, not
          in a column of sixty controls, and their line is the stamp's own 11.5px
          so the row stands level with the four above it. Both labels keep their
          full text at 390px, which the quickstart measures rather than assumes. */
       .units-seg .segment {
+        position: relative;
         flex: 0 0 auto;
         padding: 3px 10px;
         font: 500 9px/11.5px var(--cond);
         letter-spacing: 0.09em;
+      }
+      /* A thumb's target around a painted box far smaller than one. Every other
+         segmented selector on the sheet is `flex: 1` and stretches to fill its
+         container; this pair hugs two letters, so it measures about 31 × 17.5px
+         — under 44 in *both* directions, with nothing compensating. That is not
+         the trade this sheet makes elsewhere and states out loud: the index
+         sheet's 36px rows and the pattern grid's 36.8px cells go under 44 and
+         say why, and both buy it back by spanning a full width.
+
+         So the hit area is extended without moving the paint: the row keeps the
+         27.5px that makes it level with the four rows above it, and the tappable
+         box is 43.5px tall. Vertically only — the two segments sit side by side,
+         and widening them would overlap their neighbour and hand a tap to the
+         wrong system, which is a worse failure than a tap that misses. It
+         overlaps the rows above and below, which carry no controls of their own.
+
+         `content: ''` with no paint: this is a target, not a decoration.
+
+         It only works because `.units-seg` gives up `overflow-x: auto` above. A
+         scroll container clips what leaves it, so the first cut of this was
+         inert — `elementFromPoint` ten pixels above the button returned the row
+         behind it. A hit area that cannot be measured is not a hit area.
+
+         This is **not** the fix for the iOS report that prompted it. A red
+         focus ring on the tapped segment says the tap reached the button, so
+         the target was never what failed there; that was the toggle drawing
+         itself before `reletterSheet` could throw. This is the sheet's own
+         44px rule, applied to the one control that was breaking it. */
+      .units-seg .segment::after {
+        content: '';
+        position: absolute;
+        inset: -13px 0;
       }
       /* The aside under the stamp, not a line in it. Sized to the stamp so the
          column has one edge, and in --ink-3 so the block of facts above it
