@@ -3845,9 +3845,23 @@ function syncUnits() {
 
 function chooseUnits(next) {
   if (next === system()) return;
-  // `setSystem` notifies the one subscriber, which is `reletterSheet`.
-  setSystem(next);
-  syncUnits();
+  // `setSystem` notifies the one subscriber, `reletterSheet`, and it does so
+  // synchronously — before this function has drawn the control. So the sync is
+  // in a `finally`: whatever the re-letter does, the segments end up saying what
+  // `system()` actually returns.
+  //
+  // Without it the toggle lies, and lies in the worst available way. A throw
+  // anywhere in the re-letter propagates out of `setSystem`, `syncUnits` never
+  // runs, and the fill stays on the old system while the page has already
+  // changed — a control showing the opposite of the state it governs, with
+  // nothing said. The error still reaches the window trap and the Report slip,
+  // which is where a failure belongs; what it may not do is leave the reader
+  // looking at a switch that appears not to have worked.
+  try {
+    setSystem(next);
+  } finally {
+    syncUnits();
+  }
   try {
     shelfStore?.setItem(UNITS_STORE, next);
   } catch {
