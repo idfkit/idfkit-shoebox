@@ -397,5 +397,68 @@ console.log('survey invariants (gate 1, SC-003)');
   );
 }
 
+/* ── 8. a contour interval is always one the numbers can actually step by  */
+{
+  // `levelsFor` used to loop until `push` threw `RangeError: Invalid array
+  // length` on a ground whose readings were flat to within an ULP: the 1-2-5
+  // interval came out finer than the spacing of the numbers it stepped
+  // through, so `v += step` handed back `v` and the cursor never reached `hi`.
+  // It threw inside `drawGround` and took the whole ground off the sheet.
+  //
+  // Every case here is asserted to *return* rather than to return a particular
+  // count, because how many levels a degenerate ground deserves is a judgement
+  // and the count is not what was broken. The two that must hold exactly are
+  // that an ordinary ground is unmoved, and that a span which is real but fine
+  // still gets its contours — a guard that swallowed those would have traded
+  // the hang for a quieter fault.
+  const lat = (values) => ({
+    values: Float64Array.from(values),
+    mask: Uint8Array.from(values.map(() => 1)),
+    nx: values.length,
+    ny: 1,
+  });
+  const ulp = Number.EPSILON * 20;
+  const returns = (label, values) => {
+    let out;
+    try {
+      out = levelsFor(lat(values));
+    } catch (error) {
+      ok(label, false, `threw ${error.constructor.name}: ${error.message}`);
+      return null;
+    }
+    ok(label, Array.isArray(out), `returned ${typeof out}`);
+    return out;
+  };
+
+  returns('a ground flat to one ULP returns instead of looping', [20, 20 + ulp, 20, 20]);
+  returns('a ground flat to two ULPs returns instead of looping', [20, 20 + 2 * ulp, 20, 20]);
+  returns('an exactly flat ground returns', [20, 20, 20, 20]);
+  ok(
+    'a single measured position carries no contours',
+    levelsFor({ values: Float64Array.from([20, 0]), mask: Uint8Array.from([1, 0]), nx: 2, ny: 1 }).length === 0,
+  );
+  ok(
+    'a ground with nothing measured carries no contours',
+    levelsFor({ values: Float64Array.from([0, 0]), mask: Uint8Array.from([0, 0]), nx: 2, ny: 1 }).length === 0,
+  );
+
+  // The fine-but-real span: 1e-4 across, which is ten orders of magnitude above
+  // the spacing at 20 and therefore a reading that genuinely moved.
+  const fine = returns('a fine but real span still gets its contours', [20, 20.0001, 20.00005, 20]);
+  ok('and there is more than one of them', fine !== null && fine.length > 1, `${fine?.length} levels`);
+
+  // An ordinary ground is exactly what it was: the guard must be invisible
+  // anywhere the interval was already usable.
+  // Read once, so the detail on a failure is the evaluation that failed rather
+  // than a second one that might not agree with it.
+  const ordinary = JSON.stringify(levelsFor(lat([20, 22, 26, 30])));
+  ok('an ordinary ground is unmoved', ordinary === JSON.stringify([20, 22, 24, 26, 28, 30]), ordinary);
+
+  // And the contours drawn from a degenerate ground are simply absent, rather
+  // than the caller having to know that the level list might be nonsense.
+  const flat = lat([20, 20 + ulp, 20, 20]);
+  ok('and a degenerate ground draws no contours at all', contoursOf(flat, levelsFor(flat)).length === 0);
+}
+
 console.log(failures ? `\n${failures} failed` : '\nall passed');
 process.exit(failures ? 1 : 0);

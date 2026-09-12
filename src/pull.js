@@ -40,6 +40,7 @@
  */
 
 import { CHANNELS, controlFor, labelFor } from './controls.js';
+import { sampleRefusal } from './model.js';
 import { READING_BY_ID } from './survey.js';
 import { refusesSweep } from './study.js';
 
@@ -199,6 +200,22 @@ export function pullProbes(stance, patch, { quantity, engaged, annual, epw = nul
           );
           continue;
         }
+        // The third way a control can be unmeasurable from here, and it is
+        // decided in the same breath as the other two rather than after a run
+        // comes back: a step that takes this control's *own* channel out of
+        // the model measures the channel leaving, not the control moving,
+        // which is the largest effect on the board and about nothing.
+        //
+        // Sited here rather than at the landing surface because `inertReason`
+        // above is this same judgement at the stance, and a probe known
+        // unmeasurable before anything is queued should not be queued: read
+        // off a landed point it would stand on the board as *pending* and
+        // then resolve to inert, alone among inert rows in doing so.
+        const refused = sampleRefusal({ ...stance, [key]: to }, patch, channel.id);
+        if (refused) {
+          inert.push(new PullEntry({ key, control, side, channel, inert: refused }));
+          continue;
+        }
         probes.push({
           id: `${id}:${key}`,
           key,
@@ -244,6 +261,10 @@ export function entryFrom(probe, { here, there, reading }) {
       control,
       side,
       channel,
+      // Only genuine failures reach here. A step the desk refuses never became
+      // a probe at all — `pullProbes` classifies it inert beside the other two
+      // unmeasurable cases — so this sentence is about a run that was started
+      // and did not finish, which is what it says.
       inert:
         here === null
           ? 'The stance itself could not be read for this quantity.'

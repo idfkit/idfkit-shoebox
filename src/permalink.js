@@ -599,6 +599,14 @@ export function decodeState(raw) {
   // can only produce `from < to`, and a backwards band accepted here writes a
   // Schedule:Compact whose Until: times run in reverse, which the engine
   // rejects after the link was already declared loaded.
+  //
+  // A heating setpoint above the cooling one is deliberately *not* a second
+  // rule. The backwards band is refused because no desk can reach it; a crossed
+  // pair is two sliders anybody can drag past each other, so it is a desk, and
+  // a link to it has to reproduce it. What reproduces is the System channel
+  // blocked with its reason, which is the same thing the reader who drew it saw
+  // — refusing the link would turn "copy the address" on a reachable desk into
+  // a link that cannot be opened.
   if (params.occFrom >= params.occTo) {
     throw new Error(
       `the occupied hours run from ${params.occFrom} to ${params.occTo}, which is not a band`,

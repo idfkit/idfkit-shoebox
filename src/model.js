@@ -3,6 +3,7 @@ import {
   ADIABATIC,
   ADAPTIVE_RULES,
   AS_DRAWN,
+  blockReason,
   BOUNDARY_KEYS,
   NEEDS_SETPOINT,
   OPENABLE_KEYS,
@@ -240,7 +241,7 @@ function must(doc, type, name = null) {
  * even where the building is identical. That difference was measured against
  * the engine rather than argued about — `07-everything-in` reorders eleven
  * types within a thirteen-object window and runs to byte-identical `.eso` and
- * `.mtr` — and the note under "Reading an absent type" in `CLAUDE.md` carries
+ * `.mtr` — and the note under "Reading an absent type" in `docs/design-notes.md` carries
  * the whole of it.
  */
 export const holds = (doc, type) => doc.types().includes(type);
@@ -895,14 +896,48 @@ export function channelState(params, bypass) {
       // more than one way to be blocked — the Air strip's network needs a
       // surface with an outside *and* something to leak through or open — and
       // one sentence covering both would name the wrong cause half the time.
-      blocked: blocked
-        ? typeof channel.requires.reason === 'function'
-          ? channel.requires.reason(params, on, patchedOut)
-          : channel.requires.reason
-        : null,
+      // Resolved through `blockReason` rather than here, so the preset
+      // assertion in `schemes.js` resolves it identically.
+      blocked: blocked ? blockReason(channel.requires, params, on, patchedOut) : null,
     });
   }
   return state;
+}
+
+/**
+ * Why one sample of a sweep is not the building the sweep is about, or null.
+ *
+ * A study is one control moved on one building, so a position where that
+ * control takes its *own* channel out of the path is refused rather than run.
+ * Sweep the heating setpoint past the cooling one and System is blocked:
+ * solved anyway, those samples are the free-running building, and the curve
+ * would join a conditioned zone to one with no system at all as though one
+ * number had moved. `envLeak` at its Sealed stop under the pressure network is
+ * the same shape — the Air channel blocked by its own control.
+ *
+ * Another channel going out under the overlay is deliberately left alone. Sweep
+ * the only glazed wall's ratio to nothing and Blinds and Daylight lose the
+ * opening they act on; that position is still one building, the one with no
+ * window, and the blind it no longer has would have done nothing to it.
+ *
+ * The sentence is the channel's own `requires` reason at that position, so the
+ * card says exactly what the strip would have said had the desk stood there.
+ *
+ * `channels` takes one id or several, the shape `deskKey`'s `omit` already
+ * uses: a study and a pull probe sweep one control, a survey row sweeps two —
+ * its own axis along the row and the other fixed into the snapshot that made
+ * it — and every swept axis has to be asked. See docs/design-notes.md, under the
+ * thermostat invariant, for what asking only one of a ground's two costs.
+ * The first blocked channel in the order given is the sentence, since a sample
+ * is refused wholly and one reason is what there is room to say.
+ */
+export function sampleRefusal(params, bypass, channels) {
+  const state = channelState(params, bypass);
+  for (const id of Array.isArray(channels) ? channels : [channels]) {
+    const blocked = state.get(id).blocked;
+    if (blocked) return blocked;
+  }
+  return null;
 }
 
 /* ══ the appliers ════════════════════════════════════════════════════════ */

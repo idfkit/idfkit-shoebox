@@ -33,6 +33,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fins, overhangs and curbs 1 cm deep are refused.** At that depth
   EnergyPlus merges the shade's edges and deletes it, so the run went ahead
   without a shade that the drawing still showed.
+- **A heating setpoint above the cooling one no longer kills the run.** The two
+  sliders overlap and could pass each other, which EnergyPlus refuses in the
+  first warmup timestep. The System strip is now blocked until they are level or
+  apart; Heat only and Cool only are unaffected.
+- **A survey ground whose readings are nearly flat no longer fails to draw.**
+  The contour interval is chosen from the measured range, and where that range
+  was a few floating-point ticks wide the interval came out finer than the
+  numbers themselves could step by — the drawing threw and the whole ground
+  went off the sheet. A ground that flat now draws its measured designs with no
+  contours across them, which is what it already did for a ground that was
+  exactly flat.
+- **A position a ground could not measure is no longer called a failed run.**
+  The key called every gap "a run that could not be completed", which was true
+  while the only way to have one was for the engine to fail. A refused position
+  never reaches the engine, so both now read as a position with no reading,
+  each still carrying its own reason.
+- **A study, a survey ground or a pull ranking no longer mixes a building with
+  a system and one without.** A position where a swept control takes its own
+  channel out of the model is refused rather than run, drawn as a gap, and says
+  why — on a study card, on a ground, and as an inert row of a ranking, where
+  such a step would otherwise have measured the channel leaving rather than the
+  control moving. A survey asks this of both its axes. A *different* channel
+  going out under the sweep, such as blinds losing the window they hang on, is
+  still a design and is still measured.
 
 ### Changed
 
@@ -72,6 +96,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   own strip in the console. Its runs can be paused, resumed or cancelled, and
   they share the studies' queue and cache, which now runs as many simulations
   side by side as the machine has cores less two. A link carries its readings.
+
+- **Report a problem from the sheet.** A fourth way out beside Download, Share
+  and Save opens a slip under the status line carrying what the reader was
+  looking at: the link and build that reproduce the desk, the engine's severe
+  and fatal lines, what was refused or blocked in view, the browser and layout,
+  the errors the page caught and the last twenty actions. The reader reads every
+  line before one press opens a prefilled GitHub issue, which is the only moment
+  it leaves their machine. It opens even when the engine fails to load, which
+  the status line now says instead of stopping silently.
+
+- **New issues sort themselves.** Each gets one bucket or "needs a person", area
+  and failure labels, and likely duplicates named, with a folded starter
+  paragraph for `/speckit-specify` on a feature request. Claude reads the issue
+  with no tools; idfkit-bot applies only what survives a check against the
+  repository, and never overrides a maintainer's label.
 
 - **A survey of the design space, on a second drawing.** Choose two controls
   and a reading, and the sheet cuts a ground through the desk as it stands: a
