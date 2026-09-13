@@ -51,6 +51,14 @@ const weigh = (tokens) =>
 // letter one number at one precision in whichever system is showing. The unit
 // word stays in the prose beside it, because that is what makes this a sentence
 // rather than a row of a table.
+//
+// But the word beside it must come from the same kind the figure converted
+// through, and six of them did not: `figure` converts and a hand-typed `' °C'`
+// does not, so a 21 °C setpoint read `69.8 °C` in a paragraph that is always in
+// view. An unconverted number under an SI unit is at least visibly stale; a
+// converted number under the wrong unit is a wrong reading that still looks
+// like a right one. Every unit word in these sentences is now `unitIn` of the
+// kind its figure came through, which is how `fig` has always spelled them.
 const num = (key, value) => q(controlFor(key).control.figure(value));
 
 /** A figure of a named kind, for the quantities measured off the document. */
@@ -355,10 +363,10 @@ function unit(doc, params) {
   const hours = schedule === 'AlwaysOn' ? [] : [' in occupied hours'];
 
   if (standing(doc, 'ThermostatSetpoint:SingleHeating')) {
-    return ['an ideal unit heating to ', num('heatSet', params.heatSet), ' °C', hours];
+    return ['an ideal unit heating to ', num('heatSet', params.heatSet), ` ${unitIn(KINDS.temperature)}`, hours];
   }
   if (standing(doc, 'ThermostatSetpoint:SingleCooling')) {
-    return ['an ideal unit cooling to ', num('coolSet', params.coolSet), ' °C', hours];
+    return ['an ideal unit cooling to ', num('coolSet', params.coolSet), ` ${unitIn(KINDS.temperature)}`, hours];
   }
   if (standing(doc, 'ThermostatSetpoint:DualSetpoint')) {
     return [
@@ -366,7 +374,7 @@ function unit(doc, params) {
       num('heatSet', params.heatSet),
       '–',
       num('coolSet', params.coolSet),
-      ' °C',
+      ` ${unitIn(KINDS.temperature)}`,
       hours,
     ];
   }
@@ -396,7 +404,15 @@ function schedule(params) {
   const leak = params.infiltration > 0 ? [num('infiltration', params.infiltration), ' ACH of leakage'] : [];
   const flush =
     params.ventilation > 0
-      ? ['a night flush of ', num('ventilation', params.ventilation), ' ACH above ', num('ventMinIndoor', params.ventMinIndoor), ' °C']
+      ? [
+          'a night flush of ',
+          num('ventilation', params.ventilation),
+          // The rate's own `ACH` is an identity kind and reads the same in both
+          // systems; the trigger beside it is a temperature and does not.
+          ' ACH above ',
+          num('ventMinIndoor', params.ventMinIndoor),
+          ` ${unitIn(KINDS.temperature)}`,
+        ]
       : [];
   const both = [leak, flush].filter((c) => c.length);
   if (!both.length) {
@@ -510,7 +526,16 @@ function airflow(doc, params, facts) {
   // the control's own, so the sentence and the strip letter one figure.
   const rate = Number(spec.outdoor_air_flow_per_person) * 1000;
   if (!Number.isFinite(rate)) throw new Error('the outdoor air specification carries no flow per person to letter');
-  return ['nothing through the envelope beyond ', num('outdoorAir', rate), ' L/s per person of mechanical outdoor air'];
+  // The unit spelled out as `L/s per person` was three budget words where the
+  // kind's own string is one, and it was the only SI spelling on the sheet that
+  // did not match its declaration — which is the assertion the whole character
+  // for character guarantee rests on. It letters `L/s·pp` in SI now, as the
+  // strip above it always has, and `cfm/person` in IP.
+  return [
+    'nothing through the envelope beyond ',
+    num('outdoorAir', rate),
+    ` ${unitIn(KINDS.airflowPerPerson)} of mechanical outdoor air`,
+  ];
 }
 
 function moves(doc, params, facts, state) {
@@ -683,7 +708,10 @@ function moves(doc, params, facts, state) {
   }
 
   if (on('grounds')) {
-    say('grounds', FLIP.grounds, [num('extLights', params.extLights), ' kW of grounds lighting']);
+    say('grounds', FLIP.grounds, [
+      num('extLights', params.extLights),
+      ` ${unitIn(KINDS.power)} of grounds lighting`,
+    ]);
   }
 
   return out;
