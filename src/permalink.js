@@ -49,6 +49,7 @@ import {
   serializeHolidays,
   serializePattern,
 } from './controls.js';
+import { Bound, Region, RuledOut, doorsOf } from './space.js';
 import { QUANTITY_BY_ID } from './study.js';
 import { READING_BY_ID, refusesAxis } from './survey.js';
 
@@ -95,12 +96,58 @@ const MIGRATIONS = Object.freeze({});
  * quietly collide with one — `controlFor` would route the collision to a
  * parameter and the link would mean two things at once.
  */
-const RESERVED = Object.freeze(['in', 'out', 'stn', 'win', 'at', 'sty', 'sv', 'sp']);
+const RESERVED = Object.freeze(['in', 'out', 'stn', 'win', 'at', 'sty', 'sv', 'sp', 'cn']);
 for (const key of RESERVED) {
   if (ALL_KEYS.includes(key)) {
     throw new Error(`the reserved link key "${key}" collides with a control parameter`);
   }
 }
+
+/**
+ * How a link spells a door, and the two assertions that keep `cn` unambiguous.
+ *
+ * A bound entry is `key_from_to` and a ruled entry is `key_setting.setting`,
+ * so the two are told apart by how many parts an underscore splits them into,
+ * three against two. That discrimination is sound only while no setting
+ * carries an underscore of its own, and a setting that was a bare number would
+ * leave `panes_2_3` readable as both a range and a pair of options. Neither is
+ * true of the 28 doors the desk carries today — checked rather than assumed,
+ * by enumerating every one of them — and both are asserted here so that a door
+ * whose options change one day says so at load rather than in somebody's
+ * address bar.
+ *
+ * A patch door's internal id is `patch:<channelId>` (`space.js`), and
+ * `URLSearchParams` escapes the colon to `%3A`, which gives up exactly the
+ * legibility this whole encoding is arranged around, the way `at=year%408-3T13`
+ * did before the pin's `@` became a full stop. So the channel id alone is the
+ * link's spelling, asserted not to collide with a control parameter: a choice
+ * door is already spelled by its own key, and two doors answering to one word
+ * would be two claims about one design space.
+ */
+const DOOR_BY_SPELLING = (() => {
+  const bySpelling = new Map();
+  for (const door of doorsOf()) {
+    const spelling = door.kind === 'patch' ? door.channel.id : door.id;
+    if (bySpelling.has(spelling)) throw new Error(`two doors are spelled "${spelling}" in a link`);
+    if (door.kind === 'patch' && ALL_KEYS.includes(spelling)) {
+      throw new Error(`the patch door "${spelling}" collides with a control parameter`);
+    }
+    for (const setting of door.settings) {
+      const text = String(setting);
+      if (/^-?\d+(\.\d+)?$/.test(text)) {
+        throw new Error(`the door "${spelling}" carries a setting "${text}" that is a bare number, which a bound is`);
+      }
+      if (text.includes('_')) {
+        throw new Error(`the door "${spelling}" carries a setting "${text}" holding the separator a link splits on`);
+      }
+    }
+    bySpelling.set(spelling, door);
+  }
+  return bySpelling;
+})();
+
+/** What a link calls one door, which is its channel where the door is a patch. */
+const spellingOf = (door) => (door.kind === 'patch' ? door.channel.id : door.id);
 
 /**
  * And that every key the encoder writes is a key the decoder can read back.
@@ -210,7 +257,7 @@ export { PIN_KINDS, encodePin, decodePin };
  * samples that disagree by up to 9 % on degree days, so a link that named only
  * the site would reproduce a different year than the one argued over.
  */
-export function encodeState({ params, bypass, station = null, pin = null, quantity = null, studies = [], survey = null, plan = null }) {
+export function encodeState({ params, bypass, station = null, pin = null, quantity = null, studies = [], survey = null, plan = null, region = null }) {
   const pairs = new URLSearchParams();
   for (const key of ALL_KEYS) {
     // `String` rather than a display format: the display rounds, and a link
@@ -250,6 +297,10 @@ export function encodeState({ params, bypass, station = null, pin = null, quanti
   }
   if (survey) pairs.append('sv', encodeSurvey(survey));
   if (plan) pairs.append('sp', encodePlan(plan));
+  // Only where a constraint is actually in force: an unconstrained desk is the
+  // ordinary one, and `Region.EMPTY` writing an empty `cn=` would put a key
+  // sitting at its own default into every link minted after.
+  if (region && (region.bounds.size || region.ruled.size)) pairs.append('cn', encodeRegion(region));
   const body = pairs.toString();
   return body ? `${LINK_VERSION}&${body}` : '';
 }
@@ -287,6 +338,93 @@ export function decodePlan(raw) {
     if (!READING_BY_ID[id]) throw new Error(`no reading is called "${id}", so no strategy plan can be drawn for it`);
   }
   return Object.freeze(ids);
+}
+
+/**
+ * The constrained design space, as one value (research.md section 26).
+ *
+ *     cn    = entry *( "*" entry )
+ *     entry = bound / ruled
+ *     bound = key "_" from "_" to
+ *     ruled = key "_" setting *( "." setting )
+ *
+ * `sv`'s separators, for `sv`'s reason. `URLSearchParams` leaves exactly four
+ * punctuation marks alone, and of them `-` cannot separate anything here
+ * because a bound may be negative (a ground temperature, an azimuth) and `.`
+ * is spent on the decimal point inside one. That leaves `*` between entries
+ * and `_` inside them: `cn=wallR_2_6*terrain_City.Ocean`.
+ *
+ * Written in one order whatever order the reader placed the constraints in,
+ * because the region keys the `VALUES` memo as well as the link: two spellings
+ * of one region would key two identical samples, which is the same failure the
+ * holiday list and the hourly pattern are re-serialised to avoid.
+ */
+export function encodeRegion(region) {
+  const entries = [];
+  for (const key of [...region.bounds.keys()].sort()) {
+    const bound = region.bounds.get(key);
+    entries.push(`${key}_${bound.from}_${bound.to}`);
+  }
+  const ruled = [...region.ruled.values()].sort((l, r) => spellingOf(l.door).localeCompare(spellingOf(r.door)));
+  for (const out of ruled) {
+    entries.push(`${spellingOf(out.door)}_${[...out.settings].map(String).sort().join('.')}`);
+  }
+  return entries.join('*');
+}
+
+/**
+ * And back, validated whole before a `Region` is returned, so a link naming a
+ * region this desk cannot draw is refused before anything is loaded.
+ *
+ * Every refusal class is the link's own: an unknown key or door, a setting the
+ * door does not carry, a bound that fails `Bound`'s rules — the step test
+ * included, which is the one piece of validation `refuses` deliberately does
+ * not do — a door with every setting ruled out, and a malformed entry. The
+ * duplicate cases are `Region`'s own throws, since a key bounded twice is two
+ * claims about one control.
+ */
+export function decodeRegion(raw) {
+  if (typeof raw !== 'string' || raw === '') throw new Error('the constraints value ("cn") is empty');
+  const constraints = [];
+  for (const entry of raw.split('*')) {
+    const parts = entry.split('_');
+    if (parts.length === 3) {
+      const [key, from, to] = parts;
+      try {
+        controlFor(key);
+      } catch {
+        throw new Error(`no control is called "${key}", so nothing on this desk can be bounded by it`);
+      }
+      for (const text of [from, to]) {
+        // The same text gate the numeric branch and the survey's extents use,
+        // and for the same reason: `Number('')` is 0 and `Number('0x18')` is
+        // 24, either of which would constrain the desk to a region the sharer
+        // never drew.
+        if (!/^-?\d+(\.\d+)?$/.test(text)) throw new Error(`"${text}" is not a number in the bounds of ${key}`);
+      }
+      constraints.push(new Bound({ key, from: Number(from), to: Number(to) }));
+      continue;
+    }
+    if (parts.length === 2) {
+      const [spelling, named] = parts;
+      const door = DOOR_BY_SPELLING.get(spelling);
+      if (!door) throw new Error(`no door is called "${spelling}", so nothing on this desk can be ruled out of it`);
+      const settings = [];
+      for (const text of named.split('.')) {
+        if (text === '') throw new Error(`"${entry}" names an empty setting of the door "${spelling}"`);
+        // By the setting's own text rather than by position, and `undefined`
+        // rather than a falsy test, because a patch door's settings are `true`
+        // and `false` and the ruled-out one is as often the false one.
+        const own = door.settings.find((setting) => String(setting) === text);
+        if (own === undefined) throw new Error(`"${text}" is not a setting of the door "${spelling}"`);
+        settings.push(own);
+      }
+      constraints.push(new RuledOut({ door, settings }));
+      continue;
+    }
+    throw new Error(`"${entry}" is not a constraint like wallR_2_6 or terrain_City`);
+  }
+  return new Region(constraints);
 }
 
 /**
@@ -582,6 +720,16 @@ export function decodeState(raw) {
   const encodedPlan = pairs.get('sp');
   const plan = encodedPlan === null ? null : decodePlan(encodedPlan);
 
+  // The constrained design space, read here beside `sv` and `sp` for the
+  // fourth time and the third time written down before it was hit: a reserved
+  // key never reaches `readValue`, whose numeric regex runs before its
+  // per-kind switch, so a branch written inside that switch would be
+  // unreachable and every constrained link would be refused as "is not a
+  // number for cn". It is re-serialised on the way out by `encodeRegion`, so
+  // one region is one string wherever the reader placed its constraints.
+  const encodedRegion = pairs.get('cn');
+  const region = encodedRegion === null ? null : decodeRegion(encodedRegion);
+
   // `in` and `out` are lists and repeat by design; every other key — the
   // station pair included — is one claim, and a repeated one is two claims
   // about one thing. Either could be meant, so neither is taken. The check
@@ -620,5 +768,6 @@ export function decodeState(raw) {
   }
   if (survey) scheme.survey = survey;
   if (plan) scheme.plan = plan;
+  if (region) scheme.region = region;
   return scheme;
 }

@@ -95,7 +95,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and door is sorted into helps both, trade-off, lever or free, printed on its
   own strip in the console. Its runs can be paused, resumed or cancelled, and
   they share the studies' queue and cache, which now runs as many simulations
-  side by side as the machine has cores less two. A link carries its readings.
+  side by side as the machine has cores less two. The design space survey
+  stands in the same panel, which reads as six numbered parts, each headed by
+  the question it answers and each saying what it waits on rather than hiding
+  until it has something. A link carries its readings.
+
+- **Constrain the design space before it is explored.** Type the stretch of a
+  control worth sampling on its own face, or rule a choice out, and the plan
+  samples only inside it: the moves are fitted to buildings you would actually
+  build, and every figure says which span it was measured over. Setting a
+  constraint re-letters what is already measured at once and runs nothing by
+  itself, offering the runs that would fill the region with their count and
+  their time. Nothing measured outside it is thrown away, so widening back is
+  free. A world you rule out is listed as yours rather than quietly missing,
+  and a link carries the whole region.
 
 - **Report a problem from the sheet.** A fourth way out beside Download, Share
   and Save opens a slip under the status line carrying what the reader was
