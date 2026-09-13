@@ -912,6 +912,61 @@ rebuilds itself on every incoming event cannot hold a text field: the reader's
 focus, the value the field took at focus, and therefore their keystrokes all go
 with the node. Redraw such a panel only when something it draws has moved.
 
+### A constrained face
+
+Where the reader narrows the stretch of a control that is worth sampling, the
+bounds are **typed on the control's own face**, through the same
+`quantityField` pair the survey's extents use, and the stretch they rule out is
+drawn as ruled out: a hatch under the ruling, beneath the tick, so the pen
+still reads over it.
+
+Three things it must not be:
+
+- **Not a hover state.** `pointer: coarse` has no hover, so a constraint shown
+  only on hover is a fact a thumb can never reach.
+- **Not a disabled control.** The slider still moves and the face stays at full
+  ink. A constraint narrows what is *sampled and run*, not what the desk can be
+  set to, so the reader may still stand outside their own region — and where
+  they do, the stance mark stands outside it and says so rather than the region
+  quietly widening to take them back in.
+- **Not the only place it is stated.** The face says what this control is
+  sampled over; the summary at the head of the sequence says what the figures
+  below were measured under. Both stand, and every constraint is removable from
+  the summary, singly and all at once.
+
+The boxes are lettered on the way in, because a `quantityField` writes nothing
+until something asks it to and a field built and appended alone stands empty.
+And the summary is redrawn only when the region's own signature moves, for the
+reason under *Two boxes for a range*: emptying a host destroys the node the
+reader is typing into.
+
+### A numbered sequence of parts
+
+The panel reads as six numbered parts, each headed by the question it answers:
+what this plan is of, what decides this reading, what is one door away, what
+pulls anywhere in this world, what the ground looks like along two of them, and
+what should be decided now.
+
+**The number and the question live in the markup and are never composed at
+render.** That is what makes the sequence read the same with nothing measured
+as with everything measured: no part can be renumbered by what happens to have
+landed. A part with nothing in it yet **stands and says what it waits on**,
+rather than being hidden behind a gate — a sequence that grew parts as results
+arrived would teach a different shape on every visit.
+
+One split worth keeping straight: a **reading may never go in a fold**, and
+neither may a verdict, an absence reason, a blocking reason or a refusal. A
+**record** may — the complete list of designs, the spots behind a figure —
+because a record is what you consult, not what you read.
+
+Layout thresholds this panel added, each declared once and read back rather
+than restated in script: `--planner-max`, the width the panel grows to before
+it stops taking surplus; `--pair`, set by a **container** query because the
+panel's width is not the window's and a window query cannot see it; and
+`--sheet-min`, which existed as a token for a long time without being used in
+any rule and is now a real `min-width`, so the sheet reaches its own measure
+before the panel takes anything.
+
 ### The armed square, a fourth time, and a ring beside it
 
 The stance on a surveyed ground carries the same `--redline` square the patch

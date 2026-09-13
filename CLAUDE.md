@@ -592,6 +592,91 @@ combination.** `words()` counts every whitespace-separated token, so the
 research's own example, "Best ≈ 0.41 · EUI, est.", was six words against its
 own budget of five. A tag now reads `Trade-off: High/Low; High ≈0.41 est.`.
 
+**The survey moved into the panel, and the sheet keeps E-01 alone.** `section#survey`
+lives in `.planner-body` as part 5, carrying everything it owns with every id
+unchanged, so `renderSurvey` needed none. The panel reads as six numbered parts:
+what this plan is of, what decides this reading, what is one door away, what
+pulls anywhere in this world, what the ground looks like along two of them, and
+what should be decided now. **The number and the question are in the markup and
+never composed at render**, so the sequence reads the same with nothing measured
+as with everything measured, and no part is a gate: a part with nothing in it
+stands and says what it waits on. The two drawings keep opposite conventions and
+say so once where they meet: the ground is measured along two chosen controls, so
+it carries contours and a relief block; the plan's terrain is inference along
+moves, so it carries neither. Neither is brought to the other's convention.
+
+`src/relief.js` gained a resize path it never had, because a folded panel is
+`display: none` and a host inside one measures zero: `resize()` refuses a zero
+box and keeps the last good size, since a measurement taken of a hidden element
+is not a measurement, and the module's own `Math.max(1, ...)` floor would
+otherwise lock a finished survey into a 1 by 1 canvas that no later sample
+corrects. `panelsMoved()` reaches it through `relief.repaint`, one paint per
+debounced resize. A `ResizeObserver` was rejected: it fires through the fold's
+own transition and the first box it sees is the zero one. `.survey-body`'s two
+columns are decided by the stylesheet's first **container** query, because the
+panel's width is not the window's and the old media query could not see its own
+container.
+
+**A constraint narrows what is sampled, and binds in three places.** `Bound`,
+`RuledOut` and `Region` live in `space.js` beside the sequence, because the
+region binds inside `variedAt` where a design's values are made: every design
+generated under it lies inside it by construction and there is nothing left to
+filter. The three sites are `snapped` (bin into the span), `designAt`'s
+normalisation (`u` is the position within the span, since an effect is lettered
+per the constrained span) and `probesAt`'s step (a twentieth of the span, room
+tested against its bounds). Missing any one produces figures that are
+arithmetically correct and about the wrong span, which is the worst shape the
+defect could take. `region.signature` joins the `VALUES` memo key, which is
+keyed by design index alone otherwise: a constraint committed after a design was
+generated would hand back the unconstrained value with no symptom anywhere.
+
+**Every value stays on the control's own grid anchored at `control.min`**, never
+at the span's low stop, which is what `samplePoints` already does and what makes
+a re-cut reuse anything at all. The identity is between equal **desks**, never
+equal **indices**: `snapped` bins into the span, so design *i* under a narrower
+region is a different building, and measured on 300 designs of the reference
+desk, 121 had their unconstrained `wallR` admitted by a 2 to 6 region and none
+of the 121 was byte-identical under both. The contract first claimed the
+opposite; what a re-cut saves is the designs whose params happen to coincide.
+
+**And measured, that share is zero.** Gate 15 (`verify/recut.mjs`, 64 designs on
+the reference desk, 128 runs) narrowed `wallR` from 0.5 to 9 down to 2 to 6 and
+reused **0 of 64** designs. It is not a defect and it follows from the
+arrangement: a region binding one control leaves every other varied key
+identical, so reuse needs one index to snap to the same `wallR` under both bins,
+which essentially never happens. So **narrowing costs full price, and only
+widening back is free** (64 of 64 from cache, the runs being the same designs
+under the same ids). Nothing measured is thrown away, which is what makes
+widening free and what lets a reader alternate two regions; but the cost of a
+re-cut is to be stated to the reader as a fresh sample, never as a top-up, and
+`queueStrategy` asking for consent on every constrained desk is what does that.
+
+`cn` is the fourth meeting with the `readValue` trap and the third time it was
+written down before being hit: the numeric regex runs before the per-kind
+switch, so a reserved key is read in `decodeState` beside `sv` and `sp` or every
+constrained link is refused as "not a number". A patch door is spelled by its
+channel id alone, since its internal id is `patch:<channelId>` and `:` is
+escaped. Two load assertions keep the grammar unambiguous, a bound and a ruled
+entry being told apart by underscore count: no door setting is a bare number and
+none contains `_`, checked against all 28 doors.
+
+**A ruled-out world is listed, not dropped.** `neighboursOf` drops the setting
+before a world is built for it, so it is never measured, and pushes a
+`Neighbour` carrying `ruledOut: true` and the reader's own sentence, which is
+deliberately not the sentence a world the engine cannot enter carries. It was
+written the other way first and the gate caught it: the comment said both lists
+stand while the code did `continue`, so ruling out two terrain settings took the
+neighbour count from 55 to 53 with nothing anywhere saying why.
+
+A constraint is a **re-cut, not a filter**: committing one re-letters every
+figure at once from the designs the ledger already holds, keeps every design
+measured outside the region in the ledger stated as ruled out, and **queues no
+run by itself**, offering the runs that would fill the region with their count
+and their time by the consent pattern the annual cost already uses. Two things
+stand rather than being refused, each stated where it happens: a region
+excluding the desk's own stance, which is `axisFor`'s rule, and a constraint on
+a control dark in this world, which binds again wherever it comes alive.
+
 ## Invariants that fail quietly
 
 - `Building.north_axis` is ignored (World coordinates); orientation lives in the

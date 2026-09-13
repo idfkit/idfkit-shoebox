@@ -29,6 +29,30 @@ Re-measure with the same script rather than with `ls`: `index.html` carries the
 whole stylesheet inline, so a style-only change moves a number that a
 JavaScript-only measurement would miss entirely.
 
+
+After the feature, its first amendment and its second (SC-015)
+--------------------------------------------------------------
+
+Measured the same way on this branch, with `npm run build` and the deploy
+script's own brotli settings (quality 9 above 4 MiB, quality 11 below), of
+`dist/` excluding `energyplus/`, `schemas/` and `weather/`:
+
+                                          raw     brotli
+assets/index-*.js                      734194     212832
+index.html                             282809      56629
+----------------------------------------------------------
+TOTAL                                 1017003     269461
+
+Added transfer: 269459 - 225559 = **43,902 bytes**, against SC-015's ceiling of
+61,440. Under it, with about 17 KB to spare.
+
+The first amendment's own figure was 31,360 bytes, so everything in the second
+amendment — the survey moving into the panel, the six numbered parts, the
+container query, the relief's resize path and the whole of constraints with its
+link key — cost about 12.5 KB of transfer. No asset, font or dependency was
+added, and `index.html` carries the stylesheet inline, which is why a feature
+that is mostly layout still moves the second row.
+
 ────────────────────────────────────────────────────────────────────────────
 After the feature, same script, same brotli settings:
 

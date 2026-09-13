@@ -22,7 +22,7 @@
 
 import { BUDGETS, words } from './copy.js';
 import { ALL_KEYS, CHANNELS, controlFor, labelFor } from './controls.js';
-import { DESIGN_STAGE, designAt, matched, probesAt, roleOf } from './space.js';
+import { DESIGN_STAGE, Region, designAt, designIdOf, matched, probesAt, roleOf } from './space.js';
 import { CONVENTION, Coverage, READINGS, READING_BY_ID, SENSE } from './survey.js';
 
 export { DESIGN_STAGE };
@@ -272,9 +272,16 @@ export class DesignLedger {
   }
 }
 
-/** The ledger id of a design, and of a probe off it. */
-export const designId = (world, index) => `${world.signature}:${index}`;
-export const probeId = (world, index, key) => `${world.signature}:${index}:${key}`;
+/**
+ * The ledger id of a design, and of a probe off it.
+ *
+ * Both delegate to `space.js`, which owns the format, rather than spelling it
+ * out a second time: a design's own `id` and these have to be one string or
+ * the ledger is keyed two ways for one building. Under a region they are not
+ * the same string as they were, which is the point (`designIdOf`).
+ */
+export const designId = (world, index, region = Region.EMPTY) => designIdOf(world, index, region);
+export const probeId = (world, index, key, region = Region.EMPTY) => `${designId(world, index, region)}:${key}`;
 
 /** One reading out of one landing, or null: never a zero for a missing value. */
 function valueOf(reading, landed) {
@@ -444,7 +451,7 @@ export function knnShare(coords, dim, values, indices) {
  * the bases at which every live control has an effect, which is what the moves
  * are fitted on, so that every gradient in the covariance is a whole one.
  */
-export function effectsOf(world, reading, ledger, { bases }) {
+export function effectsOf(world, reading, ledger, { bases, region = Region.EMPTY }) {
   const keys = world.live;
   const g = [];
   const baseValues = [];
@@ -454,13 +461,13 @@ export function effectsOf(world, reading, ledger, { bases }) {
   for (let b = 0; b < bases; b += 1) {
     const row = new Float64Array(keys.length).fill(Number.NaN);
     g.push(row);
-    const base = designAt(world, b);
-    const landed = ledger.get(designId(world, b));
+    const base = designAt(world, b, region);
+    const landed = ledger.get(designId(world, b, region));
     const f0 = valueOf(reading, landed);
     baseValues.push(f0);
-    if (landed?.failure) gaps.push({ id: designId(world, b), reason: landed.failure });
+    if (landed?.failure) gaps.push({ id: designId(world, b, region), reason: landed.failure });
     let whole = f0 !== null;
-    probesAt(world, base).forEach((probe, j) => {
+    probesAt(world, base, region).forEach((probe, j) => {
       if (probe.skip) {
         // An exact zero only where the base itself has a reading: a skipped
         // probe builds the base's own document, so where the base failed the
@@ -469,19 +476,26 @@ export function effectsOf(world, reading, ledger, { bases }) {
         if (!skipped.has(probe.key)) skipped.set(probe.key, probe.skip);
         return;
       }
-      const there = ledger.get(probeId(world, b, probe.key));
-      if (there?.failure) gaps.push({ id: probeId(world, b, probe.key), reason: there.failure });
+      const there = ledger.get(probeId(world, b, probe.key, region));
+      if (there?.failure) gaps.push({ id: probeId(world, b, probe.key, region), reason: there.failure });
       const f1 = valueOf(reading, there);
       if (f0 === null || f1 === null) {
         whole = false;
         return;
       }
-      const { control } = controlFor(probe.key);
-      row[j] = (f1 - f0) / ((probe.to - probe.from) / (control.max - control.min));
+      // Per the **span** the region allows, never per the control's whole
+      // face. FR-052 letters an effect per the constrained span, and a
+      // gradient divided by the full range under a constraint is
+      // arithmetically correct about a building the reader has ruled out,
+      // which is the worst shape this defect could take: nothing on the sheet
+      // would look wrong. The unconstrained span is the face, so this is the
+      // same arithmetic it always was wherever nothing binds the control.
+      const span = region.spanOf(probe.key);
+      row[j] = (f1 - f0) / ((probe.to - probe.from) / (span.to - span.from));
     });
     if (whole) complete.push(b);
   }
-  return Object.freeze({ keys, g, baseValues, complete, skipped, gaps, bases });
+  return Object.freeze({ keys, g, baseValues, complete, skipped, gaps, bases, region });
 }
 
 /* ══ the moves ═══════════════════════════════════════════════════════════ */
@@ -492,11 +506,16 @@ export function effectsOf(world, reading, ledger, { bases }) {
  * world (FR-026), which is why it carries the one it was measured in.
  */
 export class Move {
-  constructor({ world, reading, rank, weights, explains, bases }) {
+  constructor({ world, reading, rank, weights, explains, bases, region = Region.EMPTY }) {
     if (rank !== 1 && rank !== 2) throw new Error(`a plan has two moves, not a move of rank ${rank}`);
     if (weights.length !== world.live.length) throw new Error('a move weighs a different set of controls from its world');
     this.world = world;
     this.reading = reading;
+    // The span every weight in this recipe is per, carried so that the recipe
+    // is lettered with it (FR-052): "higher glazing 32 %" means one thing over
+    // a control's whole face and another over a fifth of it, and two plans
+    // carrying the same words must not carry different numbers (SC-018).
+    this.region = region;
     this.rank = rank;
     this.weights = Object.freeze(weights.map(({ key, w }) => Object.freeze({ key, w })));
     this.explains = explains;
@@ -533,8 +552,8 @@ export class Move {
  * the landed designs, with the largest weight made positive where that is
  * exactly zero.
  */
-export function movesOf(world, reading, ledger, { bases, designs = 0, effects = null }) {
-  const eff = effects ?? effectsOf(world, reading, ledger, { bases });
+export function movesOf(world, reading, ledger, { bases, designs = 0, effects = null, region = Region.EMPTY }) {
+  const eff = effects ?? effectsOf(world, reading, ledger, { bases, region });
   const d = world.live.length;
   if (eff.complete.length < MOVES_FROM || d === 0) return null;
   const c = new Float64Array(d * d);
@@ -548,8 +567,8 @@ export function movesOf(world, reading, ledger, { bases, designs = 0, effects = 
   if (!(sum > 0)) return null;
   const landed = [];
   for (let index = 0; index < designs; index += 1) {
-    const value = valueOf(reading, ledger.get(designId(world, index)));
-    if (value !== null) landed.push({ u: designAt(world, index).u, value });
+    const value = valueOf(reading, ledger.get(designId(world, index, region)));
+    if (value !== null) landed.push({ u: designAt(world, index, region).u, value });
   }
   return [0, 1].map((k) => {
     const w = Array.from(vectors[k] ?? new Float64Array(d));
@@ -581,6 +600,7 @@ export function movesOf(world, reading, ledger, { bases, designs = 0, effects = 
       weights: world.live.map((key, j) => ({ key, w: sign * w[j] })),
       explains: values[k] / sum,
       bases: eff.complete.length,
+      region,
     });
   });
 }
@@ -646,13 +666,16 @@ function quadraticFits(world, points) {
  * or the end it keeps improving toward. Exactly one of the two (FR-032a).
  */
 export class SweetSpot {
-  constructor({ key, reading, at = null, limit = null, consistency, worseEnd = null }) {
+  constructor({ key, reading, at = null, limit = null, consistency, worseEnd = null, region = Region.EMPTY }) {
     if ((at === null) === (limit === null)) {
       throw new Error(`the sweet spot of ${key} carries ${at === null ? 'neither a value nor a limit' : 'both a value and a limit'}`);
     }
     if (limit !== null && limit !== 'min' && limit !== 'max') throw new Error(`${key} is at a limit named "${limit}"`);
     this.key = key;
     this.reading = reading;
+    // The span the spot was fitted over, so that "best ≈ 0.41" is never
+    // lettered without saying which stretch of the face it is the best of.
+    this.region = region;
     this.at = at;
     this.limit = limit;
     this.consistency = consistency;
@@ -702,7 +725,7 @@ function spotFrom(key, reading, fit, effects, tau) {
   let of = 0;
   for (const b0 of effects.complete) {
     const gj = effects.g[b0][j];
-    const uj = designAt(effects.world ?? null, b0)?.u?.[j];
+    const uj = designAt(effects.world ?? null, b0, effects.region ?? Region.EMPTY)?.u?.[j];
     if (!Number.isFinite(gj) || !Number.isFinite(uj)) continue;
     of += 1;
     const improving = reading.better === 'lower' ? -gj : gj;
@@ -712,13 +735,22 @@ function spotFrom(key, reading, fit, effects, tau) {
   // And most of the measured gradients have to point at it. A turn the runs
   // themselves do not lean toward is the fit's, not the building's.
   if (!(agree * 2 > of)) return null;
-  if (star < MARGIN.share) return new SweetSpot({ key, reading, limit: 'min', consistency, worseEnd: worse });
-  if (star > 1 - MARGIN.share) return new SweetSpot({ key, reading, limit: 'max', consistency, worseEnd: worse });
-  const value = control.min + star * (control.max - control.min);
+  const region = effects.region ?? Region.EMPTY;
+  if (star < MARGIN.share) return new SweetSpot({ key, reading, limit: 'min', consistency, worseEnd: worse, region });
+  if (star > 1 - MARGIN.share) return new SweetSpot({ key, reading, limit: 'max', consistency, worseEnd: worse, region });
+  // `star` is a position along `u`, and `u` is the position within the **span**
+  // the region allows rather than within the control's whole face. Read back
+  // off the face, a spot under a constraint would be lettered at a value the
+  // plan never sampled and the reader cannot build.
+  const span = region.spanOf(key);
+  const value = span.from + star * (span.to - span.from);
+  // Snapped on the control's own grid anchored at `control.min`, never at the
+  // span's own low stop: that anchoring is what keeps one design one cache
+  // entry under two regions, and is the whole reason a re-cut is free (SC-017).
   const snapped = Number(
     (control.min + Math.round((value - control.min) / control.step) * control.step).toFixed(decimalsOf(control.step)),
   );
-  return new SweetSpot({ key, reading, at: snapped, consistency, worseEnd: worse });
+  return new SweetSpot({ key, reading, at: snapped, consistency, worseEnd: worse, region });
 }
 
 /* ══ the plan ════════════════════════════════════════════════════════════ */
@@ -916,6 +948,13 @@ export class Plan {
       );
     }
     if (!(fields.spots instanceof Map)) throw new Error(`the plan of ${fields.reading.label} carries its sweet spots as something other than a map`);
+    // Every figure a plan carries was measured over one region, and SC-018
+    // requires it to be lettered with the span it is per. A plan that did not
+    // know its own region could letter two different numbers in one wording,
+    // so it cannot be built without one.
+    if (!(fields.region instanceof Region)) {
+      throw new Error(`the plan of ${fields.reading.label} carries no region, so its figures cannot say what span they are per`);
+    }
     Object.assign(this, fields);
     this.dots = Object.freeze([...fields.dots]);
     this.gaps = Object.freeze([...fields.gaps]);
@@ -956,14 +995,14 @@ function sealed(map) {
   return Object.freeze(out);
 }
 
-export function planOf(world, reading, ledger, { designs, bases, kind, tau = null }) {
+export function planOf(world, reading, ledger, { designs, bases, kind, tau = null, region = Region.EMPTY }) {
   if (kind !== 'design-day' && kind !== 'annual') throw new Error(`a plan is measured at "${kind}", which is not a run kind`);
-  const effects = effectsOf(world, reading, ledger, { bases });
-  const moves = movesOf(world, reading, ledger, { bases, designs, effects });
+  const effects = effectsOf(world, reading, ledger, { bases, region });
+  const moves = movesOf(world, reading, ledger, { bases, designs, effects, region });
   const landed = [];
   const gaps = [];
   for (let index = 0; index < designs; index += 1) {
-    const id = designId(world, index);
+    const id = designId(world, index, region);
     const entry = ledger.get(id);
     if (!entry) continue;
     if (entry.failure) {
@@ -979,7 +1018,7 @@ export function planOf(world, reading, ledger, { designs, bases, kind, tau = nul
       gaps.push(Object.freeze({ index, id, reason: `This run carries no reading of ${reading.label.toLowerCase()}.` }));
       continue;
     }
-    landed.push({ index, id, value, u: designAt(world, index).u });
+    landed.push({ index, id, value, u: designAt(world, index, region).u });
   }
   const coverage = new Coverage({ wanted: designs, measured: landed.length, gaps: gaps.length, density: designs });
   const values = landed.map((p) => p.value);
@@ -1056,6 +1095,7 @@ export function planOf(world, reading, ledger, { designs, bases, kind, tau = nul
     world,
     reading,
     kind,
+    region,
     moves,
     dots,
     gaps,
@@ -1078,7 +1118,7 @@ export function planOf(world, reading, ledger, { designs, bases, kind, tau = nul
  * The share of a reading two chosen controls explain, scored exactly as a plan
  * is (SC-004's comparison): their own normalised positions as the coordinates.
  */
-export function shareAlong(world, reading, ledger, keys, designs, bases = 0) {
+export function shareAlong(world, reading, ledger, keys, designs, bases = 0, region = Region.EMPTY) {
   const at = keys.map((key) => world.live.indexOf(key));
   if (at.some((j) => j < 0)) throw new Error(`shareAlong: ${keys.join(' and ')} are not all live in this world`);
   const coords = [];
@@ -1087,9 +1127,9 @@ export function shareAlong(world, reading, ledger, keys, designs, bases = 0) {
   // Over the same designs the plan is scored on, or the comparison would set
   // two scores on two samples beside each other.
   for (let index = bases; index < designs; index += 1) {
-    const value = valueOf(reading, ledger.get(designId(world, index)));
+    const value = valueOf(reading, ledger.get(designId(world, index, region)));
     if (value === null) continue;
-    const { u } = designAt(world, index);
+    const { u } = designAt(world, index, region);
     for (const j of at) coords.push(u[j]);
     values.push(value);
     indices.push(index);
@@ -1123,15 +1163,19 @@ export function trendOf(plan, bins = 10) {
  * jump computed from unmatched designs cannot be constructed (SC-007).
  */
 export class MatchedPairs {
-  constructor(home, neighbour, count) {
+  constructor(home, neighbour, count, region = Region.EMPTY) {
     if (!neighbour.world) throw new Error(`the neighbour through ${neighbour.door.id} was refused, so it has no pairs`);
     const pairs = [];
     for (let index = 0; index < count; index += 1) {
-      const [a, b] = matched(home, neighbour, index);
+      // Both sides under one region, which `matched` enforces by taking it
+      // once: a pair drawn half from the constrained space and half from the
+      // whole of it would be a difference of two things at once (FR-051).
+      const [a, b] = matched(home, neighbour, index, region);
       pairs.push(Object.freeze([a.id, b.id]));
     }
     this.home = home;
     this.neighbour = neighbour;
+    this.region = region;
     this.pairs = Object.freeze(pairs);
     Object.freeze(this);
   }
@@ -1224,6 +1268,111 @@ export class Island {
   }
 }
 
+/* ══ what a constraint costs ═════════════════════════════════════════════ */
+
+/**
+ * A constraint whose edge the best measured designs stand against (FR-057).
+ *
+ * That it binds is read off **measured designs inside the region**, so saying
+ * so is always honest: the best tenth of the designs that actually landed are
+ * counted, and a constraint only binds where most of them pile against one of
+ * its own ends.
+ *
+ * What relaxing it would buy is the half that invites a lie, so it is fenced:
+ * `worth` is lettered **only** from completed runs the ledger already holds
+ * outside the region, and where it holds none the binding carries `absence`
+ * instead, which offers to measure a probe just outside with its cost stated
+ * first. It is never extrapolated from the fit, inferred from the gradient at
+ * the edge, or estimated from designs inside the region: every one of those
+ * would be a reading of a building nobody has run, lettered beside readings of
+ * buildings somebody has.
+ */
+export class Binding {
+  constructor({ key, end, share, worth = null, absence = null }) {
+    if (end !== 'from' && end !== 'to') throw new Error(`the constraint on ${key} binds at "${end}", which is not an end of it`);
+    if ((worth === null) === (absence === null)) {
+      throw new Error(
+        `the binding on ${key} carries ${worth === null ? 'neither what relaxing it would buy nor the reason that is not known' : 'both what relaxing it would buy and a reason it is not known'}`,
+      );
+    }
+    if (!(Number.isInteger(share?.at) && Number.isInteger(share?.of) && share.of > 0 && share.at <= share.of)) {
+      throw new Error(`the binding on ${key} counts ${share?.at} of ${share?.of} designs, which is not a share`);
+    }
+    this.key = key;
+    this.end = end;
+    this.share = Object.freeze({ at: share.at, of: share.of });
+    this.worth = worth;
+    this.absence = absence;
+    Object.freeze(this);
+  }
+}
+
+/**
+ * Which of a region's bounds the best designs are standing against, and what
+ * the ledger can honestly say about relaxing each.
+ *
+ * `cost` is what measuring just outside one bound would take, `{ runs,
+ * seconds }`, stated before the offer as the annual consent and each island's
+ * *Measure this world* already state theirs. It is handed in rather than
+ * computed here because the cadence is the desk's, and this module never reads
+ * the desk.
+ */
+export function bindingsOf(plan, ledger, { cost = null } = {}) {
+  const { world, region, reading } = plan;
+  const bindings = [];
+  if (!plan.dots.length || !reading.better) return Object.freeze(bindings);
+  const ranked = [...plan.dots].sort((l, r) => (reading.better === 'lower' ? l.value - r.value : r.value - l.value));
+  const best = ranked.slice(0, Math.max(1, Math.floor(ranked.length / 10)));
+  for (const key of region.bounds.keys()) {
+    const j = world.live.indexOf(key);
+    // A bound on a control dark in this world is kept and stated as reaching
+    // nothing here (FR-056), which is a different sentence from binding.
+    if (j < 0) continue;
+    let atFrom = 0;
+    let atTo = 0;
+    for (const dot of best) {
+      const uj = designAt(world, dot.index, region).u[j];
+      if (!Number.isFinite(uj)) continue;
+      if (uj <= MARGIN.share) atFrom += 1;
+      if (uj >= 1 - MARGIN.share) atTo += 1;
+    }
+    const end = atTo >= atFrom ? 'to' : 'from';
+    const at = end === 'to' ? atTo : atFrom;
+    // Most of the best designs, not merely some: a few designs near an edge is
+    // where designs happen to be, and is not the reader's bound holding them.
+    if (!(at * 2 > best.length)) continue;
+    const bound = region.bounds.get(key);
+    const insideBest = best[0].value;
+    let found = null;
+    for (let index = 0; index < plan.designs; index += 1) {
+      // The unconstrained id, which is what a run measured before this bound
+      // was placed is filed under. Nothing is generated here: if the ledger
+      // does not already hold it, there is no outside reading to be had.
+      const landed = ledger.get(designId(world, index, Region.EMPTY));
+      if (!landed?.readings) continue;
+      const value = valueOf(reading, landed);
+      if (value === null) continue;
+      const stood = designAt(world, index, Region.EMPTY).params[key];
+      if (stood >= bound.from && stood <= bound.to) continue;
+      if (found === null || (reading.better === 'lower' ? value < found : value > found)) found = value;
+    }
+    let worth = null;
+    let absence = null;
+    if (found === null) {
+      // Both within the 12-word ABSENCE budget: a reason beside an em dash is
+      // read at a glance, and the sweep caught these at 18 and 16.
+      absence = cost
+        ? `Measuring ${cost.runs} designs outside this bound takes about ${cost.seconds} s.`
+        : 'No run outside this bound, so what relaxing buys is unmeasured.';
+    } else {
+      const gain = reading.better === 'lower' ? insideBest - found : found - insideBest;
+      worth = gain > 0 ? gain : 0;
+    }
+    bindings.push(new Binding({ key, end, share: { at, of: best.length }, worth, absence }));
+  }
+  return Object.freeze(bindings);
+}
+
 /* ══ the screening ═══════════════════════════════════════════════════════ */
 
 /**
@@ -1233,7 +1382,7 @@ export class Island {
  * *Not yet measured*, never an effect of zero.
  */
 export class ScreeningEntry {
-  constructor({ key, door = null, kind, label, reading, effect = null, signed = null, consistency = null, atStance = null, words = null, inert = null, stage = null }) {
+  constructor({ key, door = null, kind, label, reading, effect = null, signed = null, consistency = null, atStance = null, words = null, inert = null, stage = null, region = Region.EMPTY }) {
     if ((effect === null) === (inert === null)) {
       throw new Error(`the screening entry for "${key}" carries ${effect === null ? 'neither an effect nor a reason' : 'both an effect and a reason'}`);
     }
@@ -1242,6 +1391,11 @@ export class ScreeningEntry {
     }
     this.key = key;
     this.door = door;
+    // The span this row's effect is per (FR-052). An effect across a fifth of
+    // a control's face and an effect across the whole of it are different
+    // measurements, and a table that lettered both as "across its range" would
+    // be two numbers in one wording.
+    this.region = region;
     this.kind = kind; // 'control' | 'door' | 'held' | 'dark'
     this.label = label;
     this.reading = reading;
@@ -1274,9 +1428,12 @@ function wordsFor(effect, atStance, allZero, tau) {
  * The entries and the reasons together name every key in `ALL_KEYS` (SC-011),
  * and the function throws rather than returning a screening that drops one.
  */
-export function screen(world, reading, ledger, { bases, stance = new Map(), neighbours = [], jumps = new Map(), tau }) {
-  const effects = effectsOf(world, reading, ledger, { bases });
+export function screen(world, reading, ledger, { bases, stance = new Map(), neighbours = [], jumps = new Map(), tau, region = Region.EMPTY }) {
+  const effects = effectsOf(world, reading, ledger, { bases, region });
   const entries = [];
+  // Every row of one screening was measured over one region, so it is put on
+  // each entry here rather than at each of the eight places one is built.
+  const entry = (fields) => new ScreeningEntry({ ...fields, region });
   const stageOf = (key) => DESIGN_STAGE[controlFor(key).channel.id]?.stage ?? null;
   world.live.forEach((key, j) => {
     const measured = effects.g.map((row) => row[j]).filter(Number.isFinite);
@@ -1284,12 +1441,12 @@ export function screen(world, reading, ledger, { bases, stance = new Map(), neig
     const pulled = stance.get(key);
     const atStance = pulled && pulled.effect !== null ? pulled.effect * (control.max - control.min) : null;
     if (!measured.length) {
-      entries.push(new ScreeningEntry({ key, kind: 'control', label: labelFor(key), reading, inert: NOT_MEASURED, atStance, stage: stageOf(key) }));
+      entries.push(entry({ key, kind: 'control', label: labelFor(key), reading, inert: NOT_MEASURED, atStance, stage: stageOf(key) }));
       return;
     }
     const effect = mean(measured.map(Math.abs));
     entries.push(
-      new ScreeningEntry({
+      entry({
         key,
         kind: 'control',
         label: labelFor(key),
@@ -1304,23 +1461,23 @@ export function screen(world, reading, ledger, { bases, stance = new Map(), neig
     );
   });
   for (const { key, reason } of world.dark) {
-    entries.push(new ScreeningEntry({ key, kind: 'dark', label: labelFor(key), reading, inert: reason, stage: stageOf(key) }));
+    entries.push(entry({ key, kind: 'dark', label: labelFor(key), reading, inert: reason, stage: stageOf(key) }));
   }
   for (const neighbour of neighbours) {
     const door = neighbour.door;
     const base = { key: neighbour.id, door: door.key ?? door.id, kind: 'door', label: neighbour.label, reading, stage: door.stage };
     if (!neighbour.world) {
-      entries.push(new ScreeningEntry({ ...base, inert: neighbour.refusal }));
+      entries.push(entry({ ...base, inert: neighbour.refusal }));
       continue;
     }
     const jump = jumps.get(neighbour.id);
     if (!jump || !jump.measured) {
-      entries.push(new ScreeningEntry({ ...base, inert: NOT_MEASURED }));
+      entries.push(entry({ ...base, inert: NOT_MEASURED }));
       continue;
     }
     const effect = quantile([...jump.deltas].map(Math.abs).sort((l, r) => l - r), 0.5);
     entries.push(
-      new ScreeningEntry({
+      entry({
         ...base,
         effect,
         signed: jump.median,
@@ -1334,13 +1491,13 @@ export function screen(world, reading, ledger, { bases, stance = new Map(), neig
     const role = roleOf(key);
     if (named.has(key)) continue;
     if (role.role === 'held') {
-      entries.push(new ScreeningEntry({ key, kind: 'held', label: labelFor(key), reading, inert: role.reason, stage: null }));
+      entries.push(entry({ key, kind: 'held', label: labelFor(key), reading, inert: role.reason, stage: null }));
       named.add(key);
     } else if (role.role === 'door') {
       // A door with no neighbour at this world at all — every setting is
       // this one — is listed rather than dropped.
       entries.push(
-        new ScreeningEntry({ key, kind: 'held', label: labelFor(key), reading, inert: 'Offers no other world from here.', stage: null }),
+        entry({ key, kind: 'held', label: labelFor(key), reading, inert: 'Offers no other world from here.', stage: null }),
       );
       named.add(key);
     }

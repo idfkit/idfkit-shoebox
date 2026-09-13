@@ -84,7 +84,7 @@ import {
 } from './survey.js';
 import { createRelief } from './relief.js';
 import { PullReading, axesFrom, entryFrom, pullProbes, pullReadingFor, rankPull } from './pull.js';
-import { VARIED, designAt, neighboursOf, probesAt, worldOf } from './space.js';
+import { Bound, Region, RuledOut, VARIED, designAt, neighboursOf, probesAt, worldOf } from './space.js';
 import {
   DEPTH,
   DesignLedger,
@@ -96,6 +96,7 @@ import {
   MOVES_FROM,
   ONE_MOVE,
   SAME_MOVE,
+  bindingsOf,
   classifyAll,
   designId,
   effectsOf,
@@ -2253,6 +2254,27 @@ let studyScheduler = null; // built with the engine pool once the engine section
 // spelling: it simply throws. See "The strategy plan" in CLAUDE.md.
 const ledger = new DesignLedger();
 let strategyPlan = null; // { readingIds, view, runsAt, lastWorld, stepLabel, entered, focused, asked, queuedFor }
+/**
+ * What the reader has ruled out of the design space (FR-049 to FR-057).
+ *
+ * It belongs to the **desk** rather than to a plan or a world, so it outlives
+ * closing the plan and stepping through a door, and matched designs still
+ * compare like with like across every world (FR-051). `Region.EMPTY` is the
+ * unconstrained desk, so every call site takes a region and none carries a
+ * second path for "no constraints" that could drift from the constrained one.
+ */
+let strategyRegion = Region.EMPTY;
+/**
+ * What the constraint summary was last drawn against, so it is not rebuilt for
+ * nothing, and destroys no field the reader is typing into.
+ *
+ * Up here with the rest of the plan's state rather than beside the function
+ * that reads it, for the reason the studies' state is: `renderStrategy` runs
+ * during boot, long before the foot of this module is evaluated, and a `let`
+ * in its temporal dead zone simply throws. The console's `tagRows` and the
+ * plan's own stance mark both met this trap on their first load.
+ */
+let constraintsDrawn = null;
 const strategyJobs = new Map(); // job id -> job, while queued or running
 let strategyShed = null; // the rest shape the reader set the plan aside at
 let strategyGeneration = 0;
@@ -4447,6 +4469,12 @@ const schemeHash = (p = params) =>
     // decided by the desk above and a frozen sequence, and every measured
     // value, tag and visited world is re-measured by the recipient.
     plan: strategyPlan ? strategyPlan.readingIds : null,
+    // The region, because it decides which designs the sequence even produces
+    // (FR-051). Without it a copied link would sample a different space and
+    // read different numbers under the same address, which is the one thing
+    // Principle II exists to prevent. It rides whether or not a plan is open,
+    // since the studies and the ground are cut from constrained designs too.
+    region: strategyRegion,
   });
 
 /** The absolute form, for the clipboard and the run bundle's manifest. */
@@ -4509,10 +4537,13 @@ function refuseLink(message) {
   syncSweepGate();
   stopAuto();
   revert();
-  // `revert` restores the parameters and the patch bay; the pinned hour is
-  // neither, so it has to be released by name or a refused link would leave
-  // its one surviving claim on the desk.
+  // `revert` restores the parameters and the patch bay; the pinned hour and
+  // the region are neither, so they have to be released by name or a refused
+  // link would leave its one surviving claim on the desk. A region left
+  // standing would be the worst of the two: every later figure would be
+  // measured over a space the reader never asked for, and say so nowhere.
   pinnedHour = null;
+  strategyRegion = Region.EMPTY;
   clearResults();
   history.replaceState(null, '', location.pathname + location.search);
   statusEl.className = 'status bad';
@@ -4557,6 +4588,13 @@ function restoreLinkedSurvey(state) {
  */
 function restoreLinked(state) {
   if (linkRefused) return false;
+  // The region before anything else of the link, by the rule the plan already
+  // established: every figure the plan draws is measured over it, and the
+  // studies and the ground are cut from designs it decides, so a region
+  // restored after them would have them reading a space the link did not ask
+  // for. Nothing is validated here — `decodeRegion` refused the whole link for
+  // anything this desk cannot hold, so what arrives is already honourable.
+  if (state?.region) strategyRegion = state.region;
   const refusal = linkedPlanRefusal(state);
   if (refusal) {
     refuseLink(refusal);
@@ -10732,34 +10770,42 @@ const pairCache = new Map();
 
 /** A plan of one world for one reading, recomputed only when that world has landed something. */
 function planFor(world, reading, depth) {
+  // The region joins the key for the reason it joins the `VALUES` memo: under
+  // a constraint these are different designs with different figures, and a
+  // plan cached before the re-cut would be drawn over it unchanged.
   const key = [world.signature, reading.id, depth.designs, depth.bases, strategyKind(), ledger.epoch, pricingVersion,
-    worldVersion.get(world.signature) ?? 0].join('|');
+    strategyRegion.signature, worldVersion.get(world.signature) ?? 0].join('|');
   let plan = planCache.get(key);
   if (!plan) {
     if (planCache.size > 96) planCache.clear();
-    plan = planOf(world, reading, ledger, { ...depth, kind: strategyKind(), tau: strategyTau(reading).tau });
+    plan = planOf(world, reading, ledger, { ...depth, kind: strategyKind(), tau: strategyTau(reading).tau, region: strategyRegion });
     planCache.set(key, plan);
   }
   return plan;
 }
 
 function neighboursFor(world) {
-  let found = neighbourCache.get(world.signature);
+  // Keyed by the region too: ruling a door out changes which of these carry a
+  // world, and a list cached before the constraint would go on offering it.
+  const key = `${world.signature}|${strategyRegion.signature}`;
+  let found = neighbourCache.get(key);
   if (!found) {
     if (neighbourCache.size > 32) neighbourCache.clear();
-    found = neighboursOf(world);
-    neighbourCache.set(world.signature, found);
+    found = neighboursOf(world, strategyRegion);
+    neighbourCache.set(key, found);
   }
   return found;
 }
 
 /** A neighbour's matched pairs, built by `matched` and therefore asserted (SC-007). */
 function pairsFor(world, neighbour) {
-  const key = `${world.signature}|${neighbour.id}`;
+  const key = `${world.signature}|${neighbour.id}|${strategyRegion.signature}`;
   let pairs = pairCache.get(key);
   if (!pairs) {
     if (pairCache.size > 512) pairCache.clear();
-    pairs = new MatchedPairs(world, neighbour, DEPTH.jump);
+    // Both sides of every pair under one region, which is what keeps a jump a
+    // difference between two runs of one building (FR-051).
+    pairs = new MatchedPairs(world, neighbour, DEPTH.jump, strategyRegion);
     pairCache.set(key, pairs);
   }
   return pairs;
@@ -10919,7 +10965,7 @@ function renderCampaign() {
  */
 /** What one queue of the plan is for: its world, readings, run kind, the islands asked for, the ledger's epoch. */
 function strategyKey(world, { asked = true } = {}) {
-  const parts = [world.signature, strategyPlan.readingIds.join('.'), strategyKind(), ledger.epoch];
+  const parts = [world.signature, strategyPlan.readingIds.join('.'), strategyKind(), ledger.epoch, strategyRegion.signature];
   if (asked) parts.push([...strategyPlan.asked].join(','));
   return parts.join('|');
 }
@@ -11062,15 +11108,23 @@ function queueStrategy() {
   const consent = strategyKey(world, { asked: false });
   const home = lists.designs.length + lists.probes.length;
   const runs = home + lists.neighbours.length;
-  if (annualDesk && runs && strategyPlan.consented !== consent) {
+  // A constrained desk asks on every run kind, not only on a year (FR-056): a
+  // re-cut re-letters at once from what the ledger holds and queues nothing by
+  // itself, so the runs that would fill the new region are offered with their
+  // count and their time and spent only when the reader asks. `strategyKey`
+  // carries the region, so widening or narrowing asks afresh and asking twice
+  // for one region cannot happen.
+  const constrained = strategyRegion.bounds.size > 0 || strategyRegion.ruled.size > 0;
+  if ((annualDesk || constrained) && runs && strategyPlan.consented !== consent) {
     cancelStrategyJobs('replaced');
     strategyPlan.queuedFor = null;
     strategyPlan.pending = Object.freeze({
       key: consent,
       runs,
       home,
+      constrained,
       jumps: lists.neighbours.length,
-      seconds: Math.round((runs * STRATEGY_CADENCE.annual) / Math.max(1, studyCapacity)),
+      seconds: Math.round((runs * STRATEGY_CADENCE[kind]) / Math.max(1, studyCapacity)),
     });
     renderStrategySoon();
     return;
@@ -11191,6 +11245,95 @@ function drawStrategyChooser(offers) {
  * Re-queue where the desk has moved into another world, and nowhere else.
  * A varied slider leaves the world, and every job, exactly where it was.
  */
+/**
+ * Commit, change or remove a constraint: a re-cut, not a filter (FR-056).
+ *
+ * Three things it does and one it deliberately does not. It re-letters every
+ * figure **at once**, from the designs the ledger already holds inside the new
+ * region. It keeps every design measured outside that region in the ledger,
+ * stated as ruled out and left out of every figure, so widening back again is
+ * free (FR-050) — the ledger is never cleared here, only the caches that index
+ * it. It puts the new bounds on the faces. And it **queues no run by itself**:
+ * the runs that would fill the region are offered with their count and their
+ * time, and spent only when the reader asks, which is the consent pattern the
+ * annual cost and each island's *Measure this world* already use.
+ *
+ * Two things stand rather than being refused, each stated where it happens: a
+ * region that excludes the desk's own stance, which is `axisFor`'s own rule
+ * that a reader who constrained past where they are standing has said so; and
+ * a constraint on a control dark in this world, which binds again wherever the
+ * control comes alive, so stepping into another world cannot quietly widen it.
+ */
+function recut(region) {
+  strategyRegion = region;
+  // The three plan caches are keyed by the region, so nothing stale could be
+  // served in any case; they are cleared because every entry taken under the
+  // old region is now unreachable and would only sit there holding memory.
+  planCache.clear();
+  neighbourCache.clear();
+  pairCache.clear();
+  desk?.setBounds(strategyRegion);
+  // Nothing is queued from here. `strategyKey` carries the region and the
+  // consent is taken against that key, so the next `queueStrategy` states the
+  // cost of the new region and waits to be asked for it.
+  if (strategyPlan) strategyPlan.queuedFor = null;
+  renderConstraints();
+  renderStrategy();
+  updatePermalink();
+}
+
+/**
+ * Every constraint in force, at the head of the sequence (FR-054).
+ *
+ * Stated here as well as on the control's own face, because the two answer
+ * different questions: the face says what this control is sampled over, and
+ * this says what the figures below it were measured under. Each is removable
+ * here, and all of them at once.
+ */
+function renderConstraints() {
+  const host = $('strategy-constraints');
+  if (!host) return;
+  // Guarded by the region's own signature, for `renderSurveyChoose`'s reason:
+  // `textContent = ''` destroys the node the reader is typing into, so a bound
+  // typed while the plan fills would lose its focus, its `took` value and
+  // therefore the keystrokes, and commit nothing.
+  if (constraintsDrawn === strategyRegion.signature) return;
+  constraintsDrawn = strategyRegion.signature;
+  host.textContent = '';
+  const bounds = [...strategyRegion.bounds.values()];
+  const ruled = [...strategyRegion.ruled.values()];
+  host.hidden = !(bounds.length || ruled.length);
+  if (host.hidden) return;
+  const chip = (text, without) => {
+    const node = document.createElement('span');
+    node.className = 'strategy-constraint';
+    node.append(document.createTextNode(`${text} `));
+    const off = document.createElement('button');
+    off.type = 'button';
+    off.className = 'link';
+    off.textContent = 'Remove';
+    off.onclick = () => recut(new Region(without));
+    node.append(off);
+    host.append(node);
+  };
+  for (const bound of bounds) {
+    chip(`${labelFor(bound.key)} sampled ${strategyRegion.stateOf(bound.key)}`, [
+      ...bounds.filter((other) => other !== bound),
+      ...ruled,
+    ]);
+  }
+  for (const out of ruled) {
+    const named = out.settings.map((setting) => out.door.label(setting)).join(', ');
+    chip(`Ruled out: ${named}`, [...bounds, ...ruled.filter((other) => other !== out)]);
+  }
+  const all = document.createElement('button');
+  all.type = 'button';
+  all.className = 'link';
+  all.textContent = 'Remove every constraint';
+  all.onclick = () => recut(Region.EMPTY);
+  host.append(all);
+}
+
 function refreshStrategy({ force = false } = {}) {
   if (!strategyPlan || !studyScheduler) return;
   const world = strategyWorld();
@@ -11589,6 +11732,11 @@ function renderStrategy() {
   const world = strategyWorld();
   const readings = strategyReadings();
   const kind = strategyKind();
+  // The constraints stand at the head of the sequence whatever else the plan
+  // is doing, refusal included: a reader who has narrowed the space has to be
+  // able to see and lift that from the same place, even when the plan below it
+  // cannot be drawn.
+  renderConstraints();
   // A reading that stopped being on offer refuses the plan whole, with the
   // offer's own reason and fix, and nothing of the plan is drawn under it.
   const refusal = strategyRefusal(offers);
@@ -11609,7 +11757,10 @@ function renderStrategy() {
   const pending = strategyPlan.pending;
   if (pending && !strategyWaitingReason()) {
     go.hidden = false;
-    go.textContent = `Measure on the weather year: ${pending.runs} annual runs, about ${pending.seconds} s`;
+    go.textContent =
+      kind === 'annual'
+        ? `Measure on the weather year: ${pending.runs} annual runs, about ${pending.seconds} s`
+        : `Measure this region: ${pending.runs} ${kind} runs, about ${pending.seconds} s`;
     go.onclick = () => {
       strategyPlan.consented = pending.key;
       askCampaign();
@@ -11646,6 +11797,12 @@ function renderStrategy() {
 
   const waiting =
     strategyWaitingReason() ??
+    // Held to the 25-word BLOCK budget: the width is already lettered on the
+    // coverage line, so it is not said twice here.
+    (pending && pending.constrained && kind !== 'annual'
+      ? `A constraint runs nothing by itself: ${pending.home} runs would fill this region and ${pending.jumps} the ` +
+        `jumps, about ${pending.seconds} s. Nothing runs until you ask.`
+      : null) ??
     (pending
       ? `On a weather year the plan states its cost before spending it: ${pending.home} runs for this world and ` +
         `${pending.jumps} for the jumps one door away, about ${pending.seconds} s at this desk's cadence, ` +
@@ -11894,7 +12051,7 @@ function renderStrategy() {
       pullStance && pullStance.reading.id === reading.id && deskKey(pullStance.stance, pullStance.patch) === deskKey(params, patching())
         ? new Map(pullEntries().filter((entry) => !entry.inert).map((entry) => [entry.key, entry]))
         : new Map();
-    const entries = screen(world, reading, ledger, { bases: DEPTH.home.bases, stance: pulled, neighbours, jumps, tau: tau.tau });
+    const entries = screen(world, reading, ledger, { bases: DEPTH.home.bases, stance: pulled, neighbours, jumps, tau: tau.tau, region: strategyRegion });
     const scored = entries.filter((entry) => entry.effect !== null).length;
     $('strategy-screen-scope').textContent = ` ${scored} measured · ${entries.length - scored} listed with reasons`;
     $('strategy-screen-lede').textContent =
@@ -12002,6 +12159,27 @@ $('campaign-resume').addEventListener('click', () => resumeCampaign());
 $('campaign-cancel').addEventListener('click', () => cancelCampaign());
 // A strip tag leads to its entry among the kinds of move, readable without
 // hovering (FR-039). The console raises the event; the entry is found here.
+/**
+ * A bound typed on a control's own face (FR-053).
+ *
+ * Refused where it is typed, with the reason, exactly as the survey's extents
+ * are: `Bound` throws naming the step, the face or the direction, and the box
+ * is where the reader can see what they did, so the old value is lettered back
+ * rather than a half-read region being committed.
+ */
+document.addEventListener('ctl-bound', (event) => {
+  const { key, edge, value } = event.detail;
+  const span = strategyRegion.spanOf(key);
+  const next = { from: span.from, to: span.to, [edge]: value };
+  const others = [...strategyRegion.bounds.values()].filter((bound) => bound.key !== key);
+  try {
+    recut(new Region([...others, new Bound({ key, from: next.from, to: next.to }), ...strategyRegion.ruled.values()]));
+  } catch (failure) {
+    strategySay(failure.message);
+    desk?.setBounds(strategyRegion);
+  }
+});
+
 document.addEventListener('ctl-tag', (event) => {
   const target = document.getElementById(event.detail.target);
   if (!target) return;

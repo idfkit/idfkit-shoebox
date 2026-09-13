@@ -325,7 +325,7 @@ Every constraint in force, and the arithmetic that binds them. Frozen. `Region.E
 | `allows(door, setting)` | boolean | |
 | `stateOf(key)` | string or null | the sentence lettered wherever a figure measured in this region stands (FR-052, SC-018) |
 
-**Invariant (SC-017):** every value `snapped` returns under any region lies on the control's own global step grid, anchored at `control.min` and never at `spanOf(key).from`, so one design measured under two regions that both admit it is one cache entry.
+**Invariant (SC-017):** every value `snapped` returns under any region lies on the control's own global step grid, anchored at `control.min` and never at `spanOf(key).from`, so every desk a region can produce is one the unconstrained space could have produced too and two equal desks key one cache entry. The identity is between equal **desks**, never between equal **indices**: `snapped` bins into the span, so design *i* under a narrower region is a different building, which is what makes a constraint narrow the sample rather than filter it.
 
 ### `Binding` (`src/strategy.js`)
 

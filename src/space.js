@@ -735,7 +735,7 @@ export function worldOf(desk, patch) {
  * Exactly one of the two, by the rule `Reading` in `tm59.js` keeps.
  */
 export class Neighbour {
-  constructor({ door, from, setting, world = null, refusal = null }) {
+  constructor({ door, from, setting, world = null, refusal = null, ruledOut = false }) {
     if ((world === null) === (refusal === null)) {
       throw new Error(`the neighbour through ${door.id} carries ${world ? 'both a world and a refusal' : 'neither a world nor a refusal'}`);
     }
@@ -744,11 +744,23 @@ export class Neighbour {
     this.setting = setting;
     this.world = world;
     this.refusal = refusal;
+    // Whether the **reader** ruled this world out or the desk cannot enter it.
+    // Both are listed and neither is measured, but they are different facts and
+    // FR-043 has them lettered as different sentences: one is a constraint the
+    // reader can lift, the other is what the building is.
+    this.ruledOut = ruledOut;
     this.label = door.label(setting);
     this.id = `${door.id}=${String(setting)}`;
     Object.freeze(this);
   }
 }
+
+/**
+ * What a world the reader has ruled out carries, which is deliberately not
+ * what a world the engine cannot enter carries (FR-043, FR-055). The first is
+ * a constraint they can lift; the second is a fact about the building.
+ */
+const RULED_OUT_BY_READER = 'Ruled out by you, and never measured. Remove the constraint to reach it.';
 
 /**
  * Every other setting of every door, entered or refused.
@@ -769,12 +781,15 @@ export function neighboursOf(world, region = Region.EMPTY) {
   // by the reader, which is a different sentence from a world the engine
   // cannot enter, and both lists stand, because FR-043 has the plan say what
   // it has not visited.
-  const ruledOut = (door, setting) => !region.allows(door, setting);
+  const readerRuledOut = (door, setting) => !region.allows(door, setting);
   for (const door of DOORS) {
     if (door.kind === 'patch') {
       const from = world.patch[door.channel.id];
       const setting = !from;
-      if (ruledOut(door, setting)) continue;
+      if (readerRuledOut(door, setting)) {
+        out.push(new Neighbour({ door, from, setting, refusal: RULED_OUT_BY_READER, ruledOut: true }));
+        continue;
+      }
       const patch = { ...world.patch, [door.channel.id]: setting };
       const there = channelState(world.desk, patch).get(door.channel.id);
       if (!setting && !there.engaged) {
@@ -797,8 +812,14 @@ export function neighboursOf(world, region = Region.EMPTY) {
     for (const setting of door.settings) {
       if (setting === from) continue;
       // Ruled out by the reader: no world is built for it and it is never
-      // measured, the same skip the patch doors above take (FR-055).
-      if (ruledOut(door, setting)) continue;
+      // measured, the same skip the patch doors above take (FR-055). Listed
+      // all the same, because a world that simply vanished from the plan would
+      // be the silent omission Principle IV refuses: the reader would see
+      // nineteen worlds where the desk has twenty and nothing would say why.
+      if (readerRuledOut(door, setting)) {
+        out.push(new Neighbour({ door, from, setting, refusal: RULED_OUT_BY_READER, ruledOut: true }));
+        continue;
+      }
       let refusal = null;
       if (here.bypassed) refusal = `Patch ${door.channel.name} in to reach this world.`;
       else if (!here.engaged) refusal = here.blocked;
@@ -875,6 +896,29 @@ function variedAt(index, region = Region.EMPTY) {
  * has to be the same parameters in two worlds and a key dark in one is live in
  * the other.
  */
+/**
+ * The ledger id of one design, and the **one** place its format is written.
+ *
+ * The region rides the id for the reason it rides the `VALUES` memo key: under
+ * a constraint, one index in one world is a **different building**, and the
+ * ledger keys its readings by this string. Without it, narrowing a region
+ * would serve the previous building's readings under an identical key, with
+ * nothing reporting the substitution. An unconstrained design's id is
+ * unchanged, so every entry the ledger already holds still answers, and a
+ * re-cut stays free.
+ *
+ * `strategy.js` needs this id in loops without building a whole `Design`, and
+ * used to spell it out a second time. Two spellings of one id is the drift
+ * that module's own header warns about, and under a region they drifted: the
+ * hand-written one had no `@signature`, so the ledger would have been keyed
+ * two ways for one design and every constrained figure would have read an
+ * empty ledger. So the format lives here, once, and both callers ask for it.
+ */
+export const designIdOf = (world, index, region = Region.EMPTY) =>
+  region.signature === Region.EMPTY.signature
+    ? `${world.signature}:${index}`
+    : `${world.signature}:${index}@${region.signature}`;
+
 export class Design {
   constructor({ index, world, params, u, region = Region.EMPTY }) {
     this.index = index;
@@ -882,15 +926,7 @@ export class Design {
     this.region = region;
     this.params = params;
     this.u = u;
-    // The region rides the id for the reason it rides the `VALUES` memo key:
-    // under a constraint, one index in one world is a **different building**,
-    // and the ledger keys its readings by this string. Without it, narrowing a
-    // region would serve the previous building's readings under an identical
-    // key, with nothing reporting the substitution. An unconstrained design's
-    // id is unchanged, so every entry the ledger already holds still answers.
-    this.id = region.signature === Region.EMPTY.signature
-      ? `${world.signature}:${index}`
-      : `${world.signature}:${index}@${region.signature}`;
+    this.id = designIdOf(world, index, region);
     Object.freeze(this);
   }
 }

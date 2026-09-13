@@ -5294,6 +5294,38 @@
          tag stay at full ink, and it stays focusable and draggable. */
       .ctl-tags { display: flex; flex-wrap: wrap; gap: 3px 10px; margin-top: 3px; }
       .ctl-tags[hidden] { display: none; }
+
+      /* A constrained face (FR-053). The stretch of the range the reader has
+         ruled out is drawn as ruled out, in the strip and in the panel alike,
+         and never only on hover: `pointer: coarse` has no hover, so a hover
+         state would put the whole fact out of reach of a thumb.
+
+         Hatched rather than greyed, and the control itself stays live: a
+         constraint narrows what is *sampled and run*, not what the desk can be
+         set to, so the slider still moves and the reader may still stand
+         outside their own region. That is `axisFor`'s rule, and the stance
+         mark says so where it happens. */
+      .face-out {
+        position: absolute;
+        bottom: 5px;
+        height: 4px;
+        background-image: repeating-linear-gradient(-45deg, var(--rule) 0 1px, transparent 1px 4px);
+        pointer-events: none;
+      }
+      .face-out[hidden] { display: none; }
+      /* The two typed bounds under a control's face, the surface the survey's
+         extent boxes already use (`quantityField`). */
+      .ctl-bounds { display: flex; align-items: baseline; gap: 4px; margin-top: 3px; }
+      .ctl-bounds[hidden] { display: none; }
+      .ctl-bounds > b {
+        font: 400 10.5px/1.4 var(--cond);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--ink-3);
+      }
+      .ctl-bounds .num-field { font-size: 11px; }
+      .strategy-constraints { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0 0; }
+      .strategy-constraints[hidden] { display: none; }
       .ctl-tag {
         min-width: 0;
         min-height: 0;
@@ -6019,6 +6051,11 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
                (FR-001b). -->
           <p class="eyebrow" id="strategy-reading-title">1 · What is this plan of?</p>
           <div id="strategy-readings" role="group" aria-label="Readings the plan is drawn for"></div>
+          <!-- Every constraint in force, stated again at the head of the
+               sequence so it reads in both places: on the control's own face
+               where it was typed, and here beside the figures it decides
+               (FR-054). Each is removable here, and all of them at once. -->
+          <div class="strategy-constraints" id="strategy-constraints" hidden></div>
           <p class="survey-note" id="strategy-waiting" hidden></p>
           <button type="button" class="link" id="strategy-go" hidden></button>
           <p class="survey-note" id="strategy-entered" hidden></p>

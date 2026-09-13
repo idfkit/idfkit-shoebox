@@ -161,6 +161,16 @@ export function mountConsole({
   // parameter key -> the line under its face that letters what the model was
   // given for it. See `setDerived`.
   const derivedLines = new Map();
+  // Which controls carry typed bounds, and the region they are lettered from.
+  // The console holds the region only to draw it: it is the desk's, and every
+  // change to it comes back through `setBounds`.
+  const boundRows = new Map();
+  let boundsRegion = null;
+  /** The stretch of a control actually sampled: its own face where nothing binds it. */
+  const spanOf = (control) => {
+    const bound = boundsRegion?.bounds.get(control.key);
+    return bound ? { from: bound.from, to: bound.to } : { from: control.min, to: control.max };
+  };
   // The rows a strip tag can stand on: one entry per control row, each naming
   // the keys it owns. A scale and a selector own one; a plan key owns its four
   // walls and the boundary key its six faces, each tagged with its own letter.
@@ -643,7 +653,17 @@ export function mountConsole({
       step: control.step,
     });
     input.setAttribute('aria-label', control.label);
-    face.append(ruling, ghostTick, tick, input);
+    // The stretches of the face the reader has ruled out, drawn as ruled out
+    // (FR-053). Two of them, because a bound may cut either end or both, and
+    // they sit under the tick so the pen still reads over the hatch. The
+    // control itself stays live: a constraint narrows what is sampled and run,
+    // not what the desk can be set to, so the reader may still stand outside
+    // their own region and the stance mark says so where that happens.
+    const outLow = el('i', 'face-out');
+    const outHigh = el('i', 'face-out');
+    outLow.hidden = true;
+    outHigh.hidden = true;
+    face.append(ruling, outLow, outHigh, ghostTick, tick, input);
 
     row.append(head, face);
     const marks = buildMarks(control);
@@ -665,6 +685,32 @@ export function mountConsole({
     derived.hidden = true;
     row.append(derived);
     derivedLines.set(control.key, derived);
+    // Typed bounds, on the control's own face, through the same
+    // `quantityField` the survey's extent boxes use: two boxes for a range is
+    // an existing component pattern, and the parsing is `Ruled.parse`'s, so
+    // these accept exactly what the control can hold and refuse the rest
+    // whole, the way a bad link is refused. Hidden until a constraint is
+    // placed, so an unconstrained strip carries no extra line.
+    const bounds = el('div', 'ctl-bounds');
+    bounds.hidden = true;
+    bounds.append(el('b', null, 'Sample'));
+    const boxes = ['from', 'to'].map((edge) => {
+      const field = quantityField({
+        control,
+        name: `${control.label} sampled ${edge}`,
+        read: () => spanOf(control)[edge],
+        // The console owns no region: it raises the typed value and main.js
+        // commits it, exactly as a strip tag raises where it leads.
+        write: (v) => bounds.dispatchEvent(
+          new CustomEvent('ctl-bound', { bubbles: true, detail: { key: control.key, edge, value: v } }),
+        ),
+      });
+      bounds.append(field.node);
+      if (edge === 'from') bounds.append(el('span', 'survey-extent-rule', 'to'));
+      return field;
+    });
+    row.append(bounds);
+    boundRows.set(control.key, { control, bounds, boxes, outLow, outHigh });
     if (control.note) row.append(noteFold(control));
 
     input.addEventListener('input', () => {
@@ -2567,6 +2613,42 @@ export function mountConsole({
         const said = (byChannel.get(channel.id) ?? []).map((tag) => `${tag.label}: ${tag.text}`).join(' · ');
         here.tagline.textContent = said;
         here.tagline.hidden = !said;
+      }
+    },
+
+    /**
+     * Letter every constraint on the faces it binds (FR-053).
+     *
+     * Replaces the whole set, as `setTags` does: a control with no bound in
+     * the region shows no boxes and no hatch, never the last one it had. The
+     * hatch is drawn from the control's own `fraction`, so it lines up with
+     * the tick above it whatever the scale does.
+     *
+     * Each box calls its own `show()`, because a `quantityField` writes
+     * nothing until something asks it to and a field built and appended alone
+     * stands empty — which is what the survey's extent boxes did before they
+     * were lettered on the way in.
+     */
+    setBounds(region) {
+      boundsRegion = region;
+      for (const { control, bounds, boxes, outLow, outHigh } of boundRows.values()) {
+        const bound = region?.bounds.get(control.key) ?? null;
+        bounds.hidden = !bound;
+        for (const box of boxes) box.show();
+        const pen = (node, from, to) => {
+          const a = clamp(control.fraction(from), 0, 1) * 100;
+          const b = clamp(control.fraction(to), 0, 1) * 100;
+          node.hidden = !(b > a);
+          node.style.left = `${a}%`;
+          node.style.width = `${Math.max(0, b - a)}%`;
+        };
+        if (!bound) {
+          outLow.hidden = true;
+          outHigh.hidden = true;
+          continue;
+        }
+        pen(outLow, control.min, bound.from);
+        pen(outHigh, bound.to, control.max);
       }
     },
 
