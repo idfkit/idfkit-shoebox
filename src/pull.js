@@ -135,7 +135,13 @@ function inertReason(control, side, channel, engaged, snapshot) {
   if (!engaged.has(channel.id)) {
     return `The ${channel.name} channel is out of the path, so this control reaches no object.`;
   }
-  if (control.inert?.(snapshot)) return control.note ?? 'Set, but reaching no object at this stance.';
+  // `idle` is the declaration's own question — drawn, and its `needs` unmet —
+  // and it is the one the console greys a row with. This line used to ask
+  // `control.inert?.()`, which no control declares, so the optional call was
+  // always undefined and a control whose own precondition failed was probed
+  // anyway and came back as an exact zero: `infConstant` at `infiltration: 0`
+  // ranked as "does not move it" when the truth is that it reaches nothing.
+  if (control.idle(snapshot)) return control.note ?? 'Set, but reaching no object at this stance.';
   if (side && !side.reaches(snapshot)) return side.reasonFor(snapshot);
   return null;
 }

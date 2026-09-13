@@ -21,6 +21,7 @@
  *                                safe against the pump.
  *   runSample(built)           — the pool; resolves to an engine result
  *   readPoint(job, result, built) — extract every answerable quantity, or null
+ *                                (handed the context as a fourth argument)
  *   refuses(job, value)        — SYNCHRONOUS and pure: the sentence saying why
  *                                this position is not the building the sweep
  *                                is about, or null. A refused position is
@@ -32,7 +33,9 @@
  *                                which is also why it must be pure and cheap
  *   contextFor(job)            — SYNCHRONOUS: facts the quantity readers
  *                                needs that the sweep does not change, built
- *                                once for the whole study (see below)
+ *                                once for the whole study (see below);
+ *                                contextFor(job, index) for a design-list job,
+ *                                once per distinct world it carries
  *   paused()                   — true while a gesture is in progress
  *   capacity()                 — how many samples may be in flight at once
  *   onUpdate(job, event)       — 'point' | 'done' | 'failed' | 'cancelled',
@@ -73,9 +76,44 @@ export function makeStudyJob({
   origin,
   asked,
   openingBasis = null,
+  designs = null,
+  held = false,
 }) {
   if (!Array.isArray(points) || !points.length || points.some((v) => !Number.isFinite(v))) {
-    throw new Error(`makeStudyJob: the study of ${key} carries no numeric positions to sample`);
+    throw new Error(`makeStudyJob: the study of ${key ?? id} carries no numeric positions to sample`);
+  }
+  // A job whose points are whole designs rather than positions of one key.
+  //
+  // A study moves one control and a plan design moves every varied control at
+  // once, so the strategy plan cannot be expressed as positions along a face.
+  // It could be expressed as a thousand one-point jobs, and the round-robin
+  // below would then hand a study one dispatch in 1,025 — FR-011's "must not
+  // delay" broken by arithmetic. So a job may carry its designs outright, and
+  // `points` are then just their indices, which keeps every other line of this
+  // module — the order, the curve, `started`, `done` — exactly as it was.
+  if (designs !== null) {
+    if (!Array.isArray(designs) || !designs.length) {
+      throw new Error(`makeStudyJob: the design-list job ${id} carries no designs`);
+    }
+    if (points.length !== designs.length || points.some((value, at) => value !== at)) {
+      throw new Error(
+        `makeStudyJob: the design-list job ${id} has ${designs.length} designs, so its points must be the ` +
+          'indices 0 to n − 1 and nothing else',
+      );
+    }
+    designs.forEach((entry, at) => {
+      if (!entry?.params || !entry?.patch) {
+        throw new Error(`makeStudyJob: design ${at} of ${id} carries no ${entry?.params ? 'patch' : 'params'}`);
+      }
+    });
+    // With no single key there is nothing for `omits` to default to, and a
+    // job the cancel point cannot take the rest shape of would be cancelled on
+    // every apply the desk makes — including the ones its own samples cause.
+    if (omits === null || omits === undefined) {
+      throw new Error(`makeStudyJob: the design-list job ${id} must say which keys its rest shape leaves out`);
+    }
+  } else if (!key) {
+    throw new Error('makeStudyJob: a study with no designs needs the key it sweeps');
   }
   const named = new Set(order);
   if (named.size !== points.length || order.some((i) => !Number.isInteger(i) || i < 0 || i >= points.length)) {
@@ -116,7 +154,7 @@ export function makeStudyJob({
     omits,
     points,
     order,
-    origin, // 'manual' | 'refresh' | 'survey' | 'pull'
+    origin, // 'manual' | 'refresh' | 'survey' | 'pull' | 'strategy'
     asked, // the sample count requested — the coarse pass is later densified
     openingBasis,
     curve: new Array(points.length),
@@ -128,8 +166,20 @@ export function makeStudyJob({
     // which is the cost this exists to avoid.
     context: null,
     contextTaken: false,
+    // A design-list job's designs, and its contexts memoised by each entry's
+    // own `context` signature. A plan's neighbours job mixes worlds, and a
+    // world's `roomType` decides the occupied-hour floor TM59 a and c read, so
+    // one context per job would judge every design against the first design's
+    // room. Frozen, because the scheduler reads an entry at dispatch time and a
+    // caller mutating one in between would run a desk nobody queued.
+    designs: designs === null ? null : Object.freeze([...designs]),
+    contexts: designs === null ? null : new Map(),
     done: 0,
     total: points.length,
+    // Held by the reader rather than cancelled (`holdWhere`): the job keeps its
+    // place, its `order`, `started` and `curve`, and dispatches nothing until
+    // released, so a resumed campaign continues exactly where it stopped.
+    held,
     state: 'queued', // -> 'done' | 'cancelled'
     cancelled: false, // false | 'stopped' | 'moved' | 'cleared'
   };
@@ -180,6 +230,10 @@ export function createStudyScheduler({
   let wasIdle = true;
 
   const active = (job) => job.state === 'queued' && !job.cancelled;
+  // What may dispatch now. A held job is still active, so it keeps its identity
+  // in `byKey`, can be cancelled and superseded, and counts in `progress`; it is
+  // only never taken.
+  const takeable = (job) => active(job) && !job.held;
 
   function identities(job, value, carried = job.carried) {
     const identity = keyOf(job, value, carried);
@@ -242,6 +296,11 @@ export function createStudyScheduler({
   const readingOf = (entry, quantity) => entry?.readings?.[quantity] ?? null;
   const drew = (point) => point?.reading != null;
 
+  // Why a sample landed as a gap: the message its build, its run or its reader
+  // threw. It travels with the landing, so a job riding another's run is
+  // handed the same reason by the same promise.
+  const reasonOf = (error) => String(error?.message ?? error ?? '') || null;
+
   /**
    * One curve point, built in one place.
    *
@@ -250,23 +309,36 @@ export function createStudyScheduler({
    * being the same shape as a point that landed — so a curve rebuilt on a
    * quantity change lost every refusal it had, and counted those positions as
    * runs still to come.
+   *
+   * `failure` and `refused` are two different facts about a gap and are passed
+   * as one options object rather than one positional argument, because they
+   * arrived from opposite directions and briefly shared a slot: `dispatch`
+   * passed a refusal where the promise handlers passed `reasonOf(error)`, so
+   * every engine failure would have lettered as a refusal of the position,
+   * which is exactly the distinction the note below exists to keep.
    */
-  const pointAt = (job, value, sample, refused = null) => ({
+  const pointAt = (job, value, sample, { failure = null, refused = null } = {}) => ({
     value,
     reading: readingOf(sample, job.quantity),
     ...(sample?.readings ?? {}),
     sample,
+    // The engine's, and says nothing about the position.
+    failure,
     // Kept apart from a failed run, which is also a point with no reading:
     // a failure is the engine's and says nothing about the position, where
     // a refusal is a fact about the position and has a sentence to say.
     refused,
   });
 
-  function land(job, index, sample, refused = null) {
+  function land(job, index, sample, gap = {}) {
     if (!active(job)) return; // cancelled while this sample was in flight
-    job.curve[index] = pointAt(job, job.points[index], sample, refused);
+    job.curve[index] = pointAt(job, job.points[index], sample, gap);
     job.done += 1;
-    onUpdate(job, 'point');
+    // The index rides along for a design-list job's reader, which files each
+    // landing once into its own ledger; walking a curve of thousands on every
+    // point to find the one that just arrived would be quadratic. Every other
+    // caller ignores the third argument.
+    onUpdate(job, 'point', index);
     if (job.done < job.total) return;
     job.state = 'done';
     drop(job);
@@ -309,7 +381,7 @@ export function createStudyScheduler({
    * be served *only*.
    */
   function takeNext() {
-    const live = jobs.filter(active);
+    const live = jobs.filter(takeable);
     if (!live.length) return null;
     if (cursor >= live.length) cursor = 0;
     for (let n = 0; n < live.length; n += 1) {
@@ -333,7 +405,7 @@ export function createStudyScheduler({
     // Landed synchronously and outside `inFlight`, like a cache hit.
     const refusal = refuses(job, value);
     if (refusal) {
-      land(job, index, null, refusal);
+      land(job, index, null, { refused: refusal });
       return;
     }
     const { identity, entry: hit } = lookup(job, value);
@@ -355,8 +427,8 @@ export function createStudyScheduler({
           land(job, index, point);
           drain();
         },
-        () => {
-          land(job, index, null);
+        (error) => {
+          land(job, index, null, { failure: reasonOf(error) });
           drain();
         },
       );
@@ -398,9 +470,19 @@ export function createStudyScheduler({
     // the study's first dispatch. It must not touch the shared document —
     // that is `buildSample`'s one synchronous breath and nothing else may be
     // inside it.
-    if (!job.contextTaken) {
-      job.context = contextFor(job);
-      job.contextTaken = true;
+    let context;
+    if (job.designs) {
+      // Per distinct world rather than per job, and still never per sample:
+      // a hundred designs in one world ask once, as a study does.
+      const signature = String(job.designs[index].context ?? '');
+      if (!job.contexts.has(signature)) job.contexts.set(signature, contextFor(job, index));
+      context = job.contexts.get(signature);
+    } else {
+      if (!job.contextTaken) {
+        job.context = contextFor(job);
+        job.contextTaken = true;
+      }
+      context = job.context;
     }
 
     inFlight += 1;
@@ -408,7 +490,7 @@ export function createStudyScheduler({
     const promise = (async () => {
       const built = buildSample(job, value);
       const result = await runSample(built);
-      return result?.success ? readPoint(job, result, built) : null;
+      return result?.success ? readPoint(job, result, built, context) : null;
     })();
     pending.set(pendingKey, promise);
     promise.then(
@@ -421,11 +503,12 @@ export function createStudyScheduler({
         land(job, index, sample);
         drain();
       },
-      () => {
-        // The run could not be attempted at all. Same gap as a failed run.
+      (error) => {
+        // The build, the run or the reader threw. Same gap as a failed run,
+        // carrying what was thrown.
         if (pending.get(pendingKey) === promise) pending.delete(pendingKey);
         inFlight -= 1;
-        land(job, index, null);
+        land(job, index, null, { failure: reasonOf(error) });
         drain();
       },
     );
@@ -446,7 +529,9 @@ export function createStudyScheduler({
       if (!next) break;
       dispatch(next.job, next.index);
     }
-    const idle = inFlight === 0 && !jobs.some(active);
+    // A queue holding only held jobs is idle: nothing will dispatch until the
+    // reader releases them, and the studies' densify pass waits on 'idle'.
+    const idle = inFlight === 0 && !jobs.some(takeable);
     if (idle && !wasIdle) onUpdate(null, 'idle');
     wasIdle = idle;
   }
@@ -509,6 +594,22 @@ export function createStudyScheduler({
       drain();
     },
 
+    /**
+     * Hold or release every active job the predicate matches, then drain.
+     *
+     * The plan's Pause, and deliberately not a cancel: a cancelled job loses
+     * its place in the round-robin and re-queueing it rebuilds its design
+     * lists, where a held one resumes by clearing a flag. Nor is it `paused()`,
+     * which would stop every study and the survey with it. A run already on an
+     * engine is untouched and lands as usual.
+     */
+    holdWhere(pred, held) {
+      for (const job of jobs) {
+        if (active(job) && pred(job)) job.held = held;
+      }
+      drain();
+    },
+
     /** Whether a job is queued or running under this identity. */
     has: (id) => Boolean(byKey.get(id)),
 
@@ -527,7 +628,7 @@ export function createStudyScheduler({
         // ever end — which is what it did when only `dispatch` asked.
         const refusal = refuses(job, value);
         if (refusal) {
-          curve.push(pointAt(job, value, null, refusal));
+          curve.push(pointAt(job, value, null, { refused: refusal }));
           continue;
         }
         const { entry } = lookup(job, value);

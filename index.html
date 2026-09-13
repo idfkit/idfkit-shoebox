@@ -48,6 +48,15 @@
 
         --vellum: #f1ede4; /* the trace sheet the console is drawn on */
         --desk: 436px; /* the console at its narrowest: one column of strips */
+        --planner: 436px; /* the strategy plan's panel, the console's width mirrored */
+        /* The most the panel grows to, and the one number here that is
+           declared rather than derived: it is set so the ground and the relief
+           can stand side by side inside it at all, which is the 620px `--pair`
+           asks for plus the panel's own padding. Whether the value holds at the
+           widths it claims is quickstart gate 16, not arithmetic. */
+        --planner-max: 720px;
+        --sheet-min: 720px; /* the least measure the drawing keeps with both panels open */
+        --rail: 168px; /* a folded panel: its head alone, the ledger column's own width */
         --card: 320px; /* the least width a strip column will take before the desk folds one away */
 
         --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -91,6 +100,10 @@
         -webkit-font-smoothing: antialiased;
         display: flex;
         justify-content: center;
+        /* Whether the plan's panel and the console stand open together at
+           full width. Flipped once, by the media query beside the `.desk`
+           rules, and read back by `bothFit()` in main.js. */
+        --both: 1;
       }
 
       .sheet {
@@ -2572,12 +2585,23 @@
         align-items: flex-start;
         padding-right: 0;
       }
-      body.desk-open .sheet {
+      /* The drawing keeps its own measure, and the panels take what is left
+         (FR-046b). `--sheet-min` was declared from the start and used in no
+         rule at all, existing only to document the arithmetic behind the
+         1,624px boundary below; this is the job it was waiting for, and it is
+         the half of FR-046b that matters, since "the sheet reaches its own
+         minimum before the panel takes any surplus" is a statement about the
+         sheet's `min-width` and not about the panel's growth. */
+      body.desk-open .sheet,
+      body.planner-open .sheet {
         flex: 0 1 1080px;
-        min-width: 0;
+        min-width: var(--sheet-min);
       }
 
-      .desk {
+      /* The panel box, shared by the console and the plan's panel (below),
+         which differ only in the side they stand on. */
+      .desk,
+      .planner {
         position: sticky;
         top: 16px;
         max-height: calc(100vh - 32px);
@@ -2586,6 +2610,8 @@
         min-height: 0;
         background: var(--vellum);
         border: 1px solid var(--rule-firm);
+      }
+      .desk {
         border-right: 0;
         border-radius: var(--r) 0 0 var(--r);
         margin-left: -1px;
@@ -2595,7 +2621,99 @@
         flex: 1 0 var(--desk);
       }
 
-      .desk-head {
+      /* ── the strategy plan's panel ─────────────────────────────────
+         The console's mirror on the left, on the same board and by the same
+         argument: a second sheet laid beside the drawing, not a drawer over
+         it. The body stays a flex row — planner, sheet, desk — for the reason
+         given above against a grid, which applies twice over with two panels
+         growing into the same surplus. The panel is after the sheet in the
+         DOM and drawn before it with `order`, so focus reads sheet, plan,
+         console. */
+      body.planner-open {
+        align-items: flex-start;
+        padding-left: 0;
+      }
+      .planner {
+        order: -1;
+        border-left: 0;
+        border-radius: 0 var(--r) var(--r) 0;
+        margin-right: -1px;
+      }
+      /* It grows from its base width into whatever the drawing has not taken,
+         and stops at `--planner-max`. `flex-shrink` is 1 rather than the
+         console's 0: the panel now holds two square drawings and a sequence of
+         six parts, so where the window is too narrow to carry the sheet's
+         measure and the panel's base width both, it is the panel that gives
+         way and never the drawing. */
+      body.planner-open .planner {
+        display: flex;
+        flex: 1 1 var(--planner);
+        max-width: var(--planner-max);
+      }
+      .planner-body { overflow-y: auto; flex: 1; min-height: 0; }
+      .campaign {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 4px 14px;
+        margin-top: 6px;
+      }
+      .campaign[hidden] { display: none; }
+      .campaign-state { margin: 0; font: 400 11.5px/1.45 var(--sans); color: var(--ink-2); }
+      .campaign-acts { display: flex; gap: 14px; }
+
+      /* Whether both panels fit beside the drawing at full width: the sheet
+         at `--sheet-min` and each panel at its own width, 720 + 436 + 436 =
+         1,592px, plus 32px of slack for a classic scrollbar and the two
+         hairlines the panels overlap, is 1,624px. Declared here once and read
+         back by `bothFit()`; the number appears nowhere else. Narrower than
+         that, opening one panel folds the other to its head. The query stops
+         a fraction short of the line because `max-width` is inclusive: written
+         as 1624px it folded a panel at exactly the width that carries both. */
+      @media (max-width: 1623.98px) {
+        body { --both: 0; }
+        /* And below that line the drawing gives up its minimum again, because
+           there is no surplus left to allocate: a folded rail and a console
+           that does not shrink, plus a sheet held at 720px, add up to more than
+           the window has, and the page would scroll sideways. Surplus is what
+           FR-046b apportions, so the minimum binds exactly where surplus
+           exists. Written here rather than as its own query so the 1,624px
+           stays declared in one place. */
+        body.desk-open .sheet,
+        body.planner-open .sheet { min-width: 0; }
+      }
+
+      /* A folded panel is its head alone, a rail the ledger column's width,
+         that still reads: for the plan its readings, its campaign state and
+         its three controls, stacked; for the console its name and actions.
+         Pressing it swaps the two. */
+      body.planner-folded .planner,
+      body.desk-folded .desk { flex: 0 0 var(--rail); }
+      body.planner-folded .planner-body,
+      body.desk-folded .desk > :not(.desk-head),
+      body.desk-folded .desk-brief,
+      body.desk-folded .desk-widen { display: none; }
+      body.planner-folded .planner-head,
+      body.desk-folded .desk-head { grid-template-columns: 1fr; cursor: pointer; }
+      body.planner-folded .planner-head .desk-actions,
+      body.desk-folded .desk-head .desk-actions {
+        grid-row: auto;
+        grid-column: 1;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+      }
+      body.planner-folded .campaign,
+      body.planner-folded .campaign-acts { flex-direction: column; align-items: flex-start; gap: 6px; }
+      /* The unfold press exists only on a rail. */
+      .desk-head .unfold,
+      .planner-head .unfold { display: none; }
+      body.planner-folded .planner-head .unfold,
+      body.desk-folded .desk-head .unfold { display: inline; }
+
+      .desk-head,
+      .planner-head {
         padding: 16px 18px 14px;
         border-bottom: 1px solid var(--rule);
         display: grid;
@@ -2604,14 +2722,16 @@
         align-items: baseline;
         flex: none;
       }
-      .desk-head h2 {
+      .desk-head h2,
+      .planner-head h2 {
         grid-column: 1;
         margin: 4px 0 0;
         font: 600 17px/1.1 var(--cond);
         text-transform: uppercase;
         letter-spacing: 0.05em;
       }
-      .desk-head .eyebrow { grid-column: 1; }
+      .desk-head .eyebrow,
+      .planner-head .eyebrow { grid-column: 1; }
       .desk-actions {
         grid-row: 1 / span 2;
         grid-column: 2;
@@ -4055,17 +4175,35 @@
         /* No width left to take a column of, so the desk goes below the sheet
            and gives up its sticky rail. */
         body.desk-open { display: block; padding-right: 12px; }
+        /* The plan's panel does the same, and lands where the DOM puts it:
+           block layout ignores `order`, so it stands after the sheet and
+           before the console, head first, its campaign controls the first
+           thing it shows. Stacked, both panels fit, so `--both` is 1 and no
+           fold applies. */
+        body { --both: 1; }
+        body.planner-open { display: block; padding-left: 12px; }
+        .planner,
         .desk {
           position: static;
           max-height: none;
-          margin-left: 0;
-          border-right: 1px solid var(--rule-firm);
+          border: 1px solid var(--rule-firm);
           border-radius: var(--r);
         }
+        .planner { margin: 0 0 12px; }
+        .desk { margin-left: 0; }
         /* The desk becomes its own index sheet: see `.strips.index` above.
            This is the one place the breakpoint is declared; the console reads
            the flag back rather than knowing the number. */
         .strips { --index: 1; overflow-y: visible; }
+        .strategy { --cards: 1; }
+        .strip-tags {
+          display: block;
+          flex-basis: 100%;
+          font: 400 10.5px/1.35 var(--sans);
+          color: var(--ink-3);
+          text-align: left;
+        }
+        .strip-tags[hidden] { display: none; }
         /* The index is one list read top to bottom; columns would cut it in
            half and put channels 09–17 beside 00–08 instead of after them. */
         .strip-grid { column-width: auto; column-count: auto; }
@@ -4318,24 +4456,38 @@
          used here at all and the ground is graphite. That is the same
          argument that keeps the bill uncoloured, one drawing along.
 
-         `--survey`, below, is this feature's one layout threshold. It answers
-         a different question from `--index` and from the schedules' 620px: not
-         "can the window hold a column" and not "can a table keep its columns",
-         but "can the plan and the relief stand side by side". They are two
-         drawings of one ground, each wanting its own square, so they part
-         company some way above the width at which a table does.
+         `--pair`, on `.survey-body` below, is this feature's one layout
+         threshold. It answers a different question from `--index` and from the
+         schedules' 620px: not "can the window hold a column" and not "can a
+         table keep its columns", but "can the ground and the relief stand side
+         by side". They are two drawings of one ground, each wanting its own
+         square, so they part company some way above the width at which a table
+         does.
 
-         Unlike `--index` and `--fold` it is **not** read back by script, and
-         that is the honest state rather than an omission: nothing in E-02
-         behaves differently by layout. The relief draws at full mesh on every
-         device by decision (FR-018k), the plan's own drawing is a fixed viewBox
-         that scales, and the schedules fold on their own breakpoint. A
-         read-back with no consumer is the second source of truth the
-         declare-once rule exists to prevent, inverted — so there is none, and
-         no `matchMedia` string either. Give it one the day a module actually
-         needs to ask. ────────────────────────────────────────────────────── */
+         It is a **container** query, and that is the whole point of it. E-02
+         used to stand on the sheet, where the window's width and its own were
+         near enough the same thing, and it asked `@media` accordingly. In the
+         plan's panel they are not the same thing at all: at 436px inside a
+         1,920px window the media query never fires, and the two squares would
+         each stand about 200px wide with `aspect-ratio: 1 / 1` holding them
+         square. That is FR-046b's "one column at every width" broken by a rule
+         that cannot see its own container. A container query is a platform API,
+         which Principle V prefers to any script that would measure the panel
+         and set a class, and `.planner-body` is already a size container for
+         the screening table's own fold.
+
+         The height clause the window query carried is gone with it, and
+         nothing is lost: an inline-size container cannot ask about height, and
+         below 600px tall `--index` already sends the whole panel under the
+         sheet, which is the same answer a short window wanted.
+
+         Unlike the `--survey` flag it replaces, `--pair` is read back, and it
+         has a real consumer rather than a hoped-for one: the panel grows with
+         the window, so this threshold can be crossed by a drag that never
+         crosses the 1,624px line, and the relief is the one drawing that
+         cannot notice for itself. The resize listener in `main.js` asks for the
+         flag and repaints it. ──────────────────────────────────────────────── */
       .survey {
-        --survey: 0;
         margin-top: 26px;
         padding-top: 20px;
         border-top: 1px solid var(--rule-firm);
@@ -4637,10 +4789,14 @@
       .survey-note { margin: 12px 0 0; font-size: 12px; line-height: 1.55; }
       .survey-note.bad { color: var(--redline); }
 
-      /* Two drawings of one ground, each wanting a square. */
+      /* Two drawings of one ground, each wanting a square. One column until
+         the container is wide enough to give each of them one, which is the
+         `--pair` query below: the sequence is one column at every width
+         (FR-046b), and this pair is the only two-column thing in the panel. */
       .survey-body {
+        --pair: 0;
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1fr);
         gap: 18px;
         margin-top: 16px;
       }
@@ -4654,6 +4810,19 @@
          `.bill[hidden]` are each the fix for. Any new class that sets or
          unsets `display` and is toggled by the attribute needs its own. */
       .survey-body[hidden] { display: none; }
+
+      /* Two squares and the gap between them, measured against the panel's own
+         width rather than the window's. 620px is two ~300px squares and the
+         18px gap, which is the narrowest a pair of them is worth drawing at;
+         below it the ground takes the full column and the relief stands under
+         it. `--pair` is read back by the resize listener in `main.js`, which
+         repaints the relief when this line is crossed. */
+      @container (min-width: 620px) {
+        .survey-body {
+          --pair: 1;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        }
+      }
 
       .survey-plan,
       .survey-relief { margin: 0; min-width: 0; }
@@ -4909,6 +5078,250 @@
       }
       .pull-pick:hover { color: var(--redline); }
 
+      /* ── The strategy plan ───────────────────────────────────────────────
+         The whole design space for one reading, under the pull it answers
+         the question before. Graphite for magnitude, hairlines for the
+         frame, the accent only where the desk stands; the terrain is paint
+         on a canvas under the SVG and carries no figure (FR-019, FR-022). */
+      .strategy {
+        --cards: 0;
+        padding: 14px 18px 24px;
+      }
+
+      .strategy-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+
+      .strategy-lede,
+      .strategy-note {
+        margin: 6px 0 10px;
+        max-width: 68ch;
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--ink-3);
+      }
+
+      .strategy-offers,
+      .strategy-inert,
+      .strategy-designs,
+      .strategy-kind-list,
+      .island-cards {
+        list-style: none;
+        margin: 8px 0 0;
+        padding: 0;
+      }
+
+      .strategy-offers { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+      .strategy-offers li { display: flex; align-items: baseline; gap: 6px; min-width: 0; flex-wrap: wrap; }
+
+      /* A reading offered is a small stamp; chosen, it takes the markup
+         pen's border, and `aria-pressed` says the same thing in words. */
+      .strategy-reading,
+      .strategy-view {
+        min-width: 0;
+        min-height: 0;
+        padding: 3px 8px;
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        background: var(--sheet);
+        color: var(--ink-2);
+        font: 400 11.5px/1.3 var(--sans);
+        cursor: pointer;
+      }
+      .strategy-reading[aria-pressed="true"],
+      .strategy-view[aria-pressed="true"] { border-color: var(--redline); color: var(--ink); }
+      .strategy-reading:disabled { color: var(--ink-ghost); cursor: default; }
+      .strategy-why { font-size: 11px; line-height: 1.4; color: var(--ink-3); }
+      .strategy-views { display: flex; gap: 8px; flex-wrap: wrap; }
+
+      /* One column that can never be wider than the sheet. An implicit grid
+         track is `auto`, and a grid item's minimum width is its content's:
+         the screening table's widest row stretched the column past the
+         sheet's edge, and every drawing below then read that stretched
+         `clientWidth` and drew itself as wide. `minmax(0, 1fr)` and
+         `min-width: 0` hand the width back to the sheet, and the table
+         scrolls inside its own box, the one thing on a page allowed to. */
+      .strategy { min-width: 0; }
+      .strategy-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: 12px; }
+      .strategy-body > *,
+      .strategy-part,
+      .strategy-island { min-width: 0; }
+      .strategy-schedule { overflow-x: auto; }
+      .strategy-body[hidden] { display: none; }
+      .strategy-figure { margin: 6px 0 0; }
+      .strategy-figure[hidden] { display: none; }
+
+      .strategy-plan,
+      .strategy-one { position: relative; width: 100%; }
+      .strategy-plan canvas { position: absolute; top: 0; left: 0; width: 100%; height: auto; }
+      .plan-svg { position: relative; display: block; width: 100%; height: auto; }
+      .plan-svg:focus-visible { outline: 1px solid var(--rule-focus); outline-offset: 2px; }
+      .plan-frame { fill: none; stroke: var(--rule-firm); stroke-width: 1; }
+      .plan-dot { fill: var(--ink); stroke: var(--sheet); stroke-width: 0.75; }
+      .plan-stance { fill: var(--redline); stroke: var(--sheet); stroke-width: 1; }
+      .plan-stance-line { stroke: var(--redline); stroke-width: 1; }
+      .plan-cursor { fill: none; stroke: var(--redline); stroke-width: 1.2; }
+      .plan-trend { fill: none; stroke: var(--ink-2); stroke-width: 1.3; stroke-dasharray: 4 3; }
+      .plan-axis { font: 400 10px var(--sans); fill: var(--ink-3); }
+
+      /* The screening folds by its column, not by the window. The schedules'
+         620px is a viewport question, and it was the right one while the plan
+         stood on the sheet; in the plan's own panel, 436px wide on a monitor
+         1,900px across, the viewport query never fires and the table ran to
+         1,738px, its words column unwrapped and every figure right of the
+         first scrolled out of a column that cannot show them. So the panel's
+         body is a size container and the fold is restated for this one table
+         against the column's width, with the same data-head lettering, so a
+         folded row reads exactly as a folded row anywhere else on the sheet.
+         `keepTableSemantics` already states the table roles, which is what
+         makes a grid row safe to read aloud. */
+      .planner-body { container-type: inline-size; }
+      @container (max-width: 620px) {
+        .strategy-schedule thead { display: none; }
+        .strategy-schedule tbody { display: block; }
+        .strategy-schedule tr {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
+          align-items: start;
+          padding: 9px 0;
+          border-bottom: 1px solid var(--rule-soft);
+        }
+        .strategy-schedule tbody tr:last-child { border-bottom: 0; }
+        .strategy-schedule td,
+        .strategy-schedule td + td { padding: 0; border-bottom: 0; }
+        .strategy-schedule td:first-child { width: auto; padding-bottom: 4px; text-align: left; }
+        .strategy-schedule td[data-head] {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 2px 0;
+          min-width: 0;
+          white-space: normal;
+          text-align: right;
+        }
+        .strategy-schedule td[data-head]::before {
+          content: attr(data-head);
+          flex: 1 1 auto;
+          min-width: 0;
+          font: 500 9.5px/1.35 var(--cond);
+          text-transform: uppercase;
+          letter-spacing: 0.11em;
+          text-align: left;
+          color: var(--ink-3);
+          overflow-wrap: anywhere;
+        }
+      }
+
+      .strategy-axis { margin: 0; max-width: 72ch; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+      .strategy-axis b { font-weight: 500; color: var(--ink); }
+      .strategy-part { margin-top: 16px; }
+
+      /* The ring is the overview on a wide sheet; below the index threshold
+         the cards are the whole archipelago. `--cards` is read back by
+         `renderStrategy`, the arrangement `--index` uses. */
+      .island-ring { display: block; width: 100%; height: auto; }
+      .island-home { fill: var(--inset); stroke: var(--rule-firm); }
+      .island-marker { fill: var(--sheet); stroke: var(--ink-2); stroke-width: 1; }
+      .island-marker.plan { fill: var(--ink-2); }
+      .island.chosen .island-marker { stroke: var(--redline); stroke-width: 1.5; }
+      .island { cursor: pointer; }
+      .island-no { font: 400 9px var(--mono); fill: var(--ink); pointer-events: none; }
+      .island-marker.plan + .island-no { fill: var(--sheet); }
+      .island-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; }
+      .island-card {
+        display: grid;
+        gap: 2px;
+        width: 100%;
+        min-width: 0;
+        min-height: 0;
+        padding: 6px 8px;
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        background: var(--sheet);
+        color: var(--ink);
+        font: 400 12px/1.4 var(--sans);
+        text-align: left;
+        cursor: pointer;
+      }
+      .island-card b { font-weight: 500; }
+      .island-card small { font: 400 11px/1.4 var(--mono); color: var(--ink-3); }
+      .island-card[aria-pressed="true"] { border-color: var(--redline); }
+      .strategy-island { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--rule); background: var(--inset); }
+      .strategy-island[hidden] { display: none; }
+
+      .strategy-designs { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+      .strategy-design {
+        min-width: 0;
+        min-height: 0;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--ink-2);
+        font: 400 11px/1.5 var(--mono);
+        font-variant-numeric: tabular-nums;
+        cursor: pointer;
+      }
+      .strategy-design:hover { color: var(--redline); }
+
+      #strategy-screen { width: 100%; border-collapse: collapse; }
+      #strategy-screen td,
+      #strategy-screen th { padding: 5px 8px 5px 0; text-align: left; vertical-align: baseline; }
+      #strategy-screen td + td,
+      #strategy-screen th + th { padding-left: 14px; }
+      #strategy-screen .num { font: 400 11px/1.3 var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+      #strategy-screen tbody tr { border-bottom: 1px solid var(--rule-soft); }
+      #strategy-screen tr.group th { padding-top: 12px; font: 500 11px/1.3 var(--sans); color: var(--ink-3); }
+      #strategy-screen tr.chosen td { color: var(--redline); }
+      .strategy-inert { display: grid; gap: 4px; font-size: 11.5px; line-height: 1.5; color: var(--ink-3); }
+      .strategy-inert b { font-weight: 500; color: var(--ink-2); }
+
+      .strategy-kind h4 { margin: 12px 0 0; font: 500 12px/1.4 var(--sans); color: var(--ink); }
+      .strategy-kind-list { display: grid; gap: 6px; }
+      .strategy-move { font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+      .strategy-move b { font-weight: 500; color: var(--ink); }
+      .strategy-move:focus { outline: 1px solid var(--rule-focus); outline-offset: 2px; }
+      .strategy-held { color: var(--ink-3); }
+
+      /* A classification printed where the hand is: one short line under a
+         control's face, a button to its entry in the moves panel. A free
+         control is dimmed at the face only, less than an idle one, because
+         free for two readings is not reaching nothing; its label, value and
+         tag stay at full ink, and it stays focusable and draggable. */
+      .ctl-tags { display: flex; flex-wrap: wrap; gap: 3px 10px; margin-top: 3px; }
+      .ctl-tags[hidden] { display: none; }
+      .ctl-tag {
+        min-width: 0;
+        min-height: 0;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--ink-2);
+        font: 400 10.5px/1.35 var(--sans);
+        text-align: left;
+        text-decoration: underline dotted var(--rule-firm);
+        text-underline-offset: 2px;
+        cursor: pointer;
+      }
+      .ctl-tag[hidden] { display: none; }
+      .ctl-tag:hover { color: var(--redline); }
+      .ctl.free > .face,
+      .ctl.free > .segments { opacity: 0.62; }
+      /* One wall of a plan key, or one face of the boundary key, free while
+         its neighbours are not: its own bar dims, and the legend beside it
+         keeps its figure at full ink. */
+      .ctl [data-tag-key].free { opacity: 0.62; }
+      .strip-head-tags { margin: 0 0 4px; }
+
+      /* The folded row's copy of the tags, drawn only where the row is the
+         whole reading: below the index threshold. */
+      .strip-tags { display: none; }
+      .strip-tags[hidden] { display: none; }
+
       /* The key to the ground. A drawing that carries five different marks
          has to name them somewhere the reader can see without hovering. */
       .ground-key {
@@ -5045,18 +5458,6 @@
       .survey-stamp div:nth-child(4n) { border-right: 0; }
       .survey-stamp div { border-bottom: 0; }
 
-      /* ── E-02 on a narrower window ──────────────────────────────────────
-         The plan and the relief stop standing side by side well before a
-         table stops keeping its columns, because each of them wants a square
-         and two squares in one measure is two very small squares. Height is
-         asked as well as width, by the rule that caught the console out: two
-         squares and a schedule stacked in a short window is a page of
-         scrolling with nothing on the screen to say where you are. */
-      @media (max-width: 900px), (max-height: 620px) {
-        .survey { --survey: 1; }
-        .survey-body { grid-template-columns: minmax(0, 1fr); }
-      }
-
     </style>
   </head>
   <body>
@@ -5191,6 +5592,10 @@
                 </div>
               </div>
             </div>
+            <button type="button" class="deskbtn" id="planner-open" aria-expanded="false" aria-controls="planner">
+              <span class="toggle-main">Strategy plan</span>
+              <span class="toggle-sub" id="planner-count">The whole design space</span>
+            </button>
             <button type="button" class="deskbtn" id="desk-open" aria-expanded="false" aria-controls="desk">
               <span class="toggle-main">Model console</span>
               <span class="toggle-sub" id="desk-count">Every control on the desk</span>
@@ -5386,151 +5791,6 @@
             </div>
           </section>
 
-          <!-- E-02, the design space survey. A second drawing on the same
-               sheet: one chosen reading surveyed over two chosen controls, cut
-               through the desk's current stance. Everything on it is built out
-               of completed EnergyPlus runs; the contours and the relief are
-               inference drawn between them and say so in place, on both, because
-               a continuous surface is read as continuous data wherever it is
-               drawn. Written by `renderSurvey` in main.js. -->
-          <section class="survey" id="survey" aria-labelledby="survey-title" hidden>
-            <header class="survey-head">
-              <div>
-                <p class="eyebrow" id="survey-title">Design space survey<span class="base" id="survey-axes"></span></p>
-                <p class="survey-lede" id="survey-lede"></p>
-              </div>
-              <div class="survey-acts">
-                <button type="button" class="link" id="survey-fall" hidden>Let it fall</button>
-                <button type="button" class="link" id="survey-clear" hidden>Clear the survey</button>
-              </div>
-            </header>
-
-            <!-- The chooser: two axes and one or two readings, every offer
-                 carrying its own refusal where it cannot be taken. -->
-            <div class="survey-choose" id="survey-choose"></div>
-
-            <!-- The pull: every sweepable control ranked by how far it moves
-                 the chosen reading at the stance. The question that comes
-                 before the ground — which two controls are worth cutting one
-                 along — answered from real runs rather than from a hypothesis
-                 the reader already had. Written by `renderPull` in main.js. -->
-            <section class="pull" id="pull" hidden>
-              <div class="pull-head">
-                <p class="eyebrow">What is pulling this design<span class="base" id="pull-scope"></span></p>
-                <button type="button" class="link" id="pull-read">Read the pull</button>
-              </div>
-              <p class="pull-lede" id="pull-lede"></p>
-              <table id="pull-table"></table>
-              <button type="button" class="link" id="pull-more" hidden></button>
-              <p class="survey-note" id="pull-inert"></p>
-            </section>
-
-            <!-- A refusal stands where the ground would have been, never
-                 beside an empty drawing. -->
-            <p class="survey-note bad" id="survey-refusal" hidden></p>
-
-            <div class="survey-body" id="survey-drawing" hidden>
-              <figure class="survey-plan">
-                <div class="ground" id="survey-ground"></div>
-                <!-- What every mark on the ground means, printed under it.
-                     Each one lived only in a `<title>` before, which under a
-                     coarse pointer does not exist at all — and a reader who
-                     cannot name a mark cannot read the drawing. -->
-                <ul class="ground-key" id="survey-key"></ul>
-                <figcaption>
-                  <span class="fig">Fig. 2</span>
-                  <span id="survey-plan-cap"></span>
-                </figcaption>
-              </figure>
-              <figure class="survey-relief">
-                <div class="relief" id="survey-relief" role="img" aria-label="Relief of the surveyed ground"></div>
-                <div class="relief-views" id="survey-views" role="group" aria-label="Viewpoint"></div>
-                <figcaption>
-                  <span class="fig">Fig. 3</span>
-                  <span id="survey-relief-cap"></span>
-                </figcaption>
-              </figure>
-            </div>
-
-            <!-- The design under the reader, in full, in one line. This is
-                 what the schedule of spot heights used to be: that table
-                 carried every position of the ground, which is 144 rows on a
-                 fine one and — since `.schedule` folds at 620px — some five
-                 hundred lines of table on a phone, under two drawings.
-
-                 It was carrying three real jobs and every one of them is a
-                 question about one design at a time. The plan letters only
-                 every second position on each axis past a ground of seven, so
-                 108 of 144 figures were lettered nowhere else; both drawings
-                 are `role="img"`, so their figures are invisible to assistive
-                 technology and the table was the only route to any of them;
-                 and the relief can refuse to draw. So the line is
-                 `role="status"` — a polite live region, which the cursor's
-                 sentence never had — and it is lettered by pointing at a tick
-                 or by walking the ground with the arrow keys.
-
-                 It is a reading, so it is never folded. Written by
-                 `renderSpotReadout` in main.js. -->
-            <p class="spot-readout" id="survey-spot" role="status"></p>
-
-            <!-- Load bearing, not decoration. The relief is smooth, so it does
-                 not report its own sample density the way a faceted one would;
-                 these two figures are the only thing separating a coarse survey
-                 from a convincing picture of one. -->
-            <p class="survey-coverage" id="survey-coverage"></p>
-
-            <!-- The traverse: every design the desk has stood on this session,
-                 in order, each one restorable. It is drawn on the plan as a
-                 chain of ghost marks, but the plan can only show the stops that
-                 fall inside the current extent — so the list is where the rest
-                 of them live, and it is where the keyboard reaches all of them.
-                 Written by `renderTraverse` in main.js. -->
-            <section class="traverse" id="traverse" hidden>
-              <p class="eyebrow">Where this desk has stood<span class="base" id="traverse-count"></span></p>
-              <table id="traverse-table"></table>
-            </section>
-            <p class="finding" id="survey-finding"></p>
-
-            <!-- The complete record: every measured design with its own
-                 figures. Shut by default, because open it is 144 rows on a
-                 fine ground and — since `.schedule` folds each row into a
-                 block at 620px — some five hundred lines of table on a phone,
-                 under two drawings.
-
-                 This is the one table of readings on the sheet that sits
-                 behind a disclosure, so the rule it looks like it breaks is
-                 worth stating. "Readings never go in a fold" is about the
-                 reading the page is *for*, and that stands in view: the
-                 readout above letters the design under the reader in full and
-                 always, the coverage line says how much was measured, and the
-                 plan carries its own figures. This holds the record, which is
-                 a different thing — the same shape as the TM59 qualifications
-                 block, where the count stays in view and the entries are one
-                 press down. The summary carries the count for that reason: a
-                 reader who never opens it must still know what it holds.
-
-                 Static markup rather than built by `fold()`, because
-                 `renderSurvey` runs on every landed sample and a rebuilt
-                 `<details>` would slam shut under a reader who had opened it
-                 — the hazard that made `renderSurveyChoose` stop rebuilding
-                 the extent fields. Only the table inside is rewritten, by
-                 `renderSpots` in main.js. -->
-            <details class="fold schedule-fold" data-fold="survey:spots">
-              <summary>Schedule of spot heights<span class="base" id="survey-spots-scope"></span></summary>
-              <section class="schedule">
-                <table id="survey-spots"></table>
-              </section>
-            </details>
-
-            <!-- E-02's own title-block cells. The sheet below is E-01's and
-                 says what produced the run; this says what produced the ground. -->
-            <div class="titleblock survey-stamp">
-              <div><span>Sheet</span><b>E-02</b><i>Design space survey</i></div>
-              <div><span>Ground</span><b id="s-ground">—</b><i id="s-ground-sub">Positions asked for</i></div>
-              <div><span>Reading</span><b id="s-reading">—</b><i id="s-reading-sub">Surveyed quantity</i></div>
-              <div><span>Runs</span><b id="s-runs">—</b><i id="s-runs-sub">Completed simulations</i></div>
-            </div>
-          </section>
         </div>
       </div>
 
@@ -5715,6 +5975,297 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
       </details>
     </main>
 
+    <!-- The strategy plan's own panel, the console's mirror on the left.
+         It used to be drawn inside E-02 under the pull, where a plan of the
+         whole design space was a section a screen below the drawing it
+         moves; a panel beside the sheet keeps the plan and the building in
+         view together, as the console keeps the controls. After the sheet in
+         the DOM and before it on screen (`order: -1`), so focus reads sheet,
+         plan, console. The head is what the folded rail shows, so it carries
+         the readings, the campaign's state and its three controls. -->
+    <aside class="planner" id="planner" aria-label="Strategy plan">
+      <header class="planner-head" id="planner-head">
+        <p class="eyebrow">Design space<span class="base" id="strategy-scope"></span></p>
+        <h2 id="strategy-title">Strategy plan</h2>
+        <span class="desk-actions">
+          <button type="button" class="link unfold" id="planner-unfold">Open wide</button>
+          <button type="button" class="link" id="planner-close">Close</button>
+        </span>
+        <div class="campaign" id="campaign" hidden>
+          <p class="campaign-state" id="campaign-state" role="status"></p>
+          <span class="campaign-acts">
+            <button type="button" class="link" id="campaign-pause" hidden>Pause</button>
+            <button type="button" class="link" id="campaign-resume" hidden>Resume</button>
+            <button type="button" class="link" id="campaign-cancel" hidden>Cancel</button>
+          </span>
+        </div>
+      </header>
+      <div class="planner-body">
+        <!-- The strategy plan: the whole design space for one reading,
+             drawn along the two moves that decide it, with the worlds one
+             door away as islands. Every dot is a completed run; the
+             terrain under them is inference and says so; every island's
+             jump is measured on matched designs. Written by
+             `renderStrategy` in main.js, drawn by `strategy-view.js`. -->
+        <section class="strategy" id="strategy" aria-labelledby="strategy-title">
+          <div class="strategy-head">
+            <p class="strategy-lede" id="strategy-lede"></p>
+            <button type="button" class="link" id="strategy-close" hidden>Close the plan</button>
+          </div>
+          <!-- Part 1 of six. Every part's number and question are in the
+               markup and never composed at render, so the sequence reads the
+               same with nothing measured as with everything measured, and no
+               part can be renumbered by what happens to have landed
+               (FR-001b). -->
+          <p class="eyebrow" id="strategy-reading-title">1 · What is this plan of?</p>
+          <div id="strategy-readings" role="group" aria-label="Readings the plan is drawn for"></div>
+          <p class="survey-note" id="strategy-waiting" hidden></p>
+          <button type="button" class="link" id="strategy-go" hidden></button>
+          <p class="survey-note" id="strategy-entered" hidden></p>
+          <div class="strategy-body" id="strategy-body">
+            <section class="strategy-part" aria-labelledby="strategy-plan-title">
+              <p class="eyebrow" id="strategy-plan-title">2 · What decides this reading?</p>
+              <p class="strategy-lede" id="strategy-plan-lede"></p>
+              <div class="strategy-views" id="strategy-views" role="group" aria-label="Which reading the plan is drawn for"></div>
+              <figure class="strategy-figure">
+                <div class="strategy-plan" id="strategy-plan"></div>
+                <figcaption>
+                  <span class="fig">Fig. 4</span>
+                  <span id="strategy-plan-cap"></span>
+                </figcaption>
+              </figure>
+              <p class="strategy-axis" id="strategy-axis-x"></p>
+              <p class="strategy-axis" id="strategy-axis-y"></p>
+              <p class="survey-coverage" id="strategy-share"></p>
+              <p class="survey-coverage" id="strategy-coverage"></p>
+              <p class="spot-readout" id="strategy-spot" role="status"></p>
+              <p class="survey-note" id="strategy-limits" hidden></p>
+              <figure class="strategy-figure" id="strategy-one" hidden>
+                <div class="strategy-one" id="strategy-one-plot"></div>
+                <figcaption>
+                  <span class="fig">Fig. 5</span>
+                  <span id="strategy-one-cap"></span>
+                </figcaption>
+              </figure>
+            </section>
+
+            <section class="strategy-part" aria-labelledby="strategy-islands-title">
+              <p class="eyebrow" id="strategy-islands-title">3 · What is one door away?<span class="base" id="strategy-islands-scope"></span></p>
+              <p class="strategy-lede" id="strategy-islands-lede"></p>
+              <div id="strategy-ring"></div>
+              <div id="strategy-cards"></div>
+              <p class="survey-note" id="strategy-same" hidden></p>
+              <p class="survey-note" id="strategy-refused" hidden></p>
+              <div class="strategy-island" id="strategy-island" hidden>
+                <p class="eyebrow" id="strategy-island-title"></p>
+                <p class="strategy-lede" id="strategy-island-lede"></p>
+                <button type="button" class="link" id="strategy-measure" hidden></button>
+                <p class="survey-note" id="strategy-island-failed" hidden></p>
+                <div class="strategy-plan" id="strategy-island-plan"></div>
+                <p class="strategy-axis" id="strategy-island-axis-x" hidden></p>
+                <p class="strategy-axis" id="strategy-island-axis-y" hidden></p>
+                <p class="survey-note" id="strategy-island-cap" hidden></p>
+                <ol class="strategy-designs" id="strategy-island-designs"></ol>
+              </div>
+            </section>
+
+            <section class="strategy-part" aria-labelledby="strategy-screen-title">
+              <p class="eyebrow" id="strategy-screen-title">4 · What pulls anywhere in this world?<span class="base" id="strategy-screen-scope"></span></p>
+              <p class="strategy-lede" id="strategy-screen-lede"></p>
+              <section class="schedule strategy-schedule">
+                <table id="strategy-screen"></table>
+              </section>
+              <p class="survey-coverage" id="strategy-screen-runs"></p>
+              <ul class="strategy-inert" id="strategy-inert"></ul>
+            </section>
+
+            <!-- E-02, the design space survey. A second drawing on the same
+                 sheet: one chosen reading surveyed over two chosen controls, cut
+                 through the desk's current stance. Everything on it is built out
+                 of completed EnergyPlus runs; the contours and the relief are
+                 inference drawn between them and say so in place, on both, because
+                 a continuous surface is read as continuous data wherever it is
+                 drawn. Written by `renderSurvey` in main.js. -->
+            <section class="survey strategy-part" id="survey" aria-labelledby="survey-title">
+              <header class="survey-head">
+                <div>
+                  <p class="eyebrow" id="survey-title">5 · What does the ground look like along two of them?<span class="base" id="survey-axes"></span></p>
+                  <p class="survey-lede" id="survey-lede"></p>
+                </div>
+                <div class="survey-acts">
+                  <button type="button" class="link" id="survey-fall" hidden>Let it fall</button>
+                  <button type="button" class="link" id="survey-clear" hidden>Clear the survey</button>
+                </div>
+              </header>
+
+              <!-- Why the two topographic drawings in this panel follow
+                   opposite rules, said once, where they meet (FR-019a).
+                   Both are surfaces over a reading, and the difference is a
+                   fact about what each one measured rather than a matter of
+                   style, so neither is brought to the other's convention: the
+                   ground is measured along two chosen controls and carries
+                   contours and a relief, the terrain is inference along moves
+                   and carries neither. In place and never on hover, by the
+                   rule that put what *Chase* means above the scoreboard,
+                   since `pointer: coarse` has no hover at all. -->
+              <p class="survey-note" id="survey-conventions">
+                The ground below is measured along two chosen controls and carries contours and a relief.
+                The terrain above is inference along moves and carries neither.
+              </p>
+
+              <!-- The chooser: two axes and one or two readings, every offer
+                   carrying its own refusal where it cannot be taken. -->
+              <div class="survey-choose" id="survey-choose"></div>
+
+              <!-- The pull: every sweepable control ranked by how far it moves
+                   the chosen reading at the stance. The question that comes
+                   before the ground — which two controls are worth cutting one
+                   along — answered from real runs rather than from a hypothesis
+                   the reader already had. Written by `renderPull` in main.js. -->
+              <section class="pull" id="pull" hidden>
+                <div class="pull-head">
+                  <p class="eyebrow">What is pulling this design<span class="base" id="pull-scope"></span></p>
+                  <button type="button" class="link" id="pull-read">Read the pull</button>
+                </div>
+                <p class="pull-lede" id="pull-lede"></p>
+                <table id="pull-table"></table>
+                <button type="button" class="link" id="pull-more" hidden></button>
+                <p class="survey-note" id="pull-inert"></p>
+              </section>
+
+              <!-- A refusal stands where the ground would have been, never
+                   beside an empty drawing. -->
+              <p class="survey-note bad" id="survey-refusal" hidden></p>
+
+              <!-- The two drawing frames stay down until a ground has been
+                   cut, and that is not the gate FR-001a forbids. The part
+                   itself stands and its lede says what it waits on; what is
+                   withheld here is a pair of empty framed squares, which are
+                   furniture rather than a reading, a verdict or a refusal.
+                   Standing them empty is the measured defect the `[hidden]`
+                   twin on this class was written for. -->
+              <div class="survey-body" id="survey-drawing" hidden>
+                <figure class="survey-plan">
+                  <div class="ground" id="survey-ground"></div>
+                  <!-- What every mark on the ground means, printed under it.
+                       Each one lived only in a `<title>` before, which under a
+                       coarse pointer does not exist at all — and a reader who
+                       cannot name a mark cannot read the drawing. -->
+                  <ul class="ground-key" id="survey-key"></ul>
+                  <figcaption>
+                    <span class="fig">Fig. 2</span>
+                    <span id="survey-plan-cap"></span>
+                  </figcaption>
+                </figure>
+                <figure class="survey-relief">
+                  <div class="relief" id="survey-relief" role="img" aria-label="Relief of the surveyed ground"></div>
+                  <div class="relief-views" id="survey-views" role="group" aria-label="Viewpoint"></div>
+                  <figcaption>
+                    <span class="fig">Fig. 3</span>
+                    <span id="survey-relief-cap"></span>
+                  </figcaption>
+                </figure>
+              </div>
+
+              <!-- The design under the reader, in full, in one line. This is
+                   what the schedule of spot heights used to be: that table
+                   carried every position of the ground, which is 144 rows on a
+                   fine one and — since `.schedule` folds at 620px — some five
+                   hundred lines of table on a phone, under two drawings.
+
+                   It was carrying three real jobs and every one of them is a
+                   question about one design at a time. The plan letters only
+                   every second position on each axis past a ground of seven, so
+                   108 of 144 figures were lettered nowhere else; both drawings
+                   are `role="img"`, so their figures are invisible to assistive
+                   technology and the table was the only route to any of them;
+                   and the relief can refuse to draw. So the line is
+                   `role="status"` — a polite live region, which the cursor's
+                   sentence never had — and it is lettered by pointing at a tick
+                   or by walking the ground with the arrow keys.
+
+                   It is a reading, so it is never folded. Written by
+                   `renderSpotReadout` in main.js. -->
+              <p class="spot-readout" id="survey-spot" role="status"></p>
+
+              <!-- Load bearing, not decoration. The relief is smooth, so it does
+                   not report its own sample density the way a faceted one would;
+                   these two figures are the only thing separating a coarse survey
+                   from a convincing picture of one. -->
+              <p class="survey-coverage" id="survey-coverage"></p>
+
+              <!-- The traverse: every design the desk has stood on this session,
+                   in order, each one restorable. It is drawn on the plan as a
+                   chain of ghost marks, but the plan can only show the stops that
+                   fall inside the current extent — so the list is where the rest
+                   of them live, and it is where the keyboard reaches all of them.
+                   Written by `renderTraverse` in main.js. -->
+              <section class="traverse" id="traverse" hidden>
+                <p class="eyebrow">Where this desk has stood<span class="base" id="traverse-count"></span></p>
+                <table id="traverse-table"></table>
+              </section>
+              <p class="finding" id="survey-finding"></p>
+
+              <!-- The complete record: every measured design with its own
+                   figures. Shut by default, because open it is 144 rows on a
+                   fine ground and — since `.schedule` folds each row into a
+                   block at 620px — some five hundred lines of table on a phone,
+                   under two drawings.
+
+                   This is the one table of readings on the sheet that sits
+                   behind a disclosure, so the rule it looks like it breaks is
+                   worth stating. "Readings never go in a fold" is about the
+                   reading the page is *for*, and that stands in view: the
+                   readout above letters the design under the reader in full and
+                   always, the coverage line says how much was measured, and the
+                   plan carries its own figures. This holds the record, which is
+                   a different thing — the same shape as the TM59 qualifications
+                   block, where the count stays in view and the entries are one
+                   press down. The summary carries the count for that reason: a
+                   reader who never opens it must still know what it holds.
+
+                   Static markup rather than built by `fold()`, because
+                   `renderSurvey` runs on every landed sample and a rebuilt
+                   `<details>` would slam shut under a reader who had opened it
+                   — the hazard that made `renderSurveyChoose` stop rebuilding
+                   the extent fields. Only the table inside is rewritten, by
+                   `renderSpots` in main.js. -->
+              <details class="fold schedule-fold" data-fold="survey:spots">
+                <summary>Schedule of spot heights<span class="base" id="survey-spots-scope"></span></summary>
+                <section class="schedule">
+                  <table id="survey-spots"></table>
+                </section>
+              </details>
+
+              <!-- E-02's own title-block cells. The sheet below is E-01's and
+                   says what produced the run; this says what produced the ground. -->
+              <div class="titleblock survey-stamp">
+                <div><span>Sheet</span><b>E-02</b><i>Design space survey</i></div>
+                <div><span>Ground</span><b id="s-ground">—</b><i id="s-ground-sub">Positions asked for</i></div>
+                <div><span>Reading</span><b id="s-reading">—</b><i id="s-reading-sub">Surveyed quantity</i></div>
+                <div><span>Runs</span><b id="s-runs">—</b><i id="s-runs-sub">Completed simulations</i></div>
+              </div>
+            </section>
+
+            <section class="strategy-part" id="strategy-moves-part" aria-labelledby="strategy-moves-title">
+              <p class="eyebrow" id="strategy-moves-title">6 · What should be decided now?<span class="base" id="strategy-moves-scope"></span></p>
+              <p class="strategy-lede" id="strategy-moves-lede"></p>
+              <div id="strategy-moves"></div>
+            </section>
+
+            <!-- The complete record: every measured design of this world,
+                 each one a building to stand on. Static markup, for the
+                 reason the spot-height schedule is: a fold rebuilt on every
+                 landed run would slam shut under a reader who opened it. -->
+            <details class="fold schedule-fold" data-fold="strategy:designs">
+              <summary>Every measured design<span class="base" id="strategy-designs-scope"></span></summary>
+              <ol class="strategy-designs" id="strategy-designs"></ol>
+            </details>
+          </div>
+        </section>
+      </div>
+    </aside>
+
     <aside class="desk" id="desk" aria-label="Model console">
       <header class="desk-head">
         <p class="eyebrow">Recall sheet</p>
@@ -5728,6 +6279,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
                and it is absent rather than disabled when there is nothing to
                clear — a desk with no studies on it should not say the word. -->
           <button type="button" class="link" id="desk-clear-studies" hidden>Clear studies</button>
+          <button type="button" class="link unfold" id="desk-unfold">Open wide</button>
           <button type="button" class="link" id="desk-revert">Revert all</button>
           <button type="button" class="link" id="desk-close">Close</button>
         </span>

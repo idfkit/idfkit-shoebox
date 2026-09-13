@@ -413,6 +413,20 @@ export function createRelief(host, { onLost = null } = {}) {
 
   function resize() {
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    // A measurement taken of a hidden element is not a measurement, so a zero
+    // box is refused and the last good size stands.
+    //
+    // This module sizes itself off its host on every paint and has no
+    // `ResizeObserver`, which was harmless while the relief stood on the sheet
+    // and is not in the plan's panel: `body.planner-folded .planner-body` is
+    // `display: none`, so a host inside a folded panel measures 0, and the
+    // `Math.max(1, ...)` floor below would turn that into a 1 by 1 backing
+    // store. On a finished survey no further sample ever lands to correct it,
+    // so the reader would unfold the panel onto a single pixel of terrain for
+    // the rest of the session. Refused here, the canvas keeps the backing
+    // store it was last drawn at and the drawing is correct the moment the
+    // panel is shown again, with nothing having to be re-measured.
+    if (host.clientWidth <= 0 || host.clientHeight <= 0) return;
     const width = Math.max(1, Math.round(host.clientWidth * ratio));
     const height = Math.max(1, Math.round(host.clientHeight * ratio));
     if (canvas.width !== width || canvas.height !== height) {

@@ -161,6 +161,12 @@ export function mountConsole({
   // parameter key -> the line under its face that letters what the model was
   // given for it. See `setDerived`.
   const derivedLines = new Map();
+  // The rows a strip tag can stand on: one entry per control row, each naming
+  // the keys it owns. A scale and a selector own one; a plan key owns its four
+  // walls and the boundary key its six faces, each tagged with its own letter.
+  // Declared up here with the other registries because the strips are built
+  // during this function's own setup, before anything below it is evaluated.
+  const tagRows = [];
   const daysWidgets = new Map(); // parameter key -> that list's weather-file offer
   let solo = null;
   // The instant every meter on the desk is reading at: `{ text, pinned,
@@ -253,6 +259,22 @@ export function mountConsole({
 
   /* ── the strips ──────────────────────────────────────────────────────── */
 
+  function registerTags(row, control, channel) {
+    const keys =
+      control.kind === 'facade'
+        ? control.sides.map((side) => ({ key: side.key, prefix: side.label }))
+        : control.kind === 'boundary'
+          ? control.faces.map((face) => ({ key: face.key, prefix: face.label }))
+          : control.kind === 'scale' || control.kind === 'selector'
+            ? [{ key: control.key, prefix: null }]
+            : [];
+    if (!keys.length) return;
+    const host = el('div', 'ctl-tags');
+    host.hidden = true;
+    row.append(host);
+    tagRows.push({ row, host, keys, channel });
+  }
+
   function buildStrip(channel) {
     const strip = el('section', 'strip');
     strip.dataset.channel = channel.id;
@@ -268,6 +290,10 @@ export function mountConsole({
     toggle.type = 'button';
     const read = el('b', 'strip-read');
     const mark = el('i', 'strip-mark');
+    // The strip tags of this channel, on the folded row, where the row is the
+    // whole reading. Drawn only below the index threshold; `setTags` fills it.
+    const tagline = el('span', 'strip-tags');
+    tagline.hidden = true;
     // A channel with no "off" has no arming to report, so its cell is left
     // blank rather than drawn as a marker that is permanently lit. Blank is not
     // an em dash: there is no figure missing here, there is no figure.
@@ -291,6 +317,7 @@ export function mountConsole({
       read,
       mark,
       el('i', 'strip-chev'),
+      tagline,
     );
     title.append(toggle);
     head.append(title);
@@ -341,13 +368,26 @@ export function mountConsole({
     // line arrives with the controls when the strip is opened.
     const stripFold = el('div', 'strip-fold');
     stripFold.id = `strip-fold-${channel.id}`;
+    // A patch door is classified as a control is (a door is also a move), and
+    // the strip that is the door is where its tag belongs: no control on the
+    // strip stands for "patched in or out". At the head of the fold, so the
+    // folded index row carries it in its tag line instead of twice.
+    const headTags = channel.bypassable ? el('div', 'ctl-tags strip-head-tags') : null;
+    if (headTags) {
+      headTags.hidden = true;
+      stripFold.append(headTags);
+    }
     stripFold.append(
       el('p', 'strip-line', channel.line),
       fold(`strip:${channel.id}`, SUMMARY.channel, { label: `About ${channel.name}` }, el('p', 'strip-blurb', channel.blurb)),
     );
 
     const body = el('div', 'strip-body');
-    for (const control of channel.controls) body.append(buildControl(control, channel));
+    for (const control of channel.controls) {
+      const row = buildControl(control, channel);
+      registerTags(row, control, channel);
+      body.append(row);
+    }
     stripFold.append(body);
 
     const readout = buildReadout(channel);
@@ -358,7 +398,7 @@ export function mountConsole({
     strip.append(stripFold);
 
     strips.set(channel.id, {
-      strip, note, patch, solo: soloBtn, meter, readout, body, toggle, read, fold: stripFold,
+      strip, note, patch, solo: soloBtn, meter, readout, body, toggle, read, tagline, headTags, fold: stripFold,
       mark: channel.bypassable ? mark : null,
     });
     return strip;
@@ -927,6 +967,9 @@ export function mountConsole({
         onEnd: () => onChange(side.key, params[side.key], true),
       });
 
+      // What `setTags` dims when this one wall is free for the two readings
+      // and its neighbours are not: the wall's bar is its face.
+      g.setAttribute('data-tag-key', side.key);
       return { side, group: g, filled, cap, place, marks };
     });
 
@@ -1152,6 +1195,7 @@ export function mountConsole({
       g.append(grab);
 
       (place ? turning : root).append(g);
+      g.setAttribute('data-tag-key', face.key);
       return { face, group: g, open, shut, cap, capY, place };
     });
 
@@ -2437,6 +2481,92 @@ export function mountConsole({
         const said = lines?.get(key) ?? null;
         node.textContent = said ?? '';
         node.hidden = !said;
+      }
+    },
+
+    /**
+     * Print a classification where the hand is (FR-038 to FR-040).
+     *
+     * Replaces the whole set, as `setDerived` does. A key with an entry whose
+     * `stamp` is the current one draws a `button.ctl-tag` under its face; a key
+     * with no entry, or one stamped for another world or another pair of
+     * readings, draws nothing — never the last tag it had, which is what makes
+     * a stale tag structurally impossible rather than merely avoided (SC-013).
+     * Pressing a tag raises a `ctl-tag` event carrying the moves-panel entry
+     * it leads to, so the console knows nothing about where that entry is.
+     *
+     * A free control is dimmed at its face only, by `.free`, and stays at full
+     * ink in its label, value and tag, focusable and draggable: free for two
+     * readings is not reaching nothing, and must not look like `.idle`.
+     */
+    setTags(tags, stamp) {
+      const fresh = (key) => {
+        const tag = tags.get(key);
+        return tag && stamp && tag.stamp === stamp ? tag : null;
+      };
+      const button = (tag, prefix) => {
+        const node = el('button', 'ctl-tag', prefix ? `${prefix} · ${tag.text}` : tag.text);
+        node.type = 'button';
+        node.setAttribute('aria-label', `${tag.label}: ${tag.text}. Go to its entry among the kinds of move.`);
+        node.addEventListener('click', () => {
+          node.dispatchEvent(new CustomEvent('ctl-tag', { bubbles: true, detail: { target: tag.target, key: tag.key } }));
+        });
+        return node;
+      };
+      const byChannel = new Map();
+      const letter = (channel, tag) => {
+        if (!byChannel.has(channel.id)) byChannel.set(channel.id, []);
+        byChannel.get(channel.id).push(tag);
+      };
+      // A patch door first, on its channel's own strip: it is the strip.
+      for (const channel of CHANNELS) {
+        const host = strips.get(channel.id).headTags;
+        if (!host) continue;
+        host.textContent = '';
+        const tag = fresh(`patch:${channel.id}`);
+        host.hidden = !tag;
+        if (!tag) continue;
+        host.append(button(tag, tag.label));
+        letter(channel, tag);
+      }
+      for (const { row, host, keys, channel } of tagRows) {
+        host.textContent = '';
+        // A plan key's walls, or a boundary's six faces, are one row with a
+        // face per key, and they are free or not one by one: the south wall
+        // can be free for two readings while the west wall trades them. So
+        // each free side dims its own face, and the row-wide `.free` is kept
+        // for a row whose one face is the whole control.
+        const multi = keys.length > 1;
+        let any = false;
+        let freeAll = true;
+        for (const { key, prefix } of keys) {
+          const tag = fresh(key);
+          if (multi) {
+            for (const face of row.querySelectorAll(`[data-tag-key="${key}"]`)) face.classList.toggle('free', Boolean(tag?.free));
+          }
+          if (!tag) {
+            freeAll = false;
+            continue;
+          }
+          any = true;
+          if (!tag.free) freeAll = false;
+          host.append(button(tag, prefix));
+          letter(channel, tag);
+        }
+        host.hidden = !any;
+        row.classList.toggle('free', !multi && any && freeAll);
+      }
+      // The folded index row letters every tag's own text, free ones included,
+      // each naming both readings it was judged against (FR-038): on a phone
+      // that row is the whole of the strip, and "3 free" said nothing about
+      // which three or against what. It rides its own wrapping line under the
+      // row rather than inside `.strip-read`, which is one unbroken line of
+      // mono figures and would push five words per tag off the side of 390 px.
+      for (const channel of CHANNELS) {
+        const here = strips.get(channel.id);
+        const said = (byChannel.get(channel.id) ?? []).map((tag) => `${tag.label}: ${tag.text}`).join(' · ');
+        here.tagline.textContent = said;
+        here.tagline.hidden = !said;
       }
     },
 

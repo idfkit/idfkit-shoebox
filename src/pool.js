@@ -14,26 +14,64 @@
  */
 
 /**
- * How many instances the pool may grow to.
+ * How many engines run side by side, and which term decided it.
  *
- * Sized against the WASM heap's 256 MB starting size, not its 1 GB ceiling:
- * this model is one zone with lean sweep outputs, and a heap that grows
- * toward the ceiling is a problem no pool width survives, so the start size
- * is the honest per-instance cost. The page is not cross-origin isolated
- * (the engine is single-threaded by design, so no COOP/COEP is shipped),
- * which rules out `performance.measureUserAgentSpecificMemory` — the 256 MB
- * figure is the engine's documented start size, a stated assumption rather
- * than a measurement. `deviceMemory` is Chromium-only and capped at 8;
- * where it is absent the budget assumes 4 GB, of which a quarter is the
- * page's to spend. Two cores are held back for the main thread and the
- * pump's own engine. The cap of 6 is deliberately above the engine docs'
- * generic "two or three": a single 21-sample sweep is exactly the case
- * where width pays, and the memory and core terms shrink the pool on the
- * machines where 6 would hurt.
+ * **Two cores are held back**: one for the page's main thread, which builds
+ * every sample before an engine can take it, and one for the sheet's own
+ * engine, so a drag never waits on a study. *N − 1* was rejected for putting a
+ * sample on the sheet's core. The main thread's share is measured rather than
+ * assumed: applying one design to the reference desk and writing its IDF takes
+ * **0.79 ms** on average (median 0.76, 90th percentile 1.07, 64 designs, full
+ * reporting profile, Node 22), and `buildSample` applies twice, so a run costs
+ * about 1.5 ms of main thread against about 50 ms of design day. A pool W wide
+ * therefore spends about 3 % × W of the thread building: 30 % at ten engines,
+ * 45 % at fifteen. That does not saturate it, and it is not free; what keeps a
+ * drag live is the scheduler's `paused()` while a hand is on a control, not
+ * the width.
+ *
+ * **Half the memory**, less the sheet's own engine, at the WASM heap's 256 MB
+ * starting size rather than its 1 GB ceiling: this model is one zone with lean
+ * sweep outputs, and a heap that grows toward the ceiling is a problem no pool
+ * width survives. The page is not cross-origin isolated, which rules out
+ * `performance.measureUserAgentSpecificMemory`, so 256 MB is the engine's
+ * documented start size, a stated assumption. `deviceMemory` is Chromium's and
+ * reports at most 8, so the memory term tops out at fifteen engines; where it
+ * is absent 4 GB is assumed and `assumed` says so. The quarter it used to be
+ * held every Safari and Firefox visit to three.
+ *
+ * **No fixed cap.** The cap of 6 held every larger Chromium machine to six, and
+ * the two terms already shrink the pool on the machines where width would hurt.
+ *
+ * `why` names the binding term in words, because a browser may round or cap
+ * `hardwareConcurrency` for privacy, and a reader on a capped browser should be
+ * able to see why their plan is slower.
  */
-export function poolLimit({ cores = 4, deviceMemoryGB = null, perInstanceMB = 256, cap = 6 } = {}) {
-  const budgetMB = (Math.min(deviceMemoryGB ?? 4, 8) * 1024) / 4 - perInstanceMB;
-  return Math.max(1, Math.min(cores - 2, Math.floor(budgetMB / perInstanceMB), cap));
+export class PoolWidth {
+  constructor({ cores, memoryGB, assumed, perInstanceMB }) {
+    this.cores = cores;
+    this.memoryGB = memoryGB;
+    this.assumed = assumed;
+    this.byCores = cores - 2;
+    this.byMemory = Math.floor(((memoryGB * 1024) / 2 - perInstanceMB) / perInstanceMB);
+    const binding = Math.min(this.byCores, this.byMemory);
+    this.width = Math.max(1, binding);
+    this.why =
+      binding < 1
+        ? 'one engine at least'
+        : this.byCores <= this.byMemory
+          ? `${cores} cores less two`
+          : `half of ${assumed ? 'an assumed ' : ''}${memoryGB} GB at ${perInstanceMB} MB an engine`;
+    Object.freeze(this);
+  }
+}
+
+export function poolWidth({ cores = 4, deviceMemoryGB = null, perInstanceMB = 256 } = {}) {
+  return new PoolWidth({
+    cores,
+    memoryGB: Math.min(deviceMemoryGB ?? 4, 8),
+    assumed: deviceMemoryGB === null || deviceMemoryGB === undefined,
+    perInstanceMB,
+  });
 }
 
 export function createEnginePool({ createEngine, limit }) {
@@ -64,6 +102,27 @@ export function createEnginePool({ createEngine, limit }) {
     });
   }
 
+  /**
+   * Drop an instance that can no longer be trusted, and hand whoever was
+   * waiting for one a fresh instance instead: the waiter was promised an
+   * instance that no longer exists, so its own acquire path creates a
+   * replacement.
+   */
+  function retire(engine) {
+    engine.dispose?.();
+    created -= 1;
+    const waiter = waiters.shift();
+    if (waiter && !disposed) {
+      created += 1;
+      Promise.resolve()
+        .then(createEngine)
+        .then(waiter.resolve, (err) => {
+          created -= 1;
+          waiter.reject(err);
+        });
+    }
+  }
+
   function release(engine) {
     if (disposed) {
       engine.dispose?.();
@@ -87,27 +146,26 @@ export function createEnginePool({ createEngine, limit }) {
      */
     async run(input) {
       const engine = await acquire();
+      let result;
       try {
-        const result = await engine.run(input);
-        release(engine);
-        return result;
+        result = await engine.run(input);
       } catch (error) {
-        engine.dispose?.();
-        created -= 1;
-        // A waiter was promised an instance that no longer exists; wake it
-        // with nothing so its own acquire path creates a replacement.
-        const waiter = waiters.shift();
-        if (waiter && !disposed) {
-          created += 1;
-          Promise.resolve()
-            .then(createEngine)
-            .then(waiter.resolve, (err) => {
-              created -= 1;
-              waiter.reject(err);
-            });
-        }
+        retire(engine);
         throw error;
       }
+      // An unsuccessful run poisons its instance, and so it is retired too,
+      // not recycled. The worker calls EnergyPlus's `main` again on the same
+      // WebAssembly module, and `main` is not re-entrant: once a run has ended
+      // in a fatal or a thrown exception, every later run on that instance
+      // throws a raw C++ exception pointer before doing any work. Recycled, one
+      // setpoint crossing turned into hundreds of "Engine crashed: 287468688"
+      // failures behind it: measured on an annual plan at ten engines, 29
+      // genuine failures and 1,512 instant crashes out of 1,670 runs, every
+      // one of them a design the engine never looked at. A cancelled run is
+      // the one unsuccessful outcome that says nothing about the instance.
+      if (result?.success || result?.cancelled) release(engine);
+      else retire(engine);
+      return result;
     },
 
     /**
