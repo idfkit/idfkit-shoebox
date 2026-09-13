@@ -17,7 +17,7 @@
  * Three deliberate departures from a first cut, each with the measurement that
  * forced it:
  *
- *  - **Every factor is an expression of three constants**, never a decimal
+ *  - **Every factor is an expression of four exact constants**, never a decimal
  *    literal, so a reader can check the arithmetic rather than trust it.
  *  - **Every IP unit string is a single whitespace-free token.** `copy.js`
  *    counts whitespace tokens and throws at module load for the asserted
@@ -29,7 +29,7 @@
  *    way to letter a wrong number that still looks plausible.
  */
 
-/* ══ the three constants ═════════════════════════════════════════════════ */
+/* ══ the four exact constants ════════════════════════════════════════════ */
 
 /** Metres in a foot, exact by definition. */
 const FT = 0.3048;
@@ -37,6 +37,17 @@ const FT = 0.3048;
 const BTU = 1055.05585262;
 /** Grams in a pound, exact by definition. */
 const LB = 453.59237;
+/**
+ * Degrees Fahrenheit in a kelvin, exact by definition.
+ *
+ * Named for the reason the other three are, and written `9 / 5` rather than
+ * `1.8`. The rule this module opens with is that a factor is an expression a
+ * reader can check instead of a figure they have to trust, and the three
+ * temperature kinds plus the two that carry a kelvin in their denominator were
+ * the only decimal literals left standing in the roster. `9 / 5` and `1.8` are
+ * the same double, so this buys legibility and not accuracy.
+ */
+const DEG = 9 / 5;
 
 const FT2 = FT * FT;
 const FT3 = FT * FT * FT;
@@ -112,7 +123,13 @@ const ROSTER = [
   // The same quantity where the sentence letters millimetres rather than
   // metres — the description's slab. Its own kind for the reason `swing` has
   // one: the SI string is what must come back unchanged.
-  kind({ id: 'lengthMm', si: 'mm', ip: 'in', factor: 1 / 25.4, digits: 1 }),
+  //
+  // Twelve inches over the millimetres in a foot, which is `1 / 25.4` exactly
+  // and was written that way until the one rule this roster has about factors
+  // was applied to it: 25.4 is a true constant of the inch, but it is not one of
+  // the four declared above, and a reader checking the arithmetic should not
+  // have to recognise it.
+  kind({ id: 'lengthMm', si: 'mm', ip: 'in', factor: 12 / (FT * 1000), digits: 1 }),
   kind({ id: 'area', si: 'm²', ip: 'ft²', factor: 1 / FT2, digits: 0 }),
   kind({ id: 'volume', si: 'm³', ip: 'ft³', factor: 1 / FT3, digits: 0 }),
   // Compactness: envelope area over volume, so it converts as the reciprocal of
@@ -121,27 +138,27 @@ const ROSTER = [
   // wrong way up.
   kind({ id: 'inverseLength', si: 'm⁻¹', ip: 'ft⁻¹', factor: FT, digits: 3 }),
   kind({ id: 'areaPerPerson', si: 'm²/pp', ip: 'ft²/person', factor: 1 / FT2, digits: 0 }),
-  kind({ id: 'temperature', si: '°C', ip: '°F', factor: 1.8, offset: 32, digits: 0 }),
-  kind({ id: 'temperatureDifference', si: 'K', ip: 'Δ°F', factor: 1.8, digits: 0 }),
+  kind({ id: 'temperature', si: '°C', ip: '°F', factor: DEG, offset: 32, digits: 0 }),
+  kind({ id: 'temperatureDifference', si: 'K', ip: 'Δ°F', factor: DEG, digits: 0 }),
   // A difference that SI letters `°C` rather than `K`, which is how the
   // schedule has always lettered a swing and is idiomatic for a range. It is a
   // second kind rather than a relabelling because the SI sheet must come back
   // character for character, and it is not `temperature` because a swing is a
   // difference: lettered through that, the 32 of the Fahrenheit offset rides
   // along and a 5 °C swing reads as 41 °F instead of 9.
-  kind({ id: 'temperatureSwing', si: '°C', ip: 'Δ°F', factor: 1.8, digits: 1 }),
+  kind({ id: 'temperatureSwing', si: '°C', ip: 'Δ°F', factor: DEG, digits: 1 }),
   // The 1.8 divides rather than multiplies, and the contract had it the other
   // way round: a watt is 3600/BTU Btu/h, a square metre is 1/FT² square feet
   // and a kelvin is 1.8 °F, so W/m²K is (3600 × FT²)/(BTU × 1.8) = 0.17611
   // Btu/h·ft²·°F. Written with the 1.8 above the line it comes out 0.571, which
   // is three times the true figure and would letter every window on the desk
   // wrong while still looking like a U-factor.
-  kind({ id: 'transmittance', si: 'W/m²K', ip: 'Btu/h·ft²·°F', factor: (3600 * FT2) / (BTU * 1.8), digits: 2 }),
+  kind({ id: 'transmittance', si: 'W/m²K', ip: 'Btu/h·ft²·°F', factor: (3600 * FT2) / (BTU * DEG), digits: 2 }),
   kind({
     id: 'resistance',
     si: 'm²K/W',
     ip: 'h·ft²·°F/Btu',
-    factor: (BTU * 1.8) / (3600 * FT2),
+    factor: (BTU * DEG) / (3600 * FT2),
     digits: 1,
     prefix: 'R-',
   }),
@@ -241,6 +258,14 @@ const ROSTER = [
       'The Units table names carbon *intensity* and not a mass of it, and the rate tables this '
       + 'sheet bills from publish neither in pounds. Converting would claim a figure they do not carry.',
   }),
+  // Its two unit strings are empty, and this is the one kind on the roster whose
+  // wording cannot live here. `HDD18` and `CDD10` are two different strings for
+  // one quantity and the reading letters both in a single line, where a kind
+  // carries one SI string and one IP string. So the wording is composed at the
+  // lettering site — `degreeDays` in `weather.js`, which imports no kind at all
+  // — and this row exists to state that the count does not convert and why. The
+  // contract's unit column names the two strings for a reader; the code cannot
+  // hold them, and pretending otherwise would mean a kind per base temperature.
   kind({
     id: 'degreeDays',
     si: '',
@@ -598,6 +623,14 @@ export function assertKinds(roster = ROSTER) {
         throw new Error(`the quantity kind "${k.id}" letters SI as "${k.si}", which carries whitespace`);
       }
       if (!k.ip) throw new Error(`the quantity kind "${k.id}" converts but has no IP unit to letter`);
+      // The twin of the line above, and it was missing. Every other check here
+      // would pass a converting kind with no SI string at all, and it would then
+      // letter a bare number on the SI sheet. That is the half of the guarantee
+      // with nothing to disagree with: a wrong IP string is caught by a reader
+      // who knows the quantity, but an empty SI string is only ever noticed by
+      // this line, because the SI string is itself the thing every other
+      // assertion is compared against.
+      if (!k.si) throw new Error(`the quantity kind "${k.id}" converts but has no SI unit to letter`);
       if (k.si === k.ip && k.offset === 0) {
         throw new Error(`the quantity kind "${k.id}" letters both systems "${k.si}" but is not the identity`);
       }

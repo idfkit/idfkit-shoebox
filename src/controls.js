@@ -564,7 +564,13 @@ export class Bearing extends Control {
 
   format(v) {
     const points = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
-    return `${v.toFixed(0)}° ${points[Math.round(v / 22.5) % 16]}`;
+    // Through the `angle` kind, though a degree is a degree in both systems and
+    // no figure here can move. It was the one numeric face on the desk that
+    // lettered its own unit, and a unit stated in a second place is the drift
+    // Principle III exists to prevent whether or not today's two spellings
+    // agree. `suffixIn` rather than `unitIn`, and concatenated rather than
+    // spaced, because a bearing has always read `180° SW`.
+    return `${figureIn(KINDS.angle, v, { digits: 0 })}${suffixIn(KINDS.angle)} ${points[Math.round(v / 22.5) % 16]}`;
   }
 }
 
