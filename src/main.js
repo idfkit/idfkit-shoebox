@@ -10608,6 +10608,14 @@ function refreshSurvey() {
   // cut. It is redrawn here and where the record itself changes, and not from
   // `renderSurvey`, which runs on every landed sample and changes neither.
   renderTraverse();
+  // The chooser's offers are the desk's own — a channel patched in or out
+  // changes which axes and readings are available before there is any ground
+  // to re-cut, and the reader is often choosing exactly then. Placed above the
+  // `!survey` return below, since otherwise a patch made with no ground cut
+  // yet left the chooser showing offers from before the patch until something
+  // else happened to redraw it. `renderSurveyChoose` is cheap to call with
+  // nothing to do: it only rebuilds when the desk's own shape key has moved.
+  renderSurveyChoose();
   if (!survey || !studyScheduler || !autoOn() || linkAttachPending) return;
   const rest = surveyRestShape(survey);
   if (surveyRestShape(survey, survey.stance, survey.patch) === rest) {
