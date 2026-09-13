@@ -37,7 +37,7 @@
 
 import { CHANNEL_BY_ID, controlFor } from './controls.js';
 import { QUANTITY_BY_ID, refusesSweep, sampleOrder, samplePoints } from './study.js';
-import { figureIn, letter, suffixIn } from './units.js';
+import { deltaKindOf, figureIn, letter, suffixIn } from './units.js';
 
 /* ══ how big the ground is ═══════════════════════════════════════════════ */
 
@@ -237,6 +237,32 @@ export class Reading {
     // same number and asked for it the same way, and written out at both they
     // were a copy with a difference.
     return this.quantity.say(value);
+  }
+
+  /**
+   * A *change* in this reading, which is a different quantity from the reading.
+   *
+   * `format` above letters a value, and the trade sentence was lettering
+   * `value - base` with it. Measured on the page: a ground surveyed for high and
+   * low read "+39 °F of high against +33 °F of low" for changes of about +4 °C
+   * and +0.5 °C, because `temperature` carries Fahrenheit's 32 and a difference
+   * must not. That is the offset trap `temperatureDifference` was split out for,
+   * arriving here by a third route after the ranking's "Room left" and the
+   * Effect column — so it gets a named method rather than a kind swapped inline
+   * at the call site, which is how the first two came back.
+   *
+   * `deltaKindOf` is asked of every reading and not only of the temperatures: it
+   * returns a zero-offset kind unchanged, so a kBtu/ft² change letters exactly
+   * as it did. The quantity's own `unit` still rides along, because `letter`
+   * honours a declaration's wording on an identity kind and ignores it on one
+   * that converts, which is what keeps a counted reading wording itself.
+   */
+  change(value, bag) {
+    if (this.series.format) return this.series.format(value, bag?.[this.quantity.id]);
+    return letter(deltaKindOf(this.quantityKind), value, {
+      digits: this.digits,
+      unit: this.unit,
+    });
   }
 }
 

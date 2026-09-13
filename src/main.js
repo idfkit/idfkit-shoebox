@@ -3774,6 +3774,14 @@ function reletterSheet() {
   // `renderSurveySoon` rather than `renderSurvey` because that is the entry
   // point the other six callers use, and it costs nothing when no ground is cut.
   renderSurveySoon();
+  // And E-02's *chooser*, which `renderSurvey` does not reach at all: its only
+  // two callers are a refused extent and the boot. The Reading cell letters each
+  // offer's unit, so without this line the list a reader picks a ground from
+  // stands in whichever system the page booted in, for the whole session. Found
+  // by driving: a sheet booted in IP went on offering `High °F` after switching
+  // to SI. The cache guard inside it now carries the system, so this call is a
+  // no-op on every re-letter that is not a switch.
+  renderSurveyChoose();
   // And the ranking beside it, which `renderSurveySoon` does not reach. Its
   // "Per unit" and "Room left" columns letter off the control at draw time, so
   // an entry outlives a switch and has to be asked again — the same omission
@@ -5624,6 +5632,20 @@ function buildStandards() {
   }
 }
 
+/**
+ * One *published* figure to a decimal, in the units its source published it in.
+ *
+ * Deliberately not a conversion, and narrowed to that job rather than left as a
+ * general rounding helper. TM59 defines its categories' clamps and its fixed
+ * thresholds in Celsius, and FR-010 keeps a published figure as published in
+ * both systems, so everything still lettered through here reads °C on an IP
+ * sheet and says "published" in the same breath.
+ *
+ * The run's own *measured* temperatures are a different quantity and no longer
+ * come through here: they go through `KINDS.temperature`, which is why the
+ * précis and the sentence under it now letter the moving line in the reader's
+ * own system while the clamps beside it hold their Celsius.
+ */
 const f1c = (v) => v.toFixed(1);
 
 /**
@@ -5840,7 +5862,15 @@ function tm59Precis(reading) {
   const { criterion, coverage, line } = reading;
   const parts = [];
   if (criterion.id === 'a' && line) {
-    parts.push(`judged against ${f1c(line.low)}–${f1c(line.high)} °C`);
+    // The band the verdict was actually taken against, measured over the days
+    // this run covered: it is recomputed daily off the running mean, so it is a
+    // reading and it converts. It is also the one line the précis may never
+    // fold, stated above as FR-006, which made it the most visible °C left
+    // standing on an IP sheet. One decimal in both systems, since a tenth of a
+    // degree Celsius and a tenth of a degree Fahrenheit are the same claim
+    // about a line drawn to one.
+    const t = (v) => figureIn(KINDS.temperature, v, { digits: 1, ipDigits: 1 });
+    parts.push(`judged against ${t(line.low)}–${t(line.high)} ${unitIn(KINDS.temperature)}`);
   }
   if (coverage) parts.push(`${coverage.days} of ${SEASON.days} days`);
   parts.push('operative temperature');
@@ -5850,16 +5880,25 @@ function tm59Precis(reading) {
 const noteCache = new WeakMap();
 
 function tm59Notes(reading, asDrawn) {
+  // The system is part of the key for the same reason `asDrawn` is, and it had
+  // to be added the moment these notes began converting: criterion a's note now
+  // letters the measured adaptive line through `KINDS.temperature`, so a string
+  // built in SI and handed back from this cache would stand in °C under an IP
+  // sheet until the next solve replaced it. That is the stored-label trap the
+  // units notes warn about, and a cache is the quietest way to walk into it:
+  // nothing here is stale, the figure is simply lettered in a system the reader
+  // has left.
+  const showing = system();
   if (reading) {
     const held = noteCache.get(reading);
     // `asDrawn` is part of the key: it is read off the run rather than off live
     // params, so it moves only when a solve does, but a cache that ignored it
     // would letter "the building as drawn" over a desk that had since been
     // given the method's own profiles.
-    if (held && held.asDrawn === asDrawn) return held.notes;
+    if (held && held.asDrawn === asDrawn && held.showing === showing) return held.notes;
   }
   const notes = tm59NotesFor(reading, asDrawn);
-  if (reading) noteCache.set(reading, { asDrawn, notes });
+  if (reading) noteCache.set(reading, { asDrawn, showing, notes });
   return notes;
 }
 
@@ -5869,10 +5908,24 @@ function tm59NotesFor(reading, asDrawn) {
   const notes = [];
 
   if (criterion.id === 'a') {
+    // This sentence carries both a measurement and a citation, and they letter
+    // differently on purpose. `line.low`, `line.high` and `line.mean` are what
+    // the weather did over the days this run covered, so they convert like every
+    // other reading; `category.low` and `category.high` below are what
+    // TM59:2026 §2.4.1 publishes, and FR-010 keeps a published figure as
+    // published in both systems. The word "published" in front of each clamp is
+    // what makes the pair readable rather than contradictory, and it is already
+    // there for an unrelated reason, recorded in the comment under this one.
+    //
+    // The alternative, converting the clamps too, would state a floor and a
+    // ceiling in °F that the method does not publish and that no reader could
+    // check against their own copy of it.
+    const t = (v) => figureIn(KINDS.temperature, v, { digits: 1, ipDigits: 1 });
+    const u = unitIn(KINDS.temperature);
     let moved =
       `Read from the zone’s hourly operative temperature against ${category.label}’s adaptive line, ` +
       `which is recomputed every day off the outdoor running mean. Over the ${line.days} days this ` +
-      `run covered it ran from ${f1c(line.low)} °C to ${f1c(line.high)} °C, mean ${f1c(line.mean)} °C.`;
+      `run covered it ran from ${t(line.low)} ${u} to ${t(line.high)} ${u}, mean ${t(line.mean)} ${u}.`;
     // Named as the published clamp rather than as "the minimum", because that
     // is what it is: TM59:2026 §2.4.1 stops the line at both ends, and a
     // reader watching a share stop responding to the weather is owed the
@@ -9140,7 +9193,18 @@ function renderSurveyChoose() {
   const host = $('survey-choose');
   // `surveyChoice` is always replaced and never mutated, so identity is the
   // whole test for it; only the desk needs its key.
-  const standing = `${shapeKey(params)}|${Boolean(epwText)}`;
+  //
+  // The unit system belongs in that key, and leaving it out was a fault this
+  // chooser was structurally unable to show. The Reading cell letters each
+  // offer's `unitNow`, which converts correctly at the moment it is built and
+  // then stands for the life of the session. Measured on the page: a sheet that
+  // booted in IP offered `High °F`, and went on offering `High °F` after a
+  // switch to SI, because neither the selection nor the desk had moved and this
+  // function returned early. A reader who booted in SI was offered °C under an
+  // IP sheet, the same fault pointing the other way. It is the `setStudy`
+  // identity guard again, one surface along: a cache whose key cannot see the
+  // system will hold a converted string past the switch that invalidated it.
+  const standing = `${shapeKey(params)}|${Boolean(epwText)}|${system()}`;
   if (chooserDrawn?.choice === surveyChoice && chooserDrawn.standing === standing) return;
   chooserDrawn = { choice: surveyChoice, standing };
   host.textContent = '';
@@ -10320,7 +10384,10 @@ function renderSurveyFinding(sv) {
         const said = sv.readings.map((entry, at2) => {
           const value = entry.valueOf(worst.readings);
           const change = value - base[at2];
-          return `${change >= 0 ? '+' : ''}${entry.format(change, worst.readings)} of ${entry.label.toLowerCase()}`;
+          // `change`, not `format`: this letters a difference of the reading,
+          // and through `format` the two temperatures here read +39 °F and
+          // +33 °F for changes of +4 °C and +0.5 °C.
+          return `${change >= 0 ? '+' : ''}${entry.change(change, worst.readings)} of ${entry.label.toLowerCase()}`;
         });
         parts.push(
           `${split.length} measured ${split.length === 1 ? 'design trades' : 'designs trade'} one reading ` +
