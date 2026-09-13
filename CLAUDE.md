@@ -334,6 +334,25 @@ geometry earlier ones wrote).
   `spanUnitNow` are how a face asks it. Lettered through `quantityKind` a
   setpoint's 5 K of room reads `41 °F`. A span takes a flat precision, never
   `precisionFor`, which is an argument about positions on a grid.
+- **A change in a reading is a difference too**, and E-02's trade sentence is the
+  third route into the one trap. `Reading.format` letters a value, and the
+  sentence put `value - base` through it, so measured changes of `+4 °C` and
+  `+0.5 °C` read `+39 °F` and `+33 °F`. `Reading.change` is the sibling that
+  letters a difference, `main.js`'s trade sentence is its only caller, and
+  `deltaKindOf` is asked of every reading rather than only of temperatures,
+  since it returns a zero-offset kind unchanged.
+- **A cache whose key cannot see the unit system holds a converted string past
+  the switch that invalidated it.** `renderSurveyChoose`'s `chooserDrawn` and
+  `tm59Notes`' `noteCache` both letter units, and both now carry `system()` in
+  their key. It is `setStudy`'s identity guard again, one surface along: nothing
+  is stale, the figure is simply lettered in a system the reader has left.
+- **A hidden tab starves `requestAnimationFrame`, and this looks exactly like a
+  lettering bug.** `renderSurveySoon` and `renderPullSoon` clear their frame flag
+  only inside the rAF callback, so in a background tab the flag stays set, every
+  later call early-returns, and E-02 and the pull stop re-lettering entirely.
+  Three "stale" figures were chased this way before `document.visibilityState`
+  was checked. Force a paint before believing any E-02, pull or survey figure
+  read from a tab that is not visible.
 - **An `aria-label` that letters a figure is a reading, not a copy of one.** The
   Study buttons' sweep ranges are the only place a reader who cannot see the face
   is told what a study covers, and `sync()` does not reach them. `console.js`

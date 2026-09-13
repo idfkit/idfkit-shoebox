@@ -2,7 +2,7 @@
 
 The roster `units.js` declares, and the only vocabulary any lettering site may use. A figure on the sheet belongs to exactly one kind. Adding a kind means adding a row here and to `KINDS`; a lettering site naming a kind that is not in the roster throws at module load.
 
-## The three constants
+## The four exact constants
 
 Every factor is an expression of these, never a decimal literal, so a reader can check the arithmetic.
 
@@ -10,7 +10,16 @@ Every factor is an expression of these, never a decimal literal, so a reader can
 FT  = 0.3048          metres in a foot, exact by definition
 BTU = 1055.05585262   joules in an International Table Btu
 LB  = 453.59237       grams in a pound, exact by definition
+DEG = 9 / 5           degrees Fahrenheit in a kelvin, exact by definition
 ```
+
+`DEG` is the fourth because the rule above had an exception in its own rows until
+convergence closed it. The three temperature kinds, and the two that carry a
+kelvin in a denominator, were written with a bare `1.8`; `lengthMm` was written
+with a bare `1 / 25.4`. Both are true constants and neither is a declared one,
+which is the whole of the objection: the rule is that a reader checks the
+arithmetic rather than recognising a figure. They are now `DEG` and
+`12 / (FT × 1000)`, the same doubles to the bit.
 
 ## Converting kinds
 
@@ -24,12 +33,12 @@ LB  = 453.59237       grams in a pound, exact by definition
 | `volume` | m³ | ft³ | `1 / FT³` | 0 | Zone volume in the quantities panel |
 | `areaPerPerson` | m²/pp | ft²/person | `1 / FT²` | 0 | Occupant density |
 | `inverseLength` | m⁻¹ | ft⁻¹ | `FT` | 3 | Compactness, envelope area over volume. Added to this table for the reason `distance` was: the quantities panel letters it, so under FR-007 it needs a row. Its factor is `FT` and not `1 / FT`, being a reciprocal |
-| `temperature` | °C | °F | `1.8`, offset `32` | 0 | Setpoints, design day and climate temperatures, the pinned hour |
-| `temperatureDifference` | K | Δ°F | `1.8` | 0 | Deadbands, setback, venting deltas, solver tolerance |
-| `temperatureSwing` | °C | Δ°F | `1.8` | 1 | A swing or range, which the schedules letter `°C` and not `K`. A difference, so no offset: through `temperature` a 5 °C swing would read 41 °F instead of 9 |
-| `lengthMm` | mm | in | `1 / 25.4` | 1 | The description's slab, where the sentence letters millimetres rather than metres |
-| `transmittance` | W/m²K | Btu/h·ft²·°F | `(3600 × FT²) / (BTU × 1.8)` | 2 | Glazing and frame U-factors |
-| `resistance` | m²K/W | h·ft²·°F/Btu | `(BTU × 1.8) / (3600 × FT²)` | 1 | Wall and roof resistance. Prefix `R-`, no trailing unit |
+| `temperature` | °C | °F | `DEG`, offset `32` | 0 | Setpoints, design day and climate temperatures, the pinned hour |
+| `temperatureDifference` | K | Δ°F | `DEG` | 0 | Deadbands, setback, venting deltas, solver tolerance |
+| `temperatureSwing` | °C | Δ°F | `DEG` | 1 | A swing or range, which the schedules letter `°C` and not `K`. A difference, so no offset: through `temperature` a 5 °C swing would read 41 °F instead of 9 |
+| `lengthMm` | mm | in | `12 / (FT × 1000)` | 1 | The description's slab, where the sentence letters millimetres rather than metres |
+| `transmittance` | W/m²K | Btu/h·ft²·°F | `(3600 × FT²) / (BTU × DEG)` | 2 | Glazing and frame U-factors |
+| `resistance` | m²K/W | h·ft²·°F/Btu | `(BTU × DEG) / (3600 × FT²)` | 1 | Wall and roof resistance. Prefix `R-`, no trailing unit |
 | `powerDensity` | W/m² | W/ft² | `FT²` | 2 | Lighting and equipment density |
 | `fluxDensity` | W/m² | Btu/h·ft² | `(FT² × 3600) / BTU` | 1 | Solar and radiant flux |
 | `power` | kW | kBtu/h | `3600 / BTU` | 1 | Peak heating and cooling loads |
@@ -60,7 +69,7 @@ Declared, not omitted, so that "does not convert" is a statement rather than a s
 | `floorMultiple` | × floor | Internal mass as a multiple of floor area |
 | `appliancePower` | W | An electrical rating, quoted in watts in both systems |
 | `money` | /kWh | Rates are per kWh at the meter, in the tariff's own currency. Spec assumption |
-| `degreeDays` | HDD18, CDD10 | The base temperature is part of the published statistic. Converting the count while the label keeps saying 18 would be unverifiable arithmetic, and relabelling would claim a statistic this page did not compute (research R11). The reading states that the base is Celsius |
+| `degreeDays` | HDD18, CDD10 | The base temperature is part of the published statistic. Converting the count while the label keeps saying 18 would be unverifiable arithmetic, and relabelling would claim a statistic this page did not compute (research R11). The reading states that the base is Celsius. **The unit column here is for the reader, not for the kind**: `HDD18` and `CDD10` are two strings for one quantity and the reading letters both in one line, where a kind holds one SI string and one IP string. So this kind carries two empty strings and the wording is composed at the lettering site, in `weather.js`, which imports no kind at all. The row exists to state that the count does not convert, and holding the strings here would mean a kind per base temperature |
 | `count` | none | A count of hours, nights or panes is the same count in both systems. The overheating criteria and the pane count. Where the declaration carries its own wording — TM59's hours against its nights — it passes that wording to `letter`, which is refused on a converting kind |
 | `billedEnergy` | kWh | A US utility bills electricity in kWh and the rate tables are per kWh (spec assumption). Deliberately not `energy`, which converts: a demand read off the meters is a quantity of heat, a line on a bill is what somebody is charged for |
 | `currency` | local currency | Money stays in the tariff's own currency (spec assumption). The declaration letters a placeholder the offer replaces with the actual code |

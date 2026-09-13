@@ -281,9 +281,9 @@ Phase 3's `main.js` run, T025 to T035, is about forty lettering sites in one fil
 - [X] T080 Walk the study cards, the E-02 survey and relief, and the bill card in IP, the three surfaces T068 left unwalked and where this convergence found six un-converted sites, and time the switch against a tenth of a second, per SC-001 and SC-003 (partial) — **all three walked.** Study cards: axis ends `4.00 m / 40.00 m` → `13.1 ft / 131.2 ft`. E-02: the reading roster (`TEDI kBtu/ft²·yr`, `Peak heating load Btu/h·ft²`), the plan, the spot figure, the coverage line and the relief's standing axis all in IP, with `Hours above 25 °C` correctly left in SI as a published criterion. Bill card: the whole schedule, the build-up notes and the intensity row. The switch timed seven times, 14.2 to 41.4 ms against a tenth of a second. The walk found five of the six defects listed below
 - [X] T081 Convert the live control values in the two refusal sentences (`src/controls.js:2848`, `:2895`), leaving the `COINCIDENT` tolerance as the engine's own fact, and drive quickstart section 4 step 6, per FR-005 (partial) — **converted and SI-verified, not driven**: the opening's two sides letter through `length`, the frame through `lengthSmall` (its own control's kind, so inches not feet) and the overhang depth through `length`; `COINCIDENT` keeps its metres as the engine's own constant. The harness holds each to its SI spelling character for character (`2.50 × 1.20 m`, `0.050 m`, `0.05 m`). Forcing the refusal on the page is quickstart step 6 and needs the browser
 - [X] T082 Letter the non-currency branch of `Rate.text` (`src/rates.js:216-217`) through its kind, or make it refuse, so a future grid-rate caller cannot land in SI unnoticed, per FR-007 (partial)
-- [ ] T083 Drive quickstart section 4 steps 5 and 8, the switch during a run in flight and the toggle with the engine deliberately broken, which T038 left undriven, per US1/AC4 (partial)
+- [~] T083 Drive quickstart section 4 steps 5 and 8, the switch during a run in flight and the toggle with the engine deliberately broken, which T038 left undriven, per US1/AC4 (partial)
 - [ ] T084 Drive the storage-refused state in a private window and confirm the `units-forgets` line shows, which T056 left unobserved, per FR-015 (partial)
-- [ ] T085 Drive quickstart section 4 step 4, switching units while a study runs, which no task covers and which `reletterSheet`'s own comment says it was written to protect, per the spec edge case "Switching during a study or survey" (missing)
+- [~] T085 Drive quickstart section 4 step 4, switching units while a study runs, which no task covers and which `reletterSheet`'s own comment says it was written to protect, per the spec edge case "Switching during a study or survey" (missing)
 
 ### Phase 9 outcome
 
@@ -364,3 +364,140 @@ the survey plan, the relief and the station picker all lettering in IP with
   seen on the page**: the renderer froze under 44 queued annual pull runs before
   the comparison could be taken, and both re-render paths defer a frame, so an
   earlier capture read pre-switch DOM and proved nothing.
+
+---
+
+## Phase 10: Convergence
+
+**Purpose**: a second pass over the same artifacts against the code as built.
+Phase 9 closed what the census in research R2 predicted. What is left sits in the
+two lettering surfaces a census could not find, because neither carries a `unit`
+field to grep for: the generated paragraph composes its units as prose tokens
+beside `num()`, and the overheating précis letters through a local `toFixed`
+helper. Both were converted in part and missed in part, and the paragraph's
+misses are the worse kind, since `num()` converts the figure and leaves the unit
+behind. Three more findings are the spec's own text having fallen behind the
+code, which is a trap for the next change rather than a defect in this one.
+
+**Still open from Phase 9 and deliberately not re-issued here**: T083 (the switch
+with a run in flight, and the toggle with the engine broken), T084 (the private
+window's storage refusal) and T085 (the switch mid-study). All three are driven
+checks, all three are still unchecked above, and re-numbering them would only
+hide which attempt was which.
+
+- [X] T086 **CRITICAL** Letter the six hand-typed SI unit tokens in the generated paragraph through `unitIn` in `src/describe.js` (`:358`, `:361`, `:369` and `:399` through `KINDS.temperature`, `:513` through `KINDS.airflowPerPerson`, `:686` through `KINDS.power`), where `num()` already converts the figure through `Ruled.figure` (`src/controls.js:388`), so each one letters a converted number under an SI unit and a 21 °C setpoint reads `69.8 °C`: the shape of wrong figure that still looks like a reading, arriving by the one route T036 did not close. `:513` and `:686` spell their units as prose (`L/s per person`, `kW of grounds lighting`), so each needs a stated choice between the kind's own string and an SI wording kept as it was; the correct pattern is already in the same file at `:655-663`, per FR-005 (contradicts)
+- [X] T087 Convert the measured adaptive line at `src/main.js:5843` and `:5875`, whose `f1c` (`:5627`) is a bare `toFixed(1)` that converts nothing, so the one note the précis may never fold (its own docstring fixes that on FR-006 at `:5819-5822`) letters °C on an IP sheet while every other temperature on the page reads °F. These are the run's own measured figures (`line.low`, `line.high`, `line.mean`), not published constants, per FR-005 (missing)
+- [X] T088 Decide, and state in the code, whether TM59's published clamps and thresholds at `src/main.js:5882`, `:5887`, `:5900` and `:5921` stay as published: they are citations FR-010 freezes, but `:5882` and `:5887` append to the same sentence as T087's figures, so converting one without the other leaves a single sentence carrying two conventions, per FR-010 (partial)
+- [X] T089 Record the nine SI `digits` widenings that rode along with the eleven refined steps (`ctxWidth` 0 to 2, `openDeltaHi` 0 to 1, `openMaxWind` 1 to 2, `ventMaxWind` 1 to 2, `occupancy` 1 to 2, `activity` 0 to 2, `outdoorAir` 1 to 2, `supplyMaxT` 0 to 1, `gridFactor` 0 to 2), which `onFace`'s rounding to the step's decimals forces and which `research.md:53` and `data-model.md:65` both state do not happen. The code is right and CLAUDE.md already carries the invariant; what is missing is the deviation on the record, so that `40.00 m` where an older sheet lettered `40 m` is an accepted consequence with its measurement beside it, per SC-008 (contradicts)
+- [X] T090 Letter `Bearing`'s own degrees through `KINDS.angle` in `src/controls.js:565-568`, the one numeric face on the desk that letters a unit without asking `units.js`. No figure is wrong, since degrees are an identity kind, but the unit is stated in a second place and single-sourcing is what Principle III asks for, per FR-007 (partial)
+- [X] T091 Drive `within` (`src/main.js:10231`) and `formatEffect` (`:10647`) on the page in IP, the two figures Phase 9 left code-complete and build-verified but never seen, the renderer having frozen under 44 queued annual runs before the comparison could be taken. `formatEffect` is the one place this feature produced a wrong *number* rather than a wrong label, so it is the one that most needs to be seen, per FR-005 (partial)
+- [X] T092 Measure SC-004 as it is written: at least 200 lettered IP figures recomputed from the model's SI value with the published exact factor and checked to the stated precision. The Phase 2 harnesses cover the anchor conversions, a `parseIn`/`letter` round trip per kind, and `format`/`unitNow` agreement over all 96 ruled faces in both systems, which is a different and narrower claim, per SC-004 (partial)
+- [X] T093 Give `degreeDays` its `HDD18, CDD10` strings in the roster (`src/units.js:245-253`, today `si: ''` and `ip: ''`), or record why the wording belongs at the lettering site (`src/weather.js:153-159`, which imports no kind at all), so that the contract's own unit column (`contracts/quantity-kinds.md:63`) and the code say the same thing, per FR-007 (partial)
+- [X] T094 Write `lengthMm`'s `1 / 25.4` (`src/units.js:115`) and the three `1.8`s (`:124`, `:125`, `:132`, and inside the expressions at `:139` and `:144`) as expressions of the constants, `12 / (FT * 1000)` and `9 / 5`, which is the rule the contract states of itself at `contracts/quantity-kinds.md:7` and then breaks in exactly those rows, per FR-008 (partial)
+- [X] T095 Record the two load-time assertions as they are actually enforced, and close the one gap in them: `precisionFor` clamps at zero (`src/units.js:374`) where `data-model.md:35` gives the bare `floor(-log10(step * factor))` and the clamp bites for roughly ninety coarse steps; the no-whitespace rule is enforced on converting kinds only (`:591-596`) where `data-model.md:42` states it flat, and `floorMultiple` (`× floor`) and `currency` (`local currency`) both carry a space by design; and `assertKinds`' `!k.ip` check (`:600`) has no `si` twin, so a converting kind with an empty SI string still loads, per FR-007 and workflow gate 5 (partial)
+- [X] T096 Add a general note teaching the units toggle in `src/tour.js`, with its `tour?.note(...)` call site and a bump to `shoebox-general-notes-v5`, or record the decision not to. T064 settled the narrow branch of FR-025, that no existing note letters a unit, and left the wider one open: workflow gate 6 asks for `NOTES` on any change that adds a feature, and a reader meeting the sheet for the first time now finds a mode control the tour never mentions, per FR-025 (partial)
+
+### What this pass checked and found clean
+
+Stated so the next pass does not re-walk it. The roster matches
+`contracts/quantity-kinds.md` row for row at 25 converting and 16 identity kinds,
+every `si`, `ip` and `digits` value character for character, and the factors
+evaluate correctly. All eleven refined steps hold at R4's exact values with the
+measurement in a comment on each, and no twelfth control's step moved. All 87
+ruled declarations carry a kind, structurally, since `Ruled`'s constructor
+resolves it through `kindFor` and throws at the declaring line. `letter` is
+composed from `prefixIn` and `suffixIn`, and across all 96 faces in both systems
+there are zero `format`/`unitNow` disagreements. `readQuantity` was driven live:
+`65.6`, `65.6 ft`, `20 m` and `20m` all give 20 on an IP `ctxDistance` face, and
+`20 kg`, `abc` and `12abc` are refused whole. Neither `model.js` nor
+`permalink.js` nor `bundle.js` imports `units.js`. FR-018 holds because the
+sheet's only copy offer is a link carrying no figures; FR-019 is stated at
+`index.html:5311`; FR-020 is on the desk item at `src/main.js:11238`; and the
+degree-days reading says `°C bases` at `src/weather.js:157`. The production build
+is clean at 88 modules.
+
+### Phase 10 outcome
+
+**All twelve tasks are done.** Six were verified outside the browser, four on the
+page, and two are decisions now written down rather than left implied.
+
+The strongest check was T086's. Rather than asserting what the old code would
+have printed, the harness staged the pre-edit tree with `git archive HEAD` and
+imported both implementations into one process, so SI lettering is proved by
+running HEAD against the working tree character for character: 10 of 11 real
+paragraphs byte-identical, the eleventh differing only by the intended
+`L/s per person` to `L/s·pp` rewording, across desks chosen so that all six
+substituted tokens are actually exercised. The factor rewrites are bit-identical
+by raw IEEE-754 comparison (`9/5` and `1.8` are both `0x3ffccccccccccccd`), all
+41 kinds and 984 `letter()` strings match HEAD, and `Bearing` is unchanged over
+16 compass points and 6 off-grid values in both systems. SC-004 came in at 574 of
+574 control figures and 88 of 88 reading figures, with the harness mutation
+tested to prove it can fail.
+
+**Driving found two defects no task named, both now fixed and seen working.**
+
+1. **A cache whose key cannot see the system.** `renderSurveyChoose` redraws only
+   when the selection or the desk moves, and its Reading cell letters each
+   offer's `unitNow`. A sheet booted in IP therefore offered `High °F` and went
+   on offering it after a switch to SI. `system()` joins the key, and
+   `reletterSheet` now calls the chooser directly, because `renderSurvey` never
+   reaches it. Verified: `High°C`, `High°F`, and `High°C` restored exactly.
+2. **A change in a reading is a difference, for the third time.** E-02's trade
+   sentence lettered `value - base` through `Reading.format`, so measured changes
+   of +4 °C and +0.5 °C read `+39 °F` and `+33 °F`. `Reading.change` now letters
+   it through `deltaKindOf`. Verified under Node (`7.2 Δ°F` for 4 °C, absolutes
+   and non-temperature readings untouched) and on the page (`+7.3 Δ°F` against
+   `+1.3 Δ°F`).
+
+**And T087 introduced a third, caught before it shipped.** Making criterion a's
+note convert its measured line turned `tm59Notes`' `WeakMap` into a stored label:
+a note built in SI would have been handed back under an IP sheet. Its key carries
+`system()` now. That is the same fault as defect 1, arriving from the opposite
+direction within the same hour, which is why CLAUDE.md now states the rule about
+caches rather than the two instances.
+
+**T091 is the one that most needed driving**, and it confirmed the arithmetic
+rather than just the unit: the pull's Effect column converts both halves, so
+`-36.08 °C` per `m` becomes `-1.65 Δ°F` per `in` (−36.08 × 1.8 ÷ 39.37), Room
+left 0.40 m becomes 15.75 in, and a ratio-denominated row converts its numerator
+only (10.72 to 19.30). `within` reads `0.2 Δ°F`, not `0.2 °F`.
+
+**T083 step 8 passed as written**: with `public/energyplus` renamed away the page
+still booted, said `The engine could not be loaded` in words with the status
+marked bad, and the toggle still re-lettered, IP to SI in 13.7 ms with `t-site`
+moving 6,001 ft to 1,829 m and the roving tabindex following. The directory is
+restored.
+
+**A methodological warning, because it cost most of the driving time.** The tab
+was not visible, and a hidden tab never fires `requestAnimationFrame`.
+`renderSurveySoon` and `renderPullSoon` clear their frame flag only inside that
+callback, so the flag stayed set and every later call returned early. This
+produced three entirely convincing false positives, the plan caption, the reading
+sub-line and the spot readout all appearing not to re-letter, plus a survey
+frozen at exactly its coarse-pass boundary and one evaluate that timed out after
+45 seconds. All of it was one starved rAF: forcing a paint re-lettered the lot
+and completed the ground to 144 of 144. None of it was written up as a defect.
+`document.visibilityState` is now the first thing CLAUDE.md says to read.
+
+**T096 is resolved as a decision not to add a tour step.** The toggle already
+carries an always-visible standing line, which is what the design system requires
+of a control a reader has never met, so a step would duplicate copy that is
+never hidden, and bumping the storage key would reset every reader's notes for a
+control that explains itself in place. The key stays `shoebox-general-notes-v4`.
+
+**What is still not driven, stated rather than assumed.**
+
+- **T084, the private window.** Not attempted. Forcing the write probe to fail
+  means changing the browser's site-data settings, which is not something to do
+  to someone's browser. The `units-forgets` line is wired to the probe and hidden
+  when it succeeds, and it is held to the `STANDING` budget at load, but it has
+  still never been seen firing. A maintainer can settle it in one private window.
+- **T083 step 5 and T085, a switch strictly mid-run.** Partially covered. A
+  switch during an active survey queue was measured at 49 of 144 with the count
+  unchanged across it and no sample re-run, which is the invariant the
+  requirement is about, and the pull completed normally after a switch made while
+  it was running. The literal scenario, dimmed figures re-lettering while still
+  dimmed, was not observed: a design-day sweep lands faster than a switch can be
+  scheduled against it, and the hidden-tab rAF starvation above makes a clean
+  mid-run observation unreliable in this environment. It wants a weather year
+  attached and a visible window.

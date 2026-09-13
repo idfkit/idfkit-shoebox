@@ -2413,6 +2413,40 @@ as a `unit` override and refused on anything that converts. That is what lets
 one `count` kind serve TM59's nights, its share of occupied hours and a pane
 count, without any of them composing a unit a converting figure could inherit.
 
+**Refining a step forces refining its `digits`, and nine controls paid it.**
+`onFace` snaps to `min + n·step` and then fixes the result to the step's own
+decimals, so a face ruled to 0.25 m but lettered to zero decimals holds 40.25
+and letters `40 m`. A reader who selects that box and types back what it says
+gets 40. Nine of the eleven refined controls therefore took more SI decimals
+with their finer step, and the visible consequence is that they letter `40.00 m`
+where an older sheet lettered `40 m`. The grid stays a strict superset and no
+link's value moves, so this costs nothing a reader can lose, but it is a change
+to the SI sheet that no requirement asked for and it is written down here
+because the specification said `step` was the only field that would move.
+
+**A converted figure under a hand-typed unit is worse than an unconverted one.**
+The generated paragraph letters its numbers through each control's own `figure`,
+which converts, and six clauses then appended a literal `' °C'`, `' kW'` or
+`' L/s per person'`. So a 21 °C setpoint read `69.8 °C`: not a stale figure a
+reader might catch, but a right number under a wrong unit, in prose that is
+always in view. Every unit word in those sentences now comes from `unitIn` of
+the kind its figure converted through, which is the spelling the file's own
+`fig` helper had used all along. One of them changed the SI sheet to fix it:
+the outdoor-air clause spelled its unit `L/s per person` where the strip above
+it has always read `L/s·pp`, and the assertion that a converting kind's SI
+string equals its declaration's own is the entire guarantee that the SI sheet
+comes back character for character, so the clause now letters the kind's string.
+
+**One sentence can hold a measurement and a citation, and they letter
+differently.** TM59 criterion a is read against an adaptive line recomputed
+daily off the running mean, and the note under it reports both what the line
+actually did over the days the run covered and what the method publishes as the
+line's floor and ceiling. The first converts, being a reading; the second does
+not, FR-010 keeping a published figure as published. The word "published" in
+front of each clamp is what makes the pair readable rather than contradictory,
+and it was already there for an unrelated reason. Converting the clamps would
+state a floor in °F that no copy of the method contains.
+
 **`reletterSheet` must never call `applyGeometry`.** That is where studies in
 flight are cancelled against their rest shape, so a reader who switched units
 mid-sweep would lose every sample. The switch re-letters from state already in
@@ -2453,6 +2487,39 @@ standing where the old one stood. The column also keeps a flat two decimals in
 both systems rather than taking the control's IP precision: reachability is an
 argument about positions on a grid, and applied to a span it rounded half a
 degree of room from `0.9` to `1`.
+
+**And a change in a reading is the third route into it.** E-02's trade sentence
+letters `value - base` for each of the two readings a ground is cut for, and it
+asked `Reading.format`, which letters a *value*. Measured on the page: a ground
+surveyed for high and low read "+39 °F of high against +33 °F of low" for
+changes of about +4 °C and +0.5 °C, the Fahrenheit offset riding a difference
+for the third time after the ranking's "Room left" and the Effect column.
+`Reading.change` is the named sibling that letters a difference, rather than a
+kind swapped inline at the call site, which is how the first two came back. It
+asks `deltaKindOf` of every reading and not only of the temperatures, because
+that function returns a zero-offset kind unchanged, so a kBtu/ft² change letters
+exactly as it did. Of the six callers of `Reading.format`, exactly one passes a
+difference, which is why the fix is a second method rather than a change to the
+first.
+
+**A cache whose key cannot see the unit system is a stored label with extra
+steps.** `renderSurveyChoose` redraws only when the selection or the desk has
+moved, and its Reading cell letters each offer's `unitNow`. A sheet that booted
+in IP therefore offered `High °F` and went on offering it after a switch to SI,
+because neither the selection nor the desk had changed. `tm59Notes` had the same
+hole the moment criterion a's note began converting its measured line. Both keys
+now carry `system()`. The chooser also needed a call site: `renderSurvey` does
+not reach it, so `reletterSheet` asks for it directly.
+
+**A hidden tab starves `requestAnimationFrame`, and that is indistinguishable
+from a lettering bug until you check.** `renderSurveySoon` sets a frame flag and
+clears it only inside the callback, so in a background tab the flag stays set
+and every later call returns early. Driving the page from a tab that was not
+visible produced three convincing false positives in a row: the plan caption,
+the reading sub-line and the spot readout all "failed to re-letter", the survey
+froze at exactly its coarse-pass boundary, and one evaluate timed out after 45
+seconds. All of it was one starved rAF. `document.visibilityState` is the first
+thing to read when a figure looks stale, and forcing a paint restores the lot.
 
 **The one lettering that never converted at all was the one nobody can see.**
 Every Study button's accessible name letters the control's own range — "sweep

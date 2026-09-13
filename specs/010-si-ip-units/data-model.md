@@ -32,14 +32,28 @@ An **identity kind** has `factor: 1`, `offset: 0` and `si === ip`. Ratios, `ACH`
 | --- | --- |
 | `convert(kind, value)` | The number in the system showing. `value * factor + offset` in IP, `value` in SI. Pure. |
 | `letter(kind, value, digits)` | The string: the converted number fixed to `digits`, with `prefix` before it or the system's unit after it. Never rounds a value that reaches the model. |
-| `precisionFor(kind, step)` | The IP precision a control gets: `floor(-log10(step * factor))`, so one converted step is never finer than one lettered increment. This is what makes a round IP figure reachable. |
+| `precisionFor(kind, step)` | The IP precision a control gets: `max(0, floor(-log10(step * factor)))`, so one converted step is never finer than one lettered increment. This is what makes a round IP figure reachable. The clamp at zero is not decoration: the bare formula goes negative for every coarse step, a 1 m step giving −1, and `toFixed` refuses a negative precision. It bites for roughly ninety of the faces. Null for an identity kind, which has no second precision. |
 | `parseIn(kind, text)` | The inverse for typed text: strips either system's unit or the `R-` prefix, and returns the SI number. Refuses anything else by returning null, as `readQuantity` does today. |
 
 ### Invariants, both thrown at module load
 
 | Assertion | Rule | Why |
 | --- | --- | --- |
-| `assertKinds()` | Unique ids; every kind has both unit strings, a finite non-zero factor and a precision; an identity kind has equal strings; no IP string contains whitespace. | A declaration naming a kind that does not exist fails where it is written, not when a reader drags it. |
+| `assertKinds()` | Unique ids; every kind has both unit strings, a finite non-zero factor and a precision; an identity kind has equal strings and states why it does not convert; a converting kind has a non-empty SI string and a non-empty IP string, neither carrying whitespace, and may not convert by 1. | A declaration naming a kind that does not exist fails where it is written, not when a reader drags it. |
+
+The whitespace rule binds **converting kinds only**, and that is the rule rather
+than an exemption. An identity kind letters the same string in both systems, so
+it spends exactly the budget words it spent before this feature existed, which is
+why `× floor` and `local currency` are allowed to keep their spaces. The rule
+exists because a converting kind's IP string is new text standing where the SI
+one stood, and `Btu/h per person` would cost a strip line two words more than
+`W/pp` did and throw the page at load in `copy.js`, a module nobody would think
+to look in.
+
+The empty-string checks are a pair, and only one of them was there. An empty IP
+string is caught by any reader who knows the quantity; an empty SI string is
+caught by nothing else at all, because the SI string is itself what every other
+assertion compares against.
 | `assertReachable(control)` | For every `Ruled` control whose kind is not the identity, `step * factor` must be no larger than `10 ** -precisionFor(kind, step)`. | A control whose grid cannot produce a round IP figure is a foot the reader cannot stand on. Same arithmetic, and the same reason, as `readLandmarks`' third rule (`src/controls.js:284-290`). |
 
 ## Declarations that gain a `kind`
@@ -62,7 +76,18 @@ Sites with no declaration behind them (the quantities panel, the derived reading
 
 ## Controls whose step changes
 
-Eleven, listed with their measurements in research R4. Only `step` changes: no default moves, no range narrows, no key is renamed, and each new step divides the old one exactly, so every value an existing link carries is still a stop on the grid. `LINK_VERSION` stays `v1` and `MIGRATIONS` stays empty.
+Eleven, listed with their measurements in research R4. No default moves, no range narrows, no key is renamed, and each new step divides the old one exactly, so every value an existing link carries is still a stop on the grid. `LINK_VERSION` stays `v1` and `MIGRATIONS` stays empty.
+
+**`step` was not the only field that moved, and this page said it was.** Nine of
+the eleven also raised their SI `digits`: `ctxWidth` 0 to 2, `openDeltaHi` 0 to
+1, `openMaxWind` 1 to 2, `ventMaxWind` 1 to 2, `occupancy` 1 to 2, `activity` 0
+to 2, `outdoorAir` 1 to 2, `supplyMaxT` 0 to 1, `gridFactor` 0 to 2. Refining a
+step forces it: `onFace` rounds a snapped value to the step's own decimals, so a
+face ruled to 0.25 m but lettered to zero decimals would hold 40.25 and letter
+`40 m`, and the margin box could not hand back what it was given. The
+consequence is that those nine letter SI slightly differently than before this
+feature, `40.00 m` where `40 m` stood, which is a deviation from SC-008's "the
+same lettering as before" and is accepted rather than unnoticed.
 
 ## The remembered choice
 

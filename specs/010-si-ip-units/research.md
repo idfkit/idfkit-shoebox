@@ -64,6 +64,20 @@ None is integer-typed, so the widening is safe.
 
 **Alternatives considered**: leaving the steps and lettering those eleven at a coarser IP precision (a context distance lettered 10, 12, 13 ft, which is the "round figures" FR-011 rules out, and reads as a fault); a second IP-only grid (R3).
 
+**Recorded after the fact: nine of the eleven also took a finer SI `digits`,
+and this entry claimed none would.** `ctxWidth` 0 to 2, `openDeltaHi` 0 to 1,
+`openMaxWind` 1 to 2, `ventMaxWind` 1 to 2, `occupancy` 1 to 2, `activity` 0 to
+2, `outdoorAir` 1 to 2, `supplyMaxT` 0 to 1, `gridFactor` 0 to 2. It is forced
+rather than chosen: `onFace` snaps to `min + n·step` and then fixes the result
+to the step's decimals, so a face ruled to 0.25 m and lettered to zero decimals
+holds 40.25 and letters `40 m`, and a reader who types what it says cannot get
+it back. CLAUDE.md carries the invariant in the general form, that refining a
+step means refining its `digits` with it. The price is that those nine letter SI
+as `40.00 m` where an older sheet lettered `40 m`. The grid is still a strict
+superset and no link's value moves, so nothing about R4's conclusion changes;
+what changes is that "nothing else about them changes" was not true, and the
+deviation belongs here rather than in a reader's surprise.
+
 ## R5. Two new invariants that throw at module load
 
 **Decision**: `units.js` exports two assertions, both run at load.
