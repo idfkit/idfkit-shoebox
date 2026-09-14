@@ -2334,6 +2334,11 @@ function applyGeometry() {
   };
   studyScheduler?.cancelWhere((job) => job.restShape !== shapeOmitting(job.omits), 'moved');
   modelState = applyModel(model, params, patching());
+  // The title block's Timestep cell is set once at boot and otherwise never
+  // touched, so it went on lettering the build-time default after every
+  // later apply. Every change to the parameters passes through here, and
+  // the Solver channel's `timestep` control is one of them.
+  $('t-timestep').textContent = modelFacts(model).timestep;
   SURFACES = surfaceGeometry(model);
   WINDOWS = windowGeometry(model);
   // The neighbours are real geometry and belong in the model, but not in this
@@ -6358,11 +6363,10 @@ buildSliders();
 // no `desk-open` on the body, the button reading "Every control on the desk"
 // with `aria-expanded="false"` -- so arrival needs no call at all, and the
 // sheet keeps its full width until the reader asks for the controls.
-applyGeometry(); // also sets SURFACES and draws the axonometric
+applyGeometry(); // also sets SURFACES, draws the axonometric and letters the Timestep cell
 const facts = modelFacts(model);
 $('t-project').textContent = facts.project;
 $('t-site').textContent = facts.site;
-$('t-timestep').textContent = facts.timestep;
 $('t-engine-version').textContent = `EnergyPlus ${facts.version}`;
 
 renderTrace();
