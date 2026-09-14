@@ -67,7 +67,7 @@ jobs:
       MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.action == 'labeled' && 'starter' || 'triage') }}
     steps:
       # Only what the prompt is built from: the constitution, the guide, the
-      # spec index, the control declaration and the three modules it imports.
+      # spec index, the control declaration and the four modules it imports.
       - uses: actions/checkout@v7
         with:
           sparse-checkout: |
@@ -78,6 +78,7 @@ jobs:
             src/aperture.js
             src/tm59.data.js
             src/copy.js
+            src/units.js
             scripts/triage-context.mjs
             .github
           sparse-checkout-cone-mode: false

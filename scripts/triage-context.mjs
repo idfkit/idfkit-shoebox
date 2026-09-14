@@ -12,8 +12,8 @@
  * public, because on a public repository anyone can write it.
  *
  * Node 22 and no dependencies: `src/controls.js` imports only `aperture.js`,
- * `tm59.data.js` and `copy.js`, none of which import anything, so the sparse
- * checkout needs no install. Everything it takes comes through the
+ * `tm59.data.js`, `copy.js` and `units.js`, none of which import anything, so
+ * the sparse checkout needs no install. Everything it takes comes through the
  * environment, never through an interpolated shell string.
  */
 import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
