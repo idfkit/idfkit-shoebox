@@ -138,14 +138,25 @@ export async function nearestSites(latitude, longitude, limit = 8) {
   ).map((row) => ({ ...row, distanceKm: byUrl.get(row.station.url) }));
 }
 
-/** Degree days, the number that separates one flavour from another. */
-export const degreeDays = (station) =>
-  [
+/**
+ * Degree days, the number that separates one flavour from another.
+ *
+ * The bases stay Celsius in both systems, and the reading says so rather than
+ * leaving it to be assumed. `HDD18` is a published statistic computed on an
+ * 18 °C base: converting the count while the label still read 18 would be
+ * arithmetic nobody can check, and relabelling it `HDD65` would claim a
+ * statistic this page did not compute (research R11). Said here, where the
+ * figure is read, because a comment on the kind is not a reading — a US
+ * engineer handed `2,732 HDD18` beside an IP sheet has no way to know which
+ * base it is on.
+ */
+export const degreeDays = (station) => {
+  const said = [
     Number.isFinite(station.hdd18) ? `${station.hdd18.toLocaleString('en-US')} HDD18` : null,
     Number.isFinite(station.cdd10) ? `${station.cdd10.toLocaleString('en-US')} CDD10` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  ].filter(Boolean);
+  return said.length ? `${said.join(' · ')} · °C bases` : '';
+};
 
 /**
  * The three ways this fails, which are three different things to do about it.

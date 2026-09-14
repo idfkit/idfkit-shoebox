@@ -74,8 +74,9 @@ paragraph), `bill.js` / `rates.js` (the priced schedule), `permalink.js`,
 `schemes.js` (standards and kept schemes), `tm59.js` (overheating), `tour.js`
 (onboarding), `scheduler.js` / `study.js` / `pool.js` (studies), `survey.js` /
 `pull.js` / `relief.js` (E-02 design space survey), `weather.js` / `epw.js`,
-`copy.js` (copy budgets). Keep `readings.js`, `describe.js`, `tm59.js` and the
-`permalink.js` codec DOM-free and network-free so Node harnesses call the real code.
+`copy.js` (copy budgets), `units.js` (SI or IP, lettering only). Keep
+`readings.js`, `describe.js`, `tm59.js`, `units.js` and the `permalink.js` codec
+DOM-free and network-free so Node harnesses call the real code.
 
 ### Controls (`src/controls.js`)
 
@@ -232,6 +233,17 @@ geometry earlier ones wrote).
 - **General notes** (`tour.js`): markers fill only from real events via
   `tour?.note(...)`. **Any feature change that alters what a step teaches must update
   `NOTES` and the call sites, and bump the storage key** (`shoebox-general-notes-v4`).
+- **Units** (`units.js`): SI or IP is **lettering, never model**. Every value on
+  `params` stays the SI number the document holds; a frozen `Kind` says how it
+  converts and how precisely it reads, and conversion happens at the moment of
+  lettering and nowhere else. A converting kind owns its unit string outright
+  and its SI spelling **must equal the declaration's own** — that is the whole
+  of the guarantee that the SI sheet comes back character for character. An
+  identity kind letters the declaration's wording through `letter`'s `unit`
+  override, which is refused on anything that converts. The choice lives in
+  `shoebox-units-v1` and reaches no IDF object, no link, no solve key and no
+  kept scheme. `reletterSheet` in `main.js` is the one re-letter path and must
+  never call `applyGeometry`, which is where studies in flight are cancelled.
 - **Permalink** (`permalink.js`): delta-encoded against versioned defaults. Changing a
   default, renaming a key or narrowing a range means bumping `LINK_VERSION`, freezing
   `DEFAULTS_BY_VERSION` and writing a `MIGRATIONS` step. Links are refused whole.
@@ -308,6 +320,52 @@ geometry earlier ones wrote).
   `survey.js` returns `[]` for a span of a few ULPs).
 - **Per-surface output variables (`*` key) are ruinously expensive.** Keep new outputs
   zone- or site-level.
+- A quantity kind not in `KINDS` throws at load, naming the declaration that
+  asked for it (`assertKinds`); and a `Ruled` control whose step cannot reach a
+  round IP figure throws too (`assertReachable`, run over every face beside
+  `readLandmarks`). Refining a step means refining its `digits` with it, or the
+  face holds a value it cannot letter.
+- **A temperature and a temperature difference are different kinds**, and a
+  *change* in a temperature is a difference: lettered through `temperature` a
+  delta carries Fahrenheit's 32, so `+1 °C` reads `+33.8 °F`. The schedules
+  declare `deltaKind` for exactly this.
+- **A span along a face is a difference too.** How much room a control has left,
+  the width of a band: `deltaKindOf` owns the rule and `Ruled.spanKind` /
+  `spanUnitNow` are how a face asks it. Lettered through `quantityKind` a
+  setpoint's 5 K of room reads `41 °F`. A span takes a flat precision, never
+  `precisionFor`, which is an argument about positions on a grid.
+- **A change in a reading is a difference too**, and E-02's trade sentence is the
+  third route into the one trap. `Reading.format` letters a value, and the
+  sentence put `value - base` through it, so measured changes of `+4 °C` and
+  `+0.5 °C` read `+39 °F` and `+33 °F`. `Reading.change` is the sibling that
+  letters a difference, `main.js`'s trade sentence is its only caller, and
+  `deltaKindOf` is asked of every reading rather than only of temperatures,
+  since it returns a zero-offset kind unchanged.
+- **A cache whose key cannot see the unit system holds a converted string past
+  the switch that invalidated it.** `renderSurveyChoose`'s `chooserDrawn` and
+  `tm59Notes`' `noteCache` both letter units, and both now carry `system()` in
+  their key. It is `setStudy`'s identity guard again, one surface along: nothing
+  is stale, the figure is simply lettered in a system the reader has left.
+- **A hidden tab starves `requestAnimationFrame`, and this looks exactly like a
+  lettering bug.** `renderSurveySoon` and `renderPullSoon` clear their frame flag
+  only inside the rAF callback, so in a background tab the flag stays set, every
+  later call early-returns, and E-02 and the pull stop re-lettering entirely.
+  Three "stale" figures were chased this way before `document.visibilityState`
+  was checked. Force a paint before believing any E-02, pull or survey figure
+  read from a tab that is not visible.
+- **An `aria-label` that letters a figure is a reading, not a copy of one.** The
+  Study buttons' sweep ranges are the only place a reader who cannot see the face
+  is told what a study covers, and `sync()` does not reach them. `console.js`
+  keeps `studySweeps`, a thunk per key, replayed from `reletter()`. Any new label
+  that letters a value needs the same, or it stands in the system it was built in
+  for the life of the session.
+- **What a figure carries after it is not the kind's unit string.** A prefixed
+  kind (`resistance`, `R-20`) letters nothing after the number. Ask `suffixIn`,
+  never `unitIn`, wherever a unit is lettered *apart* from its figure — an axis
+  name, a unit column, `stopOf`'s strip. `letter` is composed from `prefixIn`
+  and `suffixIn` so the two cannot drift; the harness asserts
+  `format(v).endsWith(unitNow)` over all 87 faces in **both** systems, because
+  in SI alone the two agree by accident.
 - Any class that sets or unsets `display` and is toggled by `hidden` needs its own
   `[hidden]` twin (`all: unset` defeats the attribute too).
 - `dataset` is getter-only: write `el.dataset.x`, never `Object.assign(el, { dataset })`.

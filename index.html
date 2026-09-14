@@ -149,7 +149,16 @@
         border-radius: var(--r);
         min-width: 210px;
       }
-      .stamp div {
+      /* `>` rather than a descendant selector, and that is a fix rather than a
+         tidy-up. This is the stamp's *row* styling, and the units row carries a
+         nested `div.segments` that was picking up every line of it: 8px of
+         padding, `baseline` where a flex box wants `stretch`, and — as the last
+         div inside its row — `border-bottom: 0` from the rule below, which
+         quietly took one side off the segmented control's own border. Measured,
+         that made a 17.5px control into a 34.5px box and its row 42.5px against
+         the 28.5px of the four rows above it. A row is a child of the stamp;
+         nothing nested inside one is. */
+      .stamp > div {
         display: flex;
         justify-content: space-between;
         gap: 20px;
@@ -157,7 +166,7 @@
         padding: 8px 12px;
         border-bottom: 1px solid var(--rule-soft);
       }
-      .stamp div:last-child { border-bottom: 0; }
+      .stamp > div:last-child { border-bottom: 0; }
       .stamp span {
         font: 500 10px/1 var(--cond);
         text-transform: uppercase;
@@ -461,6 +470,126 @@
         color: var(--ink-2);
       }
       .toggle-sub { font-size: 11.5px; line-height: 1.35; color: var(--ink-3); }
+
+      /* Units: the design system's segmented selector, at the stamp's own scale
+         rather than the control row's. No new hue — the active segment is solid
+         --ink on --vellum, which `.segment.here` already carries, and
+         `aria-checked` says the same thing in words so colour is never the only
+         carrier. The restraint here is scale, not contrast: the fill stays,
+         because it is the non-colour carrier, but the whole control is about
+         the width of the `EnergyPlus 26.1.0` it sits under. */
+      .stamp-col {
+        display: grid;
+        gap: 8px;
+        align-content: start;
+        min-width: 210px;
+      }
+      /* A stamp row whose value happens to be operable, and which has to stand
+         exactly as tall as the four rows of plain text above it.
+
+         Two things, once the leak above is stopped. `align-items: center`,
+         because a bordered control aligned on a text baseline sits low and
+         drags the row down; and written `.stamp > div.units-row` because
+         `.stamp > div` is (0,1,1) and a bare `.units-row` is (0,1,0), so the
+         shorter selector loses and the rule silently does nothing.
+
+         Then the control is sized to the line it stands on rather than to a
+         padding that happens to fit: 11.5px, the line-height `.stamp b` letters
+         every value in this table on. That is 3 + 11.5 + 3 inside a 1px box,
+         19.5px, and with 4 + 4 of row padding and the 1px rule under it the row
+         comes to 28.5px — what the four rows above it measure. */
+      .stamp > div.units-row {
+        align-items: center;
+        padding-block: 4px;
+      }
+      /* `.stamp` on the front so this beats `.segments`, which is declared two
+         thousand lines further down and wins on source order at equal
+         specificity — the same trap the row rule above falls into.
+
+         `overflow: visible`, and it took two wrong reasons to arrive at the
+         right one. A first cut set `clip` on the theory that the box reserved a
+         scrollbar gutter; the measurement said otherwise, and the extra height
+         was `.stamp > div` leaking padding in. The real reason is the hit target
+         below: `overflow-x: auto` makes this a scroll container, a scroll
+         container clips what overflows it, and the `::after` that extends the
+         thumb target beyond the painted box is exactly that. Measured with
+         `elementFromPoint`, a point ten pixels above the button returned the row
+         behind it rather than the button.
+
+         Two segments of two letters cannot overflow, so nothing is lost;
+         scrolling is what `.segments` chose over shrinking a label, and that
+         choice is about strips with a dozen options, not about this pair. */
+      .stamp .units-seg { border-radius: 3px; overflow: visible; }
+      /* With the clipping gone the corners have to be cut on the segments
+         themselves, or the active segment's solid fill paints square over the
+         container's rounded border. 2px against the container's 3px, which is
+         the radius less the 1px border it sits inside. */
+      .units-seg .segment:first-child { border-radius: 2px 0 0 2px; }
+      .units-seg .segment:last-child { border-radius: 0 2px 2px 0; }
+      /* Tighter than the console's segments: these two sit in a stamp row, not
+         in a column of sixty controls, and their line is the stamp's own 11.5px
+         so the row stands level with the four above it. Both labels keep their
+         full text at 390px, which the quickstart measures rather than assumes. */
+      .units-seg .segment {
+        position: relative;
+        flex: 0 0 auto;
+        padding: 3px 10px;
+        font: 500 9px/11.5px var(--cond);
+        letter-spacing: 0.09em;
+      }
+      /* A thumb's target around a painted box far smaller than one. Every other
+         segmented selector on the sheet is `flex: 1` and stretches to fill its
+         container; this pair hugs two letters, so it measures about 31 × 17.5px
+         — under 44 in *both* directions, with nothing compensating. That is not
+         the trade this sheet makes elsewhere and states out loud: the index
+         sheet's 36px rows and the pattern grid's 36.8px cells go under 44 and
+         say why, and both buy it back by spanning a full width.
+
+         So the hit area is extended without moving the paint: the row keeps the
+         27.5px that makes it level with the four rows above it, and the tappable
+         box is 43.5px tall. Vertically only — the two segments sit side by side,
+         and widening them would overlap their neighbour and hand a tap to the
+         wrong system, which is a worse failure than a tap that misses. It
+         overlaps the rows above and below, which carry no controls of their own.
+
+         `content: ''` with no paint: this is a target, not a decoration.
+
+         It only works because `.units-seg` gives up `overflow-x: auto` above. A
+         scroll container clips what leaves it, so the first cut of this was
+         inert — `elementFromPoint` ten pixels above the button returned the row
+         behind it. A hit area that cannot be measured is not a hit area.
+
+         This is **not** the fix for the iOS report that prompted it. A red
+         focus ring on the tapped segment says the tap reached the button, so
+         the target was never what failed there; that was the toggle drawing
+         itself before `reletterSheet` could throw. This is the sheet's own
+         44px rule, applied to the one control that was breaking it. */
+      .units-seg .segment::after {
+        content: '';
+        position: absolute;
+        inset: -13px 0;
+      }
+      /* The aside under the stamp, not a line in it. Sized to the stamp so the
+         column has one edge, and in --ink-3 so the block of facts above it
+         stays the thing the eye lands on. */
+      .units-standing {
+        margin: 0;
+        max-width: 32ch;
+        font-size: 10.5px;
+        line-height: 1.4;
+        color: var(--ink-3);
+      }
+      /* Read aloud, never drawn: the switch is already visible, and a second
+         copy of the sentence on the sheet would be the same fact twice. */
+      .units-said {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
 
       /* inputs are inset: darker than the sheet, because they receive content */
 
@@ -5085,11 +5214,60 @@
              them — it is what parses the model and writes the IDF the engine is
              handed. It also says, without opening a fold, what this page is a
              demo of; the colophon at the foot says who built it. -->
-        <div class="stamp">
-          <div><span>Engine</span><b id="t-engine-version">EnergyPlus 26.1.0</b></div>
-          <div><span>Runtime</span><b>WebAssembly</b></div>
-          <div><span>Toolkit</span><b><a href="https://idfkit.com" target="_blank" rel="noreferrer">idfkit</a></b></div>
-          <div><span>Simulation server</span><b>None</b></div>
+        <div class="stamp-col">
+          <div class="stamp">
+            <div><span>Engine</span><b id="t-engine-version">EnergyPlus 26.1.0</b></div>
+            <div><span>Runtime</span><b>WebAssembly</b></div>
+            <div><span>Toolkit</span><b><a href="https://idfkit.com" target="_blank" rel="noreferrer">idfkit</a></b></div>
+            <div><span>Simulation server</span><b>None</b></div>
+            <!-- Units, as the fifth fact about how this page is read rather
+                 than a control on the desk. It belongs in the stamp for the
+                 reason every other row does: each one states something about
+                 the page itself rather than a reading off the run, and which
+                 system the figures are lettered in is exactly that. It is also
+                 the quietest place the sheet has, which is what a mode that is
+                 set once and then forgotten deserves — in the control row it
+                 sat at the scale of the two buttons that start runs.
+
+                 Still static markup, so it works when main.js never finishes
+                 booting — the same arrangement report-sheet.js relies on — and
+                 still reachable from every state the sheet can be in (FR-001),
+                 which the desk panel is not.
+
+                 A segmented selector and deliberately not the square marker:
+                 that marker means "a step that is armed" and the design system
+                 reserves it for armed states, where a unit system is one of two
+                 modes. -->
+            <div class="units-row" id="units">
+              <span id="units-label">Units</span>
+              <div class="segments units-seg" role="radiogroup" aria-labelledby="units-label" id="units-group">
+                <button type="button" class="segment here" role="radio" aria-checked="true" data-system="si">SI</button>
+                <button type="button" class="segment" role="radio" aria-checked="false" data-system="ip">IP</button>
+              </div>
+            </div>
+          </div>
+          <!-- The naming prose the design system asks for on a control a reader
+               has never met: in place, never on hover. Under the box rather than
+               inside it, so the stamp stays a clean list of facts and the
+               sentence reads as the aside it is. -->
+          <!-- Thirteen words. The contract's own draft of this line ran to
+               sixteen against a fifteen-word budget and threw the page at load,
+               which is the budget assertion working: "on the sheet" is what a
+               line printed on the sheet can leave out. -->
+          <p class="units-standing" id="units-standing">
+            Every number reads in the system you pick. The model stays in SI.
+          </p>
+          <!-- Shown only where the browser refuses to keep the choice, and in
+               place rather than on hover: a switch that quietly forgets itself
+               every visit is worse than one that says it will. -->
+          <p class="units-standing" id="units-forgets" hidden>
+            This browser will not remember the choice.
+          </p>
+          <!-- The switch announced in words. The page has no live region of its
+               own: `#status` is written by `markStale` on every drag transition,
+               so making that one live would speak a stale note each time a
+               slider settles. -->
+          <p class="units-said" id="units-said" role="status"></p>
         </div>
       </header>
 
@@ -5125,6 +5303,12 @@
             <button type="button" class="link" id="download" disabled>
               Download run bundle
             </button>
+            <!-- Said where the files are handed over, not in a fold: the model
+                 EnergyPlus reads is SI whichever system the sheet is lettered
+                 in, and a reader who has been working in feet has every reason
+                 to expect the download to follow them. It does not, because a
+                 model file in two unit systems would be two models. -->
+            <p class="take-note" id="download-note">The model files are in SI, whichever units the sheet shows.</p>
             <button type="button" class="link" id="share">
               Copy scheme link
             </button>

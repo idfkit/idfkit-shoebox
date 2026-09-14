@@ -19,6 +19,7 @@ import { CHANNELS, CHANNEL_BY_ID } from './controls.js';
 import { readDemand, readExtremes, readOverheat, readPeaks } from './readings.js';
 import { PRESETS } from './schemes.js';
 import { COUNT_CATEGORY, CRITERION_BY_ID, readCriterionA, readCriterionB, readCriterionC } from './tm59.js';
+import { kindFor, letter, unitIn } from './units.js';
 
 export { RunContents, VariableRequest };
 
@@ -218,6 +219,7 @@ export class Quantity {
     id,
     label,
     unit,
+    quantityKind,
     digits,
     needs,
     context = null,
@@ -232,6 +234,11 @@ export class Quantity {
     if (!Number.isInteger(digits) || digits < 0) {
       throw new Error(`the study quantity "${id}" declares ${digits} digits; digits must be a non-negative integer`);
     }
+    // What the curve measures, which decides how it letters in IP. Validated
+    // here beside `unit` and `digits` because those three are one statement
+    // about a quantity, and a kind resolved at draw time would fail on a card
+    // rather than at the declaration that is wrong.
+    const kind = kindFor(quantityKind, `the study quantity "${id}"`, unit);
     if (!(needs instanceof RunContents) || needs.empty) {
       throw new Error(`the study quantity "${id}" declares no run contents, so no run can answer it`);
     }
@@ -260,6 +267,7 @@ export class Quantity {
     this.id = id;
     this.label = label;
     this.unit = unit;
+    this.quantityKind = kind;
     this.digits = digits;
     this.needs = needs;
     this.context = context;
@@ -270,6 +278,31 @@ export class Quantity {
     this.wholeYear = Boolean(wholeYear);
     this.priced = priced;
     Object.freeze(this);
+  }
+
+  /**
+   * One value of this quantity, lettered in the system showing.
+   *
+   * On the quantity rather than at the surfaces that draw it, for the reason
+   * `Instant.say` is on the instant: the study card and the survey's own
+   * readings letter the same quantity, and written out at both they were a copy
+   * with a difference — the exact drift `Reading` avoids by taking its unit and
+   * precision off the quantity rather than declaring them again.
+   */
+  say(value) {
+    return letter(this.quantityKind, value, { digits: this.digits, unit: this.unit });
+  }
+
+  /**
+   * How this quantity's unit reads on its own, in the system showing.
+   *
+   * The chooser letters the unit beside the quantity's name rather than beside
+   * a figure, so it needs the unit half by itself — the same getter `Target`,
+   * `BillColumn` and survey's `Reading` carry. Without it the chooser said
+   * `°C` under a curve whose own ends read `°F`.
+   */
+  get unitNow() {
+    return unitIn(this.quantityKind, this.unit);
   }
 }
 
@@ -289,6 +322,21 @@ export class Offer {
     this.fix = fix;
     this.unit = unit;
     Object.freeze(this);
+  }
+
+  /**
+   * How this offer's unit reads beside the quantity's name, in the system
+   * showing.
+   *
+   * Through `unitIn` rather than through the quantity, because an offer may
+   * carry a unit the quantity did not: the priced ones substitute the tariff's
+   * own currency code. `unitIn` is exactly the rule that wants — it honours a
+   * declared string on an identity kind, which `currency` is, and returns the
+   * kind's own for anything that converts. The chooser used to letter `unit`
+   * raw, so it said `°C` beside a curve whose ends read `°F`.
+   */
+  get unitNow() {
+    return unitIn(this.quantity.quantityKind, this.unit);
   }
 }
 
@@ -375,7 +423,7 @@ export function contentsFor(quantity, channels = []) {
 
 export const QUANTITIES = Object.freeze([
   new Quantity({
-    id: 'extremes', label: 'High + low zone temperature', unit: '°C', digits: 1, needs: EXTREMES,
+    id: 'extremes', label: 'High + low zone temperature', unit: '°C', quantityKind: 'temperature', digits: 1, needs: EXTREMES,
     read: (landed) => {
       const reading = readExtremes(landed.eso);
       return reading ? Object.freeze(reading) : null;
@@ -386,7 +434,7 @@ export const QUANTITIES = Object.freeze([
     ],
   }),
   new Quantity({
-    id: 'demand', label: 'Heating + cooling demand', unit: 'kWh/m²·yr', digits: 1, needs: DEMAND,
+    id: 'demand', label: 'Heating + cooling demand', unit: 'kWh/m²·yr', quantityKind: 'energyIntensity', digits: 1, needs: DEMAND,
     wholeYear: true,
     read: (landed, options) => {
       const reading = readDemand(landed.eso, options?.built?.floorArea);
@@ -398,13 +446,13 @@ export const QUANTITIES = Object.freeze([
     ],
   }),
   new Quantity({
-    id: 'eui', label: 'Energy use intensity', unit: 'kWh/m²·yr', digits: 1, needs: BILL,
+    id: 'eui', label: 'Energy use intensity', unit: 'kWh/m²·yr', quantityKind: 'energyIntensity', digits: 1, needs: BILL,
     meterScope: 'building',
     wholeYear: true,
     read: (landed) => finite(landed.bill?.wholeYear ? landed.bill.intensity('metered') : null),
   }),
   new Quantity({
-    id: 'cost', label: 'Cost', unit: 'local currency', digits: 1, needs: BILL,
+    id: 'cost', label: 'Cost', unit: 'local currency', quantityKind: 'currency', digits: 1, needs: BILL,
     meterScope: 'all',
     priced: 'cost',
     read: (landed) => {
@@ -421,37 +469,41 @@ export const QUANTITIES = Object.freeze([
     ],
   }),
   new Quantity({
-    id: 'carbon', label: 'Carbon', unit: 'kgCO₂e', digits: 1, needs: BILL,
+    id: 'carbon', label: 'Carbon', unit: 'kgCO₂e', quantityKind: 'carbonMass', digits: 1, needs: BILL,
     meterScope: 'all',
     priced: 'carbon',
     read: (landed) => completeBillTotal(landed.bill, 'carbon'),
   }),
   new Quantity({
-    id: 'overheat', label: 'Hours above 25 °C', unit: '% of the year', digits: 1, needs: ANNUAL_EXTREMES,
+    id: 'overheat', label: 'Hours above 25 °C', unit: '% of the year', quantityKind: 'count', digits: 1, needs: ANNUAL_EXTREMES,
     wholeYear: true,
     read: (landed) => finite(readOverheat(landed.eso, 25)),
   }),
   new Quantity({
-    id: 'peakHeat', label: 'Peak heating load', unit: 'W/m²', digits: 1, needs: PEAKS, pen: '--warm',
+    // `fluxDensity`, not `powerDensity`, though both letter W/m² in SI: a peak
+    // load is quoted in Btu/h·ft² wherever IP is read, and a lighting allowance
+    // in W/ft². Two kinds for one SI string is the whole reason the roster
+    // carries both.
+    id: 'peakHeat', label: 'Peak heating load', unit: 'W/m²', quantityKind: 'fluxDensity', digits: 1, needs: PEAKS, pen: '--warm',
     read: fieldFrom(readPeaks, 'peakHeat'),
   }),
   new Quantity({
-    id: 'peakCool', label: 'Peak cooling load', unit: 'W/m²', digits: 1, needs: PEAKS, pen: '--cold',
+    id: 'peakCool', label: 'Peak cooling load', unit: 'W/m²', quantityKind: 'fluxDensity', digits: 1, needs: PEAKS, pen: '--cold',
     read: fieldFrom(readPeaks, 'peakCool'),
   }),
   new Quantity({
     id: 'tm59a', label: `${CRITERION_BY_ID.a.label} · ${TM59_STUDY_CATEGORY.label}`,
-    unit: CRITERION_BY_ID.a.unit, digits: 1, needs: TM59_AB,
+    unit: CRITERION_BY_ID.a.unit, quantityKind: 'count', digits: 1, needs: TM59_AB,
     context: (desk) => ({ trm: desk.runningMean, floor: desk.occupiedFloor }),
     read: (landed, { context }) => criterionValue(readCriterionA(landed.eso, context.trm, TM59_STUDY_CATEGORY, context.floor)),
   }),
   new Quantity({
     id: 'tm59b', label: `${CRITERION_BY_ID.b.label} · ${TM59_STUDY_CATEGORY.label}`,
-    unit: CRITERION_BY_ID.b.unit, digits: 0, needs: TM59_B,
+    unit: CRITERION_BY_ID.b.unit, quantityKind: 'count', digits: 0, needs: TM59_B,
     read: (landed) => criterionValue(readCriterionB(landed.eso, TM59_STUDY_CATEGORY)),
   }),
   new Quantity({
-    id: 'tm59c', label: CRITERION_BY_ID.c.label, unit: CRITERION_BY_ID.c.unit, digits: 1, needs: TM59_AB,
+    id: 'tm59c', label: CRITERION_BY_ID.c.label, unit: CRITERION_BY_ID.c.unit, quantityKind: 'count', digits: 1, needs: TM59_AB,
     context: (desk) => ({ floor: desk.occupiedFloor }),
     read: (landed, { context }) => criterionValue(readCriterionC(landed.eso, context.floor)),
   }),

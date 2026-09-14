@@ -10,6 +10,7 @@ import {
   US_ELECTRICITY,
   US_GAS,
 } from './rates.data.js';
+import { kindFor, letter } from './units.js';
 
 /**
  * What a kilowatt-hour costs and what it emits, where anyone has published it.
@@ -201,10 +202,21 @@ export const CAD = new Currency({ code: 'CAD', symbol: '$', minor: '¢' });
  * stops it being read as something more local than it is.
  */
 export class Rate {
-  constructor({ value, unit, currency = null, source, region }) {
+  constructor({ value, unit, currency = null, quantityKind = null, source, region }) {
     this.value = value;
     this.unit = unit;
     this.currency = currency;
+    // What the figure measures, for the branch of `text` that is not money.
+    //
+    // Required there, and null for a currency rate: money is the tariff's own
+    // and `currency.format` owns how it reads, while a rate with no currency is
+    // a physical quantity that had no way to letter itself as anything but SI.
+    // Today only the grid's carbon intensity takes that branch, and it is
+    // lettered through its kind elsewhere on the same card — so this is a gate
+    // rather than a repair, and the gate is the point: a second non-currency
+    // rate cannot be added without saying what it measures, and so cannot land
+    // in SI under an IP sheet unnoticed.
+    this.quantityKind = currency ? null : kindFor(quantityKind, `the "${unit}" rate for ${region}`, unit);
     this.source = source;
     this.region = region;
     Object.freeze(this);
@@ -214,7 +226,7 @@ export class Rate {
   get text() {
     return this.currency
       ? `${this.currency.format(this.value, 4)}/kWh`
-      : `${this.value.toFixed(0)} ${this.unit}`;
+      : letter(this.quantityKind, this.value, { digits: 0 });
   }
 }
 
@@ -397,6 +409,7 @@ const gridRate = (iso3, place) =>
     ? new Rate({
         value: GRID_INTENSITY[iso3],
         unit: 'gCO₂e/kWh',
+        quantityKind: 'carbonIntensity',
         source: SOURCES.grid,
         region: `${place}, ${GRID_INTENSITY_YEAR[iso3]} national mean`,
       })
@@ -416,8 +429,8 @@ const gridRate = (iso3, place) =>
  * was you, which is exactly what the bill then prints.
  */
 export function assume(card, params) {
-  const swap = (published, value, unit, currency) =>
-    new Rate({ value, unit, currency, source: SOURCES.assumed, region: 'Set on the Tariff strip' });
+  const swap = (published, value, unit, currency, quantityKind = null) =>
+    new Rate({ value, unit, currency, quantityKind, source: SOURCES.assumed, region: 'Set on the Tariff strip' });
 
   const priced = params.rateBasis === 'Assumed';
   const factored = params.factorBasis === 'Assumed';
@@ -428,7 +441,7 @@ export function assume(card, params) {
     currency: card.currency,
     electricity: priced ? swap(card.electricity, params.elecPrice, 'per kWh', card.currency) : card.electricity,
     gas: priced ? swap(card.gas, params.gasPrice, 'per kWh', card.currency) : card.gas,
-    grid: factored ? swap(card.grid, params.gridFactor, 'gCO₂e/kWh', null) : card.grid,
+    grid: factored ? swap(card.grid, params.gridFactor, 'gCO₂e/kWh', null, 'carbonIntensity') : card.grid,
     // Burning gas emits what burning gas emits. There is no assumption to
     // make here and offering one would only invite a wrong answer.
     gasFactor: card.gasFactor,
@@ -439,6 +452,7 @@ const gasFactorRate = () =>
   new Rate({
     value: GAS_G_PER_KWH,
     unit: 'gCO₂e/kWh',
+    quantityKind: 'carbonIntensity',
     source: SOURCES.combustion,
     // The kind label already says this is a combustion constant, so the region
     // says what is burning and on what basis instead.

@@ -3296,9 +3296,15 @@ export function modelFacts(doc) {
   const lon = Number(site.longitude);
   return {
     project: String(building.name).replace(/\s*\(.*\)$/, ''),
+    // The coordinates only. They are degrees in both systems, so they compose
+    // here; the elevation is a length and does not, and `model.js` may not
+    // import `units.js` — the unit system reaching an applier is the one thing
+    // that feature may not do. So the height is handed over as the number the
+    // document holds and the sheet letters it at the render site.
     site: `${Math.abs(lat).toFixed(2)}° ${lat >= 0 ? 'N' : 'S'} ${Math.abs(lon).toFixed(2)}° ${
       lon >= 0 ? 'E' : 'W'
-    } · ${Number(site.elevation).toLocaleString('en-US')} m`,
+    }`,
+    elevation: Number(site.elevation),
     timestep: `${timestep.number_of_timesteps_per_hour} / hour`,
     version: doc.version,
   };

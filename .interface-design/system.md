@@ -189,6 +189,40 @@ Exclusive states on one segmented rule: `1px --rule` border, `var(--r)` radius,
 `--ink` with `--vellum` text. Native `select` cannot be styled and hides state;
 a console has to be readable without opening anything.
 
+### A page-level mode: the units selector
+
+The segmented selector above serves one more job than choosing a channel's
+model: it is also the shape for a **mode the whole page is in**. SI against IP
+is the case, and it settles three things for any that follow.
+
+- **Not the square marker.** The marker means "a step that is armed" and is
+  reserved for that. A unit system is one of two modes, not an arming, and the
+  marker over it would say the wrong thing in the one place a reader is most
+  likely to be guessing.
+- **In the header stamp, not the control row and not the console.**
+  `mountConsole` owns the strips and the rail; a control that governs every
+  figure on the sheet is not a control of one channel. It sits in the header's
+  stamp — the block that states what the page *is*: engine, runtime, toolkit,
+  simulation server — because which system the figures are lettered in is
+  another fact of exactly that kind rather than an instrument on the desk. It
+  began in the field's control row and was moved: there it stood at the scale of
+  the two buttons that start runs, which reads far louder than a mode set once
+  and then forgotten. It is still static markup, so it works when `main.js`
+  never finishes booting, and still reachable before the engine loads, after a
+  refused link and with the desk closed — which a control inside the desk panel
+  is not.
+- **The restraint is scale, not contrast.** At stamp scale the control is about
+  as wide as the `EnergyPlus 26.1.0` above it. The solid `--ink` fill on the
+  active segment stays, because it is the carrier that is not colour; dropping
+  it for a difference in ink would have left hue doing the work alone.
+- **Its naming prose sits under the stamp, not inside it.** The standing line is
+  in place and never on hover, but below the bordered box, so the stamp stays a
+  clean list of facts and the sentence reads as the aside it is. The
+  announcement goes to a visually-hidden `role="status"` belonging to the
+  control, *not* to the page's `#status` line: that one is written by
+  `markStale` on every drag transition, so making it live would speak a stale
+  note each time a slider settled.
+
 ### The desk quantity, chosen from every study card
 
 Eleven choices are too many for a segmented selector, and the choice

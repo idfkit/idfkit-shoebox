@@ -37,6 +37,7 @@
 
 import { CHANNEL_BY_ID, controlFor } from './controls.js';
 import { QUANTITY_BY_ID, refusesSweep, sampleOrder, samplePoints } from './study.js';
+import { deltaKindOf, figureIn, letter, suffixIn } from './units.js';
 
 /* ══ how big the ground is ═══════════════════════════════════════════════ */
 
@@ -167,6 +168,10 @@ export class Reading {
     this.id = series.id;
     this.label = series.label;
     this.unit = quantity.unit;
+    // Taken from the quantity rather than declared again: a reading is one
+    // series of one quantity, and a second declaration of what it measures
+    // would be free to disagree with the card drawing the same number.
+    this.quantityKind = quantity.quantityKind;
     this.digits = quantity.digits;
     /** 'lower' | 'higher' | null — null where the direction is not ours to declare. */
     this.better = sense?.better ?? null;
@@ -197,10 +202,67 @@ export class Reading {
    * and `unit` otherwise. `bag` is the sample's readings bag the value came
    * out of, which is where a formatter finds what it needs.
    */
+  /**
+   * The unit this reading letters in, in the system showing.
+   *
+   * For the two axes that letter their unit **once, on the axis name** — the
+   * relief's standing block and the plan's contour legend — rather than on
+   * every figure. The figures there go through `figure` below, and this is the
+   * other half of that arrangement: convert both, or the drawing states IP
+   * levels under an SI unit.
+   */
+  get unitNow() {
+    // `suffixIn`, not `unitIn`: what a lettered figure of this kind actually
+    // carries after the number, which for a prefixed kind is nothing at all.
+    // `figure` below drops the `R-` along with the unit, so an axis headed from
+    // `unitIn` would have named a unit none of its stops were lettered in.
+    return suffixIn(this.quantityKind, this.unit);
+  }
+
+  /**
+   * The number alone, converted, at this reading's own precision.
+   *
+   * A contour label and a tick on the standing block carry no unit by design —
+   * the axis name carries it once, which is what keeps a field of forty spot
+   * figures readable. They still have to convert, and before this they were
+   * lettered straight off `toFixed` and bypassed `format` entirely.
+   */
+  figure(value) {
+    return figureIn(this.quantityKind, value, { digits: this.digits });
+  }
+
   format(value, bag) {
-    return this.series.format
-      ? this.series.format(value, bag?.[this.quantity.id])
-      : `${value.toFixed(this.digits)} ${this.unit}`;
+    if (this.series.format) return this.series.format(value, bag?.[this.quantity.id]);
+    // Through the quantity, which owns the lettering: the study card draws the
+    // same number and asked for it the same way, and written out at both they
+    // were a copy with a difference.
+    return this.quantity.say(value);
+  }
+
+  /**
+   * A *change* in this reading, which is a different quantity from the reading.
+   *
+   * `format` above letters a value, and the trade sentence was lettering
+   * `value - base` with it. Measured on the page: a ground surveyed for high and
+   * low read "+39 °F of high against +33 °F of low" for changes of about +4 °C
+   * and +0.5 °C, because `temperature` carries Fahrenheit's 32 and a difference
+   * must not. That is the offset trap `temperatureDifference` was split out for,
+   * arriving here by a third route after the ranking's "Room left" and the
+   * Effect column — so it gets a named method rather than a kind swapped inline
+   * at the call site, which is how the first two came back.
+   *
+   * `deltaKindOf` is asked of every reading and not only of the temperatures: it
+   * returns a zero-offset kind unchanged, so a kBtu/ft² change letters exactly
+   * as it did. The quantity's own `unit` still rides along, because `letter`
+   * honours a declaration's wording on an identity kind and ignores it on one
+   * that converts, which is what keeps a counted reading wording itself.
+   */
+  change(value, bag) {
+    if (this.series.format) return this.series.format(value, bag?.[this.quantity.id]);
+    return letter(deltaKindOf(this.quantityKind), value, {
+      digits: this.digits,
+      unit: this.unit,
+    });
   }
 }
 

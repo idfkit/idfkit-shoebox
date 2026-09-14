@@ -33,6 +33,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The sheet reads in SI or IP.** One segmented control in the header stamp
+  re-letters every figure on the page: the strips and their margin numbers, the
+  axonometric and its datums, the plate, the schedules, the scoreboard, the
+  bill, the study cards and the design space survey. The model does not move.
+  Every value stays the SI number the document and the engine hold, a quantity
+  kind declared beside each control says how that number converts and how
+  precisely it may be read, and conversion happens at the moment of lettering
+  and nowhere else. Measured on either side of a switch, the IDF is
+  byte-identical at eight desk positions and every link re-encodes to the same
+  string; a shared link carries no unit system at all, so one URL opens the same
+  building for every reader. Switching starts no run and interrupts none in
+  flight, and takes about 15 to 40 ms. The choice is remembered in the reader's
+  own browser, and a first visit opens in IP only where the browser reports a
+  United States region.
+
+  Eleven controls take a finer step, so that whole IP figures can be reached at
+  all: at the old 0.5 m one step of the context distance was 1.64 ft, and most
+  whole feet could not be stood on. Each new step divides the old one exactly,
+  walked over 1,365 stops with zero drift, so every value an existing link
+  carries is still a position on the grid and the link format does not move.
+
 - **Report a problem from the sheet.** A fourth way out beside Download, Share
   and Save opens a slip under the status line carrying what the reader was
   looking at: the link and build that reproduce the desk, the engine's severe
