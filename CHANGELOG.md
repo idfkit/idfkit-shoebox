@@ -7,176 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **The sheet reads at a glance.** Every reading, verdict, absence and refusal
-  stays in view; method notes, derivations, citations and the TM59
-  qualifications sit one press away in a fold under what they explain. Visible
-  prose falls from about 2,700 words to under 600 on the sheet, and from about
-  2,250 to under 400 with the console open. Each channel and general note now
-  leads with one short line, and a line that grows past its word budget stops
-  the page loading. The model and the link format do not move.
-
-- **The idfkit libraries move to 0.3.0-rc.3.** `@idfkit/core`, `@idfkit/schemas`
-  and `@idfkit/weather` are pinned to the exact version that wrote the file, and
-  every IDF this page hands out now stamps `@idfkit/core 0.3.0-rc.3` in its
-  header and in the run bundle's manifest. The building does not move: eight
-  desk positions were written on each toolkit and hold the same objects, field
-  for field. Links minted before the upgrade open unchanged.
-
-  Two differences are deliberate. Every `!-` comment sits one column further
-  left, an upstream fix that takes the default desk from 22,403 bytes to 22,022.
-  And reading a type the document does not hold no longer registers it, so with
-  every channel engaged eleven types sit at different positions in the file —
-  the same objects in a different order, running to byte-identical results under
-  EnergyPlus 26.1.0.
+## [0.4.0] - 2026-09-15
 
 ### Added
 
-- **Study and survey the plant and the tariff.** Seasonal efficiency, both COPs,
-  the two prices and the grid intensity now carry Study, and are axes on E-02.
-  Each costs no run beyond the one its shape needs: the run is priced at every
-  position, so a ground of U-factor against boiler efficiency costs only the
-  U-factor runs. A reading a priced control cannot move, such as efficiency
-  against heating demand, is refused with the readings it can move, and a face
-  its selector has withdrawn says why under the row. The pull still ranks only
-  what shapes the building.
-
-- **The sheet reads in SI or IP.** One segmented control in the header stamp
-  re-letters every figure on the page: the strips and their margin numbers, the
-  axonometric and its datums, the plate, the schedules, the scoreboard, the
-  bill, the study cards and the design space survey. The model does not move.
-  Every value stays the SI number the document and the engine hold, a quantity
-  kind declared beside each control says how that number converts and how
-  precisely it may be read, and conversion happens at the moment of lettering
-  and nowhere else. Measured on either side of a switch, the IDF is
-  byte-identical at eight desk positions and every link re-encodes to the same
-  string; a shared link carries no unit system at all, so one URL opens the same
-  building for every reader. Switching starts no run and interrupts none in
-  flight, and takes about 15 to 40 ms. The choice is remembered in the reader's
-  own browser, and a first visit opens in IP only where the browser reports a
-  United States region.
-
-  Eleven controls take a finer step, so that whole IP figures can be reached at
-  all: at the old 0.5 m one step of the context distance was 1.64 ft, and most
-  whole feet could not be stood on. Each new step divides the old one exactly,
-  walked over 1,365 stops with zero drift, so every value an existing link
-  carries is still a position on the grid and the link format does not move.
-
-- **Report a problem from the sheet.** A fourth way out beside Download, Share
-  and Save opens a slip under the status line carrying what the reader was
-  looking at: the link and build that reproduce the desk, the engine's severe
-  and fatal lines, what was refused or blocked in view, the browser and layout,
-  the errors the page caught and the last twenty actions. The reader reads every
-  line before one press opens a prefilled GitHub issue, which is the only moment
-  it leaves their machine. It opens even when the engine fails to load, which
-  the status line now says instead of stopping silently.
-
-- **New issues sort themselves.** Each gets one bucket or "needs a person", area
-  and failure labels, and likely duplicates named, with a folded starter
-  paragraph for `/speckit-specify` on a feature request. Claude reads the issue
-  with no tools; idfkit-bot applies only what survives a check against the
-  repository, and never overrides a maintainer's label.
-
 - **A survey of the design space, on a second drawing.** Choose two controls
-  and a reading, and the sheet cuts a ground through the desk as it stands: a
-  real EnergyPlus run at every position of a grid, contoured on a plan and
-  drawn in relief beside it. Standing on any measured point moves the whole of
-  E-01 to that design, and letting it fall walks the desk downhill one real run
-  at a time until it settles in a hollow that says it is one.
+  and a reading, and E-02 cuts a ground through the desk from a real EnergyPlus
+  run at every grid position, contoured on a plan and drawn in relief. Standing
+  on a measured point moves E-01 to that design, and a ranking beside it names
+  which controls actually move the reading here. The contours between runs are
+  declared as interpolation and no figure is read off them.
 
-  Everything lettered comes off a completed run. The contours and the surface
-  between the runs are interpolation, declared as such on both drawings, and no
-  figure anywhere is read off them; a run that failed is a hole with its reason
-  on it rather than a gap filled from a neighbour. Because a smooth relief does
-  not report its own sample density, the coverage and the grid size are
-  lettered beside it.
+- **The sheet reads in SI or IP.** A control in the header stamp re-letters
+  every figure on the page without moving the model: the IDF and every link are
+  byte-identical either side of a switch, and a shared link carries no unit
+  system. Eleven controls take a finer step that divides the old one exactly, so
+  whole IP figures can be reached and existing links still land on the grid.
 
-  A ranking beside the ground answers the question that comes before it: which
-  of the ninety sweepable controls actually move the reading here, one run each,
-  with direction in words and how much range is left in it. Controls that reach
-  no object at this desk are listed with their reasons and cost no run at all.
+- **Overheating read against CIBSE TM59.** A Room type on the Gains strip writes
+  the method's occupancy, equipment and lighting profiles, and the scoreboard
+  counts hours above a comfort line that moves with the outdoor running mean
+  rather than a fixed number. It letters how many criteria were cleared out of
+  how many it could read, never a pass or fail, since one zone on attached
+  weather is not the method's assessment.
 
-  The ground shares the studies' queue, pool and sample cache, so a control
-  already swept costs nothing, and neither starves the other. A link carries the
-  axes, the readings and the extents; the recipient re-measures to identical
-  numbers.
+- **Studies plot the quantity you choose.** Every open study shares one of
+  eleven quantities, from temperature and TEDI/CEDI to cost, carbon and the TM59
+  criteria, and one the desk cannot produce stays listed with the reason and the
+  action that enables it. Links now carry the chosen quantity and the open
+  studies.
 
-  Each axis can be narrowed to the range worth looking at, and the ground is
-  re-cut over it — the runs already inside the new extent are reused. The two
-  axes can be swapped with one press, which costs no simulation at all: a
-  flipped ground is the same designs transposed. Every
-  design the desk has stood on this session is listed with the readings taken
-  at it and can be restored exactly, whether it was reached from the survey or
-  with the sliders.
+- **Study and survey the plant and the tariff.** Seasonal efficiency, both COPs,
+  the two prices and the grid intensity now carry Study and are axes on E-02, at
+  no run beyond the one each shape needs. A reading a priced control cannot
+  move is refused, with the readings it can.
 
-- **Studies can plot the quantity you choose.** Every open parameter study now
-  shares one quantity selected from its card. Temperature draws its high and
-  low together, thermal demand draws TEDI and CEDI together, and nine further
-  choices cover energy use, cost, carbon, overheating, peak loads and the TM59
-  criteria. Each curve states what it measures, uses the quantity's own unit
-  and precision, and updates every open study together so curves on the same
-  desk remain comparable.
+- **Report a problem from the sheet.** A Report button gathers the link, build,
+  engine errors, refusals in view and last twenty actions into a slip the reader
+  reads before one press opens a prefilled GitHub issue, the only moment it
+  leaves their machine. It works even when the engine fails to load.
 
-  All eleven choices stay visible. A quantity the current desk cannot produce
-  is disabled in place with the specific reason and the action that makes it
-  available, rather than disappearing or becoming a zero. Following an
-  instruction to attach weather keeps the same study, open chooser, focus and
-  position while the new climate is solved. Compatible results are reused,
-  tariff and plant changes reprice cached meter totals without another engine
-  run, and each sample still requests only the outputs its selected quantity
-  needs.
+### Changed
 
-  Shared links now carry both the chosen quantity and every open study. Opening
-  one recreates the same questions and re-solves them locally; links minted
-  before this feature continue to open with no studies, as they did before.
+- **The sheet reads at a glance.** Every reading, verdict, absence and refusal
+  stays in view, while method notes, derivations and citations sit one press
+  away in a fold under what they explain. Visible prose falls from about 2,700
+  words to under 600; the model and the link format do not move.
+
+- **The idfkit libraries move to 0.3.0.** `@idfkit/core`, `@idfkit/schemas` and
+  `@idfkit/weather` are pinned exactly, and every IDF and run bundle stamps the
+  new version. Eight desk positions hold the same objects field for field and
+  existing links open unchanged; the file differs only in comment alignment and
+  the order of eleven types, which run to byte-identical results.
 
 ### Fixed
 
-- **E-02 re-prices when the tariff or plant moves.** A ground read for cost,
-  carbon or energy use intensity kept lettering the price it was measured at
-  after the Tariff or Plant strip changed; its spot heights now follow the bill,
-  with no run.
-
 - **A window-to-wall ratio now includes its frame, and a large framed window no
-  longer stops the run.** The ratio is measured over the whole opening, frame
-  included, as ASHRAE 90.1 measures it. A wider frame therefore means less
-  glass, not a bigger hole. Before, a ratio near 0.9 with a wide frame produced
-  a window bigger than its wall, and EnergyPlus stopped before simulating. A
-  small ratio with a frame wide enough to leave no glass is now refused on the
-  plan key, which says why. Desks without a frame produce the same file as
-  before.
-- **Fins, overhangs and curbs 1 cm deep are refused.** At that depth
-  EnergyPlus merges the shade's edges and deletes it, so the run went ahead
-  without a shade that the drawing still showed.
-- **A heating setpoint above the cooling one no longer kills the run.** The two
-  sliders overlap and could pass each other, which EnergyPlus refuses in the
-  first warmup timestep. The System strip is now blocked until they are level or
-  apart; Heat only and Cool only are unaffected.
-- **A survey ground whose readings are nearly flat no longer fails to draw.**
-  The contour interval is chosen from the measured range, and where that range
-  was a few floating-point ticks wide the interval came out finer than the
-  numbers themselves could step by — the drawing threw and the whole ground
-  went off the sheet. A ground that flat now draws its measured designs with no
-  contours across them, which is what it already did for a ground that was
-  exactly flat.
-- **A position a ground could not measure is no longer called a failed run.**
-  The key called every gap "a run that could not be completed", which was true
-  while the only way to have one was for the engine to fail. A refused position
-  never reaches the engine, so both now read as a position with no reading,
-  each still carrying its own reason.
-- **A study, a survey ground or a pull ranking no longer mixes a building with
-  a system and one without.** A position where a swept control takes its own
-  channel out of the model is refused rather than run, drawn as a gap, and says
-  why — on a study card, on a ground, and as an inert row of a ranking, where
-  such a step would otherwise have measured the channel leaving rather than the
-  control moving. A survey asks this of both its axes. A *different* channel
-  going out under the sweep, such as blinds losing the window they hang on, is
-  still a design and is still measured.
-- **Linear rooflights too thin to build are refused.** At the lowest
-  skylight-to-roof ratio, three or four bands on a shallow roof came out under
-  1 cm deep, and EnergyPlus deleted every one while the drawing still showed
-  them. The Skylights strip now goes out and says why.
+  longer stops the run.** The ratio is the rough opening, as ASHRAE 90.1
+  measures it, so a wider frame means less glass rather than a window bigger
+  than its wall. A ratio the frame closes entirely is refused on the plan key;
+  desks without a frame write the same file.
+
+- **A heating setpoint above the cooling one no longer kills the run.** The
+  System strip is blocked until the two are level or apart, instead of failing
+  in the first warmup timestep.
+
+- **Shades and rooflights too small to build are refused.** Fins, overhangs and
+  curbs 1 cm deep, and linear rooflight bands under 1 cm at the lowest skylight
+  ratio, were deleted by EnergyPlus while the drawing still showed them.
+
+- **A study no longer mixes a building with a system and one without.** A
+  position where the swept control takes its own channel out of the model is
+  refused and drawn as a gap with its reason, rather than measured.
+
+- **The title block's Timestep cell follows the Solver strip.** It was lettered
+  once at boot and never updated.
 
 ## [0.3.0] - 2026-09-03
 
@@ -1048,7 +953,8 @@ laid out as a drafting sheet, served at
 - Licensing and disclosure section citing the open datasets and npm packages
   behind the page.
 
-[unreleased]: https://github.com/idfkit/idfkit-shoebox/compare/v0.3.0...HEAD
+[unreleased]: https://github.com/idfkit/idfkit-shoebox/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/idfkit/idfkit-shoebox/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/idfkit/idfkit-shoebox/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/idfkit/idfkit-shoebox/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/idfkit/idfkit-shoebox/releases/tag/v0.1.0
