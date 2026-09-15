@@ -83,6 +83,7 @@ import {
   strataOf,
   SpotHeight,
   TraverseStop,
+  markSentence,
   passingGround,
   thresholdLevels,
   thresholdsAt,
@@ -9869,53 +9870,6 @@ function thresholdSentence(line, ground) {
   return `${opening} ${markSentence(ground)}`;
 }
 
-/**
- * What this band actually put on the ground, said in the same breath as the
- * line it belongs to.
- *
- * The hatch clause used to be unconditional, which made the key assert a mark
- * the drawing did not always carry. Three of the five states below draw no
- * hatch at all, and one of them — the scattered ground — draws no rule either,
- * so the entry stood over a blank ground saying "hatched is measured ground
- * meeting this standard's published threshold" with nothing hatched anywhere.
- * That is an absence with no reason given, which is the one thing this sheet's
- * key is for refusing.
- *
- * `hatched` is asked before `wholly`, and the order is the whole of the fix:
- * `wholly` is a fact about the reading — which side of the line the ground is
- * on — while `hatched` is a fact about the drawing, and a band can fail to
- * hatch a ground that is wholly passing. The swatch beside these words asks
- * `ruled` for the same reason; both live on `PassingGround` so the sentence
- * and the mark cannot come to disagree about what was drawn.
- */
-function markSentence(ground) {
-  const { hatched, passing, measured, wholly } = ground;
-  // Before the first sample lands there is no ground at all. The line is not
-  // absent and not refused — nothing has been measured for it to cross yet.
-  if (!measured) return 'No position on this ground carries a run yet, so there is nothing to draw this line across.';
-  // FR-007: where the line crosses none of the measured ground, saying which
-  // side the whole of it is on is the answer. Drawing nothing would leave a
-  // reader unable to tell an absent line from a defect. Built once and used by
-  // both sides, since the key and the aria label share this wording and a
-  // second spelling of it is a second thing to keep in step.
-  const crossesNone = (side) => `The line crosses no measured ground: ${side} design here meets it.`;
-  if (hatched) {
-    const said = "Hatched is measured ground meeting this standard's published threshold.";
-    return wholly === 'passing' ? `${said} ${crossesNone('every')}` : said;
-  }
-  // Nothing hatched, and the reason is the reading rather than the drawing:
-  // not one measured design is on the passing side.
-  if (wholly === 'failing') return crossesNone('no');
-  // Nothing hatched although designs do pass. A region needs a cell with four
-  // measured corners, so a passing design whose neighbours were never run has
-  // nothing to be bounded by — the same rule that leaves unsurveyed ground
-  // bare of contours, arriving where it costs a band. The count is the honest
-  // answer in the meantime, and refining is what fixes it.
-  const met = wholly === 'passing'
-    ? 'Every measured design here meets it'
-    : `${passing} of ${measured} measured designs meet it`;
-  return `${met}, but each has unmeasured neighbours, so there is no region to bound — let the ground refine.`;
-}
 
 /**
  * Draw the ground.

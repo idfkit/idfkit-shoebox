@@ -47,6 +47,7 @@ What it must assert:
 | 11 | on a lattice wholly below a limit, `wholly === 'passing'`; wholly above, `'failing'`; and `segments` is empty in both | **FR-007** |
 | 12 | a lattice whose values straddle a limit gives `segments` identical to `contoursOf(lattice, [limit])` | FR-006, R-3 |
 | 13 | `thresholdsFor` called twice with the same arguments gives equal sets, and switching `chased` and back gives the original set | **FR-015** |
+| 13b | the six states of a band's key sentence, driven through the imported `markSentence` against the real `passingGround`: a sentence claims a hatch only where `hatched`, claims a crossing only where the line is not drawn, and every state stays inside the 40-word ceiling | FR-005, FR-007, copy |
 | 14 | lettering: `threshold.figure()` in IP is the SI limit converted by the reading's kind, and `format(v).endsWith(unitNow)` still holds over all faces in both systems | units invariant |
 
 ## 2. The no-model check

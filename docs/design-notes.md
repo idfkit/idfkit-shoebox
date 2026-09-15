@@ -2505,6 +2505,20 @@ this sheet is worse than an em dash, because the reader has no way to see it.
 The swatch carries only the marks that band drew, so an entry with neither is
 a sentence alone, exactly like the absence entry above it.
 
+**And the sentence lives in `survey.js`, not beside the drawing.** That is the
+opposite of where wording usually goes on this sheet, and `absenceIn` is the
+precedent it follows: the absence path already letters its finished sentence
+in that module, and the key, the plan caption and the aria label all reuse the
+one wording rather than spelling it three times. The reason is that this is
+the copy the page cannot check. `main.js` imports the engine and drives the
+DOM, so nothing in it loads under Node — the six branches were first verified
+by *scraping* `markSentence`'s source text out of the file and rebuilding it
+with `new Function`, which is a verification a rename ends silently. Imported
+from `survey.js` the same rename is a `SyntaxError` at module load. The
+opening that names the standard and letters its figure stays in `main.js`,
+because that is lettering; this is the claim about what was drawn, and it is
+the claim that had to be provable.
+
 **What the harness covers that the page could not.** `climate.onebuilding.org`
 is unreachable from the container this was built in (403 through the proxy), so
 no weather file could be attached and only the design-day readings could be
