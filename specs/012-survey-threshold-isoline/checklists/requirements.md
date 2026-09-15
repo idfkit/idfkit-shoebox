@@ -31,9 +31,15 @@
 
 ## Notes
 
-- No [NEEDS CLARIFICATION] markers were needed: the scope question (which plotted
-  readings carry a threshold) has a reasonable default grounded in the codebase's
-  existing compliance-metric declarations (the TM59 criteria today, plus any
-  reading tied to an active compliance target elsewhere on the sheet), and is
-  recorded under Assumptions rather than left open.
-- All items pass on first validation pass.
+- Initial draft carried no [NEEDS CLARIFICATION] markers: the scope question (which
+  plotted readings carry a threshold) had a reasonable default grounded in the
+  codebase's existing compliance-metric declarations, recorded under Assumptions.
+- A `/speckit-clarify` session on 2026-09-15 surfaced a real gap the default had not
+  covered: a reading's threshold can be published by more than one standard at once
+  (e.g. space heating demand under Passivhaus, EnerPHit and LETI), which the
+  original draft did not address. Three questions resolved it — draw every
+  applicable standard's line by default, shade per standard rather than combining
+  verdicts, and narrow to one standard's line while it is being chased — and the
+  spec (Overview, a new User Story 4, Edge Cases, FR-001–FR-003 and FR-011–FR-015,
+  Key Entities, Success Criteria, Assumptions) was updated accordingly.
+- Re-validated against the updated spec: all items still pass, no regressions.
