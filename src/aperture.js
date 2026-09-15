@@ -151,3 +151,101 @@ export const openingFor = (params, face, ratio) =>
     aperture: params.aperture,
     frame: params.frameWidth,
   });
+
+/**
+ * The rooflights a skylight-to-roof ratio asks for, on the unturned plan.
+ *
+ * Asked once for the same two modules the wall opening is: `model.js` cuts them
+ * into the roof and turns them with the building, and `controls.js` has to know
+ * whether the engine will keep them, so the Skylights strip can refuse the
+ * position and say why rather than draw lights the run never sees.
+ *
+ * **A linear band can come out thinner than `COINCIDENT`.** Its depth is the
+ * ratio's area shared across n bands of nearly the full width, so it is about
+ * r·d/n, and at the strip's first stop off zero four bands on a 4 m deep plan
+ * are 5 mm deep. EnergyPlus merges each band's two long edges and deletes it:
+ *
+ *     ** Severe ** GetSurfaceData: There are 4 degenerate surfaces; Degenerate
+ *                  surfaces are those with number of sides < 3.
+ *
+ * The run completes, so every rooflight stood in the document and on the
+ * drawing, the strip read a ratio of 0.005 off their vertices, and the engine
+ * simulated a solid roof. A curb makes it twelve, since each band's two end
+ * faces are as thin as the band. Measured over the whole grid, sixty ratio
+ * stops, one to four across and plan sides from 4 to 40 m, it bites only at
+ * 0.005 with three or four bands on a plan up to 7.8 m deep. Square lights
+ * never come near it: the smallest anywhere is 0.071 m, a 1 m cell at √0.005.
+ */
+export class Rooflights {
+  constructor({ form, count, ratio, rects }) {
+    this.form = form;
+    this.count = count;
+    this.ratio = ratio;
+    this.rects = Object.freeze(rects.map((rect) => Object.freeze(rect)));
+    Object.freeze(this);
+  }
+
+  /** The shortest side of any light, or Infinity on a solid roof. */
+  get smallest() {
+    return Math.min(...this.rects.flatMap(([x0, y0, x1, y1]) => [x1 - x0, y1 - y0]));
+  }
+
+  /**
+   * Whether the engine keeps every light. True of a solid roof, because no
+   * rooflight is a setting and not a refusal.
+   */
+  get builds() {
+    return builds(this.smallest);
+  }
+}
+
+/**
+ * Lay the lights out. The two arrangements spend one area two ways. Square
+ * lights take a cell each of an n × n grid and are scaled by √r within it, the
+ * punched wall aperture's arithmetic and for the same reason: it keeps each
+ * light in proportion with its piece of roof at every ratio. Linear rooflights
+ * run the full width and spend the area on depth, which is the north-light
+ * section drawn flat. Both clamp against a reveal, and a clamp that bites is not
+ * hidden: the strip's ratio is read back off the vertices, not off the slider.
+ */
+export function layRooflights({ ratio: r, width: w, depth: d, count: n, form }) {
+  const rects = [];
+  if (!(r > 0)) return new Rooflights({ form, count: n, ratio: r, rects });
+
+  if (form === 'Linear') {
+    const x0 = MARGIN;
+    const x1 = Math.max(x0 + 0.1, w - MARGIN);
+    const band = Math.min((r * w * d) / (n * (x1 - x0)), Math.max(0.1, d / n - 2 * MARGIN));
+    for (let i = 0; i < n; i += 1) {
+      const cy = ((i + 0.5) * d) / n;
+      rects.push([x0, cy - band / 2, x1, cy + band / 2]);
+    }
+  } else {
+    const s = Math.sqrt(r);
+    const [cw, cd] = [w / n, d / n];
+    const lw = Math.min(cw * s, Math.max(0.1, cw - 2 * MARGIN));
+    const ld = Math.min(cd * s, Math.max(0.1, cd - 2 * MARGIN));
+    for (let i = 0; i < n; i += 1) {
+      for (let j = 0; j < n; j += 1) {
+        const [cx, cy] = [(i + 0.5) * cw, (j + 0.5) * cd];
+        rects.push([cx - lw / 2, cy - ld / 2, cx + lw / 2, cy + ld / 2]);
+      }
+    }
+  }
+  return new Rooflights({ form, count: n, ratio: r, rects });
+}
+
+/**
+ * The same question asked of the desk. `stops` is the count control, handed in
+ * rather than imported because this module sits under `controls.js`; its stops
+ * are what clamp the grid, so a later widening of the slider cannot become a
+ * silent clamp here.
+ */
+export const rooflightsFor = (params, stops) =>
+  layRooflights({
+    ratio: params.skyRatio,
+    width: params.width,
+    depth: params.depth,
+    count: Math.max(stops.min, Math.min(stops.max, Math.round(params.skyCount))),
+    form: params.skyForm,
+  });

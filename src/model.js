@@ -16,7 +16,7 @@ import {
   parseHolidays,
   parsePattern,
 } from './controls.js';
-import { MARGIN, builds, openingFor, sizeOpening } from './aperture.js';
+import { MARGIN, builds, openingFor, rooflightsFor, sizeOpening } from './aperture.js';
 import { END_USES } from './bill.js';
 import { RunContents } from './contents.js';
 
@@ -122,7 +122,7 @@ const SKY_GLASS = 'SKYLIGHT GLAZING';
 /**
  * The stops on the rooflight grid, read off the control that owns them rather
  * than written out again here. Repeating the top stop as a literal is how a
- * later widening of the slider becomes a silent clamp in `skylightsOn` and a
+ * later widening of the slider becomes a silent clamp in `rooflightsFor` and a
  * sweep in `applySkylights` that is one square too short.
  */
 const SKY_COUNT = controlFor('skyCount').control;
@@ -501,50 +501,26 @@ function finsOn(opening, params) {
  * does it, so a building set to a bearing carries its rooflights round with it
  * instead of having them slide across a roof that moved underneath them.
  *
- * The two arrangements spend one area two ways, and the difference is a real
- * one on a roof. Square lights take a cell each of an n × n grid and are
- * scaled by √r within it — the same arithmetic the punched wall aperture uses,
- * and for the same reason: it keeps each light in proportion with the piece of
- * roof it belongs to at every ratio. Linear rooflights run the full width and
- * spend the area on depth instead, which is the north-light section drawn flat.
- *
- * Both clamp against a reveal, and a clamp that bites is not hidden: the area
- * that results is what goes into the document, and the strip's ratio is read
- * back off those vertices rather than off the number the slider says. There is
- * no tilt here and there cannot be — a `FenestrationSurface:Detailed` has to be
- * coplanar with the surface it is cut into, so a monitor or a sawtooth would
- * need the roof itself to fold, which is a different building.
+ * How they are laid out is `layRooflights` in `aperture.js`, because the
+ * Skylights strip has to ask the same arithmetic whether the engine will keep
+ * them. There is no tilt here and there cannot be — a
+ * `FenestrationSurface:Detailed` has to be coplanar with the surface it is cut
+ * into, so a monitor or a sawtooth would need the roof itself to fold, which is
+ * a different building.
  */
 function skylightsOn(params) {
-  const r = params.skyRatio;
-  if (!(r > 0)) return [];
-  const { width: w, depth: d, height: H } = params;
-  const n = Math.max(SKY_COUNT.min, Math.min(SKY_COUNT.max, Math.round(params.skyCount)));
-  const centre = [w / 2, d / 2];
-  const rects = [];
-
-  if (params.skyForm === 'Linear') {
-    const x0 = MARGIN;
-    const x1 = Math.max(x0 + 0.1, w - MARGIN);
-    const band = Math.min((r * w * d) / (n * (x1 - x0)), Math.max(0.1, d / n - 2 * MARGIN));
-    for (let i = 0; i < n; i += 1) {
-      const cy = ((i + 0.5) * d) / n;
-      rects.push([x0, cy - band / 2, x1, cy + band / 2]);
-    }
-  } else {
-    const s = Math.sqrt(r);
-    const [cw, cd] = [w / n, d / n];
-    const lw = Math.min(cw * s, Math.max(0.1, cw - 2 * MARGIN));
-    const ld = Math.min(cd * s, Math.max(0.1, cd - 2 * MARGIN));
-    for (let i = 0; i < n; i += 1) {
-      for (let j = 0; j < n; j += 1) {
-        const [cx, cy] = [(i + 0.5) * cw, (j + 0.5) * cd];
-        rects.push([cx - lw / 2, cy - ld / 2, cx + lw / 2, cy + ld / 2]);
-      }
-    }
+  const lights = rooflightsFor(params, SKY_COUNT);
+  // The channel's own `requires` has already refused a layout the engine would
+  // delete as degenerate, so one here is a bug rather than a state — written,
+  // it would be drawn and never simulated — and it throws by the rule `must`
+  // does.
+  if (!lights.builds) {
+    throw new Error(`a rooflight ${lights.smallest} m across, which EnergyPlus deletes as degenerate`);
   }
+  const H = params.height;
+  const centre = [params.width / 2, params.depth / 2];
 
-  return rects.map(([x0, y0, x1, y1]) => {
+  return lights.rects.map(([x0, y0, x1, y1]) => {
     // Wound as the roof is wound — upper-left first, counter-clockwise seen
     // from above — so the rooflight's outward normal points at the sky like
     // the surface it is cut into, and not down into the room.

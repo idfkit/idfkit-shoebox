@@ -395,12 +395,28 @@ plan key, because almost nothing about it is the wall question rotated.
   from the live count instead would leave orphans behind every shrink. It is a
   constant of the *declaration* rather than a literal — `SKY_MAX` is the square
   of `controlFor('skyCount').control.max`, and the same control's stops clamp
-  the grid in `skylightsOn` — because a literal repeated in two places is how a
+  the grid in `rooflightsFor` — because a literal repeated in two places is how a
   later widening of the slider becomes a silent clamp and a sweep one square
   short.
 - **Nothing is subtracted from the roof.** A rooflight is a subsurface and the
   roof polygon still holds the area it sits in, which is what makes
   `roofGlazing / roofArea` the skylight-to-roof ratio a code means.
+- **A linear rooflight can be too thin to exist, and the strip refuses it.** A
+  band's depth is about r·d/n, so at the first stop off zero, 0.005, four bands
+  on a 4 m deep plan are 5 mm deep and EnergyPlus merges their long edges:
+  `** Severe ** GetSurfaceData: There are 4 degenerate surfaces`, a completed
+  run, and a roof simulated solid under rooflights the drawing showed and a
+  ratio of 0.005 read off their vertices. A curb makes it 12, since each band's
+  end faces are as thin as the band. `rooflightsFor` in `src/aperture.js` lays
+  the lights out for both modules, the Skylights channel's `requires` asks its
+  `builds`, and so the strip goes out with a declared sentence in `SKY_REASONS`
+  and `applySkylights` writes nothing. The sentence is held to the `STANDING`
+  budget, so the arithmetic a reader would check it by is in the count
+  control's note, which folds. `skylightsOn` throws if it is asked anyway.
+  The reader can still move the ratio or the count out of it, since a blocked
+  strip is dimmed and not disabled. Over the whole grid it bites only at 0.005
+  with three or four bands on a plan up to 7.8 m deep. Square lights never
+  reach it: the smallest anywhere is 0.071 m, a 1 m cell at √0.005.
 - **The blind control names only the surfaces it can serve.** `applyBlinds`
   filters to fenestration built of the layered `WINDOW` construction, because a
   `WindowShadingControl` naming a simple-glazing surface is a severe error, not
@@ -2831,7 +2847,8 @@ sanctioned identity-kind wording override that `letter` takes.
   `builds()` in `src/aperture.js` are the one statement of it: the appliers
   write no shade that does not build, the fin and curb controls go idle on it,
   and the Shading key's wall says why. Linear rooflights can come out thinner
-  than this at the Skylights strip's first stop and are not yet refused.
+  than this at the Skylights strip's first stop, and that channel's `requires`
+  refuses them; see "Skylights (channel 04)" above.
 - **A contour interval must be one the numbers can actually step by.**
   `levelsFor` in `src/survey.js` picks a 1-2-5 interval off the measured extent
   at about a span-eighth. Where the span is a few ULPs of the readings

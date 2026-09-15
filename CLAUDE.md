@@ -164,6 +164,9 @@ geometry earlier ones wrote).
   by the host surface's type, never the name. No tilt control is possible. The curb
   is drawn shading geometry. Nothing is subtracted from the roof. Blinds only name
   surfaces built of the layered construction.
+  Linear bands at the ratio's first stop can come out under `COINCIDENT`; the
+  channel's `requires` asks `rooflightsFor(...).builds` (`src/aperture.js`, shared
+  with `skylightsOn`) and refuses them.
 - **Boundaries (07):** `Boundary` owns six faces; `floorBoundary` kept its key so the
   link stayed `v1`. Clicking the axonometric can flip only the three visible faces
   and is refused while Fabric is bypassed. Ratio denominators count only surfaces
@@ -323,7 +326,8 @@ geometry earlier ones wrote).
   in `job.omits`); a refusal is not a failed run.
 - An economizer needs a cooling flow limit. Shading devices need the layered glazing.
 - EnergyPlus merges vertices closer than 0.01 m and silently deletes the surface.
-  `COINCIDENT` / `builds()` in `src/aperture.js`: write no shade that does not build.
+  `COINCIDENT` / `builds()` in `src/aperture.js`: write no shade or rooflight that
+  does not build.
 - An interval chosen off a measured range must advance the cursor (`levelsFor` in
   `survey.js` returns `[]` for a span of a few ULPs).
 - **Per-surface output variables (`*` key) are ruinously expensive.** Keep new outputs
