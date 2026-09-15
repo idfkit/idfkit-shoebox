@@ -33,6 +33,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Study and survey the plant and the tariff.** Seasonal efficiency, both COPs,
+  the two prices and the grid intensity now carry Study, and are axes on E-02.
+  Each costs no run beyond the one its shape needs: the run is priced at every
+  position, so a ground of U-factor against boiler efficiency costs only the
+  U-factor runs. A reading a priced control cannot move, such as efficiency
+  against heating demand, is refused with the readings it can move, and a face
+  its selector has withdrawn says why under the row. The pull still ranks only
+  what shapes the building.
+
+- **The sheet reads in SI or IP.** One segmented control in the header stamp
+  re-letters every figure on the page: the strips and their margin numbers, the
+  axonometric and its datums, the plate, the schedules, the scoreboard, the
+  bill, the study cards and the design space survey. The model does not move.
+  Every value stays the SI number the document and the engine hold, a quantity
+  kind declared beside each control says how that number converts and how
+  precisely it may be read, and conversion happens at the moment of lettering
+  and nowhere else. Measured on either side of a switch, the IDF is
+  byte-identical at eight desk positions and every link re-encodes to the same
+  string; a shared link carries no unit system at all, so one URL opens the same
+  building for every reader. Switching starts no run and interrupts none in
+  flight, and takes about 15 to 40 ms. The choice is remembered in the reader's
+  own browser, and a first visit opens in IP only where the browser reports a
+  United States region.
+
+  Eleven controls take a finer step, so that whole IP figures can be reached at
+  all: at the old 0.5 m one step of the context distance was 1.64 ft, and most
+  whole feet could not be stood on. Each new step divides the old one exactly,
+  walked over 1,365 stops with zero drift, so every value an existing link
+  carries is still a position on the grid and the link format does not move.
+
+- **Report a problem from the sheet.** A fourth way out beside Download, Share
+  and Save opens a slip under the status line carrying what the reader was
+  looking at: the link and build that reproduce the desk, the engine's severe
+  and fatal lines, what was refused or blocked in view, the browser and layout,
+  the errors the page caught and the last twenty actions. The reader reads every
+  line before one press opens a prefilled GitHub issue, which is the only moment
+  it leaves their machine. It opens even when the engine fails to load, which
+  the status line now says instead of stopping silently.
+
+- **New issues sort themselves.** Each gets one bucket or "needs a person", area
+  and failure labels, and likely duplicates named, with a folded starter
+  paragraph for `/speckit-specify` on a feature request. Claude reads the issue
+  with no tools; idfkit-bot applies only what survives a check against the
+  repository, and never overrides a maintainer's label.
+
 - **A survey of the design space, on a second drawing.** Choose two controls
   and a reading, and the sheet cuts a ground through the desk as it stands: a
   real EnergyPlus run at every position of a grid, contoured on a plan and
@@ -87,6 +132,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before this feature continue to open with no studies, as they did before.
 
 ### Fixed
+
+- **E-02 re-prices when the tariff or plant moves.** A ground read for cost,
+  carbon or energy use intensity kept lettering the price it was measured at
+  after the Tariff or Plant strip changed; its spot heights now follow the bill,
+  with no run.
 
 - **A window-to-wall ratio now includes its frame, and a large framed window no
   longer stops the run.** The ratio is measured over the whole opening, frame

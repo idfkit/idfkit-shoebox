@@ -241,7 +241,7 @@ function must(doc, type, name = null) {
  * even where the building is identical. That difference was measured against
  * the engine rather than argued about — `07-everything-in` reorders eleven
  * types within a thirteen-object window and runs to byte-identical `.eso` and
- * `.mtr` — and the note under "Reading an absent type" in `CLAUDE.md` carries
+ * `.mtr` — and the note under "Reading an absent type" in `docs/design-notes.md` carries
  * the whole of it.
  */
 export const holds = (doc, type) => doc.types().includes(type);
@@ -902,7 +902,7 @@ export function channelState(params, bypass) {
  * `channels` takes one id or several, the shape `deskKey`'s `omit` already
  * uses: a study and a pull probe sweep one control, a survey row sweeps two —
  * its own axis along the row and the other fixed into the snapshot that made
- * it — and every swept axis has to be asked. See CLAUDE.md, under the
+ * it — and every swept axis has to be asked. See docs/design-notes.md, under the
  * thermostat invariant, for what asking only one of a ground's two costs.
  * The first blocked channel in the order given is the sentence, since a sample
  * is refused wholly and one reason is what there is room to say.
@@ -3272,9 +3272,15 @@ export function modelFacts(doc) {
   const lon = Number(site.longitude);
   return {
     project: String(building.name).replace(/\s*\(.*\)$/, ''),
+    // The coordinates only. They are degrees in both systems, so they compose
+    // here; the elevation is a length and does not, and `model.js` may not
+    // import `units.js` — the unit system reaching an applier is the one thing
+    // that feature may not do. So the height is handed over as the number the
+    // document holds and the sheet letters it at the render site.
     site: `${Math.abs(lat).toFixed(2)}° ${lat >= 0 ? 'N' : 'S'} ${Math.abs(lon).toFixed(2)}° ${
       lon >= 0 ? 'E' : 'W'
-    } · ${Number(site.elevation).toLocaleString('en-US')} m`,
+    }`,
+    elevation: Number(site.elevation),
     timestep: `${timestep.number_of_timesteps_per_hour} / hour`,
     version: doc.version,
   };

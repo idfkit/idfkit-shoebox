@@ -189,6 +189,40 @@ Exclusive states on one segmented rule: `1px --rule` border, `var(--r)` radius,
 `--ink` with `--vellum` text. Native `select` cannot be styled and hides state;
 a console has to be readable without opening anything.
 
+### A page-level mode: the units selector
+
+The segmented selector above serves one more job than choosing a channel's
+model: it is also the shape for a **mode the whole page is in**. SI against IP
+is the case, and it settles three things for any that follow.
+
+- **Not the square marker.** The marker means "a step that is armed" and is
+  reserved for that. A unit system is one of two modes, not an arming, and the
+  marker over it would say the wrong thing in the one place a reader is most
+  likely to be guessing.
+- **In the header stamp, not the control row and not the console.**
+  `mountConsole` owns the strips and the rail; a control that governs every
+  figure on the sheet is not a control of one channel. It sits in the header's
+  stamp — the block that states what the page *is*: engine, runtime, toolkit,
+  simulation server — because which system the figures are lettered in is
+  another fact of exactly that kind rather than an instrument on the desk. It
+  began in the field's control row and was moved: there it stood at the scale of
+  the two buttons that start runs, which reads far louder than a mode set once
+  and then forgotten. It is still static markup, so it works when `main.js`
+  never finishes booting, and still reachable before the engine loads, after a
+  refused link and with the desk closed — which a control inside the desk panel
+  is not.
+- **The restraint is scale, not contrast.** At stamp scale the control is about
+  as wide as the `EnergyPlus 26.1.0` above it. The solid `--ink` fill on the
+  active segment stays, because it is the carrier that is not colour; dropping
+  it for a difference in ink would have left hue doing the work alone.
+- **Its naming prose sits under the stamp, not inside it.** The standing line is
+  in place and never on hover, but below the bordered box, so the stamp stays a
+  clean list of facts and the sentence reads as the aside it is. The
+  announcement goes to a visually-hidden `role="status"` belonging to the
+  control, *not* to the page's `#status` line: that one is written by
+  `markStale` on every drag transition, so making it live would speak a stale
+  note each time a slider settled.
+
 ### The desk quantity, chosen from every study card
 
 Eleven choices are too many for a segmented selector, and the choice
@@ -1010,6 +1044,60 @@ being re-summarised at each surface. A path that writes its own sentence over
 the top of the specific one is the sheet knowing exactly what is wrong and
 saying none of it.
 
+### The report sheet: a transmittal slip, laid in the flow
+
+How a reader sends the maintainers what they were looking at. A drafting
+office answers a drawing with a transmittal: a slip that names what went wrong
+and lists what is enclosed. That is the shape here, and it is laid on the sheet,
+not floated over it.
+
+- **In the flow, under the status line.** The sheet (`<section class="report">`)
+  opens in the field column directly below `.status-row`, above the plate, so
+  the sentence that went wrong and the slip reporting it are one glance. It is
+  opened by the ledger's fourth way out, **Report**, beside Download, Share and
+  Save, because it is the same kind of act: take this away. Never a dialog;
+  nothing on this board floats. Shown and hidden with `hidden`, and since
+  `.report` sets `display`, it has a `.report[hidden]` twin.
+- **Vellum, because it is worked.** `--vellum` with a `--rule` hairline and
+  `--r` corners, padded like a panel head (`16px 18px 14px`), blocks `11px`
+  apart. The console is the other thing on this board that is worked rather
+  than read, and the report borrows its surface rather than inventing a third.
+- **Eyebrow and one standing line.** The heading is an eyebrow; beneath it one
+  line in the strip-blurb face (`400 11.5px/1.5` sans, `--ink-3`) says the
+  report becomes a public issue and needs a GitHub account. Held to `BLOCK`.
+- **The description is an inset field.** `--inset`, `--rule-soft` hairline,
+  the `--rule-focus` ring, `400 12px/1.5` sans in `--ink`. Inputs are darker
+  than their surroundings, as everywhere on this board.
+- **The enclosures are the run log's ticks.** Each captured item is one row: an
+  `8px` square with a `1px` border, filled `--ink` when the item is enclosed and
+  a `--ink-ghost` outline when it has been taken out, exactly as the ledger
+  marks a completed phase. Then the item's label in the control-label face, its
+  one-line summary in the value-readout face (`400 11px/1.3` mono, `--ink-2`),
+  and a `.link` toggle reading **Remove** or **Put back** (`aria-pressed`). A
+  removed row's summary is replaced by the word "Removed", so the state is
+  never carried by the square alone. The build row has no toggle and says
+  "Always included."
+- **Files are `.link` buttons with their reason beside them.** A file that
+  cannot be made (no run yet, no screen capture on this browser) is a disabled
+  link with the reason under it in the control-note face, per "A refusal that
+  carries its next step". Never dimmed without words.
+- **The preview is a fold of the exact text.** `fold('report:preview', 'Exactly
+  what is sent')` holding a `<pre>` in `400 10.5px/1.5` mono, `--ink-2`, on
+  `--inset`, `pre-wrap`, scrolling within itself past about twenty lines. What
+  the preview shows is byte for byte what leaves, so it is the body string and
+  not a rendering of it.
+- **Actions are links, and the one that sends says so.** **Open on GitHub**,
+  **Copy text**, **Close**, as `.link` buttons in a wrapping row. Under Open on
+  GitHub, in the standing-line face, what pressing it does: the text goes to
+  GitHub to fill the form, and the reader submits it there. The sheet's one
+  real button is Run; this does not get a second.
+- **The outcome is a status line.** Written into a `role="status"` element in
+  the `.status` face, `.bad` for a refusal, so the result of the press is
+  announced and stands in place.
+
+At 390 px the slip is already one column; the files and actions rows wrap. No
+part of it exists only on hover.
+
 ### Withdrawing a control: dim it, or do not draw it
 
 Two different facts, two treatments, and one treatment for both was misreading
@@ -1044,6 +1132,28 @@ doing both jobs.
 A block that is not drawn changes the strip's height when the model is
 switched. That is accepted, and it is the point: the strip is a different
 instrument, and it should look like one.
+
+**A dimmed priced face says why, in view** (`.ctl-withdrawn`). A Plant or
+Tariff face that is idle reaches nothing at all, not even the bill, so a study
+or survey of it is refused, and the reason is a sentence the reader has to be
+able to read without hovering: "The tariff is Published; set it to Assumed to
+price gas here." It stands directly under the dimmed row in the dashed
+`--rule-focus` refusal box, in `--redline`, at full ink. It is the row's
+sibling, never its child: `.idle` dims with opacity, and nothing inside a
+0.4 row can take its ink back. A study card hangs after the sentence, not
+between it and its row. The disabled Study button repeats it as its title and
+accessible name, which is never its only carrier. Shaping controls keep the
+generic title: their idle state still reaches the document.
+
+**A ground standing refused keeps its points.** When the desk withdraws a
+priced axis under an open survey (the plant switched to a heat pump under a
+ground of seasonal efficiency), E-02 letters the withdrawn sentence where a
+refused cut is lettered, stops drawing the plan, the relief and the schedule
+(every figure on them would be one price at every position of that axis), and
+keeps the coverage line, because the measured points are kept. The descent and
+standing on a point are refused with the same sentence. The face returning
+draws the ground again with no run. Nothing is remembered: the refusal is asked
+of the desk on every draw.
 
 ### Dimming conventions
 

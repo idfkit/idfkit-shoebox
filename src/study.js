@@ -15,10 +15,12 @@ import { END_USES } from './bill.js';
 // because this is where they are declared *about*: every importer that had
 // them from `study.js` still does.
 import { RunContents, VariableRequest } from './contents.js';
-import { CHANNELS, CHANNEL_BY_ID } from './controls.js';
+import { CHANNELS, CHANNEL_BY_ID, controlFor, labelFor } from './controls.js';
+import { BUDGETS, withinBudget } from './copy.js';
 import { readDemand, readExtremes, readOverheat, readPeaks } from './readings.js';
 import { PRESETS } from './schemes.js';
 import { COUNT_CATEGORY, CRITERION_BY_ID, readCriterionA, readCriterionB, readCriterionC } from './tm59.js';
+import { kindFor, letter, unitIn } from './units.js';
 
 export { RunContents, VariableRequest };
 
@@ -218,6 +220,7 @@ export class Quantity {
     id,
     label,
     unit,
+    quantityKind,
     digits,
     needs,
     context = null,
@@ -227,11 +230,17 @@ export class Quantity {
     meterScope = null,
     wholeYear = false,
     priced = null,
+    movedBy = [],
   }) {
     if (!id || !label || !unit) throw new Error(`the study quantity "${id || '(unnamed)'}" lacks its identity or lettering`);
     if (!Number.isInteger(digits) || digits < 0) {
       throw new Error(`the study quantity "${id}" declares ${digits} digits; digits must be a non-negative integer`);
     }
+    // What the curve measures, which decides how it letters in IP. Validated
+    // here beside `unit` and `digits` because those three are one statement
+    // about a quantity, and a kind resolved at draw time would fail on a card
+    // rather than at the declaration that is wrong.
+    const kind = kindFor(quantityKind, `the study quantity "${id}"`, unit);
     if (!(needs instanceof RunContents) || needs.empty) {
       throw new Error(`the study quantity "${id}" declares no run contents, so no run can answer it`);
     }
@@ -250,6 +259,9 @@ export class Quantity {
     if (priced !== null && priced !== 'cost' && priced !== 'carbon') {
       throw new Error(`the study quantity "${id}" declares unknown priced field "${priced}"`);
     }
+    if (!Array.isArray(movedBy) || movedBy.some((key) => typeof key !== 'string' || !key)) {
+      throw new Error(`the study quantity "${id}" declares movedBy as something other than a list of control keys`);
+    }
     const lines = series ?? [new QuantitySeries({ id, label, pen })];
     if (!Array.isArray(lines) || !lines.length || lines.some((line) => !(line instanceof QuantitySeries))) {
       throw new Error(`the study quantity "${id}" needs at least one declared series`);
@@ -260,6 +272,7 @@ export class Quantity {
     this.id = id;
     this.label = label;
     this.unit = unit;
+    this.quantityKind = kind;
     this.digits = digits;
     this.needs = needs;
     this.context = context;
@@ -269,7 +282,40 @@ export class Quantity {
     this.meterScope = meterScope;
     this.wholeYear = Boolean(wholeYear);
     this.priced = priced;
+    // The priced controls that can move this reading, and only those. A Plant
+    // or Tariff face is applied to the bill after the run, so it reaches a
+    // reading only through `computeBill`'s arithmetic, and that arithmetic is
+    // narrow: every other reading on the roster is taken before it starts.
+    // Declared rather than derived, and checked against the real bill by the
+    // reach harness, so a study of efficiency against demand is refused by a
+    // declaration instead of drawn as a flat line that reads as a finding.
+    this.movedBy = Object.freeze(new Set(movedBy));
     Object.freeze(this);
+  }
+
+  /**
+   * One value of this quantity, lettered in the system showing.
+   *
+   * On the quantity rather than at the surfaces that draw it, for the reason
+   * `Instant.say` is on the instant: the study card and the survey's own
+   * readings letter the same quantity, and written out at both they were a copy
+   * with a difference — the exact drift `Reading` avoids by taking its unit and
+   * precision off the quantity rather than declaring them again.
+   */
+  say(value) {
+    return letter(this.quantityKind, value, { digits: this.digits, unit: this.unit });
+  }
+
+  /**
+   * How this quantity's unit reads on its own, in the system showing.
+   *
+   * The chooser letters the unit beside the quantity's name rather than beside
+   * a figure, so it needs the unit half by itself — the same getter `Target`,
+   * `BillColumn` and survey's `Reading` carry. Without it the chooser said
+   * `°C` under a curve whose own ends read `°F`.
+   */
+  get unitNow() {
+    return unitIn(this.quantityKind, this.unit);
   }
 }
 
@@ -289,6 +335,21 @@ export class Offer {
     this.fix = fix;
     this.unit = unit;
     Object.freeze(this);
+  }
+
+  /**
+   * How this offer's unit reads beside the quantity's name, in the system
+   * showing.
+   *
+   * Through `unitIn` rather than through the quantity, because an offer may
+   * carry a unit the quantity did not: the priced ones substitute the tariff's
+   * own currency code. `unitIn` is exactly the rule that wants — it honours a
+   * declared string on an identity kind, which `currency` is, and returns the
+   * kind's own for anything that converts. The chooser used to letter `unit`
+   * raw, so it said `°C` beside a curve whose ends read `°F`.
+   */
+  get unitNow() {
+    return unitIn(this.quantity.quantityKind, this.unit);
   }
 }
 
@@ -373,9 +434,12 @@ export function contentsFor(quantity, channels = []) {
   });
 }
 
+/** The plant faces, which divide delivered energy before anything is priced. */
+const PLANT_REACH = Object.freeze(['heatEfficiency', 'heatCOP', 'coolCOP']);
+
 export const QUANTITIES = Object.freeze([
   new Quantity({
-    id: 'extremes', label: 'High + low zone temperature', unit: '°C', digits: 1, needs: EXTREMES,
+    id: 'extremes', label: 'High + low zone temperature', unit: '°C', quantityKind: 'temperature', digits: 1, needs: EXTREMES,
     read: (landed) => {
       const reading = readExtremes(landed.eso);
       return reading ? Object.freeze(reading) : null;
@@ -386,7 +450,7 @@ export const QUANTITIES = Object.freeze([
     ],
   }),
   new Quantity({
-    id: 'demand', label: 'Heating + cooling demand', unit: 'kWh/m²·yr', digits: 1, needs: DEMAND,
+    id: 'demand', label: 'Heating + cooling demand', unit: 'kWh/m²·yr', quantityKind: 'energyIntensity', digits: 1, needs: DEMAND,
     wholeYear: true,
     read: (landed, options) => {
       const reading = readDemand(landed.eso, options?.built?.floorArea);
@@ -398,15 +462,23 @@ export const QUANTITIES = Object.freeze([
     ],
   }),
   new Quantity({
-    id: 'eui', label: 'Energy use intensity', unit: 'kWh/m²·yr', digits: 1, needs: BILL,
+    id: 'eui', label: 'Energy use intensity', unit: 'kWh/m²·yr', quantityKind: 'energyIntensity', digits: 1, needs: BILL,
     meterScope: 'building',
+    // `Bill.intensity('metered')` is delivered energy over the plant's divisor
+    // (`divisorFor` in `bill.js`: the heating option's efficiency or COP, and
+    // the cooling COP), taken before any rate is applied. So the three plant
+    // faces move it and no price or grid factor can.
+    movedBy: PLANT_REACH,
     wholeYear: true,
     read: (landed) => finite(landed.bill?.wholeYear ? landed.bill.intensity('metered') : null),
   }),
   new Quantity({
-    id: 'cost', label: 'Cost', unit: 'local currency', digits: 1, needs: BILL,
+    id: 'cost', label: 'Cost', unit: 'local currency', quantityKind: 'currency', digits: 1, needs: BILL,
     meterScope: 'all',
     priced: 'cost',
+    // `metered × costRate`, where `assume` in `rates.js` puts the two prices
+    // into the cost rates and nowhere else.
+    movedBy: [...PLANT_REACH, 'elecPrice', 'gasPrice'],
     read: (landed) => {
       const value = completeBillTotal(landed.bill, 'cost');
       return value === null ? null : Object.freeze({ value, currency: landed.bill.currency });
@@ -421,37 +493,44 @@ export const QUANTITIES = Object.freeze([
     ],
   }),
   new Quantity({
-    id: 'carbon', label: 'Carbon', unit: 'kgCO₂e', digits: 1, needs: BILL,
+    id: 'carbon', label: 'Carbon', unit: 'kgCO₂e', quantityKind: 'carbonMass', digits: 1, needs: BILL,
     meterScope: 'all',
     priced: 'carbon',
+    // `metered × carbonRate / 1000`, where `assume` puts the grid intensity
+    // into the electricity carbon rate only. Prices never reach it.
+    movedBy: [...PLANT_REACH, 'gridFactor'],
     read: (landed) => completeBillTotal(landed.bill, 'carbon'),
   }),
   new Quantity({
-    id: 'overheat', label: 'Hours above 25 °C', unit: '% of the year', digits: 1, needs: ANNUAL_EXTREMES,
+    id: 'overheat', label: 'Hours above 25 °C', unit: '% of the year', quantityKind: 'count', digits: 1, needs: ANNUAL_EXTREMES,
     wholeYear: true,
     read: (landed) => finite(readOverheat(landed.eso, 25)),
   }),
   new Quantity({
-    id: 'peakHeat', label: 'Peak heating load', unit: 'W/m²', digits: 1, needs: PEAKS, pen: '--warm',
+    // `fluxDensity`, not `powerDensity`, though both letter W/m² in SI: a peak
+    // load is quoted in Btu/h·ft² wherever IP is read, and a lighting allowance
+    // in W/ft². Two kinds for one SI string is the whole reason the roster
+    // carries both.
+    id: 'peakHeat', label: 'Peak heating load', unit: 'W/m²', quantityKind: 'fluxDensity', digits: 1, needs: PEAKS, pen: '--warm',
     read: fieldFrom(readPeaks, 'peakHeat'),
   }),
   new Quantity({
-    id: 'peakCool', label: 'Peak cooling load', unit: 'W/m²', digits: 1, needs: PEAKS, pen: '--cold',
+    id: 'peakCool', label: 'Peak cooling load', unit: 'W/m²', quantityKind: 'fluxDensity', digits: 1, needs: PEAKS, pen: '--cold',
     read: fieldFrom(readPeaks, 'peakCool'),
   }),
   new Quantity({
     id: 'tm59a', label: `${CRITERION_BY_ID.a.label} · ${TM59_STUDY_CATEGORY.label}`,
-    unit: CRITERION_BY_ID.a.unit, digits: 1, needs: TM59_AB,
+    unit: CRITERION_BY_ID.a.unit, quantityKind: 'count', digits: 1, needs: TM59_AB,
     context: (desk) => ({ trm: desk.runningMean, floor: desk.occupiedFloor }),
     read: (landed, { context }) => criterionValue(readCriterionA(landed.eso, context.trm, TM59_STUDY_CATEGORY, context.floor)),
   }),
   new Quantity({
     id: 'tm59b', label: `${CRITERION_BY_ID.b.label} · ${TM59_STUDY_CATEGORY.label}`,
-    unit: CRITERION_BY_ID.b.unit, digits: 0, needs: TM59_B,
+    unit: CRITERION_BY_ID.b.unit, quantityKind: 'count', digits: 0, needs: TM59_B,
     read: (landed) => criterionValue(readCriterionB(landed.eso, TM59_STUDY_CATEGORY)),
   }),
   new Quantity({
-    id: 'tm59c', label: CRITERION_BY_ID.c.label, unit: CRITERION_BY_ID.c.unit, digits: 1, needs: TM59_AB,
+    id: 'tm59c', label: CRITERION_BY_ID.c.label, unit: CRITERION_BY_ID.c.unit, quantityKind: 'count', digits: 1, needs: TM59_AB,
     context: (desk) => ({ floor: desk.occupiedFloor }),
     read: (landed, { context }) => criterionValue(readCriterionC(landed.eso, context.floor)),
   }),
@@ -484,6 +563,55 @@ export function openingQuantity({ annual, system, chasingTm59, gains, season, ru
  */
 const EVERY_NEED = RunContents.union(QUANTITIES.map((quantity) => quantity.needs));
 
+/**
+ * A reading's label set inside a sentence: lower-cased, unless it opens on an
+ * acronym, because "tEDI" and "hours above 25 °c" are nobody's spelling.
+ */
+export const inSentence = (label) => (/^[A-Z]{2,}\b/.test(label) ? label : label[0].toLowerCase() + label.slice(1));
+
+/** "a", "a or b", "a, b or c". */
+const either = (items) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} or ${items.at(-1)}`);
+
+const declaredQuantity = (quantity, caller) => {
+  if (!QUANTITIES.includes(quantity)) {
+    throw new Error(`${caller}: expected a declared study quantity, not ${quantity?.id ?? String(quantity)}`);
+  }
+};
+
+/**
+ * Why a priced control cannot be swept for this reading, or null where it can.
+ *
+ * One sentence for the study card, the survey chooser, the ground and the
+ * survey link (FR-006), built from the declarations rather than written per
+ * pair, so the 54 refused pairings cannot come to give 54 slightly different
+ * reasons. Null for any control that shapes the run, whatever the reading: a
+ * shaping control that happens not to move a reading has been measured not to,
+ * which is a finding, where a price that cannot move demand is arithmetic.
+ *
+ * A face whose kind is money is called a price here, because its label is the
+ * fuel's ("Electricity"), and a fuel is not what is applied after the run.
+ */
+export function refusesPairing(key, quantity) {
+  declaredQuantity(quantity, 'refusesPairing');
+  const { channel } = controlFor(key); // throws naming an unowned key
+  if (!channel.prices || quantity.movedBy.has(key)) return null;
+  return `${subjectOf(key)} is applied after the run and cannot move ${inSentence(quantity.label)}.`;
+}
+
+function subjectOf(key) {
+  const { control } = controlFor(key);
+  return control.quantityKind?.id === 'money' ? `${labelFor(key)} price` : labelFor(key);
+}
+
+/** The fix beside a refused pairing: every reading this priced control can move. */
+export function pairingFix(key) {
+  const { channel } = controlFor(key);
+  if (!channel.prices) throw new Error(`pairingFix: "${key}" shapes the run, so no pairing of it is ever refused`);
+  const moved = QUANTITIES.filter((quantity) => quantity.movedBy.has(key));
+  if (!moved.length) throw new Error(`pairingFix: "${key}" moves no declared reading`);
+  return `Choose ${either(moved.map((quantity) => inSentence(quantity.label)))}.`;
+}
+
 /** All declared quantities measured against current run capabilities. */
 export function offersFor({
   annual = false,
@@ -491,6 +619,10 @@ export function offersFor({
   season = false,
   channels = [],
   pricing = null,
+  // The study's own control, when the offers are for one card. Its pairing
+  // refusal is asked after every other refusal, so a reading that also wants a
+  // weather file says so first: the weather file is the first thing to fix.
+  key = null,
 } = {}) {
   const engaged = new Set(channels);
   const possible = new RunContents({
@@ -555,6 +687,8 @@ export function offersFor({
         return new Offer({ quantity, available: false, reason: status.reason, fix: status.fix });
       }
     }
+    const pairing = key === null ? null : refusesPairing(key, quantity);
+    if (pairing) return new Offer({ quantity, available: false, reason: pairing, fix: pairingFix(key) });
     return new Offer({
       quantity,
       available: possible.answers(quantity.needs),
@@ -584,6 +718,68 @@ export function assertQuantityReachability(quantities, reachableOffers) {
         throw new Error(`the study quantity "${quantity.id}" needs unknown channel "${channel}"`);
       }
     }
+  }
+
+  // Reach, both ways round. A key named in `movedBy` must be a priced face a
+  // sweep can walk, or the pairing refusal would be keyed on a control that is
+  // never offered; and every priced face must be named somewhere, or a new
+  // Tariff face would be refused against every reading on the roster, which
+  // is a study nobody could ever draw. And only a bill reading may be moved:
+  // anything else is read off the run before the plant or tariff is applied.
+  for (const quantity of QUANTITIES) {
+    if (quantity.movedBy.size && quantity.needs !== BILL) {
+      throw new Error(
+        `the study quantity "${quantity.id}" declares priced controls that move it, and does not read the bill`,
+      );
+    }
+    for (const key of quantity.movedBy) {
+      const { channel, control } = controlFor(key); // throws naming an unowned key
+      if (!channel.prices) {
+        throw new Error(
+          `the study quantity "${quantity.id}" is moved by "${key}", which shapes the run; ` +
+            'movedBy names only priced faces, since a shaping control is measured, never refused',
+        );
+      }
+      if (refusesSweep(control)) {
+        throw new Error(`the study quantity "${quantity.id}" is moved by "${key}", which has no face to sweep`);
+      }
+    }
+  }
+  for (const channel of CHANNELS.filter((candidate) => candidate.prices)) {
+    for (const control of channel.controls) {
+      if (refusesSweep(control)) continue;
+      if (!QUANTITIES.some((quantity) => quantity.movedBy.has(control.key))) {
+        throw new Error(
+          `the priced face "${control.key}" moves no study quantity, so every study of it would be refused`,
+        );
+      }
+    }
+  }
+
+  // Every priced pairing, once: refused with a sentence that stands in view, or
+  // drawn. Twelve draw — the three plant faces against the three bill readings,
+  // and each tariff face against the one reading it prices — and the count is
+  // asserted so a reach declaration widened by accident fails here rather than
+  // as a curve that should have been refused.
+  let refusedPairings = 0;
+  let pairings = 0;
+  for (const channel of CHANNELS.filter((candidate) => candidate.prices)) {
+    for (const control of channel.controls) {
+      if (refusesSweep(control)) continue;
+      for (const quantity of QUANTITIES) {
+        pairings += 1;
+        const sentence = refusesPairing(control.key, quantity);
+        if (sentence === null) continue;
+        refusedPairings += 1;
+        withinBudget(BUDGETS.STANDING, `pairing ${control.key} × ${quantity.id}`, sentence);
+      }
+      withinBudget(BUDGETS.STANDING, `pairing fix ${control.key}`, pairingFix(control.key));
+    }
+  }
+  if (pairings !== 66 || refusedPairings !== 54) {
+    throw new Error(
+      `${refusedPairings} of ${pairings} priced pairings are refused, where the reach table refuses 54 of 66`,
+    );
   }
 
   const targetIds = new Set(PRESETS.flatMap((preset) => preset.targets.map((target) => target.metric)));

@@ -33,6 +33,7 @@ import {
   phraseFor,
 } from './controls.js';
 import { fold, mountConsole } from './console.js';
+import { KINDS, convert, deltaKindOf, figureIn, inIP, kindFor, letter, onSystemChange, setSystem, suffixIn, system, unitIn } from './units.js';
 import { BUDGETS, withinBudget, words } from './copy.js';
 import { describeDesk } from './describe.js';
 import { quantityField, textField } from './field.js';
@@ -49,6 +50,7 @@ import {
   contentsFor,
   offersFor as studyOffersFor,
   openingQuantity,
+  pairingFix,
   refusesSweep,
   samplePoints,
   sampleOrder,
@@ -74,6 +76,7 @@ import {
   pointKey,
   meshOf,
   refineOrder,
+  refusesSurveyPairing,
   rowsFor,
   arrisesOf,
   blockOf,
@@ -86,8 +89,9 @@ import { PullReading, axesFrom, entryFrom, pullProbes, pullReadingFor, rankPull 
 import { createEnginePool, poolLimit } from './pool.js';
 import { createStudyScheduler, makeStudyJob } from './scheduler.js';
 import { runBundle } from './bundle.js';
-import { REVISION, revisionHref } from './version.js';
+import { ENERGYPLUS_VERSION, REVISION, revisionHref } from './version.js';
 import { readSignature, writeSignature } from './sign.js';
+import { errors, provide, trail } from './report.js';
 import { END_USES, GROUPS, computeBill, meterTotal } from './bill.js';
 import { assume, isRate, placeName, resolveRates } from './rates.js';
 import {
@@ -174,8 +178,6 @@ const FOLD = Object.freeze(
     }).map(([key, text]) => [key, withinBudget(BUDGETS.SUMMARY, `fold summary ${key}`, text)]),
   ),
 );
-
-const ENERGYPLUS_VERSION = '26.1.0';
 
 const $ = (id) => document.getElementById(id);
 
@@ -428,15 +430,15 @@ function renderAxon(meanC) {
   if (walls.length === 4) {
     const [south, east, , west] = walls.map(edgeOf);
     dims.push(
-      { a: south.a, b: south.b, d: south.n.map((v) => v * off).concat(0), text: `${south.length.toFixed(2)} m` },
-      { a: east.a, b: east.b, d: east.n.map((v) => v * off).concat(0), text: `${east.length.toFixed(2)} m` },
+      { a: south.a, b: south.b, d: south.n.map((v) => v * off).concat(0), text: letter(KINDS.length, south.length, { digits: 2 }) },
+      { a: east.a, b: east.b, d: east.n.map((v) => v * off).concat(0), text: letter(KINDS.length, east.length, { digits: 2 }) },
       {
         // The upright, stood at the corner the two faces share so it reads
         // clear of both.
         a: south.a,
         b: [south.a[0], south.a[1], z1],
         d: [(south.n[0] + west.n[0]) * off * 0.8, (south.n[1] + west.n[1]) * off * 0.8, 0],
-        text: `${z1.toFixed(2)} m`,
+        text: letter(KINDS.length, z1, { digits: 2 }),
       },
     );
   }
@@ -733,7 +735,7 @@ function renderAxon(meanC) {
 
   // The tint is a quantity, so it is reported with the others below the drawing.
   $('q-chip').style.background = meanC == null ? 'transparent' : tint(meanC);
-  $('q-mean').textContent = meanC == null ? '—' : `${meanC.toFixed(1)} °C`;
+  $('q-mean').textContent = meanC == null ? '—' : letter(KINDS.temperature, meanC, { digits: 1 });
 }
 
 /* ══ the plate: zone against outdoors, on a ruled field ══════════════════ */
@@ -809,7 +811,11 @@ function renderTrace() {
       x: PAD.l - 10, y: gy + 3.5, 'text-anchor': 'end',
       fill: 'var(--ink-3)', 'font-family': 'var(--mono)', 'font-size': 10,
     });
-    t.textContent = `${Math.round(v)}°`;
+    // The degree sign alone, with no C or F after it: the plate's own
+    // `aria-label` names the quantity once and a gridline every 5 units has no
+    // room to repeat it. The figure still converts, which is the half that
+    // would otherwise letter an IP sheet's axis in Celsius.
+    t.textContent = `${figureIn(KINDS.temperature, v, { digits: 0 })}°`;
     grid.append(t);
   }
   grid.append(
@@ -835,7 +841,9 @@ function renderTrace() {
       fill: d.value < 0 ? 'var(--cold)' : 'var(--warm)',
       'font-family': 'var(--cond)', 'font-size': 9.5, 'letter-spacing': '0.12em',
     });
-    t.textContent = `${d.label.toUpperCase()} ${d.value.toFixed(1)}`;
+    // The datum carried no unit at all before this, which was the one figure on
+    // the plate a reader could not name. It has one now, in either system.
+    t.textContent = `${d.label.toUpperCase()} ${letter(KINDS.temperature, d.value, { digits: 1 })}`;
     root.append(t);
   }
 
@@ -1203,7 +1211,6 @@ function metricsFor(zone, out, run, hasOutdoor, demand = null) {
   return { z, o, damping, lag, hours: run.end - run.start + 1, hasOutdoor, demand };
 }
 
-const f1 = (v) => v.toFixed(1);
 const or = (v, fmt) => (Number.isFinite(v) ? fmt(v) : '—');
 
 // A sentence counts in words. `applyRun` writes one run period per unbroken
@@ -1217,17 +1224,21 @@ const RUN_TALLY = Object.freeze(['', '', 'both', 'all three', 'all four', 'all f
 //
 // `at` returns the number, not the text, so the same row can be differenced
 // against the baseline and formatted to the same precision it is displayed at.
-const f2 = (v) => v.toFixed(2);
+// Each row says what it measures, how precisely, and — where a change in it is
+// a different quantity from the thing itself — what its delta measures. That
+// last field is the schedule's own instance of FR-009: a zone one degree warmer
+// than the baseline is a temperature *difference*, and lettered through
+// `temperature` the delta would carry Fahrenheit's 32 and read `+33.8 °F`.
 const SCHEDULE_ROWS = [
-  { label: 'Zone mean air temperature, minimum', unit: '°C', marker: 'zone', at: (m) => m.z.min, fmt: f1 },
-  { label: 'Zone mean air temperature, maximum', unit: '°C', at: (m) => m.z.max, fmt: f1 },
-  { label: 'Zone swing', unit: '°C', at: (m) => m.z.swing, fmt: f1 },
-  { label: 'Outdoor drybulb, minimum', unit: '°C', marker: 'out', group: true, at: (m) => (m.hasOutdoor ? m.o.min : NaN), fmt: f1 },
-  { label: 'Outdoor drybulb, maximum', unit: '°C', at: (m) => (m.hasOutdoor ? m.o.max : NaN), fmt: f1 },
-  { label: 'Outdoor swing', unit: '°C', at: (m) => (m.hasOutdoor ? m.o.swing : NaN), fmt: f1 },
-  { label: 'Damping — zone swing ÷ outdoor swing', unit: '', group: true, at: (m) => m.damping, fmt: f2 },
-  { label: 'Thermal lag — outdoor peak to zone peak', unit: 'h', at: (m) => m.lag, fmt: String },
-  { label: 'Hours simulated', unit: 'h', at: (m) => m.hours, fmt: (v) => v.toLocaleString('en-US'), nodelta: true },
+  { label: 'Zone mean air temperature, minimum', unit: '°C', kind: 'temperature', deltaKind: 'temperatureDifference', digits: 1, marker: 'zone', at: (m) => m.z.min },
+  { label: 'Zone mean air temperature, maximum', unit: '°C', kind: 'temperature', deltaKind: 'temperatureDifference', digits: 1, at: (m) => m.z.max },
+  { label: 'Zone swing', unit: '°C', kind: 'temperatureSwing', digits: 1, at: (m) => m.z.swing },
+  { label: 'Outdoor drybulb, minimum', unit: '°C', kind: 'temperature', deltaKind: 'temperatureDifference', digits: 1, marker: 'out', group: true, at: (m) => (m.hasOutdoor ? m.o.min : NaN) },
+  { label: 'Outdoor drybulb, maximum', unit: '°C', kind: 'temperature', deltaKind: 'temperatureDifference', digits: 1, at: (m) => (m.hasOutdoor ? m.o.max : NaN) },
+  { label: 'Outdoor swing', unit: '°C', kind: 'temperatureSwing', digits: 1, at: (m) => (m.hasOutdoor ? m.o.swing : NaN) },
+  { label: 'Damping — zone swing ÷ outdoor swing', unit: '', kind: 'ratio', digits: 2, group: true, at: (m) => m.damping },
+  { label: 'Thermal lag — outdoor peak to zone peak', unit: 'h', kind: 'count', digits: 0, at: (m) => m.lag },
+  { label: 'Hours simulated', unit: 'h', kind: 'count', digits: 0, at: (m) => m.hours, locale: true, nodelta: true },
   // The pair the sweep draws, for the desk as it stands. A study answers
   // "what would this control do to the demand"; without these rows the sheet
   // could not answer "what is the demand", and the curve had no point on it
@@ -1242,9 +1253,16 @@ const SCHEDULE_ROWS = [
   // do — a column is `Run period · Jan–Mar`, with its own hours a few rows up
   // — so the period is lettered where the reader is already looking, and a
   // partial year reads as itself rather than as nothing.
-  { label: 'Thermal energy demand intensity — TEDI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.tedi ?? NaN, fmt: f1 },
-  { label: 'Cooling energy demand intensity — CEDI', unit: 'kWh/m²', demand: true, at: (m) => m.demand?.cedi ?? NaN, fmt: f1 },
+  { label: 'Thermal energy demand intensity — TEDI', unit: 'kWh/m²', kind: 'energyIntensityPeriod', digits: 1, demand: true, at: (m) => m.demand?.tedi ?? NaN },
+  { label: 'Cooling energy demand intensity — CEDI', unit: 'kWh/m²', kind: 'energyIntensityPeriod', digits: 1, demand: true, at: (m) => m.demand?.cedi ?? NaN },
 ];
+
+/** One cell of the schedule, in the system showing. */
+const rowText = (row, v) =>
+  (row.locale ? v.toLocaleString('en-US') : figureIn(KINDS[row.kind], v, { digits: row.digits }));
+
+/** And the unit it stands under, which the schedule letters in its own column. */
+const rowUnit = (row) => unitIn(KINDS[row.kind], row.unit);
 
 /**
  * Change against the baseline, at the precision the value is shown at.
@@ -1255,9 +1273,13 @@ const SCHEDULE_ROWS = [
  */
 function deltaText(row, value, base) {
   if (row.nodelta || !Number.isFinite(value) || !Number.isFinite(base)) return '';
-  if (row.fmt(value) === row.fmt(base)) return '';
+  if (rowText(row, value) === rowText(row, base)) return '';
   const d = value - base;
-  return `${d > 0 ? '+' : '−'}${row.fmt(Math.abs(d))}`;
+  // Through the row's *delta* kind where it declares one. This is the schedule's
+  // own case of FR-009 and the one the whole temperature split exists for: a
+  // change is a difference, and a difference does not carry the offset.
+  const kind = KINDS[row.deltaKind ?? row.kind];
+  return `${d > 0 ? '+' : '−'}${figureIn(kind, Math.abs(d), { digits: row.digits })}`;
 }
 
 /**
@@ -1334,7 +1356,7 @@ function renderSchedule(columns, baseColumns) {
       // The head this figure stands under, carried on the cell so the narrow
       // layout can letter it beside the figure once the column heads are gone.
       td.dataset.head = c.label;
-      td.textContent = or(value, row.fmt);
+      td.textContent = or(value, (v) => rowText(row, v));
       if (!Number.isFinite(value)) td.className = 'void';
       if (base) {
         const d = tr.insertCell();
@@ -1344,7 +1366,7 @@ function renderSchedule(columns, baseColumns) {
     }
     const unit = tr.insertCell();
     unit.className = 'unit';
-    unit.textContent = row.unit || '—';
+    unit.textContent = rowUnit(row) || '—';
   }
   table.append(tbody);
   keepTableSemantics(table);
@@ -1362,7 +1384,13 @@ function renderSchedule(columns, baseColumns) {
  * printed figure is not a reading.
  */
 class BillColumn {
-  constructor({ id, label, noun, field, unit, format }) {
+  constructor({ id, label, noun, field, unit, quantityKind, format }) {
+    // All three are quantities the spec keeps out of the conversion: energy at
+    // the meter is billed in kWh, money is in the tariff's own currency, and a
+    // mass of CO₂e is published in neither pounds nor kilograms by the rate
+    // tables this bills from. Declared all the same, so that "does not convert"
+    // is a statement the roster checks rather than three silences.
+    this.quantityKind = kindFor(quantityKind, `the bill column "${id}"`);
     this.id = id;
     this.label = label;
     // The same column said inside a sentence rather than over a column of
@@ -1377,6 +1405,11 @@ class BillColumn {
     Object.freeze(this);
   }
 
+  /** How this column's unit reads in the system showing. */
+  get unitNow() {
+    return unitIn(this.quantityKind, this.unit);
+  }
+
   /** The value on a line, or NaN where nothing was behind it. */
   at(line) {
     const v = line?.[this.field];
@@ -1388,22 +1421,38 @@ class BillColumn {
 // table head and the head each cell carries for the folded layout have to be
 // the same words -- a figure lettered "Carbon" under a column headed
 // "Carbon (kgCO₂e)" is a figure whose unit depends on the window width.
-const headOf = (column) => (column.unit ? `${column.label} (${column.unit})` : column.label);
+const headOf = (column) => (column.unitNow ? `${column.label} (${column.unitNow})` : column.label);
 
 const group = (v, digits = 0) =>
   v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
+/**
+ * The site's height above sea level, lettered where the sheet letters.
+ *
+ * `modelFacts` hands over the metres the document holds rather than a string,
+ * because `model.js` may not import `units.js`. The grouping is applied *after*
+ * the conversion and not before: 5,279 ft needs its comma exactly as much as
+ * 1,609 m did, and grouping the metres and then converting the string is how
+ * the separator ends up in the wrong place or the figure stops being a number.
+ * Hence `convert` and `unitIn` rather than `letter`, which fixes to decimals
+ * and knows nothing about thousands.
+ */
+const siteElevation = (metres) => `${group(convert(KINDS.length, metres), 0)} ${unitIn(KINDS.length)}`;
+
+/** The title block's location cell: coordinates from the model, height lettered here. */
+const siteLine = (facts) => `${facts.site} · ${siteElevation(facts.elevation)}`;
+
 const BILL_COLUMNS = Object.freeze([
   new BillColumn({
-    id: 'metered', label: 'At the meter', noun: 'energy', field: 'metered', unit: 'kWh',
+    id: 'metered', label: 'At the meter', noun: 'energy', field: 'metered', unit: 'kWh', quantityKind: 'billedEnergy',
     format: (v) => group(v, v < 100 ? 1 : 0),
   }),
   new BillColumn({
-    id: 'cost', label: 'Cost', noun: 'a cost', field: 'cost', unit: '',
+    id: 'cost', label: 'Cost', noun: 'a cost', field: 'cost', unit: '', quantityKind: 'currency',
     format: (v, bill) => bill.currency.format(v, Math.abs(v) < 100 ? 2 : 0),
   }),
   new BillColumn({
-    id: 'carbon', label: 'Carbon', noun: 'a carbon figure', field: 'carbon', unit: 'kgCO₂e',
+    id: 'carbon', label: 'Carbon', noun: 'a carbon figure', field: 'carbon', unit: 'kgCO₂e', quantityKind: 'carbonMass',
     format: (v) => group(v, Math.abs(v) < 100 ? 1 : 0),
   }),
 ]);
@@ -1461,6 +1510,14 @@ let lastRun = null; // { eso, environments, hours, annual }
  */
 let lastBundle = null;
 
+/**
+ * The last attempt's severe and fatal errors, as the engine parsed them, for a
+ * report. Kept beside `lastBundle` rather than on it, so the bundle's manifest
+ * is untouched, and read from the parsed entries rather than by matching the
+ * console's `** Severe  **` markers, whose spacing is EnergyPlus's to change.
+ */
+let lastEngineErrors = [];
+
 /** The published card with the Tariff strip's assumptions written over it. */
 const rateCard = () => assume(resolveRates(station), params);
 
@@ -1493,10 +1550,13 @@ function billFrom(run) {
 }
 
 /** Re-letter the bill from the meters already read, with no new run. */
-function reprice() {
+// `key` is the priced control that moved, where one did, so the ground can skip
+// a re-price that cannot move any figure on it; null re-prices everything.
+function reprice(key = null) {
   if (!lastRun) return;
   bill = billFrom(lastRun);
   repriceStudies();
+  repriceSurvey(key);
   renderBill();
   desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt, readouts());
   desk?.setDerived(derivedLines());
@@ -1634,7 +1694,7 @@ function renderMeterHeads() {
     const qty = document.createElement('b');
     qty.className = 'qty';
     qty.textContent = group(row.metered, row.metered < 100 ? 1 : 0);
-    qty.append(Object.assign(document.createElement('i'), { textContent: 'kWh' }));
+    qty.append(Object.assign(document.createElement('i'), { textContent: unitIn(KINDS.billedEnergy) }));
 
     const buildup = document.createElement('div');
     buildup.className = 'buildup';
@@ -1655,8 +1715,21 @@ function renderMeterHeads() {
     // The rate a fuel is priced at, or the reason it could not be.
     step('×', isRate(row.costRate) ? row.costRate.text : row.costRate.what.toLowerCase());
     step('=', 'cost', row.cost == null ? null : bill.currency.format(row.cost, row.cost < 100 ? 2 : 0));
-    step('×', isRate(row.carbonRate) ? `${row.carbonRate.value.toFixed(0)} gCO₂e/kWh` : row.carbonRate.what.toLowerCase());
-    step('=', 'carbon', row.carbon == null ? null : `${group(row.carbon, row.carbon < 100 ? 1 : 0)} kg`);
+    step(
+      '×',
+      isRate(row.carbonRate)
+        ? letter(KINDS.carbonIntensity, row.carbonRate.value, { digits: 0 })
+        : row.carbonRate.what.toLowerCase(),
+    );
+    // `kg` rather than the column's own `kgCO₂e`, which is the build-up's
+    // existing shorthand on a line that has just named the carbon rate. It is
+    // sourced from the kind all the same, so the one place that decides a mass
+    // of CO₂e does not convert is the roster.
+    step(
+      '=',
+      'carbon',
+      row.carbon == null ? null : `${group(row.carbon, row.carbon < 100 ? 1 : 0)} ${unitIn(KINDS.carbonMass, 'kg')}`,
+    );
 
     // One line per rate, each opening with what kind of number it is. Run
     // together on a single line the sector was the first thing to get lost.
@@ -1816,7 +1889,7 @@ function renderBillTable(against) {
         head: row.use.label,
         mark: row.use === diverging,
         note: row.divisor
-          ? `${group(row.delivered, row.delivered < 100 ? 1 : 0)} kWh delivered ÷ ${row.divisor.value.toFixed(2)} ${row.divisor.noun}, ${row.divisor.label.toLowerCase()}`
+          ? `${group(row.delivered, row.delivered < 100 ? 1 : 0)} ${unitIn(KINDS.billedEnergy)} delivered ÷ ${row.divisor.value.toFixed(2)} ${row.divisor.noun}, ${row.divisor.label.toLowerCase()}`
           : null,
         base: baseRow ? BILL_COLUMNS.map((c) => c.at(baseRow)) : null,
       });
@@ -1833,10 +1906,29 @@ function renderBillTable(against) {
     // kgCO₂e/m² over two design days — or 14 kWh/m² over a winter taken alone
     // — is a number whose only possible use is to be mistaken for one.
     if (section.id === 'building' && bill.wholeYear) {
-      line(null, BILL_COLUMNS.map((c) => bill.intensity(c.field) ?? NaN), {
+      // The *denominator* converts, even though all three columns are identity
+      // kinds — kWh at the meter, the tariff's own currency, kgCO₂e — because
+      // what this row divides by is an area, and a US energy figure is quoted
+      // per square foot. `bill.intensity` divides by `floorArea`, which is
+      // square metres off the model, so the conversion belongs here and not in
+      // the column.
+      //
+      // Converting the head alone was the defect, and it was worse than leaving
+      // both in SI: measured on the page, `Per ft² of floor, per year` stood
+      // over 40.7, 1.42 and 8.4 — the identical figures the `Per m²` row showed
+      // — so the head contradicted every cell under it in the one direction
+      // that still looks like a plausible reading.
+      //
+      // `convert(KINDS.area, 1)` is square feet in a square metre, and exactly
+      // 1 in SI, so the SI row stays byte-identical.
+      const perFloor = (v) => (Number.isFinite(v) ? v / convert(KINDS.area, 1) : NaN);
+      line(null, BILL_COLUMNS.map((c) => perFloor(bill.intensity(c.field) ?? NaN)), {
         className: 'sum',
-        head: 'Per m² of floor, per year',
-        base: against ? BILL_COLUMNS.map((c) => against.intensity(c.field) ?? NaN) : null,
+        // The row head names the area its three columns are divided by, so it
+        // letters with them: `Per m²` standing over figures that had become
+        // per-square-foot is the head contradicting every cell under it.
+        head: `Per ${unitIn(KINDS.area)} of floor, per year`,
+        base: against ? BILL_COLUMNS.map((c) => perFloor(against.intensity(c.field) ?? NaN)) : null,
       });
     }
   }
@@ -1873,7 +1965,11 @@ function renderBillFinding() {
     ' largest cost here but the ',
     ...(d.carbon === 0 ? [] : [q(ordinal(d.carbon)), ' ']),
     `largest emitter, because it runs on ${d.line.fuel.label.toLowerCase()} at `,
-    q(`${d.line.carbonRate.value.toFixed(0)} gCO₂e/kWh`),
+    // Through the kind, as the build-up's own carbon rate at `step('×', …)`
+    // already is. Written out here it read one rate in two systems: the meter
+    // head above said `lb/MWh` and the sentence directly under it said
+    // `gCO₂e/kWh`, of the same number.
+    q(letter(KINDS.carbonIntensity, d.line.carbonRate.value, { digits: 0 })),
     '. Designing against the bill and designing against the carbon are not the same brief.',
   );
 }
@@ -2111,6 +2207,9 @@ function clearReadings() {
   // deltas are readings, so they are re-lettered here with the rest of them.
   renderRegister();
   $('finding').textContent = '';
+  // The paragraph is gone, so what would re-letter it goes too: a units switch
+  // must not put a sentence back over a cleared plate.
+  lastFinding = null;
 }
 
 // The readings and the run that produced them. This is the whole sheet back to
@@ -2236,9 +2335,14 @@ const EMPTY_OMIT = new Set();
 
 const shapeKey = (p) => deskKey(p, patching());
 
+// The unit rides once at the end of the triple, as `15.24 × 15.24 × 4.57 m`
+// always did. This line letters the desk a study was swept on and sits on the
+// card beside curve ends that convert, so left in metres it read `15.24 × 15.24
+// × 4.57 m` over an axis labelled `131.2 ft`.
 const shapeLabel = (p) =>
-  `${p.width.toFixed(2)} × ${p.depth.toFixed(2)} × ${p.height.toFixed(2)} m · ` +
-  `${((p.wwrN + p.wwrE + p.wwrS + p.wwrW) * 25).toFixed(0)} % mean WWR`;
+  `${figureIn(KINDS.length, p.width, { digits: 2 })} × ${figureIn(KINDS.length, p.depth, { digits: 2 })} × `
+  + `${letter(KINDS.length, p.height, { digits: 2 })} · `
+  + `${((p.wwrN + p.wwrE + p.wwrS + p.wwrW) * 25).toFixed(0)} % mean WWR`;
 
 /**
  * The shape of everything except one control: what a study is a study of.
@@ -2327,6 +2431,11 @@ function applyGeometry() {
   };
   studyScheduler?.cancelWhere((job) => job.restShape !== shapeOmitting(job.omits), 'moved');
   modelState = applyModel(model, params, patching());
+  // The title block's Timestep cell is set once at boot and otherwise never
+  // touched, so it went on lettering the build-time default after every
+  // later apply. Every change to the parameters passes through here, and
+  // the Solver channel's `timestep` control is one of them.
+  $('t-timestep').textContent = modelFacts(model).timestep;
   SURFACES = surfaceGeometry(model);
   WINDOWS = windowGeometry(model);
   // The neighbours are real geometry and belong in the model, but not in this
@@ -2336,37 +2445,7 @@ function applyGeometry() {
   renderAxon(lastMean);
 
   const facts = geometryFacts(model);
-  const m2 = (v) => `${v.toFixed(1)} m²`;
-  // The whole building the engine was handed, not the one storey the
-  // axonometric draws, because these three are what every intensity on the
-  // sheet is divided by and a reader has to be able to check the division.
-  // They move together or not at all: a gross floor area over a single
-  // storey's volume would put this building's ceiling at 1.5 m. The floor
-  // row names the multiplier that made it, since it is the only one of the
-  // three whose cause is not then obvious.
-  $('q-floor').textContent =
-    facts.storeys > 1
-      ? `${m2(facts.grossFloor)} · ${facts.storeys} floors`
-      : m2(facts.floor);
-  $('q-exposed').textContent = facts.grossExposed > 0 ? m2(facts.grossExposed) : 'None — adiabatic';
-  $('q-volume').textContent = `${facts.grossVolume.toFixed(1)} m³`;
-  $('q-compact').textContent = Number.isFinite(facts.compactness)
-    ? `${facts.compactness.toFixed(3)} m⁻¹`
-    : '—';
-  $('q-glazing').textContent = facts.grossGlazing > 0 ? m2(facts.grossGlazing) : 'None';
-  // Area and ratio together, the way the overhang row below carries its depth
-  // and its projection factor: the area is what was built, the ratio is what it
-  // means against the roof it was cut out of.
-  $('q-skylight').textContent =
-    facts.grossRoofGlazing > 0
-      ? `${m2(facts.grossRoofGlazing)} · SRR ${facts.srr.toFixed(3)}`
-      : 'None';
-  // Depth and projection factor together: the depth is what the slider says,
-  // the factor is what it means against the opening it shades.
-  $('q-overhang').textContent =
-    facts.overhang > 0
-      ? `${facts.overhang.toFixed(2)} m · PF ${facts.projection.toFixed(2)}`
-      : 'None';
+  renderQuantities(facts);
 
   desk?.setState(modelState);
   syncStudies();
@@ -2382,12 +2461,161 @@ function applyGeometry() {
 }
 
 /**
+ * The panel of quantities under the drawing, lettered off the geometry.
+ *
+ * Its own function rather than a block inside `applyGeometry`, because a units
+ * switch has to re-letter it and must not go anywhere near `applyGeometry`:
+ * that is where studies in flight are cancelled against their rest shape, and
+ * a reader who changed units mid-sweep would lose every sample. Nothing here
+ * reads `params` — it is all measured off the document — so calling it twice
+ * for one desk letters the same figures twice.
+ */
+function renderQuantities(facts) {
+  const m2 = (v) => letter(KINDS.area, v, { digits: 1 });
+  // The whole building the engine was handed, not the one storey the
+  // axonometric draws, because these three are what every intensity on the
+  // sheet is divided by and a reader has to be able to check the division.
+  // They move together or not at all: a gross floor area over a single
+  // storey's volume would put this building's ceiling at 1.5 m. The floor
+  // row names the multiplier that made it, since it is the only one of the
+  // three whose cause is not then obvious.
+  $('q-floor').textContent =
+    facts.storeys > 1
+      ? `${m2(facts.grossFloor)} · ${facts.storeys} floors`
+      : m2(facts.floor);
+  $('q-exposed').textContent = facts.grossExposed > 0 ? m2(facts.grossExposed) : 'None — adiabatic';
+  $('q-volume').textContent = letter(KINDS.volume, facts.grossVolume, { digits: 1 });
+  $('q-compact').textContent = Number.isFinite(facts.compactness)
+    ? letter(KINDS.inverseLength, facts.compactness, { digits: 3 })
+    : '—';
+  $('q-glazing').textContent = facts.grossGlazing > 0 ? m2(facts.grossGlazing) : 'None';
+  // Area and ratio together, the way the overhang row below carries its depth
+  // and its projection factor: the area is what was built, the ratio is what it
+  // means against the roof it was cut out of.
+  $('q-skylight').textContent =
+    facts.grossRoofGlazing > 0
+      ? `${m2(facts.grossRoofGlazing)} · SRR ${facts.srr.toFixed(3)}`
+      : 'None';
+  // Depth and projection factor together: the depth is what the slider says,
+  // the factor is what it means against the opening it shades.
+  $('q-overhang').textContent =
+    facts.overhang > 0
+      ? `${letter(KINDS.length, facts.overhang, { digits: 2 })} · PF ${facts.projection.toFixed(2)}`
+      : 'None';
+}
+
+/**
+ * The paragraph under the plate: what the reader drew, then what the run made
+ * of it.
+ *
+ * Takes a record rather than closing over the solve that produced it, and that
+ * is the whole reason it lives out here. It was an arrow function assigned to
+ * `lastFinding` from inside `solve`, which reads well and is expensive in a way
+ * that does not show: a closure keeps its entire enclosing context alive, and
+ * that context is shared with `file` and the elapsed-time interval, so it held
+ * the run's full IDF text, the whole EPW file and the parsed ESO. Being
+ * module-level and replaced only by the next solve, the *previous* run's
+ * megabytes stayed pinned underneath the new one's for the length of every run
+ * — to re-letter about eight numbers.
+ *
+ * Everything it letters is in `f`, and everything in `f` is small: the metrics,
+ * a demand pair, two nouns and the description's inputs.
+ */
+function paintFinding(f) {
+  const q = (text, hot) =>
+    Object.assign(document.createElement('span'), { className: hot ? 'q hot' : 'q', textContent: text });
+  const { m } = f;
+  const finding = $('finding');
+  finding.textContent = '';
+  // The description first, then what the run made of it. Two sentences about
+  // the same building: the first is what the reader drew, the second is the
+  // only thing on this sheet that says what drawing it that way did.
+  //
+  // Rebuilt rather than replayed, because `describeDesk` returns tokens that
+  // are already lettered — figure and unit word both — so a units switch cannot
+  // re-letter them in place and the paragraph would stand half in feet.
+  for (const token of describeDesk(f.describeInput)) finding.append(typeof token === 'string' ? token : q(token.q));
+  let why = null;
+
+  if (f.demand?.tedi != null && f.demand?.cedi != null) {
+    // The redline goes on whichever way this building leans, because that is
+    // the finding — a Denver year asks five times more cooling than heating,
+    // and the pen is the only thing in the sentence that says so. Summing the
+    // two was tried and is gone: a total of the demand side has no published
+    // definition and no benchmark behind it, and the bill's per-m² row is the
+    // figure anyone actually holds a building against.
+    finding.append(
+      'Holding the setpoints across ',
+      f.billedCount === 1 ? `the ${f.billedNoun}` : `${RUN_TALLY[f.billedCount]} run periods`,
+      ' asks ',
+      q(figureIn(KINDS.energyIntensityPeriod, f.demand.tedi, { digits: 1 }), f.demand.tedi >= f.demand.cedi),
+      ` ${unitIn(KINDS.energyIntensityPeriod)} of heat into the zone and `,
+      q(figureIn(KINDS.energyIntensityPeriod, f.demand.cedi, { digits: 1 }), f.demand.cedi > f.demand.tedi),
+      ` ${unitIn(KINDS.energyIntensityPeriod)} back out of it.`,
+    );
+    why = 'The demand the envelope sets, before the plant efficiencies the bill below divides it by.';
+  } else if (f.conditioned) {
+    // The setpoints are in the description above, so this says what the unit
+    // actually held rather than restating them: under an unmet hour the two
+    // are different numbers, and that difference is the reading. It does not
+    // say "holds" either, for the plainer reason that the sentence before it
+    // has just said "holding".
+    finding.append(
+      'The zone sits between ',
+      q(figureIn(KINDS.temperature, m.z.min, { digits: 1 })),
+      ` ${unitIn(KINDS.temperature)} and `,
+      q(figureIn(KINDS.temperature, m.z.max, { digits: 1 }), true),
+      ` ${unitIn(KINDS.temperature)} over the ${f.leadNoun}.`,
+    );
+    why =
+      'Demand intensities need a run period to read over — a sizing day is a condition, not a period — so attach a weather file and TEDI and CEDI join the schedule above.';
+  } else if (Number.isFinite(m.damping)) {
+    // "With no heating or cooling anywhere in this model" used to open this, and
+    // "alone" already says it: the branch is only reached free-running.
+    finding.append(
+      'The envelope alone takes the ',
+      f.leadNoun,
+      "'s ",
+      // A swing is a difference, so `temperatureSwing`: through `temperature`
+      // these two would carry Fahrenheit's 32 and a 14 °C swing would read as
+      // a 57 °F one, which is a plausible-looking number and wrong.
+      q(figureIn(KINDS.temperatureSwing, m.o.swing, { digits: 1 })),
+      ` ${unitIn(KINDS.temperatureSwing)} outdoor swing down to `,
+      q(figureIn(KINDS.temperatureSwing, m.z.swing, { digits: 1 }), true),
+      ` ${unitIn(KINDS.temperatureSwing)} in the zone — a damping ratio of `,
+      q(m.damping.toFixed(2)),
+      m.lag > 0 ? ' — and delays the peak by ' : '.',
+    );
+    if (m.lag > 0) finding.append(q(String(m.lag)), m.lag === 1 ? ' hour.' : ' hours.');
+  } else {
+    finding.append(
+      'Left free-running, the zone floats between ',
+      q(figureIn(KINDS.temperature, m.z.min, { digits: 1 })),
+      ` ${unitIn(KINDS.temperature)} and `,
+      q(figureIn(KINDS.temperature, m.z.max, { digits: 1 }), true),
+      ` ${unitIn(KINDS.temperature)} — held there by nothing but the envelope.`,
+    );
+  }
+  // The reading stays in the paragraph and the reason for it folds, inside the
+  // paragraph rather than beside it: every exit that clears the finding clears
+  // it with `textContent = ''`, so a fold living inside goes with it, and
+  // `.finding:empty` never leaves a summary standing under nothing.
+  if (why) finding.append(fold('finding:why', FOLD.findingWhy, {}, elem('span', null, why)));
+}
+
+/**
  * Commit one control, from wherever it was turned.
  *
  * `done` marks the end of a gesture — a pointer release or the keyboard's
  * commit — which is where the annual run solves and where a design day catches
  * its last shape.
  */
+// Whether the gesture in hand has moved a key that reaches the IDF, which is
+// what earns it a traverse stop on release. Asked of the gesture rather than of
+// the key that releases it: standing on a point is two commits, and with axis Y
+// priced the release is Y's while the building moved along X.
+let gestureShaped = false;
+
 function commit(key, value, done = false) {
   if (params[key] !== value) {
     // A priced control changes what the energy was worth, not how much of it
@@ -2396,7 +2624,11 @@ function commit(key, value, done = false) {
     // bill still wants a ghost of where it stood when you took hold.
     const priced = PRICED_KEYS.has(key);
     beginGesture({ priced });
+    if (!priced) gestureShaped = true;
     params[key] = value;
+    // Lettered by the declaration, so the trail names a control exactly as
+    // the desk does; keyed, so a drag collapses to where it came to rest.
+    trail.push('control', `${labelFor(key)} ${formatValue(key, value)}`, { key });
     syncSlider[key]?.();
     desk?.sync(key);
     // What this control's value settles besides itself, asked of the
@@ -2414,7 +2646,7 @@ function commit(key, value, done = false) {
       desk?.sync();
     }
     applyGeometry();
-    if (priced) reprice();
+    if (priced) reprice(key);
     else if (continuous()) pump();
   }
   if (done) {
@@ -2426,7 +2658,9 @@ function commit(key, value, done = false) {
     // ground. Recorded in the one funnel every control comes through rather
     // than at the survey's own gestures, because the reader walks the design
     // space with the sliders as often as with the drawing.
-    if (!PRICED_KEYS.has(key)) recordTraverse();
+    // A gesture of priced keys alone adds no stop (FR-017a): the traverse is a
+    // record of buildings.
+    if (gestureShaped) recordTraverse();
     endGesture();
     desk?.settle();
     if (autoOn()) pump();
@@ -2593,7 +2827,41 @@ $('reset').addEventListener('click', () => revert(SHEET_KEYS));
 let desk = null;
 let lastReadings = new Map();
 let lastHours = null;
-let lastAt = null; // the instant the desk's meters are reading, as the rail letters it
+/**
+ * The instant the desk's meters are reading.
+ *
+ * It holds the *value*, not the sentence. Composed as a lettered string this was
+ * a stored label of exactly the kind the units notes warn about: `reletterSheet`
+ * hands `lastAt` straight back to the console, so the pin line kept whichever
+ * system the run was solved in and went on reading `zone 32.7 °C` under an IP
+ * sheet until some later run happened to replace it. Measured on the page, not
+ * reasoned about — the sheet-wide scan for surviving SI tokens found it.
+ *
+ * `text` is a getter for that reason: both readers, the sheet's own pin line and
+ * the console's, ask at draw time, and neither had to be touched.
+ */
+class ReadInstant {
+  constructor({ stamp, celsius, pinned, released }) {
+    this.stamp = stamp;
+    // The temperature off `points` rather than the plate's parallel array of
+    // bare values: the same number, and one series to be indexed by one instant
+    // is one fewer thing that can be sliced differently.
+    this.celsius = celsius;
+    this.pinned = pinned;
+    this.released = released;
+    Object.freeze(this);
+  }
+
+  /**
+   * Lettered exactly as the rail's own warmest and coolest instants are — same
+   * kind, same precision — because it is the same quantity read at another hour.
+   */
+  get text() {
+    return `${this.stamp} · zone ${letter(KINDS.temperature, this.celsius, { digits: 1 })}`;
+  }
+}
+
+let lastAt = null; // the instant the desk's meters are reading
 
 /**
  * The readings as the desk is allowed to show them.
@@ -2695,8 +2963,16 @@ function derivedLines() {
     const b = leakageBuildUp(model, params.envLeak);
     lines.set(
       'envLeak',
-      `${b.coefficient.toFixed(3)} kg/s at 1 Pa over ${b.area.toFixed(1)} m² of envelope\n` +
-        `${b.ach} ACH · ${b.volume.toFixed(1)} m³ / 3600 · ${b.density} kg/m³ / ${b.deltaP}^${b.exponent}`,
+      // The envelope area and the zone volume are the reader's own geometry and
+      // letter where they are working. The rest of the line does not: the
+      // coefficient is the field the engine is actually given, in the units the
+      // IDF holds it in, and the density, the reference pressure and the
+      // exponent are the blower-door convention's own constants. This line
+      // exists so the reader can redo the arithmetic against the model, and a
+      // converted coefficient would be arithmetic about a field that is not
+      // there.
+      `${b.coefficient.toFixed(3)} kg/s at 1 Pa over ${letter(KINDS.area, b.area, { digits: 1, ipDigits: 0 })} of envelope\n` +
+        `${b.ach} ACH · ${letter(KINDS.volume, b.volume, { digits: 1, ipDigits: 0 })} / 3600 · ${b.density} kg/m³ / ${b.deltaP}^${b.exponent}`,
     );
   }
   return lines;
@@ -2706,7 +2982,7 @@ function derivedReadings(facts) {
   const hours = runHours();
 
   return new Map([
-    ['massing', Number.isFinite(facts.compactness) ? `${facts.compactness.toFixed(3)} m⁻¹` : '—'],
+    ['massing', Number.isFinite(facts.compactness) ? letter(KINDS.inverseLength, facts.compactness, { digits: 3 }) : '—'],
     // How high the neighbours stand from where the building is looking, which
     // is the number that decides whether they matter.
     [
@@ -2723,10 +2999,10 @@ function derivedReadings(facts) {
     [
       'skylights',
       facts.grossRoofGlazing > 0
-        ? `${facts.grossRoofGlazing.toFixed(1)} m² · SRR ${facts.srr.toFixed(3)}`
+        ? `${letter(KINDS.area, facts.grossRoofGlazing, { digits: 1 })} · SRR ${facts.srr.toFixed(3)}`
         : 'None',
     ],
-    ['shading', facts.grossShadeArea > 0 ? `${facts.grossShadeArea.toFixed(1)} m²` : 'None'],
+    ['shading', facts.grossShadeArea > 0 ? letter(KINDS.area, facts.grossShadeArea, { digits: 1 }) : 'None'],
     ['solver', `${params.timestep} / hour`],
     ['run', lastHours ? `${lastHours.toLocaleString('en-US')} solved` : `${hours.toLocaleString('en-US')} to solve`],
     // What the plant has to buy to deliver the heat the system moved. Reads an
@@ -2736,7 +3012,10 @@ function derivedReadings(facts) {
       'plant',
       (() => {
         const heat = bill?.lines.find((l) => l.use.id === 'heating');
-        return heat ? `${heat.metered.toFixed(0)} kWh ${heat.fuel.label.toLowerCase()}` : '—';
+        // `billedEnergy`, not `energy`: this is what the plant had to buy, and
+        // a US utility bills it in kWh (spec assumption). The demand readings
+        // elsewhere on the sheet are heat, and those convert.
+        return heat ? `${letter(KINDS.billedEnergy, heat.metered, { digits: 0 })} ${heat.fuel.label.toLowerCase()}` : '—';
       })(),
     ],
     // What the site bought around the building. Same rule as the plant's
@@ -2746,7 +3025,7 @@ function derivedReadings(facts) {
       'grounds',
       (() => {
         const ext = bill?.lines.find((l) => l.use.id === 'exterior');
-        return ext ? `${ext.metered.toFixed(0)} kWh` : '—';
+        return ext ? letter(KINDS.billedEnergy, ext.metered, { digits: 0 }) : '—';
       })(),
     ],
     // This one is true before any run at all: it describes the place, not the
@@ -2797,8 +3076,11 @@ function readouts() {
   const out = new Map();
   const glass = lastGlass;
   if (glass) {
+    // The U-factor's unit rides inside `letter` rather than being appended
+    // after it, which is what stops the figure and its unit being composed in
+    // two places; SHGC and visible transmittance are fractions and carry none.
     const trio = (t) =>
-      `U ${or(t.u, (v) => v.toFixed(2))} W/m²K · SHGC ${or(t.shgc, (v) => v.toFixed(2))} · VT ${or(t.vt, (v) => v.toFixed(2))}`;
+      `U ${or(t.u, (v) => letter(KINDS.transmittance, v, { digits: 2 }))} · SHGC ${or(t.shgc, (v) => v.toFixed(2))} · VT ${or(t.vt, (v) => v.toFixed(2))}`;
     const framed = Number.isFinite(glass.assembly.u);
     out.set('glazing', {
       text: trio(glass),
@@ -2884,14 +3166,12 @@ function readAt(points, runs, leadIndex, eso) {
   lastReadFrom = { points, runs, leadIndex, eso, at };
   const stamp = stampText(points, at);
   lastAt = stamp
-    ? {
-        // The temperature off `points` rather than the plate's parallel array
-        // of bare values: the same number, and one series to be indexed by one
-        // instant is one fewer thing that can be sliced differently.
-        text: `${stamp} · zone ${points[at].value.toFixed(1)} °C`,
+    ? new ReadInstant({
+        stamp,
+        celsius: points[at].value,
         pinned: Boolean(pinnedHour),
         released: released ? hourPinText(released) : null,
-      }
+      })
     : null;
   lastReadings = readMeters(eso, at);
   // A released pin has to leave the address with it. Without this the bar goes
@@ -3177,8 +3457,13 @@ function whenPanel(points, runs, leadIndex, eso, at, held) {
     offerChip({
       id: 'free',
       label: "The run's own hour",
-      blurb: `The hour the lead environment is furthest from ${NEUTRAL_C} °C — where the meters read when nothing is held.`,
-      sub: `${stampText(points, freeAt)} · ${Math.abs(points[freeAt].value - NEUTRAL_C).toFixed(1)} K off ${NEUTRAL_C} °C`,
+      // `NEUTRAL_C` is this sheet's own neutral point, not a published figure
+      // quoted from somewhere, so it converts like any other temperature on the
+      // desk. The gap beside it is a *difference* and goes through the
+      // difference kind: lettered through `temperature` it would carry
+      // Fahrenheit's 32 and a 3 K gap would read as 37 °F off neutral.
+      blurb: `The hour the lead environment is furthest from ${letter(KINDS.temperature, NEUTRAL_C, { digits: 0 })} — where the meters read when nothing is held.`,
+      sub: `${stampText(points, freeAt)} · ${letter(KINDS.temperatureDifference, Math.abs(points[freeAt].value - NEUTRAL_C), { digits: 1, ipDigits: 1 })} off ${letter(KINDS.temperature, NEUTRAL_C, { digits: 0 })}`,
       where: runs.length > 1 ? runs[leadIndex].label : null,
       active: !held,
       take: () => releasePin(),
@@ -3196,7 +3481,7 @@ function whenPanel(points, runs, leadIndex, eso, at, held) {
         sub:
           offer.at == null
             ? offer.reason
-            : `${stampText(points, offer.at)} · ${instant.letter(
+            : `${stampText(points, offer.at)} · ${instant.say(
                 // Divided back down where the series is reported at building
                 // level, so an offer and the rail term behind it letter one
                 // number. See `Term.perBuilding`.
@@ -3347,6 +3632,7 @@ function patchChannel(id, off) {
   tour?.note('patch');
   beginGesture();
   bypass[id] = off;
+  trail.push('patch', `${CHANNELS.find((c) => c.id === id).name} patched ${off ? 'out' : 'in'}`);
   // Taking a channel in by hand is an answer to the solo question too.
   if (solo && solo !== id) {
     solo = null;
@@ -3401,6 +3687,244 @@ desk = mountConsole({
   },
 });
 
+/* ══ units: SI or IP ═════════════════════════════════════════════════════ */
+
+/**
+ * Whether this browser will keep anything, probed with a real write.
+ *
+ * Merely reading `localStorage` is not enough of a test: a browser with site
+ * data switched off, and Safari in private browsing, hand over an object that
+ * looks perfectly serviceable and throws on the first `setItem`. Finding that
+ * out at the moment somebody presses Save is finding it out one press too
+ * late, so the probe happens here and both readers say up front that they
+ * cannot keep anything.
+ *
+ * It lives **here**, above the units toggle, rather than down with the scheme
+ * shelf that first needed it. The toggle reads it while the page is still
+ * booting, and a `const` declared after the reader is in its temporal dead zone
+ * however far down the file it sits: the whole boot died on
+ * `Cannot access 'shelfStore' before initialization`, the sheet came up with a
+ * panel of em dashes, and nothing on the page said why. The shelf reads it
+ * hundreds of lines below and does not care where it was declared.
+ */
+/**
+ * The station the picker's sub-line letters, held so a unit switch can redraw it.
+ *
+ * That line is written once when a station is attached and then stands for the
+ * session, so its elevation was the one figure under the picker with no route
+ * back to `reletterSheet`: it would have kept its metres under an IP sheet until
+ * the reader happened to choose another city. Held as the station rather than as
+ * the composed string, by the sheet's own rule — a string cannot be re-lettered.
+ */
+let sitePicked = null;
+
+function renderSiteSub() {
+  if (!sitePicked) return;
+  const { station, label } = sitePicked;
+  const zone = document.createElement('span');
+  zone.className = 'cz';
+  zone.textContent = climateZone(station);
+  $('site-sub').replaceChildren(
+    zone,
+    document.createTextNode(
+      [climateDescription(station), `TMYx ${label}`, siteElevation(station.elevation)]
+        .filter(Boolean)
+        .join(' · '),
+    ),
+  );
+}
+
+const shelfStore = (() => {
+  const probe = '__shoebox_probe__';
+  try {
+    window.localStorage.setItem(probe, '1');
+    window.localStorage.removeItem(probe);
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+})();
+
+/**
+ * Re-letter the whole sheet in the system now showing.
+ *
+ * Every figure on the page, from state already in hand. It starts no run,
+ * queues no solve, interrupts none in flight, marks nothing stale and touches
+ * no parameter — a unit system is how a number reads, and no number has moved.
+ *
+ * It deliberately does **not** call `applyGeometry`, which is the obvious thing
+ * to reach for and would be wrong twice over: that is where studies in flight
+ * are cancelled against their rest shape, so a reader who switched units
+ * mid-sweep would lose every sample, and it re-applies the desk to the document
+ * for a change that cannot have moved it.
+ */
+function reletterSheet() {
+  desk?.reletter();
+  // The sheet's own five sliders keep their own copies of the faces.
+  for (const redraw of Object.values(syncSlider)) redraw();
+  if (model) {
+    const facts = geometryFacts(model);
+    renderQuantities(facts);
+    desk?.setReadings(engagedReadings(), derivedReadings(facts), lastAt, readouts());
+    desk?.setDerived(derivedLines());
+    // The title block's own height, lettered here because `model.js` may not
+    // import `units.js` and so hands over the metres rather than the string.
+    $('t-site').textContent = siteLine(modelFacts(model));
+  }
+  // The line under the picker, from the station held for exactly this.
+  renderSiteSub();
+  renderAxon(lastMean);
+  renderTrace();
+  // Unguarded, and that guard was a bug: `null` columns is not "skip the
+  // schedule", it is the same empty table `clearReadings` draws, and it still
+  // has a unit column to letter. Guarded on `solvedColumns` the rows stood in
+  // °F under a sheet that had been switched back to SI, because before the
+  // first run there is nothing to re-render and after a clear there is nothing
+  // to re-render either — which is exactly when the stale units show.
+  renderSchedule(solvedColumns, baseline?.columns);
+  renderBill();
+  renderRegister();
+  renderWhen();
+  // E-02, which this list forgot. `Reading.figure` and `Reading.unitNow` were
+  // added for the relief's standing axis, the plan's contour labels and the
+  // spot figures — every one of them drawn from here and from nowhere the rest
+  // of this function reaches, so a switch left the whole survey in the system
+  // it was cut in until some unrelated gesture happened to redraw it. Through
+  // `renderSurveySoon` rather than `renderSurvey` because that is the entry
+  // point the other six callers use, and it costs nothing when no ground is cut.
+  renderSurveySoon();
+  // And E-02's *chooser*, which `renderSurvey` does not reach at all: its only
+  // two callers are a refused extent and the boot. The Reading cell letters each
+  // offer's unit, so without this line the list a reader picks a ground from
+  // stands in whichever system the page booted in, for the whole session. Found
+  // by driving: a sheet booted in IP went on offering `High °F` after switching
+  // to SI. The cache guard inside it now carries the system, so this call is a
+  // no-op on every re-letter that is not a switch.
+  renderSurveyChoose();
+  // And the ranking beside it, which `renderSurveySoon` does not reach. Its
+  // "Per unit" and "Room left" columns letter off the control at draw time, so
+  // an entry outlives a switch and has to be asked again — the same omission
+  // E-02 itself was fixed for, one table along.
+  renderPullSoon();
+  // The offers and the status line beside the cards. The cards themselves are
+  // rebuilt by `desk.reletter()` above, and deliberately not from here: passing
+  // `setStudy` the same study object again hits its identity guard and only
+  // restyles, which is what makes a drag cheap — so re-issuing the studies from
+  // out here could never re-letter them, however much it looked as though it
+  // should.
+  syncStudies();
+  // And the paragraph under the plate, from the record the run left behind.
+  if (lastFinding) paintFinding(lastFinding);
+}
+
+const UNITS_STORE = 'shoebox-units-v1';
+
+/**
+ * The reader's remembered choice, or null where there is none to read.
+ *
+ * Through the same real-write probe the scheme shelf uses: a browser with site
+ * data switched off hands over a `localStorage` that looks serviceable and
+ * throws on the first write, and anything that is not one of the two systems is
+ * treated as absent rather than guessed at.
+ */
+const rememberedUnits = () => {
+  try {
+    const said = shelfStore?.getItem(UNITS_STORE) ?? null;
+    return said === 'si' || said === 'ip' ? said : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * What a reader who has never chosen sees: IP where the browser reports a
+ * United States region, SI everywhere else and where it reports no region.
+ *
+ * `navigator.language` is a platform value, so this needs no request and
+ * reaches nothing but the lettering — FR-003 and FR-017 keep it there. A wrong
+ * guess costs one press of the toggle.
+ */
+const firstVisitUnits = () => {
+  const tag = navigator.languages?.[0] ?? navigator.language ?? '';
+  let region = null;
+  try {
+    region = new Intl.Locale(tag).region ?? null;
+  } catch {
+    // An older browser, or a tag `Intl.Locale` refuses. The region subtag is
+    // two letters after the language, which is the whole of what is wanted.
+    region = /^[A-Za-z]{2,3}[-_]([A-Za-z]{2})\b/.exec(tag)?.[1] ?? null;
+  }
+  return region?.toUpperCase() === 'US' ? 'ip' : 'si';
+};
+
+const unitSegments = [...$('units-group').querySelectorAll('[data-system]')];
+
+/** Draw which system is showing, in fill and in words both. */
+function syncUnits() {
+  for (const button of unitSegments) {
+    const here = button.dataset.system === system();
+    button.classList.toggle('here', here);
+    button.setAttribute('aria-checked', String(here));
+    // One tab stop for the group, arrow keys within it, as a radiogroup owes.
+    button.tabIndex = here ? 0 : -1;
+  }
+}
+
+function chooseUnits(next) {
+  if (next === system()) return;
+  // `setSystem` notifies the one subscriber, `reletterSheet`, and it does so
+  // synchronously — before this function has drawn the control. So the sync is
+  // in a `finally`: whatever the re-letter does, the segments end up saying what
+  // `system()` actually returns.
+  //
+  // Without it the toggle lies, and lies in the worst available way. A throw
+  // anywhere in the re-letter propagates out of `setSystem`, `syncUnits` never
+  // runs, and the fill stays on the old system while the page has already
+  // changed — a control showing the opposite of the state it governs, with
+  // nothing said. The error still reaches the window trap and the Report slip,
+  // which is where a failure belongs; what it may not do is leave the reader
+  // looking at a switch that appears not to have worked.
+  try {
+    setSystem(next);
+  } finally {
+    syncUnits();
+  }
+  try {
+    shelfStore?.setItem(UNITS_STORE, next);
+  } catch {
+    // Said up front beside the toggle rather than discovered here: the line
+    // under it already states that this browser will not remember the choice.
+  }
+  $('units-said').textContent = `${next.toUpperCase()}. Every figure on the sheet re-lettered.`;
+}
+
+for (const [at, button] of unitSegments.entries()) {
+  button.addEventListener('click', () => chooseUnits(button.dataset.system));
+  button.addEventListener('keydown', (event) => {
+    const step = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[event.key];
+    if (!step) return;
+    event.preventDefault();
+    const next = unitSegments[(at + step + unitSegments.length) % unitSegments.length];
+    next.focus();
+    chooseUnits(next.dataset.system);
+  });
+}
+
+// Where the browser will not keep it, the sheet says so in place — never on
+// hover, and before the reader presses rather than after.
+$('units-forgets').hidden = Boolean(shelfStore);
+
+// Both always-visible strings this feature adds, against the same budget every
+// other standing line on the sheet is held to.
+withinBudget(BUDGETS.STANDING, 'the units standing line', $('units-standing').textContent);
+withinBudget(BUDGETS.STANDING, 'the units storage line', $('units-forgets').textContent);
+
+// Set before subscribing, so booting into a remembered IP does not re-letter a
+// sheet that has not been drawn yet.
+setSystem(rememberedUnits() ?? firstVisitUnits());
+syncUnits();
+onSystemChange(reletterSheet);
+
 function openDesk(open) {
   document.body.classList.toggle('desk-open', open);
   deskButton.setAttribute('aria-expanded', String(open));
@@ -3449,6 +3973,7 @@ let solvedParams = null; // the shape those results describe
 function beginGesture({ priced = false } = {}) {
   if (gesture) return;
   gesture = true;
+  gestureShaped = false;
   // Money gets the same treatment the plate gives temperature: a figure that
   // changes with no record of what it changed from is a flicker, not a reading.
   billGhost = bill;
@@ -3696,7 +4221,10 @@ function render(found, { distances = false, onPick } = {}) {
 
         far.textContent =
           distances && row.distanceKm != null
-            ? `${row.distanceKm < 10 ? row.distanceKm.toFixed(1) : Math.round(row.distanceKm)} km`
+            ? letter(KINDS.distance, row.distanceKm, {
+                digits: row.distanceKm < 10 ? 1 : 0,
+                ipDigits: row.distanceKm < 10 ? 1 : 0,
+              })
             : `${row.flavors.length} ${row.flavors.length === 1 ? 'file' : 'files'}`;
         button.append(name, zone, far);
       } else {
@@ -3872,6 +4400,7 @@ async function choose(row, pick, sizing = 'No') {
 
 async function attach(row, pick, sizing) {
   const picked = pick.station;
+  trail.push('station', `${siteName(picked)}, ${siteRegion(picked)}, WMO ${picked.wmo ?? '—'}`);
   const studyContext = desk?.captureStudyContext();
   inflight?.abort();
   inflight = new AbortController();
@@ -3889,8 +4418,14 @@ async function attach(row, pick, sizing) {
   // which is the one it is still lettered with.
   const refuse = (what, reason) => {
     const message = `${siteName(picked)} ${what}: ${reason}`;
+    trail.push('refusal', `Station refused: ${message}`);
+    lastStationRefusal = message;
     site.classList.remove('picked');
     $('site-main').textContent = 'Choose a weather location';
+    // The held station goes with the line it letters. Left standing, a later
+    // unit switch would redraw the refused city over the placeholder — the
+    // sheet asserting a climate it does not have.
+    sitePicked = null;
     $('site-sub').textContent = 'Any of 17,292 TMYx stations, for a full 8,760-hour year';
     statusEl.className = 'status bad';
     statusEl.textContent = message;
@@ -3931,17 +4466,8 @@ async function attach(row, pick, sizing) {
     return refuse('cannot be used', error.message);
   }
 
-  const zone = document.createElement('span');
-  zone.className = 'cz';
-  zone.textContent = climateZone(picked);
-  $('site-sub').replaceChildren(
-    zone,
-    document.createTextNode(
-      [climateDescription(picked), `TMYx ${pick.label}`, `${picked.elevation} m`]
-        .filter(Boolean)
-        .join(' · ')
-    )
-  );
+  sitePicked = { station: picked, label: pick.label };
+  renderSiteSub();
 
   // Studies in flight were sampling the outgoing climate — their captured
   // EPWs against design days the next line replaces. Cleared by hand, because
@@ -3980,7 +4506,7 @@ async function attach(row, pick, sizing) {
   // did for Denver: the datum lines from the design days, the co-ordinates from
   // `Site:Location`. Only the place name comes from the picker.
   $('t-location').textContent = `${siteName(picked)}, ${siteRegion(picked)}`;
-  $('t-site').textContent = modelFacts(model).site;
+  $('t-site').textContent = siteLine(modelFacts(model));
   DATUMS = designDayDatums(model);
 
   // The datums are the one thing on the plate that does not wait for a run:
@@ -4175,7 +4701,11 @@ function updatePermalink() {
  * happened to the link.
  */
 let refusalNote = null;
+// The last station refusal's sentence, so a report can say a station was
+// refused while that sentence is still the one standing in the status line.
+let lastStationRefusal = null;
 function refuseLink(message) {
+  trail.push('refusal', message);
   linkAttachPending = false;
   syncSweepGate();
   stopAuto();
@@ -4219,8 +4749,9 @@ function restoreLinkedStudies(state) {
   for (const key of state.studies ?? []) {
     const job = jobForStudy(key);
     const quantity = quantityOf(studyQuantity);
-    const offers = studyOffers(job.snapshot, job.patch, job.epw);
+    const offers = studyOffers(job.snapshot, job.patch, job.epw, key);
     const selected = offers.find((offer) => offer.quantity.id === quantity.id);
+    const refusal = studyRefusal(key, job.snapshot, selected);
     const waiting = {
       label: shapeLabel(job.snapshot),
       restShape: job.restShape,
@@ -4231,7 +4762,7 @@ function restoreLinkedStudies(state) {
       waiting: {
         quantity: quantity.label,
         missing: job.total,
-        reason: selected.available ? null : `${selected.reason} ${selected.fix}`,
+        reason: refusal,
       },
       curve: [],
       coarse: false,
@@ -4239,7 +4770,7 @@ function restoreLinkedStudies(state) {
     openStudies.add(key);
     studies.set(key, waiting);
     desk.setStudy(key, waiting, { stale: false });
-    if (selected.available && autoOn()) studyScheduler.enqueue(job);
+    if (!refusal && autoOn()) studyScheduler.enqueue(job);
   }
   syncStudyControls();
 }
@@ -4352,27 +4883,9 @@ async function attachFromLink(linked) {
 
 const SCHEME_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
-/**
- * The shelf's storage, probed with a real write.
- *
- * Merely reading `localStorage` is not enough of a test: a browser with site
- * data switched off, and Safari in private browsing, hand over an object that
- * looks perfectly serviceable and throws on the first `setItem`. Finding that
- * out at the moment somebody presses Save is finding it out one press too
- * late, so the probe happens here and the register says up front that it
- * cannot keep anything.
- */
-const shelfStore = (() => {
-  const probe = '__shoebox_probe__';
-  try {
-    window.localStorage.setItem(probe, '1');
-    window.localStorage.removeItem(probe);
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-})();
-
+// The probe that answers whether anything can be kept is declared up with the
+// units toggle, which reads it while the page is still booting — hundreds of
+// lines before this one. One probe, two readers.
 const shelf = new Shelf(shelfStore);
 let kept = []; // the shelf as last read
 let shelfNote = null; // why it could not be read, when it could not
@@ -4382,6 +4895,12 @@ let shelfNote = null; // why it could not be read, when it could not
 // on every gesture, and re-reading 8,760 points to do it would make a drag
 // stutter for a number that cannot have changed.
 let lastOutcome = null;
+// What the last landed run's finding paragraph is made of, so a units switch
+// can letter it again without a run. A small record rather than the closure
+// that draws it: a closure would keep the whole of `solve` alive, and that
+// scope holds the run's IDF text, the EPW file and the parsed ESO. Null
+// whenever no paragraph is standing, which `clearReadings` decides.
+let lastFinding = null;
 
 /** Every distinct temperature the shipped criteria count exceedances above. */
 const OVERHEAT_THRESHOLDS = Object.freeze([
@@ -5134,6 +5653,20 @@ function buildStandards() {
   }
 }
 
+/**
+ * One *published* figure to a decimal, in the units its source published it in.
+ *
+ * Deliberately not a conversion, and narrowed to that job rather than left as a
+ * general rounding helper. TM59 defines its categories' clamps and its fixed
+ * thresholds in Celsius, and FR-010 keeps a published figure as published in
+ * both systems, so everything still lettered through here reads °C on an IP
+ * sheet and says "published" in the same breath.
+ *
+ * The run's own *measured* temperatures are a different quantity and no longer
+ * come through here: they go through `KINDS.temperature`, which is why the
+ * précis and the sentence under it now letter the moving line in the reader's
+ * own system while the clamps beside it hold their Celsius.
+ */
 const f1c = (v) => v.toFixed(1);
 
 /**
@@ -5251,7 +5784,7 @@ function syncStandards() {
  * its declaration with nothing anywhere saying so. `Target` refuses a `digits`
  * `toFixed` cannot take, which is what keeps this total.
  */
-const scoreFigure = (target, value) => value.toFixed(target.digits);
+const scoreFigure = (target, value) => figureIn(target.quantityKind, value, { digits: target.digits });
 
 /**
  * Whether the criteria were read over the desk as it was drawn.
@@ -5350,7 +5883,15 @@ function tm59Precis(reading) {
   const { criterion, coverage, line } = reading;
   const parts = [];
   if (criterion.id === 'a' && line) {
-    parts.push(`judged against ${f1c(line.low)}–${f1c(line.high)} °C`);
+    // The band the verdict was actually taken against, measured over the days
+    // this run covered: it is recomputed daily off the running mean, so it is a
+    // reading and it converts. It is also the one line the précis may never
+    // fold, stated above as FR-006, which made it the most visible °C left
+    // standing on an IP sheet. One decimal in both systems, since a tenth of a
+    // degree Celsius and a tenth of a degree Fahrenheit are the same claim
+    // about a line drawn to one.
+    const t = (v) => figureIn(KINDS.temperature, v, { digits: 1, ipDigits: 1 });
+    parts.push(`judged against ${t(line.low)}–${t(line.high)} ${unitIn(KINDS.temperature)}`);
   }
   if (coverage) parts.push(`${coverage.days} of ${SEASON.days} days`);
   parts.push('operative temperature');
@@ -5360,16 +5901,25 @@ function tm59Precis(reading) {
 const noteCache = new WeakMap();
 
 function tm59Notes(reading, asDrawn) {
+  // The system is part of the key for the same reason `asDrawn` is, and it had
+  // to be added the moment these notes began converting: criterion a's note now
+  // letters the measured adaptive line through `KINDS.temperature`, so a string
+  // built in SI and handed back from this cache would stand in °C under an IP
+  // sheet until the next solve replaced it. That is the stored-label trap the
+  // units notes warn about, and a cache is the quietest way to walk into it:
+  // nothing here is stale, the figure is simply lettered in a system the reader
+  // has left.
+  const showing = system();
   if (reading) {
     const held = noteCache.get(reading);
     // `asDrawn` is part of the key: it is read off the run rather than off live
     // params, so it moves only when a solve does, but a cache that ignored it
     // would letter "the building as drawn" over a desk that had since been
     // given the method's own profiles.
-    if (held && held.asDrawn === asDrawn) return held.notes;
+    if (held && held.asDrawn === asDrawn && held.showing === showing) return held.notes;
   }
   const notes = tm59NotesFor(reading, asDrawn);
-  if (reading) noteCache.set(reading, { asDrawn, notes });
+  if (reading) noteCache.set(reading, { asDrawn, showing, notes });
   return notes;
 }
 
@@ -5379,10 +5929,24 @@ function tm59NotesFor(reading, asDrawn) {
   const notes = [];
 
   if (criterion.id === 'a') {
+    // This sentence carries both a measurement and a citation, and they letter
+    // differently on purpose. `line.low`, `line.high` and `line.mean` are what
+    // the weather did over the days this run covered, so they convert like every
+    // other reading; `category.low` and `category.high` below are what
+    // TM59:2026 §2.4.1 publishes, and FR-010 keeps a published figure as
+    // published in both systems. The word "published" in front of each clamp is
+    // what makes the pair readable rather than contradictory, and it is already
+    // there for an unrelated reason, recorded in the comment under this one.
+    //
+    // The alternative, converting the clamps too, would state a floor and a
+    // ceiling in °F that the method does not publish and that no reader could
+    // check against their own copy of it.
+    const t = (v) => figureIn(KINDS.temperature, v, { digits: 1, ipDigits: 1 });
+    const u = unitIn(KINDS.temperature);
     let moved =
       `Read from the zone’s hourly operative temperature against ${category.label}’s adaptive line, ` +
       `which is recomputed every day off the outdoor running mean. Over the ${line.days} days this ` +
-      `run covered it ran from ${f1c(line.low)} °C to ${f1c(line.high)} °C, mean ${f1c(line.mean)} °C.`;
+      `run covered it ran from ${t(line.low)} ${u} to ${t(line.high)} ${u}, mean ${t(line.mean)} ${u}.`;
     // Named as the published clamp rather than as "the minimum", because that
     // is what it is: TM59:2026 §2.4.1 stops the line at both ends, and a
     // reader watching a share stop responding to the weather is owed the
@@ -5721,7 +6285,7 @@ function renderScore() {
         tr,
         value == null ? '—' : scoreFigure(target, value),
         null,
-        `Reads, ${target.unit}`,
+        `Reads, ${target.unitNow}`,
       );
       if (value == null) read.className = 'void';
       const margin = tr.insertCell();
@@ -5742,7 +6306,7 @@ function renderScore() {
       }
       const unit = tr.insertCell();
       unit.className = 'unit';
-      unit.textContent = target.unit;
+      unit.textContent = target.unitNow;
     }
     // Under the rows they are about, and only where there is a run behind
     // them. `clearReadings` puts `lastOutcome` back to null on every exit where
@@ -5987,7 +6551,7 @@ function renderChase() {
       mark(now.target.label),
       ` ${against}, over by `,
       mark(scoreFigure(now.target, now.over), true),
-      ` ${now.target.unit}.`,
+      ` ${now.target.unitNow}.`,
       tally,
     );
   } else {
@@ -5996,7 +6560,7 @@ function renderChase() {
       mark(now.target.label),
       `, ${against} — under by `,
       mark(scoreFigure(now.target, -now.over)),
-      ` ${now.target.unit}.`,
+      ` ${now.target.unitNow}.`,
     );
   }
 
@@ -6051,16 +6615,25 @@ function renderChase() {
  * `$5,100` would look like a comparison when one of them is Canadian.
  */
 const SHELF_COLUMNS = Object.freeze([
-  { label: 'Energy', field: 'eui', unit: 'kWh/m²·yr', fmt: (v) => v.toFixed(1) },
-  { label: 'Heating', field: 'tedi', unit: 'kWh/m²·yr', fmt: (v) => v.toFixed(1) },
+  // A row names its kind once. It used to name it twice — as `kind`, and again
+  // inside its own `fmt` — which left the two free to disagree outright: change
+  // the `kind` to correct a conversion and the figure keeps converting the old
+  // way under a unit column that has been corrected. `fmt` is kept only by the
+  // two rows that group rather than convert.
+  { label: 'Energy', field: 'eui', unit: 'kWh/m²·yr', kind: 'energyIntensity', digits: 1 },
+  { label: 'Heating', field: 'tedi', unit: 'kWh/m²·yr', kind: 'energyIntensity', digits: 1 },
   // The load beside the energy, because what a scheme costs to run and what it
   // costs to install are two different arguments and a shelf that carried only
   // the first would keep settling the second by accident. It is also the one
   // column here a design-day run can fill.
-  { label: 'Peak heat', field: 'peakHeat', unit: 'W/m²', fmt: (v) => v.toFixed(1) },
-  { label: 'Cost', field: 'cost', unit: '', fmt: (v, m) => `${group(v, 0)} ${m.currency ?? ''}`.trim() },
-  { label: 'Carbon', field: 'carbon', unit: 'kgCO₂e', fmt: (v) => group(v, 0) },
+  { label: 'Peak heat', field: 'peakHeat', unit: 'W/m²', kind: 'fluxDensity', digits: 1 },
+  { label: 'Cost', field: 'cost', unit: '', kind: 'currency', fmt: (v, m) => `${group(v, 0)} ${m.currency ?? ''}`.trim() },
+  { label: 'Carbon', field: 'carbon', unit: 'kgCO₂e', kind: 'carbonMass', fmt: (v) => group(v, 0) },
 ]);
+
+/** One shelf cell, in the system showing. */
+const shelfText = (column, value, measure) =>
+  (column.fmt ? column.fmt(value, measure) : figureIn(KINDS[column.kind], value, { digits: column.digits }));
 
 function renderShelf() {
   const note = $('shelf-note');
@@ -6146,8 +6719,9 @@ function renderShelf() {
     for (const column of SHELF_COLUMNS) {
       const value = scheme.measure[column.field];
       const td = tr.insertCell();
-      td.textContent = Number.isFinite(value) ? column.fmt(value, scheme.measure) : '—';
-      td.dataset.label = column.unit ? `${column.label}, ${column.unit}` : column.label;
+      td.textContent = Number.isFinite(value) ? shelfText(column, value, scheme.measure) : '—';
+      const said = unitIn(KINDS[column.kind], column.unit);
+      td.dataset.label = said ? `${column.label}, ${said}` : column.label;
       if (!Number.isFinite(value)) td.className = 'void';
       const d = tr.insertCell();
       d.className = 'delta';
@@ -6160,10 +6734,14 @@ function renderShelf() {
         like &&
         Number.isFinite(value) &&
         Number.isFinite(mine) &&
-        column.fmt(value, scheme.measure) !== column.fmt(mine, here)
+        shelfText(column, value, scheme.measure) !== shelfText(column, mine, here)
       ) {
         const diff = mine - value;
-        d.textContent = `${diff > 0 ? '+' : '−'}${column.fmt(Math.abs(diff), here)}`;
+        // Safe to letter a difference through the column's own kind: none of
+        // the five carries an offset, and there is no temperature on this
+        // shelf. A column that gained one would need a delta kind, as the
+        // schedule's temperature rows do.
+        d.textContent = `${diff > 0 ? '+' : '−'}${shelfText(column, Math.abs(diff), here)}`;
         d.title = `the sheet, against ${scheme.name}`;
       }
     }
@@ -6252,6 +6830,29 @@ mountChangelog($('changelog-body'), CHANGELOG_SOURCE);
 // — impossible to read at all.
 let quiet = false;
 
+/**
+ * State a boot load that failed, and stop the boot.
+ *
+ * Until this existed, a missing engine or schema bundle stopped the module at
+ * a top-level await with nothing on the sheet but the last progress line, so
+ * a reader saw "Compiling engine" for ever and a report had nothing to say.
+ * The refusal goes in the status line where every other one does, is recorded
+ * once for the report, and is marked `reported` so the error trap in
+ * `report-sheet.js` does not list the same failure a second time when the
+ * rejection surfaces.
+ */
+function bootFailure(what, error) {
+  statusEl.className = 'status bad';
+  statusEl.textContent = `The ${what} could not be loaded: ${error?.message ?? error}`;
+  errors.record({ source: 'boot', message: statusEl.textContent });
+  const reported = error instanceof Error ? error : new Error(String(error));
+  reported.reported = true;
+  return reported;
+}
+
+// The handler is attached as the promise is made rather than where it is
+// awaited further down: rejected before anything awaits it, it would surface
+// as an unhandled rejection first and be recorded twice.
 const enginePromise = createEnergyPlus({
   // `BASE_URL` rather than a leading slash: a PR preview is built with
   // `--base=/<pr>/` and served from that subdirectory, and an absolute path
@@ -6263,14 +6864,18 @@ const enginePromise = createEnergyPlus({
     setPhase(phase);
     statusEl.textContent = message;
   },
+}).catch((error) => {
+  throw bootFailure('engine', error);
 });
 
 // `predev`/`prebuild` stage the bundle into `public/schemas/`; `httpSource`
 // resolves the path against the document and inflates the `.gz` files, or not,
 // depending on what the host has already done to them.
-const schema = await new SchemaBundle(httpSource(`${import.meta.env.BASE_URL}schemas/`)).load(
-  ENERGYPLUS_VERSION,
-);
+const schema = await new SchemaBundle(httpSource(`${import.meta.env.BASE_URL}schemas/`))
+  .load(ENERGYPLUS_VERSION)
+  .catch((error) => {
+    throw bootFailure('schema bundle', error);
+  });
 const model = buildModel(schema);
 
 // Everything the drawing asserts is now read back off the model, so the sheet
@@ -6285,9 +6890,13 @@ DATUMS = designDayDatums(model);
 // stand and be read.
 let linked = null;
 let linkError = null;
+// The link exactly as it arrived, kept before the decode: a refusal clears
+// the address bar, and a report of a refused link has to carry the link.
+const arrivedHash = location.hash.slice(1);
 if (location.hash.length > 1) {
   try {
     linked = decodeState(location.hash.slice(1));
+    trail.push('link', 'Opened on a scheme link');
     Object.assign(params, linked.params);
     Object.assign(bypass, linked.bypass);
     studyQuantity = linked.quantity ?? null;
@@ -6309,10 +6918,10 @@ buildSliders();
 // no `desk-open` on the body, the button reading "Every control on the desk"
 // with `aria-expanded="false"` -- so arrival needs no call at all, and the
 // sheet keeps its full width until the reader asks for the controls.
-applyGeometry(); // also sets SURFACES and draws the axonometric
+applyGeometry(); // also sets SURFACES, draws the axonometric and letters the Timestep cell
 const facts = modelFacts(model);
 $('t-project').textContent = facts.project;
-$('t-site').textContent = facts.site;
+$('t-site').textContent = siteLine(facts);
 $('t-timestep').textContent = facts.timestep;
 $('t-engine-version').textContent = `EnergyPlus ${facts.version}`;
 
@@ -6383,9 +6992,20 @@ async function solve() {
   // already letter a few centimetres above it, and the description and the
   // finding together are held to sixty words. The building is what the
   // paragraph is for; the station is said once, where it is chosen.
-  const described = describeDesk({ doc: model, params: snapshot, state: modelState });
+  // The arguments, not the sentence. `describeDesk` returns tokens that are
+  // already lettered — the figure and the unit word both — so a units switch
+  // cannot re-letter them in place and the paragraph would have stood half in
+  // feet and half in metres. Held as its inputs, it is rebuilt instead.
+  //
+  // `params` and `state` are the captured snapshot, so every clause about what
+  // the reader set is the desk this run was written from. The geometry comes
+  // off the document as it now stands, which is the same rule the quantities
+  // panel follows when the same switch re-letters it: those are facts about the
+  // drawing, not readings off the run.
+  const describeInput = { doc: model, params: snapshot, state: modelState };
   const live = continuous();
   quiet = live;
+  trail.push('run', epwText ? 'annual solve started' : 'design-day solve started', { key: 'run' });
 
   clearLog();
   // Every solve leaves the previous result standing until the new one lands —
@@ -6444,6 +7064,7 @@ async function solve() {
     // Nothing reached the engine, so nothing on the sheet is going to be
     // replaced: the previous run's readings and its title block both come
     // down, leaving the reason standing alone.
+    lastEngineErrors = [];
     clearResults();
     statusEl.className = 'status bad';
     statusEl.textContent = `The run could not be attempted: ${error.message}`;
@@ -6468,6 +7089,9 @@ async function solve() {
   const errs = result.err?.entries ?? [];
   const severe = errs.filter((e) => e.severity === 'severe' || e.severity === 'fatal').length;
   const warnings = errs.filter((e) => e.severity === 'warning').length;
+  lastEngineErrors = errs
+    .filter((e) => e.severity === 'severe' || e.severity === 'fatal')
+    .map((e) => `[${e.severity}] ${String(e.message).replace(/\s+/g, ' ').trim()}`);
   set('t-exit', String(result.exitCode), result.exitCode === 0 ? '' : 'flag');
   set('t-err', `${severe} / ${warnings}`, severe ? 'flag' : '');
 
@@ -6667,90 +7291,40 @@ async function solve() {
         : 'Zone mean air temperature against outdoor drybulb across both Denver design days. Geometry drawn from the IDF, tinted by the zone mean.'
     : 'Zone mean air temperature over the run. No outdoor drybulb was recorded in the ESO.';
 
-  const q = (text, hot) =>
-    Object.assign(document.createElement('span'), { className: hot ? 'q hot' : 'q', textContent: text });
-  const finding = $('finding');
-  finding.textContent = '';
-  // The description first, then what the run made of it. Two sentences about
-  // the same building: the first is what the reader drew, the second is the
-  // only thing on this sheet that says what drawing it that way did.
-  for (const token of described) finding.append(typeof token === 'string' ? token : q(token.q));
+  // Declared here rather than inside the record below, because the traverse
+  // stop further down reads it too.
   const m = lead.metrics;
   // Whether an ideal unit was in the path, read off the run and not off the
   // desk: these meters exist only when the System strip is engaged, and the
-  // controls may have moved since this run was started. The sentence below
-  // used to open "with no heating or cooling anywhere in this model"
-  // whatever the strip was doing, which was the sheet stating the opposite of
-  // what it had just simulated.
+  // controls may have moved since this run was started. The sentence used to
+  // open "with no heating or cooling anywhere in this model" whatever the strip
+  // was doing, which was the sheet stating the opposite of what it had just
+  // simulated.
   const conditioned = END_USES.some((u) => u.needs === 'system' && meterTotal(eso, u.meter) != null);
   // The same reading the sweep takes at every sample, over the same billed
   // environments, so the sentence, the schedule's columns and the tick under
   // a study's redline are one number rather than three that ought to agree.
   const demand = readDemand(eso, floorArea);
   const billedRuns = runs.filter((r) => r.kind === null);
-  let why = null;
-
-  if (demand?.tedi != null && demand?.cedi != null) {
-    // The redline goes on whichever way this building leans, because that is
-    // the finding — a Denver year asks five times more cooling than heating,
-    // and the pen is the only thing in the sentence that says so. Summing the
-    // two was tried and is gone: a total of the demand side has no published
-    // definition and no benchmark behind it, and the bill's per-m² row is the
-    // figure anyone actually holds a building against.
-    finding.append(
-      'Holding the setpoints across ',
-      billedRuns.length === 1 ? `the ${billedRuns[0].noun}` : `${RUN_TALLY[billedRuns.length]} run periods`,
-      ' asks ',
-      q(f1(demand.tedi), demand.tedi >= demand.cedi),
-      ' kWh/m² of heat into the zone and ',
-      q(f1(demand.cedi), demand.cedi > demand.tedi),
-      ' kWh/m² back out of it.',
-    );
-    why = 'The demand the envelope sets, before the plant efficiencies the bill below divides it by.';
-  } else if (conditioned) {
-    // The setpoints are in the description above, so this says what the unit
-    // actually held rather than restating them: under an unmet hour the two
-    // are different numbers, and that difference is the reading. It does not
-    // say "holds" either, for the plainer reason that the sentence before it
-    // has just said "holding".
-    finding.append(
-      'The zone sits between ',
-      q(f1(m.z.min)),
-      ' °C and ',
-      q(f1(m.z.max), true),
-      ` °C over the ${lead.noun}.`,
-    );
-    why =
-      'Demand intensities need a run period to read over — a sizing day is a condition, not a period — so attach a weather file and TEDI and CEDI join the schedule above.';
-  } else if (Number.isFinite(m.damping)) {
-    // "With no heating or cooling anywhere in this model" used to open this, and
-    // "alone" already says it: the branch is only reached free-running.
-    finding.append(
-      'The envelope alone takes the ',
-      lead.noun,
-      "'s ",
-      q(f1(m.o.swing)),
-      ' °C outdoor swing down to ',
-      q(f1(m.z.swing), true),
-      ' °C in the zone — a damping ratio of ',
-      q(m.damping.toFixed(2)),
-      m.lag > 0 ? ' — and delays the peak by ' : '.',
-    );
-    if (m.lag > 0) finding.append(q(String(m.lag)), m.lag === 1 ? ' hour.' : ' hours.');
-  } else {
-    finding.append(
-      'Left free-running, the zone floats between ',
-      q(f1(m.z.min)),
-      ' °C and ',
-      q(f1(m.z.max), true),
-      ' °C — held there by nothing but the envelope.',
-    );
-  }
-  // The reading stays in the paragraph and the reason for it folds, inside the
-  // paragraph rather than beside it: every exit that clears the finding clears
-  // it with `textContent = ''`, so a fold living inside goes with it, and
-  // `.finding:empty` never leaves a summary standing under nothing.
-  if (why) finding.append(fold('finding:why', FOLD.findingWhy, {}, elem('span', null, why)));
+  // What the paragraph is made of, kept so a units switch can letter it again.
+  //
+  // A record and not a closure. The closure read better and cost more than it
+  // looked: it would have kept the whole of this function's scope alive, and
+  // that scope is shared with `file` and the elapsed-time interval, so the
+  // run's IDF text, the entire EPW file and the parsed ESO stayed pinned under
+  // the next run — to re-letter about eight numbers. Everything here is small,
+  // and computing the three readings above once rather than inside the redraw
+  // also stops a toggle press re-walking the meters and the zone series.
+  lastFinding = {
+    describeInput,
+    m,
+    leadNoun: lead.noun,
+    conditioned,
+    demand,
+    billedCount: billedRuns.length,
+    billedNoun: billedRuns[0]?.noun ?? null,
+  };
+  paintFinding(lastFinding);
 
   statusEl.className = 'status';
   statusEl.textContent = live
@@ -6941,12 +7515,21 @@ class LandedRun {
   }
 }
 
+// The station's published card, resolved once per station rather than once per
+// bill: a priced drag prices every study position and every spot height on
+// every frame, and the card depends on nothing but the station.
+let publishedCard = { station: undefined, card: null };
+const publishedRates = () => {
+  if (publishedCard.station !== station) publishedCard = { station, card: resolveRates(station) };
+  return publishedCard.card;
+};
+
 function billFromBasis(basis, pricing) {
   if (!basis || !Object.keys(basis.series).length) return null;
   return computeBill({
     series: new Map(Object.entries(basis.series)),
     params: pricing,
-    card: assume(resolveRates(station), pricing),
+    card: assume(publishedRates(), pricing),
     floorArea: basis.floorArea,
     hours: basis.hours,
     engaged: new Set(basis.engaged),
@@ -7002,7 +7585,9 @@ function engagedChannels(snapshot, patch) {
   return [...channelState(snapshot, patch)].filter(([, value]) => value.engaged).map(([id]) => id);
 }
 
-function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? null) {
+// `key` is the study's own control, where the offers are for one card: a priced
+// control refuses the readings it cannot move, after every other refusal.
+function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? null, key = null) {
   const channels = engagedChannels(snapshot, patch);
   const engaged = new Set(channels);
   const card = assume(resolveRates(station), snapshot);
@@ -7035,6 +7620,7 @@ function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? nul
     season: Boolean(epw) && touchesSeason(snapshot.months),
     channels,
     pricing,
+    key,
   });
 }
 
@@ -7079,19 +7665,135 @@ function sampleContentsFor(quantities, snapshot, patch, annual) {
   return { needed, carried };
 }
 
+/**
+ * One run's readings with the bill's three readings re-read at `pricing`.
+ *
+ * The only place the bill is applied to a retained meter basis (FR-012). The
+ * cache reprice, every position of a priced sweep and every spot height of a
+ * ground all come through here, so a figure on a curve is the figure the bill
+ * would letter with the desk standing there, by the one arithmetic.
+ */
+function pricedReadings(readings, basis, pricing) {
+  const landed = { bill: billFromBasis(basis, pricing) };
+  const priced = { ...readings };
+  for (const quantity of BILL_QUANTITIES) priced[quantity.id] = quantity.read(landed);
+  return Object.freeze(priced);
+}
+
+/** The readings a price can move, by their own `movedBy` declaration. */
+const BILL_QUANTITIES = Object.freeze(QUANTITIES.filter((quantity) => quantity.movedBy.size));
+
+/** A job's swept keys as a list: a study's one key, a survey row's two axes. */
+const sweptKeys = (job) => (Array.isArray(job.omits) ? job.omits : [job.omits]);
+
+/** Whether a job sweeps any priced key, which is what earns it per-position pricing. */
+const sweepsPriced = (job) => sweptKeys(job).some((key) => PRICED_KEYS.has(key));
+
+/**
+ * Live `params` with the priced keys among `positions` laid over.
+ *
+ * Live rather than a job's snapshot for the priced keys not swept, which is what
+ * `repriceStudies` has always done (spec 004 FR-020): a tariff turned under an
+ * open study re-prices it at the tariff now showing. `positions` is a list of
+ * `[key, value]`; a shaping key among them is ignored, since its value is
+ * already in the run.
+ */
+function pricingOver(positions) {
+  const pricing = { ...params };
+  for (const [key, value] of positions) {
+    if (PRICED_KEYS.has(key)) pricing[key] = value;
+  }
+  return pricing;
+}
+
+/** The priced settings one position of a sweep is priced at: the swept key at `value`, a row's Y at the row's. */
+const pricingAt = (job, value) =>
+  pricingOver(sweptKeys(job).map((key) => [key, key === job.key ? value : job.snapshot[key]]));
+
+/**
+ * Re-price every measured position of the ground at the desk's priced settings.
+ *
+ * A spot height holds the readings it was landed with, so before this nothing
+ * re-priced E-02 at all: turning the gas price with a ground surveyed for cost
+ * re-lettered the bill and left every spot height at the old price (measured on
+ * `main`, specs/011-sweep-priced-controls/verify/README.md, T002). Each spot
+ * carries its run's meter basis, so this needs no cache entry and no run.
+ *
+ * A priced axis is taken at the spot's own position and every other priced key
+ * off live `params`, as a study's positions are. A spot that no longer prices
+ * becomes a gap carrying the bill's own reason and keeps its basis, so the rate
+ * returning stands it back up with no run (FR-015); a spot height with no
+ * reading is never built, since coverage would count it as measured.
+ */
+function repriceSurvey(key = null) {
+  if (!survey) return;
+  // Only the bill's readings carry a price, and a priced drag lands here every
+  // frame: a ground of temperatures has nothing to re-price, and a face the
+  // ground's readings do not list in `movedBy` (the grid intensity under a
+  // ground of cost) moves no figure on it. A selector is always re-priced,
+  // since it decides which faces reach the bill at all. A priced axis moved
+  // by hand re-prices nothing either: every spot takes that axis at its own
+  // position. It still redraws, for the stance mark.
+  if (!survey.quantities.some((quantity) => quantity.movedBy.size)) return;
+  const face = key === null ? null : controlFor(key).control;
+  if (face?.kind === 'scale') {
+    const isAxis = key === survey.x.key || key === survey.y.key;
+    if (isAxis || !survey.quantities.some((quantity) => quantity.movedBy.has(key))) {
+      renderSurveySoon();
+      return;
+    }
+  }
+  // A withdrawn axis is left priced as it stood; `renderSurvey` draws nothing
+  // while it stands, and the re-price that follows the face's return is at the
+  // desk as it then is.
+  if (surveyWithdrawn(survey)) {
+    renderSurveySoon();
+    return;
+  }
+  for (const point of [...survey.points.values()]) {
+    if (!point.basis) continue;
+    const pricing = pricingOver([
+      [survey.x.key, survey.x.positions[point.ix]],
+      [survey.y.key, survey.y.positions[point.iy]],
+    ]);
+    const readings = pricedReadings(point.readings, point.basis, pricing);
+    landPoint(survey, {
+      ix: point.ix,
+      iy: point.iy,
+      readings,
+      basis: point.basis,
+      // Asked only where the spot will land as a gap: it prices the bill a
+      // second time, and this runs for every point on every frame of a drag.
+      reason:
+        survey.readings[0].valueOf(readings) === null
+          ? unpricedReason(point.basis, pricing, survey.readings[0].quantity)
+          : null,
+      floorArea: point.basis.floorArea,
+      cacheKey: point.cacheKey,
+    });
+  }
+  renderSurveySoon();
+}
+
+/**
+ * The bill's own reason a reading could not be priced here, or null.
+ *
+ * The `Absent` rate on the first line left without a figure, which is exactly
+ * the sentence the bill letters beside its own em dash. Null for a reading the
+ * rates do not reach, where `landPoint`'s own sentence is the true one.
+ */
+function unpricedReason(basis, pricing, quantity) {
+  if (!quantity.priced) return null;
+  const priced = billFromBasis(basis, pricing);
+  const line = priced?.lines.find((candidate) => !Number.isFinite(candidate[quantity.priced]));
+  const rate = line && (quantity.priced === 'cost' ? line.costRate : line.carbonRate);
+  return rate?.reason ?? null;
+}
+
 function repriceStudies() {
   if (!studyScheduler) return;
-  studyScheduler.reprice((readings, basis) => {
-    const priced = billFromBasis(basis, params);
-    const landed = { bill: priced };
-    return Object.freeze({
-      ...readings,
-      eui: QUANTITY_BY_ID.eui.read(landed),
-      cost: QUANTITY_BY_ID.cost.read(landed),
-      carbon: QUANTITY_BY_ID.carbon.read(landed),
-    });
-  });
-  if (studyQuantity) redrawStudiesForQuantity({ queue: false });
+  studyScheduler.reprice((readings, basis) => pricedReadings(readings, basis, params));
+  if (studyQuantity) redrawStudiesForQuantity({ queue: false, requeueLifted: true });
 }
 
 /**
@@ -7150,6 +7852,21 @@ function sampleIdentity(job, value, carried) {
  * ground cut across two walls asks one channel twice, which `sampleRefusal`
  * answers on the first and is why there is no dedupe here to go stale.
  */
+/**
+ * The withdrawn sentence of the first priced key that is idle on `desk`, or null.
+ *
+ * One reading for the scheduler's per-position refusal, the survey's standing
+ * refusal and the axis chooser, so all three say what the console letters
+ * under the row.
+ */
+function withdrawnRefusal(keys, desk) {
+  for (const key of keys) {
+    const refusal = controlFor(key).control.withdrawnAt?.(desk);
+    if (refusal) return refusal;
+  }
+  return null;
+}
+
 const sweptChannels = (omits) => [omits].flat().map((key) => controlFor(key).channel.id);
 
 studyScheduler = createStudyScheduler({
@@ -7166,7 +7883,23 @@ studyScheduler = createStudyScheduler({
   // sweeps: a study's own control, and a survey row's two axes — the one it
   // steps along and the one the row stands at. `makeStudyJob` defaults it to
   // the key, so a study asks exactly what it asked before.
-  refuses: (job, value) => sampleRefusal(deskAt(job, value), job.patch, sweptChannels(job.omits)),
+  //
+  // Then a withdrawn priced face, asked of the job's own desk so the hook stays
+  // pure. An idle shaping control still reaches the document, so its curve is a
+  // measurement; `heatEfficiency` under a heat pump reaches nothing, not even
+  // the bill, and every position of it would be the same figure drawn as though
+  // the swept value had been used.
+  refuses: (job, value) => {
+    const desk = deskAt(job, value);
+    const refusal = sampleRefusal(desk, job.patch, sweptChannels(job.omits));
+    if (refusal) return refusal;
+    return withdrawnRefusal(sweptKeys(job), desk);
+  },
+  // Every position of a priced sweep shares one run, so it is priced here, at
+  // its own value, rather than read at whichever price the cache entry holds.
+  // A job sweeping only shaping keys takes the cache's readings untouched.
+  priceAt: (job, value, sample) =>
+    sweepsPriced(job) ? pricedReadings(sample.readings, sample.meterBasis, pricingAt(job, value)) : sample.readings,
   runSample: async ({ idf, epw }) => {
     const result = await studyPool.run({ idf, epw });
     // The counter counts engine runs, so cache hits — honestly — do not turn it.
@@ -7399,13 +8132,29 @@ function jobForStudy(key, { origin = 'refresh', n = SWEEP_SAMPLES, openingBasis 
   });
 }
 
+/**
+ * Why one study card stands refused rather than drawn, or null.
+ *
+ * A withdrawn priced face first, since it is a fact about the desk and the
+ * selector that fixes it sits above the row; then whatever refused the
+ * selected reading, the pairing refusal included. Both stand the card in its
+ * waiting state with the sentence and draw no curve: a heat pump under a study
+ * of seasonal efficiency would otherwise letter twenty-two refused positions
+ * as though a channel had gone out, and a price against demand a flat line.
+ * The card comes back, with no run, when the face or the reading does.
+ */
+function studyRefusal(key, snapshot, selected) {
+  return withdrawnRefusal([key], snapshot) ?? (selected.available ? null : `${selected.reason} ${selected.fix}`);
+}
+
 /** Queue one study of the desk as it stands right now. */
 function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES, openingBasis = null } = {}) {
   const job = jobForStudy(key, { origin, n, openingBasis });
   const quantity = quantityOf(job.quantity);
-  const offers = studyOffers(job.snapshot, job.patch, job.epw);
+  const offers = studyOffers(job.snapshot, job.patch, job.epw, key);
   const selected = offers.find((offer) => offer.quantity.id === quantity.id);
-  if (!selected.available) {
+  const refusal = studyRefusal(key, job.snapshot, selected);
+  if (refusal) {
     const prior = studies.get(key);
     const waiting = {
       ...(prior ?? {}),
@@ -7415,7 +8164,7 @@ function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES, openingBa
       wholeYear: job.annual && isWholeYear(job.snapshot.months),
       quantity: quantity.id,
       offers,
-      waiting: { quantity: quantity.label, missing: job.total, reason: `${selected.reason} ${selected.fix}` },
+      waiting: { quantity: quantity.label, missing: job.total, reason: refusal },
       curve: [],
       coarse: n === COARSE_SAMPLES,
     };
@@ -7428,22 +8177,26 @@ function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES, openingBa
   studyScheduler.enqueue(job, { front });
 }
 
-function redrawStudiesForQuantity({ queue = true } = {}) {
+function redrawStudiesForQuantity({ queue = true, requeueLifted = false } = {}) {
   if (!studyScheduler || !studyQuantity) return;
   const quantity = quantityOf(studyQuantity);
-  const offers = studyOffers();
+  // The desk's offers are the same for every card; only a priced key refuses
+  // readings of its own, so only those are asked again with the key.
+  const deskOffers = studyOffers();
   for (const [key, prior] of studies) {
+    const offers = PRICED_KEYS.has(key) ? studyOffers(params, patching(), epwText ?? null, key) : deskOffers;
     const job = jobForStudy(key, { n: prior.coarse ? COARSE_SAMPLES : SWEEP_SAMPLES });
     const cached = studyScheduler.curveFor(job);
     const selected = offers.find((offer) => offer.quantity.id === quantity.id);
-    const unavailable = !selected.available;
+    const refusal = studyRefusal(key, params, selected);
+    const unavailable = Boolean(refusal);
     const study = {
       ...prior,
       quantity: quantity.id,
       offers,
       curve: unavailable ? [] : cached.curve,
       waiting: unavailable
-        ? { quantity: quantity.label, missing: job.total, reason: `${selected.reason} ${selected.fix}` }
+        ? { quantity: quantity.label, missing: job.total, reason: refusal }
         : cached.missing
           ? { quantity: quantity.label, missing: cached.missing, reason: null }
           : null,
@@ -7451,7 +8204,19 @@ function redrawStudiesForQuantity({ queue = true } = {}) {
     };
     studies.set(key, study);
     desk.setStudy(key, study, { stale: false });
-    if (!unavailable && cached.missing && queue && autoOn() && !studyScheduler.has(key)) {
+    // A card that stood refused and no longer does is queued even on a re-price:
+    // the refusal lifts through a priced selector (the plant switched back from
+    // a heat pump), which moves no shape, so `refreshStudies` never sees it and
+    // a card refused before its first run would otherwise wait for nothing.
+    // A Stop still holds: the priced switch moved no rest shape, so the desk
+    // has not moved past it.
+    const lifted =
+      requeueLifted &&
+      !linkAttachPending &&
+      Boolean(prior.waiting?.reason) &&
+      !unavailable &&
+      studyStops.get(key) !== restShapeKey(key);
+    if (!unavailable && cached.missing && (queue || lifted) && autoOn() && !studyScheduler.has(key)) {
       studyScheduler.enqueue(job);
     }
   }
@@ -7535,7 +8300,7 @@ const partialStudy = (job) => ({
   // period that stops in May are not "the annual peak".
   wholeYear: job.annual && isWholeYear(job.snapshot.months),
   quantity: job.quantity,
-  offers: studyOffers(job.snapshot, job.patch, job.epw),
+  offers: studyOffers(job.snapshot, job.patch, job.epw, job.key),
   waiting: null,
   openingBasis: job.openingBasis,
   // Samples still in flight are simply absent, so the silhouette spans them
@@ -7704,8 +8469,15 @@ function onStudyUpdate(job, event) {
       ? 'annual'
       : 'run-period';
 
+  // A priced face withdrawn while its one run was in flight. The job's own
+  // snapshot still has the face live, so `refuses` passes every position, but
+  // `priceAt` prices at the live desk, where the swept value reaches nothing:
+  // drawn, the curve is the flat line `studyRefusal` exists to refuse. The run
+  // stays in the cache, so the face returning redraws it with no run.
+  const withdrawn = withdrawnRefusal([key], params);
+
   if (event === 'point') {
-    desk.setStudy(key, partialStudy(job), { stale: false });
+    if (!withdrawn) desk.setStudy(key, partialStudy(job), { stale: false });
     desk.setStudyProgress(key, { done: job.done, total: job.total });
     syncStudyStatus();
   } else if (event === 'done') {
@@ -7715,10 +8487,12 @@ function onStudyUpdate(job, event) {
       annual: job.annual,
       wholeYear: job.annual && isWholeYear(job.snapshot.months),
       quantity: job.quantity,
-      offers: studyOffers(job.snapshot, job.patch, job.epw),
-      waiting: null,
+      offers: studyOffers(job.snapshot, job.patch, job.epw, key),
+      waiting: withdrawn
+        ? { quantity: quantityOf(job.quantity).label, missing: job.total, reason: withdrawn }
+        : null,
       openingBasis: job.openingBasis,
-      curve: job.curve,
+      curve: withdrawn ? [] : job.curve,
       // A coarse first pass is a real study, drawn honestly at eleven points;
       // the flag is what tells the idle densify it is worth finishing.
       coarse: job.asked === COARSE_SAMPLES,
@@ -7734,7 +8508,22 @@ function onStudyUpdate(job, event) {
     // A refused position reached no engine, so it is not a run.
     const refused = job.curve.filter((point) => point?.refused).length;
     const note = refused ? `, ${refused} positions refused` : '';
-    syncStudyStatus(`Study drawn — ${job.total - refused} ${kind} runs across ${said}${note}.`, {
+    // Positions and runs are one count only while every position is its own
+    // building. A priced study's twenty-two positions price one run, and
+    // lettering them as twenty-two runs is a count of the wrong thing, so the
+    // runs are counted from the meter bases behind the points and both are said
+    // where the two differ (FR-027).
+    const positions = job.total - refused;
+    // Only a priced sweep can share runs between positions. A shaping study
+    // whose run failed, or was evicted from the cache, also counts fewer
+    // identities than positions, and is not "priced from" anything.
+    const runs = sweepsPriced(job)
+      ? new Set(job.curve.map((point) => point?.sample?.meterBasis).filter(Boolean)).size
+      : positions;
+    const counted = runs === positions
+      ? `${positions} ${kind} runs`
+      : `${positions} positions, priced from ${runs} ${kind} ${runs === 1 ? 'run' : 'runs'},`;
+    syncStudyStatus(`Study drawn — ${counted} across ${said}${note}.`, {
       quietly: job.origin !== 'manual',
     });
   } else if (event === 'failed') {
@@ -7802,7 +8591,20 @@ function surveyRefusal(sv) {
   const ids = new Set(sv.readings.map((reading) => reading.id));
   const refused = surveyReadingOffers(sv.stance, sv.patch, sv.epw)
     .find((offer) => ids.has(offer.reading.id) && !offer.available);
-  return refused?.reason ?? null;
+  return refused?.reason ?? surveyWithdrawn(sv);
+}
+
+/**
+ * A priced axis whose face the live desk has withdrawn, as its sentence, or null.
+ *
+ * Against live `params`, not the stance: the selector that withdraws a priced
+ * face is itself priced, so switching the plant under an open ground moves no
+ * shape and cancels nothing, and the ground has to be told some other way that
+ * one of its axes has stopped meaning anything (a heat pump under a ground of
+ * seasonal efficiency).
+ */
+function surveyWithdrawn(sv) {
+  return withdrawnRefusal([sv.x.key, sv.y.key], params);
 }
 
 /** The rest of the desk, excluding both axes — see `deskKey`'s note. */
@@ -7877,10 +8679,18 @@ function absorbSurveyRow(job) {
     // records the run rather than the old refusal.
     const already = survey.at(ix, iy);
     if (already instanceof SpotHeight) continue;
+    // A gap that kept its run could not be priced, and `repriceSurvey` owns it:
+    // this row's curve still holds the figure priced when the point landed, so
+    // re-landing it here would stand the gap up at a price the desk has left.
+    if (already?.basis) continue;
+    // The point's own readings, priced at its position by `priceAt`, and not
+    // `point.sample.readings`, which is the one run priced wherever it first
+    // landed: along a priced axis every spot height shares that run.
     landPoint(survey, {
       ix,
       iy,
-      sample: point.sample ?? null,
+      readings: point.readings,
+      basis: point.sample?.meterBasis ?? null,
       // Or `landPoint`'s own fallback would call it "The run did not complete"
       // over a position where no run was ever started. The distinction itself
       // is the scheduler's, at `land`.
@@ -8001,6 +8811,9 @@ function refineSurvey() {
   if (!survey || !studyScheduler || !autoOn() || gesture || linkAttachPending) return;
   if (surveyPass !== null) return;
   if (surveyStop === surveyRestShape(survey)) return;
+  // Every position along a withdrawn axis is refused, and a refused gap is
+  // never re-measured, so a densify now would fill the ground with holes.
+  if (surveyWithdrawn(survey)) return;
   const refined = makeSurvey({
     x: axisFor(survey.x.key, { from: survey.x.from, to: survey.x.to, count: FINE_GRID, stance: survey.stance }),
     y: axisFor(survey.y.key, { from: survey.y.from, to: survey.y.to, count: FINE_GRID, stance: survey.stance }),
@@ -8028,7 +8841,8 @@ function refineSurvey() {
     landPoint(refined, {
       ix,
       iy,
-      sample: point.readings ? { readings: point.readings } : null,
+      readings: point.readings ?? null,
+      basis: point.basis ?? null,
       reason: point.reason ?? null,
       floorArea: point.floorArea ?? null,
       cacheKey: point.cacheKey ?? null,
@@ -8057,6 +8871,16 @@ function openSurvey({ xKey, yKey, readingIds, extents = {}, count = COARSE_GRID 
     if (!reading) throw new Error(`no survey reading is declared as "${id}"`);
     return reading;
   });
+  // Asked before `makeSurvey`, which throws with the same sentence: from the
+  // chooser a reader can name the reading first and a priced axis second, and
+  // that is a refusal to letter in place, not an exception.
+  const pairing = pairingRefusal([xKey, yKey], readings);
+  if (pairing) {
+    closeSurvey();
+    surveyRefused = pairing;
+    renderSurvey();
+    return;
+  }
   const cut = makeSurvey({
     x: axisFor(xKey, { ...(extents[xKey] ?? {}), count, stance }),
     y: axisFor(yKey, { ...(extents[yKey] ?? {}), count, stance }),
@@ -8141,7 +8965,8 @@ function axisOffers(snapshot = params, patch = patching()) {
   const state = channelState(snapshot, patch);
   const offers = [];
   for (const channel of CHANNELS) {
-    if (channel.prices) continue; // nothing it owns reaches the IDF
+    // Priced channels are offered too (spec 011 FR-001): nothing they own
+    // reaches the IDF, so an axis along one prices the shaping axis's runs.
     const engaged = state.get(channel.id)?.engaged;
     for (const control of channel.controls) {
       const sides = control.kind === 'facade' ? control.sides : [null];
@@ -8161,11 +8986,19 @@ function axisOffers(snapshot = params, patch = patching()) {
       for (const side of sides) {
         const key = side ? side.key : control.key;
         const channelOut = !faceless && !engaged;
+        // A priced channel is never patched out, only blocked (Plant, with
+        // System out), and says so in its own sentence; a priced face whose
+        // selector has withdrawn it says what the console letters under it.
+        const withdrawn = control.withdrawnAt?.(snapshot);
         const reason = faceless
           ? null
           : !engaged
-            ? `Patch ${channel.name} in; with it out of the path this control reaches no object.`
-            : control.inert?.(snapshot)
+            ? channel.prices
+              ? state.get(channel.id).blocked
+              : `Patch ${channel.name} in; with it out of the path this control reaches no object.`
+            : withdrawn
+              ? withdrawn
+              : control.inert?.(snapshot)
               ? control.note
               : side && !side.reaches(snapshot)
                 ? side.reasonFor(snapshot)
@@ -8196,17 +9029,33 @@ function axisOffers(snapshot = params, patch = patching()) {
   return offers;
 }
 
-/** Every reading a ground may be surveyed for, against this desk's own offers. */
-function surveyReadingOffers(snapshot = params, patch = patching(), epw = epwText ?? null) {
+/**
+ * Every reading a ground may be surveyed for, against this desk's own offers.
+ *
+ * `axes` are the controls chosen so far. A reading a priced axis cannot move is
+ * greyed with the study card's own sentence and fix, after the desk's own
+ * refusals, so a reading that also wants a weather file asks for that first.
+ */
+function surveyReadingOffers(snapshot = params, patch = patching(), epw = epwText ?? null, axes = []) {
   const offers = studyOffers(snapshot, patch, epw);
   return SURVEY_READINGS.map((reading) => {
     const offer = offers.find((candidate) => candidate.quantity.id === reading.quantity.id);
+    const pairing = offer.available ? pairingRefusal(axes, [reading]) : null;
     return {
       reading,
-      available: offer.available,
-      reason: offer.available ? null : `${offer.reason} ${offer.fix}`,
+      available: offer.available && !pairing,
+      reason: !offer.available ? `${offer.reason} ${offer.fix}` : pairing,
     };
   });
+}
+
+/**
+ * The first refused pairing of these axes and readings, as its sentence and
+ * fix, or null. The study card letters exactly this, from the same two calls.
+ */
+function pairingRefusal(keys, readings) {
+  const refused = refusesSurveyPairing(keys.filter(Boolean), readings);
+  return refused && `${refused.sentence} ${pairingFix(refused.key)}`;
 }
 
 /**
@@ -8635,17 +9484,36 @@ function extentField(which) {
  * the selection, or the desk the offers are measured against.
  */
 let chooserDrawn = null; // { choice, standing } as last drawn
+const PRICED_SELECTORS = Object.freeze(
+  [...PRICED_KEYS].filter((key) => controlFor(key).control.kind === 'selector'),
+);
 
 function renderSurveyChoose() {
   const host = $('survey-choose');
   // `surveyChoice` is always replaced and never mutated, so identity is the
   // whole test for it; only the desk needs its key.
-  const standing = `${shapeKey(params)}|${Boolean(epwText)}`;
+  //
+  // The unit system belongs in that key, and leaving it out was a fault this
+  // chooser was structurally unable to show. The Reading cell letters each
+  // offer's `unitNow`, which converts correctly at the moment it is built and
+  // then stands for the life of the session. Measured on the page: a sheet that
+  // booted in IP offered `High °F`, and went on offering `High °F` after a
+  // switch to SI, because neither the selection nor the desk had moved and this
+  // function returned early. A reader who booted in SI was offered °C under an
+  // IP sheet, the same fault pointing the other way. It is the `setStudy`
+  // identity guard again, one surface along: a cache whose key cannot see the
+  // system will hold a converted string past the switch that invalidated it.
+  // And the priced selectors, which `shapeKey` drops: switching the plant to a
+  // heat pump withdraws seasonal efficiency as an axis without moving a shape.
+  // The selectors and not the faces, whose values the chooser never letters,
+  // or every frame of a price drag would rebuild it.
+  const pricedNow = PRICED_SELECTORS.map((key) => params[key]).join('|');
+  const standing = `${shapeKey(params)}|${pricedNow}|${Boolean(epwText)}|${system()}`;
   if (chooserDrawn?.choice === surveyChoice && chooserDrawn.standing === standing) return;
   chooserDrawn = { choice: surveyChoice, standing };
   host.textContent = '';
   const axes = axisOffers();
-  const readings = surveyReadingOffers();
+  const readings = surveyReadingOffers(params, patching(), epwText ?? null, [surveyChoice.x, surveyChoice.y]);
   const named = (key) => (key ? labelFor(key) : '');
 
   const axisOptions = (other) =>
@@ -8713,7 +9581,7 @@ function renderSurveyChoose() {
       options: readings.map((offer) => ({
         id: offer.reading.id,
         label: offer.reading.label,
-        note: offer.available ? offer.reading.unit : null,
+        note: offer.available ? offer.reading.unitNow : null,
         available: offer.available,
         reason: offer.reason,
       })),
@@ -8890,7 +9758,13 @@ function drawGround(sv) {
     }),
   );
   const axisTitle = (axis) => {
-    const unit = axis.control.unit;
+    // `unitNow`, not the declaration's SI string. This name carries the unit
+    // once for a whole column of bare stops — that is the arrangement `stopOf`
+    // is the other half of — so read off `control.unit` it stood as `Width · m`
+    // over stops lettering 13.1 to 131.2 ft. Measured on the page: the same
+    // defect `stopOf` was fixed for, surviving one label along because the two
+    // halves of one arrangement were written in two places.
+    const unit = axis.control.unitNow;
     return unit ? `${labelFor(axis.key)} · ${unit}` : labelFor(axis.key);
   };
   for (const [axis, along] of [[sv.x, 'x'], [sv.y, 'y']]) {
@@ -9010,7 +9884,11 @@ function drawGround(sv) {
     if (at) {
       lettered.push(at);
       const text = svg('text', { class: 'level', x: at[0], y: at[1] - 3, 'text-anchor': 'middle' });
-      text.textContent = level.toFixed(reading.digits);
+      // Through the reading rather than off `toFixed`, which bypassed it
+      // entirely and drew a contour in SI on an IP sheet. The bare figure, not
+      // `format`: a contour label carries no unit by design — the legend
+      // carries it once, which is what keeps a field of them readable.
+      text.textContent = reading.figure(level);
       root.append(text);
     }
   }
@@ -9079,7 +9957,7 @@ function drawGround(sv) {
         y: y - 5,
         'text-anchor': 'middle',
       });
-      text.textContent = value.toFixed(reading.digits);
+      text.textContent = reading.figure(value);
       mark.append(text);
       // The second reading, where there is one, under the first (FR-031).
       // Lettered rather than encoded as a hue or a radius: two readings side
@@ -9091,7 +9969,7 @@ function drawGround(sv) {
       if (second) {
         const other = second.valueOf(spot.readings);
         const under = svg('text', { class: 'spot-figure second', x, y: y + 11, 'text-anchor': 'middle' });
-        under.textContent = other === null ? '—' : other.toFixed(second.digits);
+        under.textContent = other === null ? '—' : second.figure(other);
         mark.append(under);
       }
     }
@@ -9347,7 +10225,7 @@ function surveyAriaLabel(sv) {
   return (
     `${sv.readings.map((reading) => reading.label).join(' and ')} over ${labelFor(sv.x.key)} and ` +
     `${labelFor(sv.y.key)}, on a ${sv.density} ground with ${coverage.measured} of ${coverage.wanted} ` +
-    'positions measured. Contours are drawn between measured points and carry no figure.'
+    `positions measured${coverage.fromRuns}. Contours are drawn between measured points and carry no figure.`
   );
 }
 
@@ -9366,6 +10244,13 @@ function surveyAriaLabel(sv) {
  */
 function standOn(sv, spot) {
   if (!(spot && spot.readings)) return;
+  // A ground standing refused says why rather than moving the desk onto an
+  // axis that means nothing as the desk is set.
+  const withdrawn = surveyWithdrawn(sv);
+  if (withdrawn) {
+    surveySay(withdrawn);
+    return;
+  }
   const already =
     params[sv.x.key] === spot.x && params[sv.y.key] === spot.y;
   if (already) return;
@@ -9678,8 +10563,17 @@ function renderCoverage(sv) {
     el('b', null, `${coverage.measured} of ${coverage.wanted}`),
     document.createTextNode(' positions measured'),
   );
-  if (coverage.gaps) {
-    host.append(document.createTextNode(` · ${coverage.gaps} could not be run`));
+  // Along a priced axis several positions price one run, so the positions are
+  // not a count of runs, and the runs are said beside them wherever the two
+  // differ (FR-027).
+  if (coverage.fromRuns) host.append(document.createTextNode(coverage.fromRuns));
+  // A gap that kept its run could not be priced, which is not a run that
+  // failed, and a tariff that returns stands it back up.
+  if (coverage.gaps - coverage.unpriced) {
+    host.append(document.createTextNode(` · ${coverage.gaps - coverage.unpriced} could not be run`));
+  }
+  if (coverage.unpriced) {
+    host.append(document.createTextNode(` · ${coverage.unpriced} could not be priced`));
   }
   if (coverage.unsurveyed) {
     host.append(el('span', 'loose', ` · ${coverage.unsurveyed} not yet measured`));
@@ -9696,10 +10590,17 @@ function renderCoverage(sv) {
  */
 function amountOn(axis, value) {
   // The declaration's `digits` rather than `format` itself, because an amount
-  // of exactly zero is not the control's `zero` label.
-  const unit = axis.control.unit;
-  const said = value.toFixed(axis.control.digits);
-  return unit ? `${said} ${unit}` : said;
+  // of exactly zero is not the control's `zero` label — and `letter` gives that
+  // while converting the figure and its unit together. Composed from
+  // `control.unit` and a bare `toFixed` this was wrong twice over in IP: an
+  // unconverted number standing under an SI unit, which is the one shape of
+  // wrong figure that still looks like a reading. A unitless control still
+  // letters as a bare number, because `letter` appends nothing for an empty
+  // suffix.
+  return letter(axis.control.quantityKind, value, {
+    digits: axis.control.digits,
+    ipDigits: axis.control.ipDigits,
+  });
 }
 
 /**
@@ -9712,10 +10613,19 @@ function amountOn(axis, value) {
  * bound rather than as a figure.
  */
 function within(tolerance, reading) {
+  // A tolerance is a *difference* of the reading, so it goes through the delta
+  // kind: lettered through the reading's own kind, a tolerance on a temperature
+  // would carry Fahrenheit's 32 and a hundredth of a degree would read as 32.
+  const kind = deltaKindOf(reading.quantityKind);
+  // The floor is a property of the lettering rather than of the quantity, so it
+  // is already in the system showing and is compared against the converted
+  // tolerance, not the SI one. Both halves stayed SI here, which put an
+  // unconverted figure under an SI unit inside an otherwise IP sentence.
   const floor = 10 ** -reading.digits;
-  return tolerance < floor
-    ? `${floor.toFixed(reading.digits)} ${reading.unit}`
-    : `${tolerance.toFixed(reading.digits)} ${reading.unit}`;
+  const shown = convert(kind, tolerance);
+  const said = (shown < floor ? floor : shown).toFixed(reading.digits);
+  const unit = suffixIn(kind, reading.unit);
+  return unit ? `${said} ${unit}` : said;
 }
 
 /**
@@ -9731,7 +10641,7 @@ function renderSurveyFinding(sv) {
   const host = $('survey-finding');
   if (!coverage.measured) {
     host.textContent = coverage.gaps
-      ? `Nothing on this ground could be measured: all ${coverage.gaps} runs failed. There is no relief to draw, and none is drawn.`
+      ? `Nothing on this ground could be measured: all ${coverage.gaps} positions failed. There is no relief to draw, and none is drawn.`
       : '';
     return;
   }
@@ -9794,7 +10704,10 @@ function renderSurveyFinding(sv) {
         const said = sv.readings.map((entry, at2) => {
           const value = entry.valueOf(worst.readings);
           const change = value - base[at2];
-          return `${change >= 0 ? '+' : ''}${entry.format(change, worst.readings)} of ${entry.label.toLowerCase()}`;
+          // `change`, not `format`: this letters a difference of the reading,
+          // and through `format` the two temperatures here read +39 °F and
+          // +33 °F for changes of +4 °C and +0.5 °C.
+          return `${change >= 0 ? '+' : ''}${entry.change(change, worst.readings)} of ${entry.label.toLowerCase()}`;
         });
         parts.push(
           `${split.length} measured ${split.length === 1 ? 'design trades' : 'designs trade'} one reading ` +
@@ -10053,7 +10966,7 @@ function renderPull() {
       barCell,
       el('td', null, entry.perUnit || '—'),
       el('td', 'num', formatEffect(entry, pullStance.reading)),
-      el('td', 'num', entry.atStop ? 'At its stop' : `${entry.room.toFixed(2)}${entry.perUnit ? ` ${entry.perUnit}` : ''}`),
+      el('td', 'num', entry.atStop ? 'At its stop' : `${entry.roomSaid}${entry.perUnit ? ` ${entry.perUnit}` : ''}`),
     ];
     cells.forEach((cell, at) => {
       // Set where the cell is built, so the words over a column and the words
@@ -10120,9 +11033,22 @@ function cutFromPull(key) {
 /** One effect, per unit of the control's own travel and in the reading's units. */
 function formatEffect(entry, reading) {
   if (entry.effect === null) return '—';
-  const magnitude = Math.abs(entry.effect);
+  // **Both halves convert.** The effect is a change in the reading per unit of
+  // the control's own travel, so it is a ratio of two quantities and neither
+  // was being converted: in IP this printed an SI number under an SI unit in a
+  // table whose every other column had moved. That is the worst shape this
+  // feature can produce — not a mislabelled figure but a wrong one, at
+  // whatever `kR / kC` happens to be, and still plausible.
+  //
+  // The numerator is a *difference* of the reading, hence the delta kind; the
+  // denominator is a span of the control's face, which is what `spanKind`
+  // answers and what the "Per unit" column beside this one letters.
+  const kind = deltaKindOf(reading.quantityKind);
+  const shown = convert(kind, entry.effect) / convert(entry.control.spanKind, 1);
+  const magnitude = Math.abs(shown);
   const digits = magnitude >= 100 ? 0 : magnitude >= 1 ? 2 : 3;
-  return `${entry.effect.toFixed(digits)} ${reading.unit}`;
+  const unit = suffixIn(kind, reading.unit);
+  return unit ? `${shown.toFixed(digits)} ${unit}` : shown.toFixed(digits);
 }
 
 /* ── letting the design fall ─────────────────────────────────────────────── */
@@ -10173,6 +11099,11 @@ function letItFall() {
 
 function fallOnce() {
   if (!falling || !survey) return;
+  const withdrawn = surveyWithdrawn(survey);
+  if (withdrawn) {
+    stopFalling(withdrawn);
+    return;
+  }
   const at = survey.positionOf(params);
   const next = fallStep(survey, at, { visited: falling.visited });
   if (!next || next.stopped) {
@@ -10238,7 +11169,13 @@ function surveySay(sentence) {
  */
 function stopOf(axis, value) {
   const said = formatValue(axis.key, value);
-  const unit = axis.control.unit;
+  // The unit `formatValue` actually appended, not the declaration's SI string.
+  // Read off `control.unit` the match failed the instant the sheet was switched:
+  // `formatValue` letters `50.0 ft` and the strip looked for `m`, so the stop
+  // kept its unit and the relief drew `50.0 ft` under an axis lettered `Width
+  // ft` — the unit printed twice, once on a figure that had been built not to
+  // carry it.
+  const unit = axis.control.unitNow;
   return unit && said.endsWith(unit) ? said.slice(0, -unit.length).trim() : said;
 }
 
@@ -10336,8 +11273,8 @@ function drawRelief(sv) {
       // unit rides the name once — the rule `stopOf` keeps for the other two.
       z: {
         label: reading.label,
-        unit: reading.unit,
-        ticks: levels.map((level) => ({ value: level, text: level.toFixed(reading.digits) })),
+        unit: reading.unitNow,
+        ticks: levels.map((level) => ({ value: level, text: reading.figure(level) })),
       },
     },
   });
@@ -10395,7 +11332,7 @@ function drawRelief(sv) {
     `${coverage.measured} of ${coverage.wanted} positions carry a run, each marked by a post, and no ` +
     `figure anywhere on this sheet is read off the surface between them. Holes are positions that could ` +
     `not be measured. The vertical scale is fixed and the whole measured range fills the box — ` +
-    `${extent ? `${extent.lo.toFixed(sv.readings[0].digits)} to ${extent.hi.toFixed(sv.readings[0].digits)} ${sv.readings[0].unit}` : 'nothing measured yet'} — ` +
+    `${extent ? `${sv.readings[0].figure(extent.lo)} to ${sv.readings[0].figure(extent.hi)} ${sv.readings[0].unitNow}` : 'nothing measured yet'} — ` +
     `and there is no exaggeration control, because a reader who can dial the drama of a result up and ` +
     `down can argue from the picture.`;
 }
@@ -10460,8 +11397,8 @@ function renderTraverse() {
     // or one whose solve was overtaken. Absence is not zero.
     const cells = [
       name,
-      el('td', 'num', stop.readings ? `${stop.readings.high.toFixed(1)} °C` : '—'),
-      el('td', 'num', stop.readings ? `${stop.readings.low.toFixed(1)} °C` : '—'),
+      el('td', 'num', stop.readings ? letter(KINDS.temperature, stop.readings.high, { digits: 1 }) : '—'),
+      el('td', 'num', stop.readings ? letter(KINDS.temperature, stop.readings.low, { digits: 1 }) : '—'),
       el('td', 'num', stop.readings ? stop.readings.hours.toLocaleString('en-US') : '—'),
     ];
     cells.forEach((cell, at) => {
@@ -10481,9 +11418,15 @@ function renderSurvey() {
   section.hidden = false;
   renderSurveyChoose();
 
+  // A ground whose priced axis the desk has withdrawn stands refused in place,
+  // with every measured point kept: the plant switched back brings it back
+  // with no run. Asked on every draw rather than remembered, so there is no
+  // flag to forget to clear.
   const refusal = $('survey-refusal');
-  refusal.hidden = !surveyRefused;
-  if (surveyRefused) refusal.textContent = surveyRefused;
+  const withdrawn = survey ? surveyWithdrawn(survey) : null;
+  const standing = surveyRefused ?? withdrawn;
+  refusal.hidden = !standing;
+  if (standing) refusal.textContent = standing;
 
   const drawing = $('survey-drawing');
   $('survey-fall').hidden = !survey;
@@ -10499,8 +11442,8 @@ function renderSurvey() {
     $('survey-spots-scope').textContent = '';
     $('survey-axes').textContent = '';
     $('survey-lede').textContent =
-      'Choose two controls and a reading, and the sheet surveys that reading over that ground — one real ' +
-      'EnergyPlus run at every position. Contours and relief are drawn between the runs and carry no figure ' +
+      'Choose two controls and a reading, and the sheet surveys that reading over that ground — a real ' +
+      'EnergyPlus run behind every position. Contours and relief are drawn between the runs and carry no figure ' +
       'of their own. Standing on a measured point moves the whole of E-01 to that design.';
     for (const [id, text] of [['s-ground', '—'], ['s-reading', '—'], ['s-runs', '—']]) {
       $(id).textContent = text;
@@ -10508,6 +11451,17 @@ function renderSurvey() {
     return;
   }
 
+  // Standing refused, the ground draws nothing: every figure on it would be
+  // priced at a face the desk has withdrawn, which is the same figure at every
+  // position of that axis. The coverage stays, because the measured points
+  // are kept, and the ground is drawn again when the face returns.
+  if (withdrawn) {
+    drawing.hidden = true;
+    for (const id of ['survey-finding', 'survey-spot', 'survey-spots', 'survey-spots-scope']) $(id).textContent = '';
+    renderPull();
+    renderCoverage(survey);
+    return;
+  }
   drawing.hidden = false;
   const coverage = coverageOf(survey);
   $('survey-axes').textContent =
@@ -10515,7 +11469,9 @@ function renderSurvey() {
   $('survey-lede').textContent =
     `${survey.readings.map((reading) => reading.label).join(' and ')} over ` +
     `${phraseFor(survey.x.key)} and ${phraseFor(survey.y.key)}, cut through the desk as it stands. ` +
-    `Every figure below is a completed ${survey.annual ? 'annual' : 'design-day'} run.`;
+    `Every figure below is a completed ${survey.annual ? 'annual' : 'design-day'} run` +
+    // Still true along a priced axis, and only if it says the rest (FR-028).
+    ([survey.x, survey.y].some((axis) => PRICED_KEYS.has(axis.key)) ? ', priced at its position.' : '.');
 
   drawGround(survey);
   renderGroundKey(survey);
@@ -10527,16 +11483,19 @@ function renderSurvey() {
   drawRelief(survey);
 
   $('survey-plan-cap').textContent =
-    `${survey.readings[0].label} in ${survey.readings[0].unit} over ${labelFor(survey.x.key)} and ` +
+    `${survey.readings[0].label} in ${survey.readings[0].unitNow} over ${labelFor(survey.x.key)} and ` +
     `${labelFor(survey.y.key)}. Ticks are measured designs and carry the only figures on this drawing; ` +
     'the contours between them are interpolation and no figure anywhere is read off them. Ground with no ' +
     'contour across it has not been measured.';
   $('s-ground').textContent = coverage.density;
   $('s-ground-sub').textContent = `${coverage.wanted} positions asked for`;
   $('s-reading').textContent = survey.readings.map((reading) => reading.label).join(' + ');
-  $('s-reading-sub').textContent = survey.readings.map((reading) => reading.unit).join(' · ');
-  $('s-runs').textContent = String(coverage.measured);
-  $('s-runs-sub').textContent = coverage.gaps ? `${coverage.gaps} could not be run` : 'Completed simulations';
+  $('s-reading-sub').textContent = survey.readings.map((reading) => reading.unitNow).join(' · ');
+  // Runs, not positions: along a priced axis the two part company.
+  $('s-runs').textContent = String(coverage.runs);
+  $('s-runs-sub').textContent = coverage.runs !== coverage.measured
+    ? `Priced at ${coverage.measured} positions`
+    : coverage.gaps ? `${coverage.gaps} could not be run` : 'Completed simulations';
 }
 
 /**
@@ -10554,7 +11513,25 @@ function refreshSurvey() {
   // cut. It is redrawn here and where the record itself changes, and not from
   // `renderSurvey`, which runs on every landed sample and changes neither.
   renderTraverse();
+  // The chooser's offers are the desk's own — a channel patched in or out
+  // changes which axes and readings are available before there is any ground
+  // to re-cut, and the reader is often choosing exactly then. Placed above the
+  // `!survey` return below, since otherwise a patch made with no ground cut
+  // yet left the chooser showing offers from before the patch until something
+  // else happened to redraw it. `renderSurveyChoose` is cheap to call with
+  // nothing to do: it only rebuilds when the desk's own shape key has moved.
+  renderSurveyChoose();
   if (!survey || !studyScheduler || !autoOn() || linkAttachPending) return;
+  // A ground whose priced axis is withdrawn stands refused with its points and
+  // is neither re-cut nor refined. Re-cut, `openSurvey` would take the withdrawn
+  // sentence for a ground that cannot be cut and close the survey, so a shaping
+  // drag under a heat pump threw away every measured point, and switching back
+  // to a boiler brought nothing back. The release of the switch back is a
+  // gesture too, so it lands here with the face live and re-cuts then.
+  if (surveyWithdrawn(survey)) {
+    renderSurvey();
+    return;
+  }
   const rest = surveyRestShape(survey);
   if (surveyRestShape(survey, survey.stance, survey.patch) === rest) {
     // The ground still describes this desk. Only the stance mark moves.
@@ -10630,3 +11607,103 @@ if (linkError) {
   restoreLinkedStudies(linked);
   restoreLinkedSurvey(linked);
 }
+
+/* ══ what a report reads off this sheet ══════════════════════════════════ */
+
+/** A filesystem-safe word or two, for the names of the files a report saves. */
+const slug = (text) =>
+  String(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40) || 'sheet';
+
+/**
+ * The facts only this module holds, handed to the report sheet each time it
+ * opens (`src/report.js`, the registry): the link, what the sheet is showing,
+ * and the last attempt's errors. Everything is read from the state the sheet
+ * already letters from, never from a second copy of it.
+ *
+ * Registered here, at the foot of the module, because it reads state declared
+ * all the way down: registered any earlier, a report opened on a boot that
+ * stopped half way would reach a `let` still in its temporal dead zone and
+ * throw. Until this line runs, the report says the sheet had not finished
+ * starting, which is then the truth.
+ */
+function describeScreen() {
+  const failed = statusEl.classList.contains('bad');
+  const status = statusEl.textContent.trim() || '—';
+  const stale = Boolean(solvedShape) && solvedShape !== shapeKey(params);
+  const readings = lastBundle ? `from ${lastBundle.annual ? 'an annual' : 'a design-day'} run` : 'none yet';
+  const standing = pumping ? 'run in flight' : !lastBundle ? null : stale ? 'stale, from an earlier desk' : 'current';
+
+  const inView = [];
+  if (refusalNote) inView.push(`Link refused: ${refusalNote}`);
+  if (lastStationRefusal && statusEl.textContent === lastStationRefusal) inView.push(`Station refused: ${lastStationRefusal}`);
+  // In view means drawn: a strip inside a closed console has no client rects,
+  // and a blocking note nobody could see is not what the reader was looking at.
+  for (const strip of document.querySelectorAll('.strip.blocked')) {
+    if (!strip.getClientRects().length) continue;
+    const name = strip.querySelector('.strip-name')?.textContent.trim() || '—';
+    inView.push(`${name} blocked: ${strip.querySelector('.strip-blocked')?.textContent.trim() || '—'}`);
+  }
+
+  const progress = studyScheduler?.progress();
+  const studies = !progress ? '—' : progress.jobs ? `${progress.done} of ${progress.total} samples solved` : 'none running';
+  const coverage = survey ? coverageOf(survey) : null;
+  const surveyed = coverage ? `${coverage.measured} of ${coverage.wanted} measured, ${coverage.unsurveyed} unsurveyed` : 'none running';
+
+  const hash = schemeHash();
+  const warnings = (n) => (n == null ? '— warnings' : `${n} warning${n === 1 ? '' : 's'}`);
+  return {
+    stem: `${slug($('t-location').textContent)}-${lastBundle?.annual ? 'annual' : 'design-days'}`,
+    // After a refusal the desk is back at its defaults, so its link would
+    // report a building the reader never asked for; the link they did ask for
+    // is carried instead, as typed, with the reason the sheet gave.
+    // The unit system rides with the desk rather than taking an item of its
+    // own: `ITEM_IDS` is a closed set asserted in the report's constructor, so
+    // a new id would mean a new heading, a new removable rule and a new row in
+    // the sheet, all for one line. The desk item is already "what the reader
+    // was looking at", and which units they were reading is exactly that.
+    desk:
+      refusalNote && arrivedHash
+        ? [`- Refused link: \`${arrivedHash}\``, `- Reason given: ${refusalNote}`, `- Units: ${system().toUpperCase()}`]
+        : [`- Link: ${schemeUrl()}`, `- Units: ${system().toUpperCase()}`],
+    deskSummary:
+      refusalNote && arrivedHash
+        ? 'A refused link'
+        : hash
+          ? `${hash.split('&').length - 1} settings off the defaults`
+          : 'The default desk',
+    screen: [
+      `- Status: ${status} (${failed ? 'failure' : 'normal'})`,
+      `- Readings: ${readings}${standing ? `; ${standing}` : ''}`,
+      inView.length ? '- In view:' : '- In view: nothing refused or blocked',
+      ...inView.map((line) => `  - ${line}`),
+      `- Studies: ${studies}`,
+      `- Survey: ${surveyed}`,
+    ],
+    screenSummary: failed ? status : readings,
+    log: lastBundle
+      ? [
+          `- Last run: ${lastBundle.severe ?? '—'} severe, ${warnings(lastBundle.warnings)}, exit ${lastBundle.exitCode ?? '—'}`,
+          `- Failure: ${lastBundle.failure ?? '—'}`,
+        ]
+      : ['No run has been made.'],
+    fence: lastBundle && lastEngineErrors.length ? lastEngineErrors : null,
+    logSummary: lastBundle ? `${lastBundle.severe ?? '—'} severe, ${warnings(lastBundle.warnings)}` : 'No run yet',
+  };
+}
+
+provide('screen', describeScreen);
+provide('refusedLink', () => (refusalNote && arrivedHash ? { raw: arrivedHash, reason: refusalNote } : null));
+
+// The run bundle the Download button already makes, offered from the report
+// signed or unsigned. The signature is the reader's own (`sign.js` keeps it off
+// the link for exactly this reason), so it reaches a public report only when
+// they choose the signed files.
+provide('runFiles', () => ({
+  available: Boolean(lastBundle),
+  signed: Boolean(signature),
+  build: (withSignature) => runBundle({ ...lastBundle, author: withSignature ? signature : null }),
+}));

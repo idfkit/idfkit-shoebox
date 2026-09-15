@@ -64,6 +64,7 @@ import { AS_DRAWN, DAYS_IN_MONTH, MONTHS } from './controls.js';
 // there imports this, so the direction of the dependency stays one way.
 import { OCCUPANCY_SCHEDULE } from './model.js';
 import { BUDGETS, withinBudget } from './copy.js';
+import { kindFor } from './units.js';
 
 /* ══ the calendar this method is written on ══════════════════════════════ */
 
@@ -364,9 +365,17 @@ export const SEASON = new Season({
  */
 export class Criterion {
   constructor({
-    id, label, applies, asks, clause, limit, unit, threshold, thresholdFrom,
+    id, label, applies, asks, clause, limit, unit, quantityKind, threshold, thresholdFrom,
     byCategory, stage1, judgeable = true, unreadable = null,
   }) {
+    // Every criterion is a count or a share of hours, so every one of them is
+    // the identity: TM59 is defined in °C and K, but what it *reports* is
+    // nights and percentages, and a percentage is a percentage in both systems.
+    // Declared rather than left off so that "this does not convert" is a
+    // statement the roster checks, not a silence. The temperatures the criteria
+    // are judged on convert; they come through `temperature` and
+    // `temperatureDifference` where they are lettered.
+    this.quantityKind = kindFor(quantityKind, `TM59 ${label}`);
     this.id = id;
     this.label = label;
     this.applies = applies;
@@ -396,6 +405,7 @@ export const CRITERIA = Object.freeze([
       '1st May and 30th September inclusive shall not be more than 3% of the occupied hours during ' +
       'this period.',
     clause: 'TM59:2026 §2.4.1',
+    quantityKind: 'count',
     limit: 3,
     unit: '% of occupied hours',
     threshold: null,
@@ -416,6 +426,7 @@ export const CRITERIA = Object.freeze([
       'the number of nights for which the mean operative temperature during hours of sleep exceeds Tn, ' +
       'between 1st May and 30th September inclusive shall not be more than four nights during this period.',
     clause: 'TM59:2026 §2.4.2',
+    quantityKind: 'count',
     limit: 4,
     unit: 'nights',
     threshold: null,
@@ -436,6 +447,7 @@ export const CRITERIA = Object.freeze([
       'the room operative temperature shall not exceed 26 °C between 1st May and 30th September inclusive ' +
       'for more than 3% of occupied hours during this period.',
     clause: 'TM59:2026 §2.4.3',
+    quantityKind: 'count',
     limit: 3,
     unit: '% of occupied hours',
     threshold: 26,
@@ -454,6 +466,7 @@ export const CRITERIA = Object.freeze([
       'the operative temperature shall not exceed 28 °C between 1st May and 30th September for more than ' +
       '3% of occupied hours during this period.',
     clause: 'TM59:2026 §2.4.4',
+    quantityKind: 'count',
     limit: 3,
     unit: '% of occupied hours',
     threshold: 28,

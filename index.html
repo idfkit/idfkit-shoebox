@@ -149,7 +149,16 @@
         border-radius: var(--r);
         min-width: 210px;
       }
-      .stamp div {
+      /* `>` rather than a descendant selector, and that is a fix rather than a
+         tidy-up. This is the stamp's *row* styling, and the units row carries a
+         nested `div.segments` that was picking up every line of it: 8px of
+         padding, `baseline` where a flex box wants `stretch`, and — as the last
+         div inside its row — `border-bottom: 0` from the rule below, which
+         quietly took one side off the segmented control's own border. Measured,
+         that made a 17.5px control into a 34.5px box and its row 42.5px against
+         the 28.5px of the four rows above it. A row is a child of the stamp;
+         nothing nested inside one is. */
+      .stamp > div {
         display: flex;
         justify-content: space-between;
         gap: 20px;
@@ -157,7 +166,7 @@
         padding: 8px 12px;
         border-bottom: 1px solid var(--rule-soft);
       }
-      .stamp div:last-child { border-bottom: 0; }
+      .stamp > div:last-child { border-bottom: 0; }
       .stamp span {
         font: 500 10px/1 var(--cond);
         text-transform: uppercase;
@@ -462,6 +471,126 @@
       }
       .toggle-sub { font-size: 11.5px; line-height: 1.35; color: var(--ink-3); }
 
+      /* Units: the design system's segmented selector, at the stamp's own scale
+         rather than the control row's. No new hue — the active segment is solid
+         --ink on --vellum, which `.segment.here` already carries, and
+         `aria-checked` says the same thing in words so colour is never the only
+         carrier. The restraint here is scale, not contrast: the fill stays,
+         because it is the non-colour carrier, but the whole control is about
+         the width of the `EnergyPlus 26.1.0` it sits under. */
+      .stamp-col {
+        display: grid;
+        gap: 8px;
+        align-content: start;
+        min-width: 210px;
+      }
+      /* A stamp row whose value happens to be operable, and which has to stand
+         exactly as tall as the four rows of plain text above it.
+
+         Two things, once the leak above is stopped. `align-items: center`,
+         because a bordered control aligned on a text baseline sits low and
+         drags the row down; and written `.stamp > div.units-row` because
+         `.stamp > div` is (0,1,1) and a bare `.units-row` is (0,1,0), so the
+         shorter selector loses and the rule silently does nothing.
+
+         Then the control is sized to the line it stands on rather than to a
+         padding that happens to fit: 11.5px, the line-height `.stamp b` letters
+         every value in this table on. That is 3 + 11.5 + 3 inside a 1px box,
+         19.5px, and with 4 + 4 of row padding and the 1px rule under it the row
+         comes to 28.5px — what the four rows above it measure. */
+      .stamp > div.units-row {
+        align-items: center;
+        padding-block: 4px;
+      }
+      /* `.stamp` on the front so this beats `.segments`, which is declared two
+         thousand lines further down and wins on source order at equal
+         specificity — the same trap the row rule above falls into.
+
+         `overflow: visible`, and it took two wrong reasons to arrive at the
+         right one. A first cut set `clip` on the theory that the box reserved a
+         scrollbar gutter; the measurement said otherwise, and the extra height
+         was `.stamp > div` leaking padding in. The real reason is the hit target
+         below: `overflow-x: auto` makes this a scroll container, a scroll
+         container clips what overflows it, and the `::after` that extends the
+         thumb target beyond the painted box is exactly that. Measured with
+         `elementFromPoint`, a point ten pixels above the button returned the row
+         behind it rather than the button.
+
+         Two segments of two letters cannot overflow, so nothing is lost;
+         scrolling is what `.segments` chose over shrinking a label, and that
+         choice is about strips with a dozen options, not about this pair. */
+      .stamp .units-seg { border-radius: 3px; overflow: visible; }
+      /* With the clipping gone the corners have to be cut on the segments
+         themselves, or the active segment's solid fill paints square over the
+         container's rounded border. 2px against the container's 3px, which is
+         the radius less the 1px border it sits inside. */
+      .units-seg .segment:first-child { border-radius: 2px 0 0 2px; }
+      .units-seg .segment:last-child { border-radius: 0 2px 2px 0; }
+      /* Tighter than the console's segments: these two sit in a stamp row, not
+         in a column of sixty controls, and their line is the stamp's own 11.5px
+         so the row stands level with the four above it. Both labels keep their
+         full text at 390px, which the quickstart measures rather than assumes. */
+      .units-seg .segment {
+        position: relative;
+        flex: 0 0 auto;
+        padding: 3px 10px;
+        font: 500 9px/11.5px var(--cond);
+        letter-spacing: 0.09em;
+      }
+      /* A thumb's target around a painted box far smaller than one. Every other
+         segmented selector on the sheet is `flex: 1` and stretches to fill its
+         container; this pair hugs two letters, so it measures about 31 × 17.5px
+         — under 44 in *both* directions, with nothing compensating. That is not
+         the trade this sheet makes elsewhere and states out loud: the index
+         sheet's 36px rows and the pattern grid's 36.8px cells go under 44 and
+         say why, and both buy it back by spanning a full width.
+
+         So the hit area is extended without moving the paint: the row keeps the
+         27.5px that makes it level with the four rows above it, and the tappable
+         box is 43.5px tall. Vertically only — the two segments sit side by side,
+         and widening them would overlap their neighbour and hand a tap to the
+         wrong system, which is a worse failure than a tap that misses. It
+         overlaps the rows above and below, which carry no controls of their own.
+
+         `content: ''` with no paint: this is a target, not a decoration.
+
+         It only works because `.units-seg` gives up `overflow-x: auto` above. A
+         scroll container clips what leaves it, so the first cut of this was
+         inert — `elementFromPoint` ten pixels above the button returned the row
+         behind it. A hit area that cannot be measured is not a hit area.
+
+         This is **not** the fix for the iOS report that prompted it. A red
+         focus ring on the tapped segment says the tap reached the button, so
+         the target was never what failed there; that was the toggle drawing
+         itself before `reletterSheet` could throw. This is the sheet's own
+         44px rule, applied to the one control that was breaking it. */
+      .units-seg .segment::after {
+        content: '';
+        position: absolute;
+        inset: -13px 0;
+      }
+      /* The aside under the stamp, not a line in it. Sized to the stamp so the
+         column has one edge, and in --ink-3 so the block of facts above it
+         stays the thing the eye lands on. */
+      .units-standing {
+        margin: 0;
+        max-width: 32ch;
+        font-size: 10.5px;
+        line-height: 1.4;
+        color: var(--ink-3);
+      }
+      /* Read aloud, never drawn: the switch is already visible, and a second
+         copy of the sentence on the sheet would be the same fact twice. */
+      .units-said {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+
       /* inputs are inset: darker than the sheet, because they receive content */
 
       /* ── the site picker ────────────────────────────────────────────
@@ -626,6 +755,93 @@
       .status-row { display: flex; align-items: baseline; gap: 14px; }
       .status-row .status { flex: 1; }
       .status-row .link { flex: none; margin-top: 12px; font-size: 10.5px; }
+
+      /* ── the report sheet ───────────────────────────────────────────
+         A transmittal slip laid on the sheet under the status line, on the
+         console's vellum because it is worked rather than read. Every value
+         here is one the system already names; see .interface-design/system.md,
+         "The report sheet". */
+      .report {
+        margin: 14px 0 0;
+        padding: 16px 18px 14px;
+        background: var(--vellum);
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
+        display: flex;
+        flex-direction: column;
+        gap: 11px;
+      }
+      .report[hidden] { display: none; }
+      .report-standing { margin: 0; font: 400 11.5px/1.5 var(--sans); color: var(--ink-3); }
+      .report-field { display: flex; flex-direction: column; gap: 4px; }
+      .report-label,
+      .report-item-label {
+        font: 500 9.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
+      }
+      .report textarea {
+        font: 400 12px/1.5 var(--sans);
+        color: var(--ink);
+        background: var(--inset);
+        border: 1px solid var(--rule-soft);
+        border-radius: var(--r);
+        padding: 8px 10px;
+        min-height: 5.5em;
+        resize: vertical;
+      }
+      .report textarea:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 1px; }
+      .report-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+      /* The run log's tick: filled ink when the item is enclosed, a ghost
+         outline when the reader has taken it out. The summary says "Removed"
+         as well, so the square is never the only thing saying so. */
+      .report-item {
+        display: grid;
+        grid-template-columns: 8px minmax(0, 1fr) auto;
+        column-gap: 10px;
+        align-items: baseline;
+      }
+      .report-item::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border: 1px solid var(--ink);
+        border-radius: 1px;
+        background: var(--ink);
+        align-self: center;
+      }
+      .report-item.removed::before { background: transparent; border-color: var(--ink-ghost); }
+      .report-item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+      .report-item-summary {
+        font: 400 11px/1.3 var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink-2);
+        overflow-wrap: anywhere;
+      }
+      .report-item.removed .report-item-summary { color: var(--ink-ghost); }
+      .report-item-fixed { font: 400 10.5px/1.45 var(--sans); color: var(--ink-ghost); }
+      .report-files,
+      .report-actions { display: flex; flex-wrap: wrap; align-items: start; gap: 10px 22px; }
+      .report-file,
+      .report-send { display: flex; flex-direction: column; align-items: start; gap: 4px; }
+      .report-reason { margin: 0; max-width: 34ch; font: 400 10.5px/1.45 var(--sans); color: var(--ink-3); }
+      .report-reason:empty { display: none; }
+      .report-preview pre {
+        margin: 6px 0 0;
+        padding: 8px 10px;
+        font: 400 10.5px/1.5 var(--mono);
+        color: var(--ink-2);
+        background: var(--inset);
+        border: 1px solid var(--rule-soft);
+        border-radius: var(--r);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        max-height: 30em;
+        overflow: auto;
+      }
+      .report .report-outcome { margin: 0; min-height: 0; }
+      .report-outcome a { color: inherit; }
 
       /* ── the plate ──────────────────────────────────────────────── */
 
@@ -2780,6 +2996,18 @@
       }
       /* Set, but not reaching the model in the current configuration. */
       .ctl.idle { opacity: 0.4; }
+      /* Why a withdrawn priced face cannot be studied or surveyed, under its
+         dimmed row. The refusal box `.strip-blocked` draws, at full ink: it is
+         a sibling of the row, not a child, so the row's 0.4 never reaches it. */
+      .ctl-withdrawn {
+        margin: -5px 0 0;
+        padding: 5px 7px;
+        border: 1px dashed var(--rule-focus);
+        border-radius: var(--r);
+        font: 400 10.5px/1.45 var(--sans);
+        color: var(--redline);
+      }
+      .ctl-withdrawn[hidden] { display: none; }
 
       /* ── the study: one control swept across its face ─────────────── */
 
@@ -4998,11 +5226,60 @@
              them — it is what parses the model and writes the IDF the engine is
              handed. It also says, without opening a fold, what this page is a
              demo of; the colophon at the foot says who built it. -->
-        <div class="stamp">
-          <div><span>Engine</span><b id="t-engine-version">EnergyPlus 26.1.0</b></div>
-          <div><span>Runtime</span><b>WebAssembly</b></div>
-          <div><span>Toolkit</span><b><a href="https://idfkit.com" target="_blank" rel="noreferrer">idfkit</a></b></div>
-          <div><span>Simulation server</span><b>None</b></div>
+        <div class="stamp-col">
+          <div class="stamp">
+            <div><span>Engine</span><b id="t-engine-version">EnergyPlus 26.1.0</b></div>
+            <div><span>Runtime</span><b>WebAssembly</b></div>
+            <div><span>Toolkit</span><b><a href="https://idfkit.com" target="_blank" rel="noreferrer">idfkit</a></b></div>
+            <div><span>Simulation server</span><b>None</b></div>
+            <!-- Units, as the fifth fact about how this page is read rather
+                 than a control on the desk. It belongs in the stamp for the
+                 reason every other row does: each one states something about
+                 the page itself rather than a reading off the run, and which
+                 system the figures are lettered in is exactly that. It is also
+                 the quietest place the sheet has, which is what a mode that is
+                 set once and then forgotten deserves — in the control row it
+                 sat at the scale of the two buttons that start runs.
+
+                 Still static markup, so it works when main.js never finishes
+                 booting — the same arrangement report-sheet.js relies on — and
+                 still reachable from every state the sheet can be in (FR-001),
+                 which the desk panel is not.
+
+                 A segmented selector and deliberately not the square marker:
+                 that marker means "a step that is armed" and the design system
+                 reserves it for armed states, where a unit system is one of two
+                 modes. -->
+            <div class="units-row" id="units">
+              <span id="units-label">Units</span>
+              <div class="segments units-seg" role="radiogroup" aria-labelledby="units-label" id="units-group">
+                <button type="button" class="segment here" role="radio" aria-checked="true" data-system="si">SI</button>
+                <button type="button" class="segment" role="radio" aria-checked="false" data-system="ip">IP</button>
+              </div>
+            </div>
+          </div>
+          <!-- The naming prose the design system asks for on a control a reader
+               has never met: in place, never on hover. Under the box rather than
+               inside it, so the stamp stays a clean list of facts and the
+               sentence reads as the aside it is. -->
+          <!-- Thirteen words. The contract's own draft of this line ran to
+               sixteen against a fifteen-word budget and threw the page at load,
+               which is the budget assertion working: "on the sheet" is what a
+               line printed on the sheet can leave out. -->
+          <p class="units-standing" id="units-standing">
+            Every number reads in the system you pick. The model stays in SI.
+          </p>
+          <!-- Shown only where the browser refuses to keep the choice, and in
+               place rather than on hover: a switch that quietly forgets itself
+               every visit is worse than one that says it will. -->
+          <p class="units-standing" id="units-forgets" hidden>
+            This browser will not remember the choice.
+          </p>
+          <!-- The switch announced in words. The page has no live region of its
+               own: `#status` is written by `markStale` on every drag transition,
+               so making that one live would speak a stale note each time a
+               slider settles. -->
+          <p class="units-said" id="units-said" role="status"></p>
         </div>
       </header>
 
@@ -5038,6 +5315,12 @@
             <button type="button" class="link" id="download" disabled>
               Download run bundle
             </button>
+            <!-- Said where the files are handed over, not in a fold: the model
+                 EnergyPlus reads is SI whichever system the sheet is lettered
+                 in, and a reader who has been working in feet has every reason
+                 to expect the download to follow them. It does not, because a
+                 model file in two unit systems would be two models. -->
+            <p class="take-note" id="download-note">The model files are in SI, whichever units the sheet shows.</p>
             <button type="button" class="link" id="share">
               Copy scheme link
             </button>
@@ -5048,6 +5331,15 @@
                  string the button above copies. -->
             <button type="button" class="link" id="save-scheme">
               Save this scheme
+            </button>
+            <!-- The fourth way out, and the one addressed to whoever maintains
+                 the sheet: the link and the build say which drawing this was,
+                 and the report carries what they cannot, the lines the engine
+                 wrote and the sentence the sheet showed. Wired by
+                 src/report-sheet.js, so it answers even when main.js never
+                 finished starting. -->
+            <button type="button" class="link" id="report-open" aria-expanded="false" aria-controls="report">
+              Report a problem
             </button>
           </div>
         </aside>
@@ -5104,6 +5396,26 @@
             <p class="status" id="status"></p>
             <button type="button" class="link" id="studies-stop" hidden>Set studies aside</button>
           </div>
+
+          <!-- The report sheet, laid in the flow under the sentence it most
+               often reports, never floated over the drawing. Hosts only: every
+               word it letters is declared once in src/report-sheet.js and held
+               to its budget there. See .interface-design/system.md, "The report
+               sheet". -->
+          <section class="report" id="report" hidden aria-labelledby="report-title">
+            <h2 class="eyebrow" id="report-title"></h2>
+            <p class="report-standing" id="report-standing"></p>
+            <label class="report-field">
+              <span class="report-label" id="report-ask"></span>
+              <textarea id="report-text" rows="4" spellcheck="true"></textarea>
+            </label>
+            <ul class="report-items" id="report-items"></ul>
+            <div class="report-files" id="report-files"></div>
+            <div class="report-preview" id="report-preview"></div>
+            <div class="report-actions" id="report-actions"></div>
+            <p class="report-reason" id="report-needs"></p>
+            <p class="status report-outcome" id="report-outcome" role="status"></p>
+          </section>
 
           <figure class="plate" id="plate">
             <div class="plate-body">
@@ -5511,20 +5823,14 @@
           <article class="colophon">
             <h2>Colophon</h2>
             <p>
-              Built by Samuel Letellier-Duchesne, who works on building energy simulation at
+              Built by <a href="https://samuelduchesne.github.io" target="_blank" rel="noreferrer">Samuel Letellier-Duchesne</a>, who works on building energy simulation at
               <a href="https://www.introba.com" target="_blank" rel="noreferrer">Introba</a>
               and maintains <a href="https://idfkit.com" target="_blank" rel="noreferrer"><b>idfkit</b></a>:
               an open-source toolkit for reading, writing and running EnergyPlus models, meant to
-              be one set of ideas in whatever language the work is in rather than a library tied
-              to one of them. Shoebox is that toolkit in a browser — <code>@idfkit/core</code>
+              be one set of common developers tools for javascript and python. Shoebox is that toolkit in a browser — <code>@idfkit/core</code>
               builds and writes the model every figure on this sheet is read back off,
               <code>@idfkit/weather</code> finds the stations the picker offers, and
-              <code>@idfkit/engine</code> runs them.
-            </p>
-            <p>
-              The drawing itself has no author but whoever is at the console. That is why the
-              credit sits here and not in the title block, where every cell is read back off the
-              model and a name would be the one thing on it you could not check.
+              <code>@idfkit/engine</code> runs them using the EnergyPlus engine.
             </p>
           </article>
 
@@ -5657,6 +5963,11 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
       </header>
     </aside>
 
+    <!-- The report sheet and the error trap load first, and separately: the
+         engine and schema loads in main.js are top-level awaits, and a failure
+         there stops that whole module. A report has to open on exactly that
+         sheet. Both entries share one instance of src/report.js. -->
+    <script type="module" src="/src/report-sheet.js"></script>
     <script type="module" src="/src/main.js"></script>
 
     <!-- GoatCounter, which counts page views and nothing else: no cookie, no

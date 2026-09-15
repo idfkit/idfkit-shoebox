@@ -20,6 +20,7 @@ import { BUDGETS, withinBudget } from './copy.js';
 // definition: a second copy here would be the first thing to drift the day a
 // figure changed precision on one surface and not the other.
 import { flowPhrase, flowWord, watts } from './readings.js';
+import { letter } from './units.js';
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -147,6 +148,15 @@ export function mountConsole({
   const rows = new Map();
   const cards = new Map(); // parameter key -> { node, kind, study, syncTick }
   const studyButtons = new Map(); // parameter key -> that scale's Study button
+  // And how each one says its sweep, held as a thunk rather than a string.
+  // The label letters the control's own range, so it has to be rebuilt on a
+  // unit switch; written once at build time it was the only lettering on the
+  // desk that never converted at all, telling a reader who cannot see the face
+  // "sweep from 10.0 °C to 26.0 °C" beside a face reading 68 °F. A closure
+  // rather than a recomputation because the two callers name their subject
+  // differently: a scale passes `control.label`, one wall of a plan key passes
+  // `labelFor(side.key)`, and only the closure still knows which.
+  const studySweeps = new Map(); // parameter key -> () => its aria-label
   // parameter key -> that wall's Survey button, on the plan keys only. A
   // survey is cut along two controls, so an offer under every one of the
   // ninety sweepable faces would be ninety more tab stops asking half a
@@ -171,6 +181,10 @@ export function mountConsole({
   // that has to take the focus back.
   let whenButton = null;
   let engaged = new Set(); // which channels the model says are in the path
+  // channel id -> why a channel that is not patched out is still not in the path
+  // (its `requires`, resolved by `channelState`). An offer on such a channel has
+  // no patch to press, so it says this instead of "patch it in".
+  let blocked = new Map();
   let ghost = {}; // where each control stood when the current gesture began
   // Whether a study can be taken at all, and the sentence for when it cannot.
   // Off until the caller says otherwise: the engine is not resident at mount.
@@ -418,22 +432,28 @@ export function mountConsole({
    * The question every swept control carries: what would the rest of your
    * face do?
    *
-   * Not on a priced channel — nothing it owns reaches the engine, so a sweep
-   * of it could only redraw the numbers already on the sheet. `name` is the
+   * On a priced channel too. Nothing a Plant or Tariff face owns reaches the
+   * engine, which is exactly why its sweep is cheap rather than pointless: the
+   * desk's one run, priced at each position, is the whole curve, and those
+   * figures are not on the sheet until something draws them. `name` is the
    * subject as the offer says it, which for one wall of a plan key is that
    * wall and not the group: four buttons under one label would otherwise all
    * announce themselves identically.
    */
   function studyOffer(key, name, control, channel) {
-    if (channel?.prices) return null;
     const btn = el('button', 'study', 'Study');
     btn.type = 'button';
-    btn.setAttribute(
-      'aria-label',
-      `Study ${name}: sweep from ${control.format(control.min)} to ${control.format(control.max)}`,
-    );
+    // A withdrawn priced face is named by its refusal rather than its sweep, for
+    // a reader who cannot see the dimmed row. The sentence also stands in view
+    // under the row (`buildScale`), so this is never its only carrier. One
+    // thunk, so `syncStudyOffer` and `reletter` cannot disagree about which.
+    const said = () =>
+      control.withdrawnAt?.(params) ??
+      `Study ${name}: sweep from ${control.format(control.min)} to ${control.format(control.max)}`;
+    btn.setAttribute('aria-label', said());
     btn.addEventListener('click', () => onStudy?.(key));
     studyButtons.set(key, btn);
+    studySweeps.set(key, said);
     return btn;
   }
 
@@ -452,7 +472,6 @@ export function mountConsole({
    * chosen too. The button says which of the two it would fill.
    */
   function surveyOffer(key, channel) {
-    if (channel?.prices) return null;
     const btn = el('button', 'study survey-offer', 'Survey');
     btn.type = 'button';
     btn.addEventListener('click', () => onSurvey?.(key));
@@ -469,7 +488,7 @@ export function mountConsole({
     const title = !sweepGate.ok
       ? sweepGate.reason
       : out
-        ? 'This path is out of the model — patch it in to survey it.'
+        ? blocked.get(channel.id) ?? 'This path is out of the model — patch it in to survey it.'
         : idle
           ? unreached ?? 'Set, but not reaching the model — there is nothing to survey along.'
           : axis
@@ -502,16 +521,16 @@ export function mountConsole({
    * Written only on change: this runs for every control on every synced frame
    * of a drag, and attribute writes are never free.
    */
-  function syncStudyOffer(btn, channel, { idle, unreached = null }) {
+  function syncStudyOffer(btn, channel, { idle, unreached = null, withdrawn = null }) {
     if (!btn || btn.dataset.running) return;
     const out = !engaged.has(channel.id);
     const disabled = !sweepGate.ok || out || idle;
     const title = !sweepGate.ok
       ? sweepGate.reason
       : out
-        ? 'This path is out of the model — patch it in to sweep it.'
+        ? blocked.get(channel.id) ?? 'This path is out of the model — patch it in to sweep it.'
         : idle
-          ? unreached ?? 'Set, but not reaching the model — there is nothing to sweep.'
+          ? withdrawn ?? unreached ?? 'Set, but not reaching the model — there is nothing to sweep.'
           : 'Sweep this control across its face: the desk solved at a score of positions, drawn as a curve.';
     if (btn.disabled !== disabled) btn.disabled = disabled;
     if (btn.title !== title) btn.title = title;
@@ -627,6 +646,14 @@ export function mountConsole({
     derivedLines.set(control.key, derived);
     if (control.note) row.append(noteFold(control));
 
+    // Why a withdrawn priced face cannot be studied, in view. A sibling of the
+    // row rather than a child, because `.ctl.idle` dims the row with opacity
+    // and no child can take its ink back from that; a refusal lettered at 0.4
+    // is a refusal half read. It is also the anchor a study card hangs after,
+    // so the card stands under the sentence rather than between it and its row.
+    const withdrawnLine = control.withdrawn ? el('p', 'ctl-withdrawn') : null;
+    if (withdrawnLine) withdrawnLine.hidden = true;
+
     input.addEventListener('input', () => {
       markGesture(control.key);
       onChange(control.key, Number(input.value));
@@ -667,13 +694,26 @@ export function mountConsole({
       const idle = control.idle(params);
       row.hidden = !control.shown(params);
       row.classList.toggle('idle', idle);
-      syncStudyOffer(studyBtn, channel, { idle });
+      const withdrawn = control.withdrawnAt(params);
+      syncStudyOffer(studyBtn, channel, { idle, withdrawn });
+      if (withdrawnLine) {
+        const standing = Boolean(withdrawn) && !row.hidden;
+        if (withdrawnLine.hidden === standing) withdrawnLine.hidden = !standing;
+        if (standing && withdrawnLine.textContent !== withdrawn) withdrawnLine.textContent = withdrawn;
+        // The label changes only where a face can be withdrawn, so only those
+        // rows pay for re-reading it on every synced frame.
+        const label = studySweeps.get(control.key)();
+        if (studyBtn.getAttribute('aria-label') !== label) studyBtn.setAttribute('aria-label', label);
+      }
       // Dragging the swept control just walks the study's tick along its curve.
       cards.get(control.key)?.syncTick?.();
     };
     faces.set(control.key, redraw);
-    rows.set(control.key, row);
-    return row;
+    rows.set(control.key, withdrawnLine ?? row);
+    if (!withdrawnLine) return row;
+    const both = document.createDocumentFragment();
+    both.append(row, withdrawnLine);
+    return both;
   }
 
   /** A small set of exclusive states on one segmented rule. */
@@ -989,7 +1029,12 @@ export function mountConsole({
         const v = params[bar.side.key];
         const f = clamp(control.fraction(v), 0, 1);
         bar.filled.setAttribute('x2', String(-24 + f * 48));
-        bar.cap.textContent = v > 0 ? v.toFixed(control.digits) : '';
+        // The bare number, through the control's own `figure`, so a cap ruled
+        // along the edge of the plan agrees with the face above it to the last
+        // decimal in either system. The unit is deliberately absent: four of
+        // these are lettered around one small plan, and four copies of `m` is
+        // four more things to read on a drawing that has room for none.
+        bar.cap.textContent = v > 0 ? control.figure(v) : '';
         // Keep the lettering upright however far the plan has been turned.
         const total = params.northAxis + bar.place.rotate;
         bar.cap.setAttribute('transform', `rotate(${-total})`);
@@ -1887,7 +1932,7 @@ export function mountConsole({
     const summary = el('summary', 'study-quantity-summary');
     summary.append(
       el('span', 'study-quantity-label', selected.label),
-      el('span', 'study-quantity-unit', selectedOffer.unit),
+      el('span', 'study-quantity-unit', selectedOffer.unitNow),
     );
     details.append(summary);
 
@@ -1908,7 +1953,7 @@ export function mountConsole({
       const line = el('span', 'study-quantity-line');
       line.append(
         el('span', 'study-quantity-name', offer.quantity.label),
-        el('span', 'study-quantity-unit', offer.unit),
+        el('span', 'study-quantity-unit', offer.unitNow),
       );
       if (input.checked) line.append(el('span', 'study-quantity-selected', 'Selected'));
       words.append(line);
@@ -2020,7 +2065,7 @@ export function mountConsole({
       const format = (value, point) =>
         line.format
           ? line.format(value, readingOf(point))
-          : `${value.toFixed(quantity.digits)} ${quantity.unit}`;
+          : quantity.say(value);
       return {
         sel: (point) => {
           const value = line.select(readingOf(point));
@@ -2264,6 +2309,48 @@ export function mountConsole({
       else for (const redraw of faces.values()) redraw();
     },
 
+    /**
+     * Re-letter the console in the system now showing.
+     *
+     * Every face, margin box, landmark band edge and study tick, from the
+     * values already on `params`. It starts no run, queues no solve, marks
+     * nothing stale and touches no parameter — a unit system is how a number
+     * reads, and no number has moved.
+     *
+     * This is the console's half only, and the split is deliberate rather than
+     * a layering accident: the console has never held a run's outcome. It is
+     * handed readings through `setReadings` and writes them straight out, so a
+     * `reletter` that could redraw them on its own would need a copy of the
+     * last run kept here — the second copy of a reading that the read-back rule
+     * exists to prevent. The other half is `main.js`, which replays the render
+     * of the outcome it already holds. See the toggle there.
+     */
+    reletter() {
+      // `sync` already walks every face, and each face's own redraw ends by
+      // ticking the study card hung under it, so the ticks come with it.
+      api.sync();
+      // The cards themselves are a different matter: `syncTick` only walks the
+      // tick along a curve whose labels were lettered when the card was built.
+      // Rebuilt from the studies this console is already holding, so nothing is
+      // re-swept and no sample is dropped — the study object is the same one,
+      // which is why it has to say so explicitly to get past the identity guard.
+      for (const [key, card] of [...cards]) {
+        if (card.study) api.setStudy(key, card.study, { stale: card.node.classList.contains('stale'), relettering: true });
+      }
+      // The Study offers' own labels. `sync` does not reach them: nothing about
+      // them depends on the desk's state, so they had no reason to be re-read
+      // until units gave them one. They are also the only place a reader who
+      // cannot see the face is told what a sweep would cover, which is why a
+      // label left in the other system is worse here than anywhere else on the
+      // sheet — it is not a second copy of a visible figure, it is the figure.
+      for (const [key, said] of studySweeps) {
+        const btn = studyButtons.get(key);
+        if (!btn) continue;
+        const label = said();
+        if (btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label);
+      }
+    },
+
     /** Forget the ghosts: a gesture has ended and this is the new baseline. */
     settle() {
       ghost = {};
@@ -2316,6 +2403,7 @@ export function mountConsole({
     /** Letter every strip against the state the model reports. */
     setState(state) {
       engaged = new Set([...state].filter(([, s]) => s.engaged).map(([id]) => id));
+      blocked = new Map([...state].filter(([, s]) => s.blocked).map(([id, s]) => [id, s.blocked]));
       for (const channel of CHANNELS) {
         const here = strips.get(channel.id);
         const s = state.get(channel.id);
@@ -2447,9 +2535,20 @@ export function mountConsole({
      * place rather than rebuilding — staleness moves per drag frame, the card
      * itself only when a sweep lands or clears.
      */
-    setStudy(key, study, { stale = false } = {}) {
+    setStudy(key, study, { stale = false, relettering = false } = {}) {
       const have = cards.get(key);
-      if (study && have?.study === study) {
+      // The identity guard: the same study restyles in place rather than
+      // rebuilding, which is what keeps a drag cheap.
+      //
+      // `relettering` is the one caller that has to get past it. A card's
+      // heading, its desk line, its quantity's unit and its axis ends are all
+      // lettered when the card is built, so on a units switch the study object
+      // is unchanged and every figure on the card is wrong — and re-issuing it
+      // from outside could never help, because it arrives here and takes this
+      // early return. The rebuild below is the re-lettering, and it already
+      // carries the open disclosure, the held focus and the scroll position
+      // across, which is exactly what a switch must not disturb.
+      if (study && have?.study === study && !relettering) {
         have.node.classList.toggle('stale', stale);
         return;
       }

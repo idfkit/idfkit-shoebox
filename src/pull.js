@@ -40,6 +40,7 @@
  */
 
 import { CHANNELS, controlFor, labelFor } from './controls.js';
+import { figureIn } from './units.js';
 import { sampleRefusal } from './model.js';
 import { READING_BY_ID } from './survey.js';
 import { refusesSweep } from './study.js';
@@ -53,7 +54,7 @@ import { refusesSweep } from './study.js';
  * entry that carried both would be two claims about one control.
  */
 export class PullEntry {
-  constructor({ key, control, side, channel, direction = null, effect = null, perUnit = '', room = 0, atStop = false, inert = null }) {
+  constructor({ key, control, side, channel, direction = null, effect = null, room = 0, atStop = false, inert = null }) {
     if (!key) throw new Error('a pull entry needs a control key');
     if ((inert === null) === (effect === null)) {
       throw new Error(
@@ -77,7 +78,6 @@ export class PullEntry {
     this.direction = direction;
     /** Change in the reading per unit of this control's own travel. */
     this.effect = effect;
-    this.perUnit = perUnit;
     /** How much range remains in the direction that improves the reading. */
     this.room = room;
     /** True where `room` is zero: a steep face with nowhere left to go. */
@@ -89,6 +89,37 @@ export class PullEntry {
   /** The magnitude the ranking sorts on. Zero for an inert control. */
   get pull() {
     return this.effect === null ? 0 : Math.abs(this.effect);
+  }
+
+  /**
+   * The unit one step of this control's travel is in, in the system showing.
+   *
+   * Asked of the control at draw time rather than frozen in at construction,
+   * because an entry outlives a unit switch: the ranking is built once and
+   * re-lettered from `reletterSheet`, and a string captured here would have
+   * stood in SI under an IP sheet for the life of the reading.
+   *
+   * A control with no unit is a ratio or a fraction, and lettering it
+   * `0.20 unit` is worse than lettering it `0.20`: it invents a dimension the
+   * declaration deliberately does not have.
+   */
+  get perUnit() {
+    return this.control.spanUnitNow;
+  }
+
+  /**
+   * How much range is left, lettered bare so the column can put the unit beside
+   * it once. Through the control's **span** kind: this is a subtraction along a
+   * face, and on a setpoint `quantityKind` would carry Fahrenheit's 32 into it.
+   */
+  get roomSaid() {
+    // Two decimals in both systems, as this column has always shown, rather
+    // than the control's own IP precision. A span is not a position on the
+    // grid, so `precisionFor`'s reachability argument does not apply to it —
+    // and applied anyway it rounded half a degree of room on a 0.5 °C setpoint
+    // face from `0.9` to `1`, losing the reading to a rule about somewhere to
+    // stand.
+    return figureIn(this.control.spanKind, this.room, { digits: 2, ipDigits: 2 });
   }
 }
 
@@ -117,10 +148,16 @@ export class PullReading {
   }
 
   /** The sentence that must accompany the ranking wherever it is drawn. */
+  //
+  // It says Plant and Tariff are not ranked (spec 011 FR-021), because they can
+  // be studied and surveyed and a reader who finds them missing here would
+  // otherwise take the absence for a finding that they pull on nothing.
   get said() {
-    return this.kind === 'annual'
-      ? `Read against ${this.reading.label.toLowerCase()} over the attached weather year, one run per control.`
-      : `Read against ${this.reading.label.toLowerCase()} over the two design days, one run per control.`;
+    const over = this.kind === 'annual' ? 'the attached weather year' : 'the two design days';
+    return (
+      `Read against ${this.reading.label.toLowerCase()} over ${over}, one run per control. ` +
+      'Plant and Tariff price the run rather than shape it, so they are not ranked.'
+    );
   }
 }
 
@@ -161,8 +198,13 @@ export function pullProbes(stance, patch, { quantity, engaged, annual, epw = nul
   const probes = [];
   const inert = [];
   for (const channel of CHANNELS) {
-    // Nothing a priced channel owns reaches the IDF, so a probe of one would
-    // be a run that could only reproduce the number already on the sheet.
+    // Left out by decision rather than by cost (spec 011, clarification of
+    // 2026-09-14, FR-021). A priced probe would be free, since it prices the
+    // stance's own run, but the pull ranks what is pulling the building, and a
+    // tariff or a boiler efficiency is not the building. Plant and Tariff are
+    // studied and surveyed instead, and `PullReading.said` says they are not
+    // ranked here, nor listed as inert: they are not absent from the building
+    // at this stance, they are not part of it.
     if (channel.prices) continue;
     for (const control of channel.controls) {
       if (refusesSweep(control)) continue; // no numeric face; there is nothing to step along
@@ -289,10 +331,6 @@ export function entryFrom(probe, { here, there, reading }) {
     channel,
     direction,
     effect,
-    // A control with no unit is a ratio or a fraction, and lettering it
-    // `0.20 unit` is worse than lettering it `0.20`: it invents a dimension
-    // the declaration deliberately does not have.
-    perUnit: control.unit || '',
     room: Math.max(0, room),
     atStop: Math.max(0, room) === 0,
   });

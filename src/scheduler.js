@@ -30,6 +30,18 @@
  *                                alike, so a curve resolved from the cache
  *                                classifies a position the way a drain does —
  *                                which is also why it must be pure and cheap
+ *   priceAt(job, value, sample) — SYNCHRONOUS and deliberately impure: the
+ *                                readings bag a curve point carries at this
+ *                                position. Never called for a refused position
+ *                                or a missing sample. The cache holds one entry
+ *                                per shape, and every position of a priced
+ *                                sweep is one shape, so a price cannot live in
+ *                                the cache: this is where each position is
+ *                                priced at its own value. It may read the
+ *                                desk's current priced settings, unlike
+ *                                `refuses`, because the caller rebuilds every
+ *                                curve whenever those move. Defaults to the
+ *                                sample's own readings
  *   contextFor(job)            — SYNCHRONOUS: facts the quantity readers
  *                                needs that the sweep does not change, built
  *                                once for the whole study (see below)
@@ -141,6 +153,7 @@ export function createStudyScheduler({
   runSample,
   readPoint,
   refuses = () => null,
+  priceAt = (job, value, sample) => sample.readings,
   contextFor = () => null,
   paused,
   capacity,
@@ -239,7 +252,6 @@ export function createStudyScheduler({
   * whenever a quantity is declared and would turn a complete curve into a
   * reported failure when that second list drifted.
    */
-  const readingOf = (entry, quantity) => entry?.readings?.[quantity] ?? null;
   const drew = (point) => point?.reading != null;
 
   /**
@@ -250,17 +262,27 @@ export function createStudyScheduler({
    * being the same shape as a point that landed — so a curve rebuilt on a
    * quantity change lost every refusal it had, and counted those positions as
    * runs still to come.
+   *
+   * The reading and the spread bag come from `priceAt`, so a position of a
+   * priced sweep letters its own price; `sample` rides along unpriced, since it
+   * is the run's, and the survey keeps its meter basis to re-price from.
    */
-  const pointAt = (job, value, sample, refused = null) => ({
-    value,
-    reading: readingOf(sample, job.quantity),
-    ...(sample?.readings ?? {}),
-    sample,
-    // Kept apart from a failed run, which is also a point with no reading:
-    // a failure is the engine's and says nothing about the position, where
-    // a refusal is a fact about the position and has a sentence to say.
-    refused,
-  });
+  const pointAt = (job, value, sample, refused = null) => {
+    const readings = sample ? priceAt(job, value, sample) : null;
+    return {
+      value,
+      reading: readings?.[job.quantity] ?? null,
+      ...(readings ?? {}),
+      // The same bag by name, for a caller that needs it whole (a survey spot
+      // height) without picking it back out of the spread by exclusion.
+      readings,
+      sample,
+      // Kept apart from a failed run, which is also a point with no reading:
+      // a failure is the engine's and says nothing about the position, where
+      // a refusal is a fact about the position and has a sentence to say.
+      refused,
+    };
+  };
 
   function land(job, index, sample, refused = null) {
     if (!active(job)) return; // cancelled while this sample was in flight
@@ -519,6 +541,11 @@ export function createStudyScheduler({
     curveFor(job) {
       const curve = [];
       let missing = 0;
+      // The engine runs behind the measured points, which is not their count:
+      // every position of a priced sweep prices one run, so a curve of
+      // twenty-one points can stand on one. Counted by identity, so a sentence
+      // that letters runs can letter these rather than the positions.
+      const runs = new Set();
       for (const value of job.points) {
         // Asked before the cache, exactly as `dispatch` asks it, or the two
         // ways a curve comes to exist would disagree about the same position.
@@ -530,11 +557,12 @@ export function createStudyScheduler({
           curve.push(pointAt(job, value, null, refusal));
           continue;
         }
-        const { entry } = lookup(job, value);
+        const { identity, entry } = lookup(job, value);
         if (!entry) missing += 1;
+        else runs.add(identity.exact);
         curve.push(pointAt(job, value, entry));
       }
-      return { curve, missing };
+      return { curve, missing, runs: runs.size };
     },
 
     /** Recompute price-derived readings from retained physical meter bases. */

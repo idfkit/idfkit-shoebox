@@ -16,6 +16,7 @@ import { END_USES, J_TO_KWH, meterTotal } from './bill.js';
 // year is declared; re-exported here because every reader of a run letters its
 // timestamps with them and `main.js` has always taken them from this module.
 import { MONTHS } from './controls.js';
+import { KINDS, inIP, kindFor, letter } from './units.js';
 
 export { MONTHS };
 
@@ -193,9 +194,18 @@ export const exactly = (name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]
 export function watts(w) {
   if (!Number.isFinite(w)) return '—';
   const abs = Math.abs(w);
-  if (abs >= 10000) return `${(w / 1000).toFixed(1)} kW`;
-  if (abs >= 1000) return `${(w / 1000).toFixed(2)} kW`;
-  return `${w.toFixed(0)} W`;
+  // In IP the three-branch scale collapses to one kind, because US practice has
+  // no second unit the way W gives way to kW: a metered rate is kBtu/h at every
+  // magnitude. The thresholds stay thresholds *in watts* — they are about how
+  // big the figure is, not about what it is lettered in, and converting them
+  // would move where the precision changes to a place no reader chose.
+  if (inIP()) return letter(KINDS.power, w / 1000, { ipDigits: abs >= 10000 ? 1 : 2 });
+  if (abs >= 10000) return letter(KINDS.power, w / 1000, { digits: 1 });
+  if (abs >= 1000) return letter(KINDS.power, w / 1000, { digits: 2 });
+  // Below a kilowatt the SI sheet letters bare watts, which is an appliance
+  // rating's unit and reads the same in both systems — unreachable in IP, since
+  // the branch above has already answered.
+  return letter(KINDS.appliancePower, w, { digits: 0 });
 }
 
 /**
@@ -277,7 +287,13 @@ export const flowPhrase = (w) => {
  * `Channel.requires` makes, for the same reason.
  */
 export class Instant {
-  constructor({ id, label, blurb, variable = null, perBuilding = false, better, holds = () => true, letter, missing, never }) {
+  constructor({ id, label, blurb, variable = null, perBuilding = false, better, holds = () => true, quantityKind, digits = null, missing, never }) {
+    // What the offer measures, in place of the closure that used to letter it.
+    // Each of these carried its own `${v.toFixed(1)} °C` or a reference to
+    // `watts`, which meant seven private opinions about how a figure reads and
+    // seven places an IP reader would have been handed a Celsius number.
+    this.quantityKind = kindFor(quantityKind, `the instant "${id}"`);
+    this.digits = digits;
     this.id = id;
     this.label = label;
     this.blurb = blurb;
@@ -294,13 +310,24 @@ export class Instant {
     this.perBuilding = perBuilding;
     this.better = better;
     this.holds = holds;
-    this.letter = letter;
     // Why the series is not in this run at all — a channel that is out of the
     // path takes its output variable with it.
     this.missing = missing;
     // Why the extreme that was found is not the thing the label names.
     this.never = never;
     Object.freeze(this);
+  }
+
+  /**
+   * How this offer's figure reads, in the system showing.
+   *
+   * A power instant goes through `watts`, which owns the W-to-kW scale and the
+   * half-watt floor the rail is drawn to. The kind names the *quantity*, not
+   * the magnitude prefix: these values arrive in watts and `power` letters
+   * kilowatts, and `watts` is the one place that scale is decided.
+   */
+  say(v) {
+    return this.quantityKind === KINDS.power ? watts(v) : letter(this.quantityKind, v, { digits: this.digits });
   }
 }
 
@@ -317,7 +344,7 @@ export const INSTANTS = Object.freeze([
     perBuilding: true,
     better: (v, best) => v > best,
     holds: (v) => v > 0,
-    letter: watts,
+    quantityKind: 'power',
     missing: NO_SYSTEM,
     never: 'Nothing in this run called for heating.',
   }),
@@ -329,7 +356,7 @@ export const INSTANTS = Object.freeze([
     perBuilding: true,
     better: (v, best) => v < best,
     holds: (v) => v < 0,
-    letter: watts,
+    quantityKind: 'power',
     missing: NO_SYSTEM,
     never: 'Nothing in this run called for cooling.',
   }),
@@ -338,14 +365,14 @@ export const INSTANTS = Object.freeze([
     label: 'Warmest zone',
     blurb: 'The highest zone mean air temperature in the run.',
     better: (v, best) => v > best,
-    letter: (v) => `${v.toFixed(1)} °C`,
+    quantityKind: 'temperature', digits: 1,
   }),
   new Instant({
     id: 'coolest',
     label: 'Coolest zone',
     blurb: 'The lowest zone mean air temperature in the run.',
     better: (v, best) => v < best,
-    letter: (v) => `${v.toFixed(1)} °C`,
+    quantityKind: 'temperature', digits: 1,
   }),
   new Instant({
     id: 'hottest',
@@ -353,7 +380,7 @@ export const INSTANTS = Object.freeze([
     blurb: 'The highest outdoor drybulb in the run — the hour a design week is picked to contain.',
     variable: 'Site Outdoor Air Drybulb Temperature',
     better: (v, best) => v > best,
-    letter: (v) => `${v.toFixed(1)} °C`,
+    quantityKind: 'temperature', digits: 1,
     missing: 'This run carried no outdoor drybulb series.',
   }),
   new Instant({
@@ -362,7 +389,7 @@ export const INSTANTS = Object.freeze([
     blurb: 'The lowest outdoor drybulb in the run.',
     variable: 'Site Outdoor Air Drybulb Temperature',
     better: (v, best) => v < best,
-    letter: (v) => `${v.toFixed(1)} °C`,
+    quantityKind: 'temperature', digits: 1,
     missing: 'This run carried no outdoor drybulb series.',
   }),
   new Instant({
@@ -372,7 +399,7 @@ export const INSTANTS = Object.freeze([
     variable: 'Enclosure Windows Total Transmitted Solar Radiation Rate',
     better: (v, best) => v > best,
     holds: (v) => v > 0,
-    letter: watts,
+    quantityKind: 'power',
     missing: 'Glazing, Skylights and Blinds are all out of the path, so no transmitted solar was metered.',
     never: 'No solar reached the glass in this run.',
   }),
