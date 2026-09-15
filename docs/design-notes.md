@@ -2480,6 +2480,26 @@ second wording cost: the aria label built its sentences by hand and dropped
 ground with no hatch anywhere on it. Two spellings of one mark is two things to
 keep in step, and the one that fails is always the one nobody can see.
 
+**A key entry describes the mark, not the intention.** The hatch clause was
+unconditional — every drawn line's entry ended "hatched is measured ground
+meeting this standard's published threshold" — and a band draws no hatch in
+three of its five states. The one that cost the most is a ground whose passing
+designs are all on incomplete cells: a region needs four measured corners, so
+a chequered ground, or a coarse pass whose failures fall beside the passing
+runs, gives `cells: []`, `segments: []` and `wholly: null` at once. Nothing
+drawn, nothing said, and a swatch in the key showing a specimen hatch and a
+specimen rule for two marks that were nowhere on the sheet — which is more
+convincing than the sentence, because a swatch looks like it was cut from the
+drawing. So `markSentence` asks `cells` and `segments`, which are what was
+drawn, rather than `wholly`, which is a fact about the reading: a band can fail
+to hatch a ground that is wholly passing. The scattered case states the count
+it does know (`2 of 5 measured designs meet it`), the reason there is no
+region, and the one thing that fixes it — let the ground refine — which is the
+`freeExchange` refusal's shape, and for the same reason: false precision on
+this sheet is worse than an em dash, because the reader has no way to see it.
+The swatch carries only the marks that band drew, so an entry with neither is
+a sentence alone, exactly like the absence entry above it.
+
 **What the harness covers that the page could not.** `climate.onebuilding.org`
 is unreachable from the container this was built in (403 through the proxy), so
 no weather file could be attached and only the design-day readings could be

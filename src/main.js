@@ -9834,7 +9834,7 @@ class GroundLines {
 
   /** The key's sentences, in the key's own order, which the aria label reuses. */
   sentences() {
-    return this.set.lines.map((line) => thresholdSentence(line, this.bandFor(line).ground.wholly));
+    return this.set.lines.map((line) => thresholdSentence(line, this.bandFor(line).ground));
   }
 }
 
@@ -9862,22 +9862,55 @@ function groundLinesFor(sv, lattice) {
  * standard, the criterion, the figure and the side that passes, which is the
  * whole of what the mark means.
  */
-function thresholdSentence(line, wholly = null) {
+function thresholdSentence(line, ground) {
   const unit = line.reading.unitNow;
   const side = line.passesBelow ? 'at or below' : 'at or above';
-  // FR-007: where the line crosses none of the measured ground, saying which
-  // side the whole of it is on is the answer. Drawing nothing would leave a
-  // reader unable to tell an absent line from a defect.
-  const outside =
-    wholly === 'passing'
-      ? ' The line crosses no measured ground: every design here meets it.'
-      : wholly === 'failing'
-        ? ' The line crosses no measured ground: no design here meets it.'
-        : '';
-  return (
-    `${line.label}: passes ${side} ${line.figure()}${unit ? ` ${unit}` : ''}. Hatched is measured ` +
-    `ground meeting this standard's published threshold.${outside}`
-  );
+  const opening = `${line.label}: passes ${side} ${line.figure()}${unit ? ` ${unit}` : ''}.`;
+  return `${opening} ${markSentence(ground)}`;
+}
+
+/**
+ * What this band actually put on the ground, said in the same breath as the
+ * line it belongs to.
+ *
+ * The hatch clause used to be unconditional, which made the key assert a mark
+ * the drawing did not always carry. Three of the five states below draw no
+ * hatch at all, and one of them — `scattered` — draws no line either, so the
+ * entry stood over a blank ground saying "hatched is measured ground meeting
+ * this standard's published threshold" with nothing hatched anywhere. That is
+ * an absence with no reason given, which is the one thing this sheet's key is
+ * for refusing.
+ *
+ * `cells` and `segments` are asked rather than `wholly`, because they are what
+ * was drawn: `wholly` says which side the ground is on, and a band can fail to
+ * hatch a ground that is wholly passing.
+ */
+function markSentence(ground) {
+  const { cells, segments, passing, measured, wholly } = ground;
+  // Before the first sample lands there is no ground at all. The line is not
+  // absent and not refused — nothing has been measured for it to cross yet.
+  if (!measured) return 'No position on this ground carries a run yet, so there is nothing to draw this line across.';
+  if (cells.length) {
+    const hatched = "Hatched is measured ground meeting this standard's published threshold.";
+    // FR-007: where the line crosses none of the measured ground, saying which
+    // side the whole of it is on is the answer. Drawing nothing would leave a
+    // reader unable to tell an absent line from a defect.
+    return wholly === 'passing'
+      ? `${hatched} The line crosses no measured ground: every design here meets it.`
+      : hatched;
+  }
+  // Nothing hatched, and the reason is the reading rather than the drawing:
+  // not one measured design is on the passing side.
+  if (wholly === 'failing') return 'The line crosses no measured ground: no design here meets it.';
+  // Nothing hatched although designs do pass. A region needs a cell with four
+  // measured corners, so a passing design whose neighbours were never run has
+  // nothing to be bounded by — the same rule that leaves unsurveyed ground
+  // bare of contours, arriving where it costs a band. The count is the honest
+  // answer in the meantime, and refining is what fixes it.
+  const met = wholly === 'passing'
+    ? 'Every measured design here meets it'
+    : `${passing} of ${measured} measured designs meet it`;
+  return `${met}, but each has unmeasured neighbours, so there is no region to bound — let the ground refine.`;
 }
 
 /**
@@ -10525,11 +10558,20 @@ function renderGroundKey(sv, lines) {
   const { set } = lines;
   const said = lines.sentences();
   set.lines.forEach((line, at) => {
-    const { signature } = lines.bandFor(line);
+    const { signature, ground } = lines.bandFor(line);
+    // The swatch carries the marks this band actually drew and no others. A
+    // key showing a hatch and a rule beside a sentence explaining that neither
+    // could be drawn is the same false claim the sentence was fixed for, one
+    // column along — and on a scattered ground it is the more convincing half,
+    // because a swatch looks like a specimen of something on the sheet.
     entry(
       () => [
-        svg('rect', { class: `passing passing-${signature}`, x: 1, y: 1, width: 12, height: 8 }),
-        svg('line', { class: `threshold threshold-${signature}`, x1: 0, y1: 5, x2: 14, y2: 5 }),
+        ...(ground.cells.length
+          ? [svg('rect', { class: `passing passing-${signature}`, x: 1, y: 1, width: 12, height: 8 })]
+          : []),
+        ...(ground.segments.length
+          ? [svg('line', { class: `threshold threshold-${signature}`, x1: 0, y1: 5, x2: 14, y2: 5 })]
+          : []),
       ],
       said[at],
     );
