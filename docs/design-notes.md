@@ -2490,9 +2490,14 @@ runs, gives `cells: []`, `segments: []` and `wholly: null` at once. Nothing
 drawn, nothing said, and a swatch in the key showing a specimen hatch and a
 specimen rule for two marks that were nowhere on the sheet — which is more
 convincing than the sentence, because a swatch looks like it was cut from the
-drawing. So `markSentence` asks `cells` and `segments`, which are what was
-drawn, rather than `wholly`, which is a fact about the reading: a band can fail
-to hatch a ground that is wholly passing. The scattered case states the count
+drawing. So the sentence asks `PassingGround.hatched` and the swatch asks
+`ruled` — both getters on the object that emitted the geometry — before either
+asks `wholly`, which is a fact about the *reading*: which side of the line the
+ground is on. A band can fail to hatch a ground that is wholly passing, and
+the two must be asked in that order. The getters exist because the emptiness
+test was otherwise spelled at two sites six hundred lines apart that have to
+agree forever, which is the defect this whole paragraph is about, one turn
+further on. The scattered case states the count
 it does know (`2 of 5 measured designs meet it`), the reason there is no
 region, and the one thing that fixes it — let the ground refine — which is the
 `freeExchange` refusal's shape, and for the same reason: false precision on

@@ -1867,6 +1867,32 @@ export class PassingGround {
     this.wholly = wholly;
     Object.freeze(this);
   }
+
+  /**
+   * Whether this band put a hatch on the ground, and whether it drew a rule.
+   *
+   * Named here because two surfaces ask it — the key's sentence and the key's
+   * own swatch, six hundred lines apart in `main.js` — and the defect both
+   * were fixed for was a key asserting a mark the drawing did not carry.
+   * Spelled `cells.length` at each site, the next refinement of what counts as
+   * a drawn hatch lands at one of them and the two halves of one entry
+   * disagree again, silently, because only one of them has words in it.
+   *
+   * Neither is `wholly`, and that is the distinction worth keeping: `wholly`
+   * is a fact about the reading — which side of the line the ground is on —
+   * and a band can fail to hatch a ground that is wholly passing, when every
+   * passing design sits on a cell that was never fully measured.
+   *
+   * Getters, so they sit on the prototype and the constructor's freeze still
+   * holds: no second field to keep in step with the geometry it is read off.
+   */
+  get hatched() {
+    return this.cells.length > 0;
+  }
+
+  get ruled() {
+    return this.segments.length > 0;
+  }
 }
 
 /**
@@ -2205,9 +2231,8 @@ export function passingGround(lattice, threshold) {
   // (FR-007). A ground with measured positions on both sides and no crossing
   // — passing points whose neighbours were never measured — is neither, and
   // says so by carrying no sentence rather than by picking one.
-  const wholly = segments.length
-    ? null
-    : measured === 0
+  const wholly =
+    segments.length || measured === 0
       ? null
       : passing === measured
         ? 'passing'
