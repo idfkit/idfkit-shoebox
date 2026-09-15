@@ -43,7 +43,7 @@ What it must assert:
 | 7 | `thresholdsFor(readingFor('tm59a'), { chased: 'passivhaus' })` returns no lines and an absence naming Passivhaus | FR-014 |
 | 8 | the `tm59a`/`tm59b` lines matched are the **Category II** targets, matching `TM59_STUDY_CATEGORY` — not Category I, whose limit is identical | R-4, the quiet failure |
 | 9 | `overheat`'s matched targets all carry `above: 25`, the temperature its quantity reads at | R-4 |
-| 10 | on a synthetic lattice with a hole, `passingGround` emits no cell touching an unmeasured corner, and `measured + unmeasured === wanted` | **FR-004** |
+| 10 | on a synthetic lattice with a hole, `passingGround` emits no cell touching an unmeasured corner, and `passing <= measured` | **FR-004** |
 | 11 | on a lattice wholly below a limit, `wholly === 'passing'`; wholly above, `'failing'`; and `segments` is empty in both | **FR-007** |
 | 12 | a lattice whose values straddle a limit gives `segments` identical to `contoursOf(lattice, [limit])` | FR-006, R-3 |
 | 13 | `thresholdsFor` called twice with the same arguments gives equal sets, and switching `chased` and back gives the original set | **FR-015** |

@@ -2455,6 +2455,31 @@ so a contour label placed afterwards clears all of it. Threshold labels are
 placed **before** any contour label, so the order of precedence on this drawing
 is measurement, then published line, then inference.
 
+**One index behind four marks, and it belongs to the band.** A band's hatch
+pattern, its fill class, its line's chain-dash class and the relief's hatch
+angle are all taken from its position in the list. Three of them wrapped at
+four (`at % BAND_ANGLES.length`) and the fill class did not, so a fifth band
+would have asked the page for `.passing-4`, which it does not declare — and an
+SVG polygon with no `fill` is a solid black one, which is a whole ground
+painted out on the day somebody publishes a fifth limit for one reading.
+Unreachable against today's roster, where the busiest reading draws two, and
+exactly the kind of thing that stays unreachable until it is not. `Band` is a
+declaration rather than the dictionary it started as, `signature` wraps once in
+its constructor, and the four marks read it.
+
+**Read once, at the top of `renderSurvey`.** The plan, its key, the relief and
+the aria label each read the declarations for themselves, which is four chances
+to be handed a different chase state and four tracings of the same bands on a
+path that runs again on every landed sample — the key going as far as cutting a
+second lattice to get the one sentence it needed off each band. `GroundLines`
+is that reading, made once and passed down, and `GroundLines.sentences()` is
+the one wording the key and the aria label share. It is worth saying what the
+second wording cost: the aria label built its sentences by hand and dropped
+`wholly`, so the one reader who cannot look at the drawing and check was told
+"hatched is measured ground meeting this standard's published threshold" over a
+ground with no hatch anywhere on it. Two spellings of one mark is two things to
+keep in step, and the one that fails is always the one nobody can see.
+
 **What the harness covers that the page could not.** `climate.onebuilding.org`
 is unreachable from the container this was built in (403 through the proxy), so
 no weather file could be attached and only the design-day readings could be

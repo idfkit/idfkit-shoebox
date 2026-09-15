@@ -140,7 +140,14 @@ const PIN_HEIGHT = 0.2;
  */
 const THRESHOLD_LIFT = 0.004;
 
-/** How many published lines the shader carries. Mirrors BAND_ANGLES on the plan. */
+/**
+ * How many published lines the shader carries. Mirrors BAND_ANGLES on the plan.
+ *
+ * Interpolated into the fragment source below rather than spelled `4` there as
+ * well: a GLSL array declared at one size and a JavaScript constant saying
+ * another is a mismatch no tool on this page checks, and it would show as the
+ * fifth band silently never appearing.
+ */
 const BAND_LIMIT = 4;
 
 /** A uniform array's worth of floats, so a shorter list leaves no stale tail. */
@@ -149,6 +156,32 @@ const padded = (values) => {
   out.set(values.slice(0, BAND_LIMIT));
   return out;
 };
+
+/**
+ * A ground read against no published line.
+ *
+ * Held from the moment `draw` starts rather than assigned part-way through it,
+ * so a repaint — a theme change, a camera step, the resize observer — always
+ * finds the four arrays `paint` uploads, whatever happened between.
+ */
+const NO_BANDS = Object.freeze({
+  geometry: new Float32Array(0),
+  bands: 0,
+  limits: padded([]),
+  below: padded([]),
+  angles: padded([]),
+});
+
+/**
+ * The device ratio the canvas is actually drawn at, capped.
+ *
+ * One expression, because two things read it and they have to agree: `resize`
+ * scales the backing store by it, and the fragment shader spaces the passing
+ * ground's stipple in device pixels. Spaced against a different ratio from the
+ * one the canvas was sized at, the stipple would be finer or coarser than the
+ * plan's hatch beside it on exactly the screens the cap exists for.
+ */
+const pixelRatio = () => Math.min(window.devicePixelRatio || 1, 2);
 
 const clampElevation = (value) => Math.min(ELEVATION_MAX, Math.max(ELEVATION_MIN, value));
 const wrapAzimuth = (value) => ((value % 360) + 360) % 360;
@@ -209,9 +242,9 @@ uniform int uMode;
 // which side of each passes. Four, matching BAND_ANGLES on the plan; the
 // busiest reading on the roster draws two.
 uniform int uBandCount;
-uniform float uBandLimit[4];
-uniform float uBandBelow[4];
-uniform float uBandAngle[4];
+uniform float uBandLimit[${BAND_LIMIT}];
+uniform float uBandBelow[${BAND_LIMIT}];
+uniform float uBandAngle[${BAND_LIMIT}];
 uniform float uPixelRatio;
 out vec4 outColor;
 void main() {
@@ -276,7 +309,7 @@ void main() {
   // this fragment, so the comparison is exact at every viewpoint — and no
   // triangle spans unsurveyed ground, so a band cannot be painted over ground
   // nobody stood on, structurally and not by a rule.
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < ${BAND_LIMIT}; i++) {
     if (i >= uBandCount) break;
     bool passes = uBandBelow[i] > 0.5 ? vHeight <= uBandLimit[i] : vHeight >= uBandLimit[i];
     if (!passes) continue;
@@ -473,7 +506,7 @@ export function createRelief(host, { onLost = null } = {}) {
   }
 
   function resize() {
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const ratio = pixelRatio();
     const width = Math.max(1, Math.round(host.clientWidth * ratio));
     const height = Math.max(1, Math.round(host.clientHeight * ratio));
     if (canvas.width !== width || canvas.height !== height) {
@@ -539,15 +572,19 @@ export function createRelief(host, { onLost = null } = {}) {
     // every viewpoint and cannot reach ground the mesh does not span — the
     // holes are in the index buffer, which is what keeps `Coverage`'s
     // guarantee intact through a second drawing.
-    const lines = held.thresholds ?? [];
-    gl.uniform1i(uniform.bandCount, Math.min(lines.length, BAND_LIMIT));
-    gl.uniform1fv(uniform.bandLimit, padded(lines.map((line) => line.limit)));
-    gl.uniform1fv(uniform.bandBelow, padded(lines.map((line) => (line.passesBelow ? 1 : 0))));
-    gl.uniform1fv(uniform.bandAngle, padded(lines.map((line) => (line.angle * Math.PI) / 180)));
+    //
+    // The four arrays are built in `draw`, not here: they change only when the
+    // ground does, and built in `paint` they were three fresh `Float32Array`s
+    // on every frame of an orbit drag.
+    const lines = held.thresholds;
+    gl.uniform1i(uniform.bandCount, lines.bands);
+    gl.uniform1fv(uniform.bandLimit, lines.limits);
+    gl.uniform1fv(uniform.bandBelow, lines.below);
+    gl.uniform1fv(uniform.bandAngle, lines.angles);
     // `gl_FragCoord` is in device pixels and the canvas is scaled by the
     // device ratio, so a stipple spaced in raw fragments would be twice as
     // fine on a retina screen as on the plan beside it.
-    gl.uniform1f(uniform.pixelRatio, Math.min(window.devicePixelRatio || 1, 2));
+    gl.uniform1f(uniform.pixelRatio, pixelRatio());
 
     const positions = attribute.position;
     const flags = attribute.measured;
@@ -617,9 +654,12 @@ export function createRelief(host, { onLost = null } = {}) {
     // is triangulated on the bottom-left-to-top-right diagonal, so a segment's
     // interior can sit a hair off the drawn surface mid-cell. Drawing the line
     // through the surface instead would show that as a stitched line.
-    for (const line of held.thresholds ?? []) {
-      if (!line.geometry.length) continue;
-      drawArray(thresholdPosition, line.geometry, gl.LINES, line.geometry.length / 3, 8);
+    // One buffer for every line, because every line is drawn the same way: one
+    // mode, one ink, no dash. Per line it was a `bufferData` upload apiece on
+    // every frame of an orbit drag to produce a drawing indistinguishable from
+    // this one.
+    if (held.thresholds.geometry.length) {
+      drawArray(thresholdPosition, held.thresholds.geometry, gl.LINES, held.thresholds.geometry.length / 3, 8);
     }
 
     /* ── the axis rules on the base, and their ticks ────────────────────── */
@@ -888,7 +928,7 @@ export function createRelief(host, { onLost = null } = {}) {
       const span = extent && extent.hi > extent.lo ? extent.hi - extent.lo : 1;
       const normalise = (v) => (extent ? (v - extent.lo) / span : 0);
 
-      held = { mesh, extent, block, axes, count: mesh.indices.length, stance: null };
+      held = { mesh, extent, block, axes, count: mesh.indices.length, stance: null, thresholds: NO_BANDS };
       // The ruling arrives in the reading's own units and in lattice space; it
       // is normalised here with everything else, so one rule governs how a
       // height becomes a position in the box.
@@ -902,22 +942,27 @@ export function createRelief(host, { onLost = null } = {}) {
       // The published lines arrive in the reading's own units and in lattice
       // space, as the ruling does, and normalise with everything else — one
       // rule governs how a height becomes a position in the box.
-      held.thresholds = thresholds.slice(0, BAND_LIMIT).map((line, at) => {
-        const flat = [];
+      //
+      // Every line's geometry into one buffer, and the shader's four uniform
+      // arrays built once here: both change only when the ground does, and the
+      // lines are drawn alike, so there is nothing per line to hold apart.
+      const lines = thresholds.slice(0, BAND_LIMIT);
+      const flat = [];
+      for (const line of lines) {
         for (const [a, b] of line.segments) flat.push(a[0], a[1], line.limit, b[0], b[1], line.limit);
-        const geometry = lifted(new Float32Array(flat));
-        for (let i = 2; i < geometry.length; i += 3) geometry[i] += THRESHOLD_LIFT;
-        return {
-          geometry,
-          limit: normalise(line.limit),
-          passesBelow: line.passesBelow,
-          // The angle is the plan's, handed across rather than decided again:
-          // the two drawings hatch one band one way or they are saying one
-          // thing twice.
-          angle: line.angle ?? 0,
-          at,
-        };
-      });
+      }
+      const geometry = lifted(new Float32Array(flat));
+      for (let i = 2; i < geometry.length; i += 3) geometry[i] += THRESHOLD_LIFT;
+      held.thresholds = {
+        geometry,
+        bands: lines.length,
+        limits: padded(lines.map((line) => normalise(line.limit))),
+        below: padded(lines.map((line) => (line.passesBelow ? 1 : 0))),
+        // The angle is the plan's, handed across rather than decided again:
+        // the two drawings hatch one band one way or they are saying one
+        // thing twice.
+        angles: padded(lines.map((line) => ((line.angle ?? 0) * Math.PI) / 180)),
+      };
       if (stance) {
         // Filled or hollow is the pin's whole claim, so it is asked for rather
         // than defaulted: a caller that forgot would draw "on a run" by default.

@@ -78,13 +78,16 @@ never merged across thresholds (FR-011).
 | `threshold` | `Threshold` | which line this ground belongs to |
 | `cells` | array of cell polygons in lattice coordinates | the fill, per cell, clipped to the isoline |
 | `segments` | `contoursOf` output at `threshold.limit` | the boundary |
-| `measured` | `number` | measured positions on the passing side |
-| `wanted` | `number` | measured positions in total |
+| `passing` | `number` | measured positions on the passing side |
+| `measured` | `number` | measured positions in total |
 | `wholly` | `'passing' \| 'failing' \| null` | set when the line crosses no measured ground (FR-007); `null` when it crosses |
 
-`measured + (wanted − measured) === wanted` is asserted in the constructor, the same
-way `Coverage` asserts its own sum and for the same reason: a drawn band and the count
-of what was measured must never be able to disagree.
+`passing <= measured` is asserted in the constructor, the same way `Coverage` asserts
+its own sum and for the same reason: a drawn band and the count of what was measured
+must never be able to disagree. The counts are named against `Coverage`'s own
+vocabulary — `measured` is how many positions carry a run there too — so that one word
+does not mean two things in one module; the failing half is the subtraction and is not
+carried.
 
 **A cell contributes nothing unless all four of its corners carry a run.** Not styled —
 never generated. This is what makes FR-004 structural rather than a rule somebody has to

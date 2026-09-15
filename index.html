@@ -4967,10 +4967,15 @@
 
          The bands are hatched at 0°, 90°, 135° and 22.5° (BAND_ANGLES in
          main.js, which builds the patterns beside the improving hatch). None
-         of them is the improving region's 45°, and none is another's. Every
-         target on this sheet passes at or below its limit, so the bands are
-         nested and their overlap reads as cross-hatch — the union of two
-         bands, never a third verdict; the key words each standard separately. */
+         of them is the improving region's 45°, and none is another's. Four
+         classes for four angles, and a fifth band takes the first one's
+         signature again: `Band.signature` wraps, and it is the sole index
+         behind these four names, the four dashes below, the pattern ids and
+         the relief's hatch angle, so none of them can be asked for a rule
+         this page does not declare. Every target on this sheet passes at or
+         below its limit, so the bands are nested and their overlap reads as
+         cross-hatch — the union of two bands, never a third verdict; the key
+         words each standard separately. */
       .ground .passing { stroke: none; }
       .ground .passing-0 { fill: url(#survey-band-0); }
       .ground .passing-1 { fill: url(#survey-band-1); }

@@ -1833,16 +1833,23 @@ export class ThresholdSet {
  * where one published line falls on measured ground, and a union of two bands
  * would be a combined verdict nobody published.
  *
- * `measured` against `wanted` is asserted the way `Coverage` asserts its own
+ * `passing` against `measured` is asserted the way `Coverage` asserts its own
  * sum, and for the same reason — a shaded band and the count of what was
  * measured must never be able to disagree about how much ground there is.
+ *
+ * The two counts are named against `Coverage`'s own vocabulary rather than
+ * against this function's local one. `Coverage.measured` is how many positions
+ * carry a run and `Coverage.unsurveyed` is how many do not, so a field here
+ * called `unmeasured` holding the count of measured positions that *fail* the
+ * line would be the same word meaning two things in one module. There is no
+ * third count to carry: passing and failing are the whole of the measured
+ * ground, and the failing half is the subtraction.
  */
 export class PassingGround {
-  constructor({ threshold, cells, segments, measured, wanted, wholly = null }) {
-    const unmeasured = wanted - measured;
-    if (!Number.isInteger(measured) || !Number.isInteger(wanted) || !(unmeasured >= 0)) {
+  constructor({ threshold, cells, segments, passing, measured, wholly = null }) {
+    if (!Number.isInteger(passing) || !Number.isInteger(measured) || !(measured - passing >= 0)) {
       throw new Error(
-        `the passing ground does not sum: ${measured} passing against ${wanted} measured positions on the ` +
+        `the passing ground does not sum: ${passing} passing against ${measured} measured positions on the ` +
           'ground. A band and the schedule of spot heights behind it must never be able to disagree',
       );
     }
@@ -1852,9 +1859,8 @@ export class PassingGround {
     this.threshold = threshold;
     this.cells = Object.freeze(cells.map((cell) => Object.freeze(cell)));
     this.segments = Object.freeze(segments);
+    this.passing = passing;
     this.measured = measured;
-    this.wanted = wanted;
-    this.unmeasured = unmeasured;
     // Set only where the line crosses no measured ground at all (FR-007), so
     // the key can say which side the whole ground is on rather than the
     // drawing showing nothing because there was no crossing to draw.
@@ -2008,6 +2014,38 @@ function matchedTargets(reading) {
 /** Two limits are one line when they differ by less than this. */
 const coincidence = (limit) => Math.max(1, Math.abs(limit)) * 1e-9;
 
+/** The matched targets a chase narrows this ground to, or all of them. */
+const scopedTargets = (reading, chased) => {
+  const matched = matchedTargets(reading);
+  return chased ? matched.filter(({ preset }) => preset.id === chased) : matched;
+};
+
+/**
+ * The reason there is no line, given the targets already in scope.
+ *
+ * Split from the export below so `thresholdsFor` can decide the absence and
+ * the lines off **one** walk of the roster rather than two: the exported
+ * wrapper walked it, and then the caller that wanted the lines walked it again
+ * to filter the same list on the same chase.
+ */
+function absenceIn(reading, scope, chased) {
+  if (scope.some(({ target }) => target.limit != null)) return null;
+  if (scope.length) {
+    // Each standard with its own wording. Joining the names and then taking
+    // one `asks` put the first standard's words in every other standard's
+    // mouth — with one limitless criterion on the roster today that reads
+    // correctly, and it would have gone on reading correctly right up to the
+    // second, which is the shape of a citation that is quietly wrong.
+    const said = scope.map(({ preset, target }) => `${preset.name} names ${target.asks}`).join(' and ');
+    return `${said} for ${reading.label}, so there is no line to draw across this ground.`;
+  }
+  if (chased) {
+    const name = PRESET_BY_ID[chased]?.name ?? chased;
+    return `${name} publishes no limit for ${reading.label}, so this ground carries no line while it is chased.`;
+  }
+  return `No standard on this sheet publishes a limit for ${reading.label}, so this ground carries no threshold line.`;
+}
+
 /**
  * The reason there is no line, or null where there is one.
  *
@@ -2019,19 +2057,7 @@ const coincidence = (limit) => Math.max(1, Math.abs(limit)) * 1e-9;
  * value is climate- or building-specific, and the plain fact otherwise.
  */
 export function thresholdAbsence(reading, { chased = null } = {}) {
-  const matched = matchedTargets(reading);
-  const scope = chased ? matched.filter(({ preset }) => preset.id === chased) : matched;
-  if (scope.some(({ target }) => target.limit != null)) return null;
-  if (scope.length) {
-    const names = scope.map(({ preset }) => preset.name).join(' and ');
-    const asks = scope[0].target.asks;
-    return `${names} names ${asks} for ${reading.label}, so there is no line to draw across this ground.`;
-  }
-  if (chased) {
-    const name = PRESET_BY_ID[chased]?.name ?? chased;
-    return `${name} publishes no limit for ${reading.label}, so this ground carries no line while it is chased.`;
-  }
-  return `No standard on this sheet publishes a limit for ${reading.label}, so this ground carries no threshold line.`;
+  return absenceIn(reading, scopedTargets(reading, chased), chased);
 }
 
 /**
@@ -2049,10 +2075,11 @@ export function thresholdAbsence(reading, { chased = null } = {}) {
  * harness drives the real function.
  */
 export function thresholdsFor(reading, { chased = null } = {}) {
-  const absence = thresholdAbsence(reading, { chased });
+  const scope = scopedTargets(reading, chased);
+  const absence = absenceIn(reading, scope, chased);
   if (absence) return new ThresholdSet({ reading, chased, absence });
-  const lines = matchedTargets(reading)
-    .filter(({ preset, target }) => target.limit != null && (!chased || preset.id === chased))
+  const lines = scope
+    .filter(({ target }) => target.limit != null)
     .map(({ preset, target }) => new Threshold({ preset, target, reading }))
     // Ascending, then by the standard's name, so the order a reader meets the
     // lines in is the order they cross the ground rather than the order the
@@ -2106,12 +2133,12 @@ export function passingGround(lattice, threshold) {
   // boundary the same `> level` test drew.
   const passes = (value) => (threshold.passesBelow ? !(value > level) : value > level);
 
+  let passing = 0;
   let measured = 0;
-  let wanted = 0;
   for (let i = 0; i < values.length; i += 1) {
     if (!mask[i]) continue;
-    wanted += 1;
-    if (passes(values[i])) measured += 1;
+    measured += 1;
+    if (passes(values[i])) passing += 1;
   }
 
   const cells = [];
@@ -2180,14 +2207,14 @@ export function passingGround(lattice, threshold) {
   // says so by carrying no sentence rather than by picking one.
   const wholly = segments.length
     ? null
-    : wanted === 0
+    : measured === 0
       ? null
-      : measured === wanted
+      : passing === measured
         ? 'passing'
-        : measured === 0
+        : passing === 0
           ? 'failing'
           : null;
-  return new PassingGround({ threshold, cells, segments, measured, wanted, wholly });
+  return new PassingGround({ threshold, cells, segments, passing, measured, wholly });
 }
 
 /**

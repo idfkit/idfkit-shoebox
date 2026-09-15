@@ -516,7 +516,10 @@ export const QUANTITIES = Object.freeze([
     read: (landed) => completeBillTotal(landed.bill, 'carbon'),
   }),
   new Quantity({
-    id: 'overheat', label: 'Hours above 25 °C', unit: '% of the year', quantityKind: 'count', digits: 1, needs: ANNUAL_EXTREMES,
+    // The label off the constant the reader is read at, not beside it: the two
+    // said 25 twice, and a reading whose name and whose threshold could part
+    // company is one the survey's qualifier would go on matching in silence.
+    id: 'overheat', label: `Hours above ${OVERHEAT_ABOVE} °C`, unit: '% of the year', quantityKind: 'count', digits: 1, needs: ANNUAL_EXTREMES,
     wholeYear: true,
     read: (landed) => finite(readOverheat(landed.eso, OVERHEAT_ABOVE)),
   }),

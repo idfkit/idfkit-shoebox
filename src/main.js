@@ -84,7 +84,6 @@ import {
   SpotHeight,
   TraverseStop,
   passingGround,
-  thresholdAbsence,
   thresholdLevels,
   thresholdsAt,
   thresholdsFor,
@@ -9714,13 +9713,13 @@ function groundFrame(sv) {
  * the drawing.
  *
  * Four surfaces letter these — the plan, its key, the relief and the aria
- * label — and they must not be able to disagree about what is drawn. That is
- * one expression here rather than four `thresholdsFor` calls with four chances
- * to be handed a different chase state: `thresholdsFor` is pure and uncached,
- * so calling it four times through this is the same set four times over, which
- * is exactly what makes FR-015 a property of the function rather than of a
- * clean-up path. A cache here would have to carry the chase state *and* the
- * unit system in its key, which is the trap this codebase has met three times.
+ * label — and they must not be able to disagree about what is drawn. This is
+ * the one place `chased` reaches the drawing, and `renderSurvey` calls it once
+ * and hands the answer to all four (`GroundLines` below), so FR-015 holds by
+ * there being one reading rather than four that happen to agree. `thresholdsFor`
+ * is pure and uncached, and stays so: a cache here would have to carry the
+ * chase state *and* the unit system in its key, which is the trap this codebase
+ * has met three times.
  *
  * `readings[0]` only, and deliberately: a survey may carry a second reading,
  * lettered as a ghost figure under the first, and it has no contours because
@@ -9729,27 +9728,6 @@ function groundFrame(sv) {
  */
 function groundThresholds(sv) {
   return thresholdsFor(sv.readings[0], { chased });
-}
-
-/**
- * One band per drawn line, with the lines that share it.
- *
- * Grouped by level *and* by pass side, so two standards at one figure are one
- * band carrying both names — the common case, not an edge one — while two
- * lines that happened to coincide and pass opposite ways would still be two
- * regions, because they are.
- */
-function groundBands(lattice, set) {
-  const bands = [];
-  for (const level of thresholdLevels(set)) {
-    const at = thresholdsAt(set, level);
-    for (const side of [true, false]) {
-      const lines = at.filter((line) => line.passesBelow === side);
-      if (!lines.length) continue;
-      bands.push({ level, lines, ground: passingGround(lattice, lines[0]) });
-    }
-  }
-  return bands;
 }
 
 /**
@@ -9771,6 +9749,100 @@ function groundBands(lattice, set) {
  * contour labels lean on when one of them cannot be placed.
  */
 const BAND_ANGLES = Object.freeze([0, 90, 135, 22.5]);
+
+/**
+ * One drawn band: a level, the lines that share it, and the measured ground on
+ * their passing side.
+ *
+ * `signature` is the whole reason this is a declaration rather than the plain
+ * dictionary it started as. Four marks are taken from one index — the hatch
+ * pattern's id, the fill class, the line's chain-dash class and the relief's
+ * hatch angle — and three of them wrapped at four while the fill class did not.
+ * A fifth band therefore asked for `.passing-4`, which the page does not
+ * declare, and an SVG polygon with no `fill` is a solid black one: a whole
+ * ground painted out on the day somebody publishes a fifth limit for one
+ * reading. The wrap belongs to the band, once, and the four marks read it.
+ */
+class Band {
+  constructor({ level, lines, ground, signature }) {
+    this.level = level;
+    this.lines = Object.freeze([...lines]);
+    this.ground = ground;
+    this.signature = signature;
+    this.angle = BAND_ANGLES[signature];
+    Object.freeze(this);
+  }
+}
+
+/**
+ * One band per drawn line, with the lines that share it.
+ *
+ * Grouped by level *and* by pass side, so two standards at one figure are one
+ * band carrying both names — the common case, not an edge one — while two
+ * lines that happened to coincide and pass opposite ways would still be two
+ * regions, because they are.
+ */
+function groundBands(lattice, set) {
+  const bands = [];
+  for (const level of thresholdLevels(set)) {
+    const at = thresholdsAt(set, level);
+    for (const side of [true, false]) {
+      const lines = at.filter((line) => line.passesBelow === side);
+      if (!lines.length) continue;
+      bands.push(
+        new Band({
+          level,
+          lines,
+          ground: passingGround(lattice, lines[0]),
+          signature: bands.length % BAND_ANGLES.length,
+        }),
+      );
+    }
+  }
+  return bands;
+}
+
+/**
+ * The published lines of one ground, read once and handed to the four surfaces
+ * that draw them.
+ *
+ * The plan, its key, the relief and the aria label must not be able to
+ * disagree about what is drawn, and before this each of them read the
+ * declarations for itself — the key going as far as cutting a second lattice
+ * and tracing every band again for the one sentence it needed off each. Read
+ * here, at the top of `renderSurvey`, and passed down: one set, one tracing,
+ * one chase state, on a path that runs again on every landed sample.
+ */
+class GroundLines {
+  constructor({ set, bands }) {
+    this.set = set;
+    this.bands = Object.freeze([...bands]);
+    Object.freeze(this);
+  }
+
+  /** The band a line is drawn in. Every line is in exactly one, by construction. */
+  bandFor(line) {
+    const band = this.bands.find((each) => each.lines.includes(line));
+    if (!band) {
+      throw new Error(
+        `"${line.label}" is a published line this ground drew no band for, so there is no hatch, no ` +
+          'signature and no pass side to letter it with',
+      );
+    }
+    return band;
+  }
+
+  /** The key's sentences, in the key's own order, which the aria label reuses. */
+  sentences() {
+    return this.set.lines.map((line) => thresholdSentence(line, this.bandFor(line).ground.wholly));
+  }
+}
+
+/** Everything one drawing needs of the published lines, off one lattice. */
+function groundLinesFor(sv, lattice) {
+  const set = groundThresholds(sv);
+  return new GroundLines({ set, bands: groundBands(lattice, set) });
+}
 
 /**
  * One published line, as the sentence the key and the aria label both use.
@@ -9822,18 +9894,20 @@ function thresholdSentence(line, wholly = null) {
  *     structural rather than styled: `contoursOf` emits nothing for a cell
  *     whose mask is not full, so there is no node to style into looking
  *     measured later.
+ *
+ * `lattice` and `lines` are `renderSurvey`'s, both cut for `readings[0]`, so
+ * the contours, the bands and the key are one tracing of one surface.
  */
-function drawGround(sv) {
+function drawGround(sv, lattice, lines) {
   const host = $('survey-ground');
   host.textContent = '';
   const reading = sv.readings[0];
-  const lattice = latticeOf(sv, reading);
   const { px, py } = groundFrame(sv);
   const root = svg('svg', {
     viewBox: `0 0 ${GROUND_SIZE} ${GROUND_SIZE}`,
     role: 'img',
     tabindex: '0',
-    'aria-label': surveyAriaLabel(sv),
+    'aria-label': surveyAriaLabel(sv, lines),
   });
 
   // The hatch the improving region is filled with. Hatching rather than a
@@ -9851,25 +9925,26 @@ function drawGround(sv) {
 
   /* ── the published lines, and the ground on each one's passing side ──── */
   //
-  // Read once here and handed to everything below, so the band, the line, its
-  // label and the key are four drawings of one set rather than four readings
-  // of the declarations.
-  const set = groundThresholds(sv);
-  const bands = groundBands(lattice, set);
-  // One hatch per band, at its own angle. Built here beside the improving
+  // Read once by the caller and handed to everything below, so the band, the
+  // line, its label and the key are four drawings of one set rather than four
+  // readings of the declarations.
+  const { bands } = lines;
+  // One hatch per signature, at its own angle. Built here beside the improving
   // hatch rather than in the page, because the pattern and the band that fills
-  // it are one arrangement and splitting them puts an id between them.
-  bands.forEach((band, at) => {
+  // it are one arrangement and splitting them puts an id between them. Per
+  // signature and not per band: beyond four the signatures repeat, and two
+  // bands sharing one share its hatch as well as its dash.
+  for (const at of new Set(bands.map((band) => band.signature))) {
     const hatch = svg('pattern', {
       id: `survey-band-${at}`,
       width: 5,
       height: 5,
       patternUnits: 'userSpaceOnUse',
-      patternTransform: `rotate(${BAND_ANGLES[at % BAND_ANGLES.length]})`,
+      patternTransform: `rotate(${BAND_ANGLES[at]})`,
     });
     hatch.append(svg('line', { x1: 0, y1: 0, x2: 0, y2: 5, stroke: 'var(--ink-ghost)', 'stroke-width': 0.6 }));
     defs.append(hatch);
-  });
+  }
   root.append(defs);
 
   /* ── axes, lettered with the controls' own names and stops ───────────── */
@@ -9965,16 +10040,16 @@ function drawGround(sv) {
   // applied here but the shape of `passingGround` itself, exactly as no contour
   // is carried across unsurveyed ground: the geometry is never generated, so
   // there is nothing to style into looking measured (FR-004).
-  bands.forEach((band, at) => {
+  for (const band of bands) {
     for (const cell of band.ground.cells) {
       root.append(
         svg('polygon', {
-          class: `passing passing-${at}`,
+          class: `passing passing-${band.signature}`,
           points: cell.map(([cx, cy]) => `${px(cx)},${py(cy)}`).join(' '),
         }),
       );
     }
-  });
+  }
 
   /* ── the region where every reading improves, under everything ───────── */
   // Against where the desk is standing, not where the ground was cut, and
@@ -10152,7 +10227,7 @@ function drawGround(sv) {
     for (const [a, b] of band.ground.segments) {
       root.append(
         svg('line', {
-          class: `threshold threshold-${at % BAND_ANGLES.length}`,
+          class: `threshold threshold-${band.signature}`,
           x1: px(a[0]),
           y1: py(a[1]),
           x2: px(b[0]),
@@ -10410,7 +10485,7 @@ function drawGround(sv) {
  * is built from the same classes the ground uses, so a mark restyled there
  * cannot come to disagree with its own key.
  */
-function renderGroundKey(sv) {
+function renderGroundKey(sv, lines) {
   const host = $('survey-key');
   host.textContent = '';
   const swatch = (draw) => {
@@ -10447,18 +10522,18 @@ function renderGroundKey(sv) {
   // it says (FR-011). The absence stands here too, and never in a fold —
   // absence reasons are one of the four things the copy convention keeps out
   // of them.
-  const set = groundThresholds(sv);
-  const bands = groundBands(latticeOf(sv, sv.readings[0]), set);
-  for (const line of set.lines) {
-    const at = bands.findIndex((band) => band.lines.includes(line));
+  const { set } = lines;
+  const said = lines.sentences();
+  set.lines.forEach((line, at) => {
+    const { signature } = lines.bandFor(line);
     entry(
       () => [
-        svg('rect', { class: `passing passing-${at}`, x: 1, y: 1, width: 12, height: 8 }),
-        svg('line', { class: `threshold threshold-${at % BAND_ANGLES.length}`, x1: 0, y1: 5, x2: 14, y2: 5 }),
+        svg('rect', { class: `passing passing-${signature}`, x: 1, y: 1, width: 12, height: 8 }),
+        svg('line', { class: `threshold threshold-${signature}`, x1: 0, y1: 5, x2: 14, y2: 5 }),
       ],
-      thresholdSentence(line, bands[at]?.ground.wholly ?? null),
+      said[at],
     );
-  }
+  });
   // No swatch, because there is no mark: the entry is a sentence saying why
   // this reading carries no line. It stands beside the improving region's
   // entry and must not be read as it — improving on the design the desk is on
@@ -10537,13 +10612,17 @@ function spotSentence(sv, spot) {
  * cannot see it, which is why the published lines are stated here in the same
  * words the key uses rather than left to the marks.
  */
-function surveyAriaLabel(sv) {
+function surveyAriaLabel(sv, lines) {
   const coverage = coverageOf(sv);
-  const set = groundThresholds(sv);
-  // The same sentence the key uses, word for word: this is the only route to
-  // the drawing for a reader who cannot see it, and two wordings of one mark
-  // is two things to keep in step.
-  const said = set.absence ? ` ${set.absence}` : ` ${set.lines.map((line) => thresholdSentence(line)).join(' ')}`;
+  const { set } = lines;
+  // The same sentence the key uses, word for word, and through the same call:
+  // this is the only route to the drawing for a reader who cannot see it, and
+  // two wordings of one mark is two things to keep in step. Built by hand here
+  // it dropped `wholly`, so the one reader who cannot look and check was told
+  // "hatched is measured ground meeting this standard's published threshold"
+  // over a ground with no hatch anywhere on it — which is the exact defect
+  // FR-007's sentence exists to prevent, on the exact surface that needs it.
+  const said = set.absence ? ` ${set.absence}` : ` ${lines.sentences().join(' ')}`;
   return (
     `${sv.readings.map((reading) => reading.label).join(' and ')} over ${labelFor(sv.x.key)} and ` +
     `${labelFor(sv.y.key)}, on a ${sv.density} ground with ${coverage.measured} of ${coverage.wanted} ` +
@@ -11517,7 +11596,7 @@ let reliefLoss = null;
  * substituting a still image, and why the loss is stated where the drawing
  * would have been rather than logged.
  */
-function drawRelief(sv) {
+function drawRelief(sv, lines = null) {
   const host = $('survey-relief');
   const caption = $('survey-relief-cap');
   if (!relief && !reliefLoss) {
@@ -11553,6 +11632,11 @@ function drawRelief(sv) {
 
   const reading = sv.readings[0];
   const lattice = latticeOf(sv, reading);
+  // The plan's own reading of the declarations, handed down, so the two
+  // drawings show the same lines in the same bands (FR-006) off one tracing.
+  // Read here only on the path that has no caller to hand it one: the redraw
+  // after a lost context, which comes back through the loss note above.
+  const drawn = lines ?? groundLinesFor(sv, lattice);
   const extent = extentOf(lattice);
   const levels = levelsFor(lattice);
   const at = sv.standingAt(params);
@@ -11591,11 +11675,11 @@ function drawRelief(sv) {
     // same lines at the same positions with the same bands (FR-006). Lattice
     // coordinates and the reading's own units; the relief normalises them with
     // everything else.
-    thresholds: groundBands(lattice, groundThresholds(sv)).map((band, at) => ({
+    thresholds: drawn.bands.map((band) => ({
       limit: band.level,
       passesBelow: band.lines[0].passesBelow,
       segments: band.ground.segments,
-      angle: BAND_ANGLES[at % BAND_ANGLES.length],
+      angle: band.angle,
     })),
     stance,
     axes: {
@@ -11628,7 +11712,7 @@ function drawRelief(sv) {
     }
     host.setAttribute(
       'aria-label',
-      `${surveyAriaLabel(sv)} Drawn from ${relief.view.azimuth}° at ${relief.view.elevation}° above.`,
+      `${surveyAriaLabel(sv, drawn)} Drawn from ${relief.view.azimuth}° at ${relief.view.elevation}° above.`,
     );
   };
   views.textContent = '';
@@ -11807,21 +11891,29 @@ function renderSurvey() {
     // Still true along a priced axis, and only if it says the rest (FR-028).
     ([survey.x, survey.y].some((axis) => PRICED_KEYS.has(axis.key)) ? ', priced at its position.' : '.');
 
-  drawGround(survey);
-  renderGroundKey(survey);
+  // The published lines and the ground each passes, read once for the four
+  // surfaces that letter them — the plan, its key, the relief and the aria
+  // label. Four separate readings could be handed four chase states and four
+  // tracings of the same bands, and this path runs again on every landed
+  // sample.
+  const groundLattice = latticeOf(survey, survey.readings[0]);
+  const lines = groundLinesFor(survey, groundLattice);
+
+  drawGround(survey, groundLattice, lines);
+  renderGroundKey(survey, lines);
   renderPull();
   renderCoverage(survey);
   renderSurveyFinding(survey);
   renderSpotReadout(survey);
   renderSpots(survey);
-  drawRelief(survey);
+  drawRelief(survey, lines);
 
   // The absence, where there is one, in the caption as well as in the key and
-  // the aria label — one wording from `thresholdAbsence`, not three, because
+  // the aria label — one wording off the set already read, not three, because
   // three spellings of one absence is three things to keep in step. Where
   // lines are drawn the caption says nothing extra: the key names each of
   // them, with its criterion and its pass side, which the caption cannot.
-  const noLine = thresholdAbsence(survey.readings[0], { chased });
+  const noLine = lines.set.absence;
   $('survey-plan-cap').textContent =
     `${survey.readings[0].label} in ${survey.readings[0].unitNow} over ${labelFor(survey.x.key)} and ` +
     `${labelFor(survey.y.key)}. Ticks are measured designs and carry the only figures on this drawing; ` +
