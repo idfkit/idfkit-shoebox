@@ -1408,6 +1408,27 @@ export function conformance(params, bypass, preset) {
 }
 
 /**
+ * Every published standard that names a figure for one metric, with the target
+ * that names it.
+ *
+ * A named export rather than a walk of `PRESETS` at the call site, because the
+ * survey's threshold isoline reads exactly this list and a second walk written
+ * there would be free to disagree about what a standard is: `kind` separates a
+ * published document from this sheet's own partis, and a parti's numbers are
+ * not somebody else's to draw a line at. Ordered by preset, which is the order
+ * the register and the scoreboard already argue in.
+ *
+ * The `Target` instances come back **by reference**, never copied: the line the
+ * survey draws and the row the scoreboard letters have to be one declaration,
+ * or a drawn limit could disagree with the verdict beside it.
+ */
+export function targetsForMetric(metric) {
+  return PRESETS.filter((preset) => preset.kind === 'standard').flatMap((preset) =>
+    preset.targets.filter((target) => target.metric === metric).map((target) => ({ preset, target })),
+  );
+}
+
+/**
  * The one line of a standard that is furthest from being met, for a desk that
  * has chosen to chase it.
  *

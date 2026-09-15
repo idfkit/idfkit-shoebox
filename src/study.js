@@ -191,6 +191,20 @@ export function samplePoints(control, current, n = SWEEP_SAMPLES, { from = contr
  */
 export const TM59_STUDY_CATEGORY = COUNT_CATEGORY;
 
+/**
+ * The temperature the `overheat` quantity counts hours above.
+ *
+ * Named because it is a *qualifier* on the reading and not just an argument:
+ * Passivhaus and EnerPHit both publish "≤ 10 % of the hours above 25 °C", and
+ * the survey matches their targets to this reading by comparing `target.above`
+ * against this constant. Written inline as a bare `25` at the one call site it
+ * had, a target published above some other temperature would have matched the
+ * metric and drawn a line the reading does not answer — which is the quiet
+ * failure the survey's load-time qualifier assertion exists to refuse, and it
+ * cannot refuse what the reading will not state.
+ */
+export const OVERHEAT_ABOVE = 25;
+
 const request = (name, frequency = 'Hourly', key = '*') =>
   new VariableRequest({ name, frequency, key });
 
@@ -504,7 +518,7 @@ export const QUANTITIES = Object.freeze([
   new Quantity({
     id: 'overheat', label: 'Hours above 25 °C', unit: '% of the year', quantityKind: 'count', digits: 1, needs: ANNUAL_EXTREMES,
     wholeYear: true,
-    read: (landed) => finite(readOverheat(landed.eso, 25)),
+    read: (landed) => finite(readOverheat(landed.eso, OVERHEAT_ABOVE)),
   }),
   new Quantity({
     // `fluxDensity`, not `powerDensity`, though both letter W/m² in SI: a peak

@@ -129,6 +129,27 @@ const VIEWPOINTS = Object.freeze([
  */
 const PIN_HEIGHT = 0.2;
 
+/**
+ * How far a published line stands proud of the ground it is drawn on, in the
+ * normalised height the box is drawn in.
+ *
+ * Far less than the pin, which is a mark standing *over* the terrain; this is
+ * a line lying *on* it and has only to clear the depth test and the hair of
+ * disagreement between a contour interpolated along a cell edge and a surface
+ * triangulated across its diagonal.
+ */
+const THRESHOLD_LIFT = 0.004;
+
+/** How many published lines the shader carries. Mirrors BAND_ANGLES on the plan. */
+const BAND_LIMIT = 4;
+
+/** A uniform array's worth of floats, so a shorter list leaves no stale tail. */
+const padded = (values) => {
+  const out = new Float32Array(BAND_LIMIT);
+  out.set(values.slice(0, BAND_LIMIT));
+  return out;
+};
+
 const clampElevation = (value) => Math.min(ELEVATION_MAX, Math.max(ELEVATION_MIN, value));
 const wrapAzimuth = (value) => ((value % 360) + 360) % 360;
 
@@ -182,8 +203,16 @@ uniform vec4 uFlat;
 uniform vec4 uAccent;
 uniform vec4 uRule;
 // 0 surface · 1 cut face · 2 base · 3 post · 4 furniture · 5 pin · 6 strata
-// · 7 the pin's head between two measured designs
+// · 7 the pin's head between two measured designs · 8 a published line
 uniform int uMode;
+// The published lines this ground is read against, in normalised height, and
+// which side of each passes. Four, matching BAND_ANGLES on the plan; the
+// busiest reading on the roster draws two.
+uniform int uBandCount;
+uniform float uBandLimit[4];
+uniform float uBandBelow[4];
+uniform float uBandAngle[4];
+uniform float uPixelRatio;
 out vec4 outColor;
 void main() {
   if (uMode == 7) {
@@ -216,6 +245,15 @@ void main() {
     outColor = uLow;
     return;
   }
+  if (uMode == 8) {
+    // Somebody else's published line, laid on the ground at its own level.
+    // Drawn in the ink the terrain's own high end is shaded in, so it reads as
+    // a line **on** the surface rather than as furniture beside it — and no
+    // accent, for the reason the plan spends none: --redline says "the desk is
+    // here" and a published limit is not the desk.
+    outColor = uHigh;
+    return;
+  }
   if (uMode == 1) {
     // A cut face is not a reading. It is toned flat, with the faintest lean
     // down its own depth so the block has a body rather than reading as a
@@ -230,7 +268,24 @@ void main() {
     return;
   }
   float t = clamp(vHeight, 0.0, 1.0);
-  outColor = mix(uLow, uHigh, t);
+  vec4 shaded = mix(uLow, uHigh, t);
+  // The passing ground, as a **screen-space stipple** rather than a tint. A
+  // tint would be a hue spent on a category and would break "the surface is
+  // shaded by height alone"; a stipple is the plan's own hatch idiom, so the
+  // two drawings say one thing one way. vHeight is the reading itself at
+  // this fragment, so the comparison is exact at every viewpoint — and no
+  // triangle spans unsurveyed ground, so a band cannot be painted over ground
+  // nobody stood on, structurally and not by a rule.
+  for (int i = 0; i < 4; i++) {
+    if (i >= uBandCount) break;
+    bool passes = uBandBelow[i] > 0.5 ? vHeight <= uBandLimit[i] : vHeight >= uBandLimit[i];
+    if (!passes) continue;
+    float a = uBandAngle[i];
+    float d = gl_FragCoord.x * cos(a) + gl_FragCoord.y * sin(a);
+    // Five CSS pixels apart with a hairline on, which is the plan's hatch.
+    if (mod(d, 5.0 * uPixelRatio) < 0.9 * uPixelRatio) shaded = mix(shaded, uHigh, 0.5);
+  }
+  outColor = shaded;
 }`;
 
 function compile(gl, type, source) {
@@ -318,6 +373,7 @@ export function createRelief(host, { onLost = null } = {}) {
   const strataPosition = gl.createBuffer();
   const arrisPosition = gl.createBuffer();
   const pinPosition = gl.createBuffer();
+  const thresholdPosition = gl.createBuffer();
   // Looked up once: the program never relinks, and each lookup is a round trip
   // to the driver that `paint` used to make three to five times a frame.
   const attribute = {
@@ -335,6 +391,11 @@ export function createRelief(host, { onLost = null } = {}) {
     rule: gl.getUniformLocation(program, 'uRule'),
     mode: gl.getUniformLocation(program, 'uMode'),
     pointSize: gl.getUniformLocation(program, 'uPointSize'),
+    bandCount: gl.getUniformLocation(program, 'uBandCount'),
+    bandLimit: gl.getUniformLocation(program, 'uBandLimit'),
+    bandBelow: gl.getUniformLocation(program, 'uBandBelow'),
+    bandAngle: gl.getUniformLocation(program, 'uBandAngle'),
+    pixelRatio: gl.getUniformLocation(program, 'uPixelRatio'),
   };
 
   let view = { ...VIEWPOINTS[0] };
@@ -473,6 +534,21 @@ export function createRelief(host, { onLost = null } = {}) {
     gl.uniform4fv(uniform.rule, ink.rule);
     gl.uniform1f(uniform.pointSize, 4);
 
+    // The published lines this ground is read against. The band is a branch in
+    // the fragment shader rather than draped geometry, so it stays exact at
+    // every viewpoint and cannot reach ground the mesh does not span — the
+    // holes are in the index buffer, which is what keeps `Coverage`'s
+    // guarantee intact through a second drawing.
+    const lines = held.thresholds ?? [];
+    gl.uniform1i(uniform.bandCount, Math.min(lines.length, BAND_LIMIT));
+    gl.uniform1fv(uniform.bandLimit, padded(lines.map((line) => line.limit)));
+    gl.uniform1fv(uniform.bandBelow, padded(lines.map((line) => (line.passesBelow ? 1 : 0))));
+    gl.uniform1fv(uniform.bandAngle, padded(lines.map((line) => (line.angle * Math.PI) / 180)));
+    // `gl_FragCoord` is in device pixels and the canvas is scaled by the
+    // device ratio, so a stipple spaced in raw fragments would be twice as
+    // fine on a retina screen as on the plan beside it.
+    gl.uniform1f(uniform.pixelRatio, Math.min(window.devicePixelRatio || 1, 2));
+
     const positions = attribute.position;
     const flags = attribute.measured;
 
@@ -529,6 +605,21 @@ export function createRelief(host, { onLost = null } = {}) {
     }
     if (held.arrises?.length) {
       drawArray(arrisPosition, held.arrises, gl.LINES, held.arrises.length / 3, 4);
+    }
+
+    /* ── somebody else's published lines, laid on the ground ────────────── */
+    //
+    // The same polylines the plan draws, as 3-D line geometry at z = limit,
+    // standing a hair proud of the surface for the reason the pin does: run
+    // exactly on it the depth test eats it and the reader is handed a boundary
+    // with no boundary in it. The offset also covers a real disagreement — the
+    // contour segments are interpolated along cell *edges* while the surface
+    // is triangulated on the bottom-left-to-top-right diagonal, so a segment's
+    // interior can sit a hair off the drawn surface mid-cell. Drawing the line
+    // through the surface instead would show that as a stitched line.
+    for (const line of held.thresholds ?? []) {
+      if (!line.geometry.length) continue;
+      drawArray(thresholdPosition, line.geometry, gl.LINES, line.geometry.length / 3, 8);
     }
 
     /* ── the axis rules on the base, and their ticks ────────────────────── */
@@ -789,7 +880,7 @@ export function createRelief(host, { onLost = null } = {}) {
      * reader is never handed a surface that appears to know less than
      * somebody else's.
      */
-    draw({ mesh, extent, block = null, stance = null, axes = null, strata = null, arrises = null }) {
+    draw({ mesh, extent, block = null, stance = null, axes = null, strata = null, arrises = null, thresholds = [] }) {
       if (lost) return;
       // Heights normalised into 0..1 against the measured extent, so the
       // surface fills its own box whatever the reading's units are — and the
@@ -808,6 +899,25 @@ export function createRelief(host, { onLost = null } = {}) {
       };
       held.strata = strata?.length ? lifted(strata) : null;
       held.arrises = arrises?.length ? lifted(arrises) : null;
+      // The published lines arrive in the reading's own units and in lattice
+      // space, as the ruling does, and normalise with everything else — one
+      // rule governs how a height becomes a position in the box.
+      held.thresholds = thresholds.slice(0, BAND_LIMIT).map((line, at) => {
+        const flat = [];
+        for (const [a, b] of line.segments) flat.push(a[0], a[1], line.limit, b[0], b[1], line.limit);
+        const geometry = lifted(new Float32Array(flat));
+        for (let i = 2; i < geometry.length; i += 3) geometry[i] += THRESHOLD_LIFT;
+        return {
+          geometry,
+          limit: normalise(line.limit),
+          passesBelow: line.passesBelow,
+          // The angle is the plan's, handed across rather than decided again:
+          // the two drawings hatch one band one way or they are saying one
+          // thing twice.
+          angle: line.angle ?? 0,
+          at,
+        };
+      });
       if (stance) {
         // Filled or hollow is the pin's whole claim, so it is asked for rather
         // than defaulted: a caller that forgot would draw "on a run" by default.
