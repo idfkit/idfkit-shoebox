@@ -669,6 +669,17 @@ uses for a rate, one level up.
 - List the criteria the sheet **cannot** judge beside the ones it can, with the
   reason for each. A panel showing only the questions it happens to be able to
   answer reads as a certification.
+- **Where the same number is drawn as well as lettered, draw the declaration
+  itself.** The survey's threshold line holds the `Target` by reference and its
+  limit is a getter onto it, so a line and the row it belongs to cannot come to
+  disagree. Which side passes is *probed* from the published comparator rather
+  than declared a second time, for the same reason.
+- **A legend says what a mark is; the board says what the standard asks.** The
+  criterion's own full wording belongs on the row for that target, where the
+  reader met the standard. Inlined into the drawing's key it came out at
+  seventy-five words against a forty-word ceiling — TM59's criterion a is
+  forty-five words on its own. The key entry names the standard, the criterion,
+  the figure and the side that passes.
 
 ### A surveyed ground: measured, inferred, and not yet visited
 
@@ -704,6 +715,45 @@ A second reading at the same point is lettered **under** the first, in
 `--ink-ghost`, never beside it and never as a size or a hue: a size ranks one
 reading against the other, and there is no published weighting on this sheet to
 rank them with.
+
+**Somebody else's published line is a fourth state, and it is not a contour.**
+Where a standard sets a limit for the plotted reading, that limit is drawn
+across the ground as its own isoline with the ground on its passing side picked
+out. There is still no colour to spend — `--redline` is the markup pen and a
+published limit is not the desk, and `--cold` / `--warm` encode a signed
+physical quantity, which a pass/fail limit is not — so it is told apart by
+drafting and by words.
+
+| Mark | Drawn as |
+| --- | --- |
+| **The line** | a chain-dash (dash-dot, the surveyor's boundary convention) at `--ink`, 1.1px, above both contour weights |
+| **Several lines** | the same weight, different dash signatures — `7 2.5 1 2.5`, then two dots, then a longer dash |
+| **The passing ground** | a hatch at 0°, 90°, 135°, 22.5° — never the improving region's 45°, and never another band's |
+| **On the relief** | the same polylines at `z = limit`, standing a hair proud, and the band as a screen-space stipple |
+
+- **Signature, never weight.** Weight ranks one standard over another and
+  nobody published a weighting to rank them with — the same argument the second
+  reading's spot figure is already settled by.
+- **Two standards at one figure are one line**, labelled with both, over one
+  band; the key still gives each a row of its own. This is the common case, not
+  an edge one: TEDI carries Passivhaus 15 and LETI 15.
+- **An ordinary contour at a drawn line's level is not drawn.** Two lines a
+  hair apart read as one ambiguous mark. Nothing is lost — a contour carries
+  only its own level, and the line at that level letters the same figure plus
+  the standard that published it.
+- **The bands nest, and the overlap is cross-hatch.** Every target on this
+  sheet passes at or below its limit, so the region meeting a tighter line is
+  inside the region meeting a looser one. The cross-hatch is the union of two
+  bands and not a third judgement; each standard is worded separately in the
+  key, which is what keeps it from reading as a combined verdict.
+- **The stipple on the relief is not a tint.** A tint would spend a hue on a
+  category and break "the surface is shaded by height alone"; the plan's band
+  is a hatch, and the relief's has to be the same idiom or the two drawings are
+  saying one thing two ways.
+- **The label on the line is the standard's first word and the figure.** The
+  key beside the drawing carries every name in full with its criterion; a label
+  standing in a field of measured spot figures has one job and a character
+  budget, and a measurement is the one thing it may not cover.
 
 ### A block diagram, not a floating surface
 

@@ -2340,6 +2340,194 @@ the same journey or the words drift off the corners they name.
 `src/model.js` is untouched and no new `Output:Variable` is requested anywhere,
 which discharges the output-budget requirement outright.
 
+#### Somebody else's published line, cut across the ground (feature 012)
+
+Every standard's limit for the plotted reading is drawn as its own isoline with
+the passing ground hatched, on the plan and on the relief; a reading that
+carries no limit says so. `Threshold`, `ThresholdSet`, `PassingGround`,
+`thresholdsFor`, `passingGround`, `thresholdLevels` and `thresholdAbsence` are
+all in `src/survey.js` and DOM-free, so a Node harness drives the real
+functions. Nothing here reaches the IDF, the link, `shapeKey` or the engine:
+chasing, unchasing and switching units were measured on the page and `#s-runs`
+does not move.
+
+**The line is the `Target`, held by reference.** `Threshold.limit` is a getter
+onto `target.limit` and there is no own property behind it, so the line and the
+scoreboard row it belongs to are one declaration and cannot drift. A `limit: 15`
+written anywhere in `survey.js` would be the defect FR-009 exists to prevent —
+the same drift the contour label had when it was lettered off `toFixed` and drew
+an SI contour on an IP sheet.
+
+**The pass side is probed, not declared twice.** `passesBelow` is read off
+`Target.meets` at `limit ± max(1, |limit|) * 1e-6`; a probe that does not
+resolve to exactly one side throws at load naming the target. Every target on
+this sheet passes at or below its limit today and the probe records that as a
+measurement, so a target published the other way round draws its band on the
+other side with nothing in this feature edited. `SENSE` is **not** the pass
+side and must never be used as one: it is a direction of improvement, it is
+`'higher'` for the zone's low, and it carries the `CONVENTION` prefix for
+exactly the two readings that carry no limit at all.
+
+**The TM59 category trap, which is the one place this can be silently wrong.**
+`tm59a`'s quantity reads criterion a at one category (`TM59_STUDY_CATEGORY`,
+Category II) while TM59 declares the criterion at two, and **both categories
+carry the same limit**. Matched on `metric` alone, a Category I line is drawn
+across a Category II ground and looks perfectly correct while citing a
+criterion the ground does not answer. `tm59.js` met this first — `clearedCount`
+matches on criterion *and* category — so the rule is that module's, restated in
+`matchedTargets`.
+
+Two facts are kept apart there, and conflating them is what makes a qualifier
+fail quietly. A qualifier that is **decidable and different** describes another
+reading: Category I is correctly declared and simply not this ground's, so it is
+not matched and that is a fact about the roster. A qualifier the survey
+**cannot decide** — an `overheat` target naming no temperature, a TM59 criterion
+read by category naming none, a criterion carrying one where the reading has
+none — throws at load naming both declarations, because falling through to a
+match there is the silent fallback. `OVERHEAT_ABOVE` was named in `study.js` for
+this: the reading has to be able to *state* what it reads at before anything can
+check a target against it.
+
+**Kinds are compared, unit strings are not.** The `demand` quantity says
+`kWh/m²·yr` and the Passivhaus target says `kWh/(m²a)`; a converting kind owns
+its unit string outright, so the kind is the comparison and the wording is the
+publisher's.
+
+**Coincident limits are the common case, not an edge one.** TEDI carries
+Passivhaus 15 *and* LETI 15, `overheat` carries Passivhaus 10 and EnerPHit 10.
+They collapse to one line at `max(1, |limit|) * 1e-9`, labelled with both names
+over one band, while the key keeps a row per standard. And an ordinary contour
+within `step / 10` of a drawn line is dropped at the **plan's contour drawing
+only** — `levels` itself is left whole, because it also rules the relief's cut,
+which is a scale rather than the ground. Measured on the page: a narrowed
+wall-and-roof-resistance ground at a 5 W/m² interval drew 39 contour segments
+with the line withdrawn and 22 with it drawn, and the level lettered 10.0
+disappears exactly when "Passivhaus 10.0" appears.
+
+**The band is the same marching square as the line.** `passingGround` walks the
+identical cells with the identical edge interpolation, so FR-004 (nothing over
+unsurveyed ground) and FR-006 (both drawings agree) are properties of the
+arrangement rather than rules anyone has to remember. The **saddle** has to be
+settled the same way or the band joins ground the line keeps apart:
+`contoursOf` decides by the cell's own mean, so the band asks the same
+question — the over-pair is connected when the mean is over the level — and
+Sutherland–Hodgman is used for every other case, where it gives the marching
+square's own region by construction. Exactly at `mean === level` the two
+resolutions are a tie and the harness asserts both sides of it.
+
+**The contour and the triangulation disagree, and the relief has to allow for
+it.** The contour segments are interpolated along cell *edges* while the
+surface is triangulated on the bottom-left-to-top-right diagonal, so a
+segment's interior can sit a hair off the drawn surface mid-cell — the same
+disagreement `surfaceAt` was written for. The line stands `THRESHOLD_LIFT`
+(0.004 of the normalised box) proud, for the reason the pin does: run exactly
+on the surface, the depth test eats it and the reader is handed a boundary with
+no boundary in it; run through it, the same disagreement shows as a stitched
+line. The band is a fragment-shader branch on `vHeight` rather than draped
+geometry, so it stays exact at every viewpoint and cannot reach ground the mesh
+does not span — the holes are in the index buffer, which keeps `Coverage`'s
+guarantee intact through a second drawing. `gl_FragCoord` is in device pixels,
+so the stipple carries `uPixelRatio` or it comes out twice as fine on a retina
+screen as the plan's hatch beside it.
+
+**A criterion's own words do not fit in a legend, and that was measured.**
+`Target.asks` is a short clause for the energy lines ("≤ 15 kWh/(m²a)") and the
+whole criterion for TM59's — criterion a is forty-five words on its own — so
+the first key entry came out at **75 words** against `CEILING`'s 40. The board
+is where a standard says what it asks, in its own words, on the row for that
+very target; the key is where the drawing says what a mark *is*. The entry now
+names the standard, the criterion, the figure and the side that passes, and all
+117 distinct strings this feature can compose fit the ceiling, the longest at
+39. `STANDING` (15) and `ABSENCE` (12) are **not** the binding budgets here and
+the plan's guess that they were is wrong: these are entries in the drawing's
+legend, which is a visible block, not a marginal note beside an em dash. The
+existing entries beside them run to 24 words.
+
+**A label is a box, not a point.** `drawGround`'s `lettered` list is points and
+its clearance test was a radius, which is near enough for a five-character
+contour label and is not for a fourteen-character one: "Passivhaus 3.2" cleared
+a spot figure's centre by 22 units and printed straight across it. `roomAt`
+now takes the label's half-width and measures to the *box*, the chosen turn is
+the roomiest rather than the first that clears, midpoints count as candidates
+(a segment's ends sit on cell edges, which is exactly where the lattice puts
+its figures), and the label is entered into `lettered` across its whole width
+so a contour label placed afterwards clears all of it. Threshold labels are
+placed **before** any contour label, so the order of precedence on this drawing
+is measurement, then published line, then inference.
+
+**One index behind four marks, and it belongs to the band.** A band's hatch
+pattern, its fill class, its line's chain-dash class and the relief's hatch
+angle are all taken from its position in the list. Three of them wrapped at
+four (`at % BAND_ANGLES.length`) and the fill class did not, so a fifth band
+would have asked the page for `.passing-4`, which it does not declare — and an
+SVG polygon with no `fill` is a solid black one, which is a whole ground
+painted out on the day somebody publishes a fifth limit for one reading.
+Unreachable against today's roster, where the busiest reading draws two, and
+exactly the kind of thing that stays unreachable until it is not. `Band` is a
+declaration rather than the dictionary it started as, `signature` wraps once in
+its constructor, and the four marks read it.
+
+**Read once, at the top of `renderSurvey`.** The plan, its key, the relief and
+the aria label each read the declarations for themselves, which is four chances
+to be handed a different chase state and four tracings of the same bands on a
+path that runs again on every landed sample — the key going as far as cutting a
+second lattice to get the one sentence it needed off each band. `GroundLines`
+is that reading, made once and passed down, and `GroundLines.sentences()` is
+the one wording the key and the aria label share. It is worth saying what the
+second wording cost: the aria label built its sentences by hand and dropped
+`wholly`, so the one reader who cannot look at the drawing and check was told
+"hatched is measured ground meeting this standard's published threshold" over a
+ground with no hatch anywhere on it. Two spellings of one mark is two things to
+keep in step, and the one that fails is always the one nobody can see.
+
+**A key entry describes the mark, not the intention.** The hatch clause was
+unconditional — every drawn line's entry ended "hatched is measured ground
+meeting this standard's published threshold" — and a band draws no hatch in
+three of its five states. The one that cost the most is a ground whose passing
+designs are all on incomplete cells: a region needs four measured corners, so
+a chequered ground, or a coarse pass whose failures fall beside the passing
+runs, gives `cells: []`, `segments: []` and `wholly: null` at once. Nothing
+drawn, nothing said, and a swatch in the key showing a specimen hatch and a
+specimen rule for two marks that were nowhere on the sheet — which is more
+convincing than the sentence, because a swatch looks like it was cut from the
+drawing. So the sentence asks `PassingGround.hatched` and the swatch asks
+`ruled` — both getters on the object that emitted the geometry — before either
+asks `wholly`, which is a fact about the *reading*: which side of the line the
+ground is on. A band can fail to hatch a ground that is wholly passing, and
+the two must be asked in that order. The getters exist because the emptiness
+test was otherwise spelled at two sites six hundred lines apart that have to
+agree forever, which is the defect this whole paragraph is about, one turn
+further on. The scattered case states the count
+it does know (`2 of 5 measured designs meet it`), the reason there is no
+region, and the one thing that fixes it — let the ground refine — which is the
+`freeExchange` refusal's shape, and for the same reason: false precision on
+this sheet is worse than an em dash, because the reader has no way to see it.
+The swatch carries only the marks that band drew, so an entry with neither is
+a sentence alone, exactly like the absence entry above it.
+
+**And the sentence lives in `survey.js`, not beside the drawing.** That is the
+opposite of where wording usually goes on this sheet, and `absenceIn` is the
+precedent it follows: the absence path already letters its finished sentence
+in that module, and the key, the plan caption and the aria label all reuse the
+one wording rather than spelling it three times. The reason is that this is
+the copy the page cannot check. `main.js` imports the engine and drives the
+DOM, so nothing in it loads under Node — the six branches were first verified
+by *scraping* `markSentence`'s source text out of the file and rebuilding it
+with `new Function`, which is a verification a rename ends silently. Imported
+from `survey.js` the same rename is a `SyntaxError` at module load. The
+opening that names the standard and letters its figure stays in `main.js`,
+because that is lettering; this is the claim about what was drawn, and it is
+the claim that had to be provable.
+
+**What the harness covers that the page could not.** `climate.onebuilding.org`
+is unreachable from the container this was built in (403 through the proxy), so
+no weather file could be attached and only the design-day readings could be
+driven: the three-line TEDI ground and the coincident collapse are proved in
+the Node harness (214 assertions) rather than on the page. Everything else —
+the line, the band, the label, the relief, the chase, the absences, the
+coincident-contour suppression, gaps, IP/SI round-tripping and 390 px — was
+driven in Chromium.
+
 ### Feedback reports and triage (src/report.js, src/report-sheet.js, .github/workflows/triage.yml)
 
 A reader reports from the sheet, and the report carries what they were looking
