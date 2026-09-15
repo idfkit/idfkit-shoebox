@@ -13,11 +13,11 @@
     "undeploy": "node scripts/deploy.mjs --remove"
   },
   "dependencies": {
-    "@idfkit/core": "0.3.0-rc.3",
+    "@idfkit/core": "0.3.0",
     "@idfkit/engine": "^0.1.0",
     "@idfkit/engine-assets": "26.1.0",
-    "@idfkit/schemas": "0.3.0-rc.3",
-    "@idfkit/weather": "0.3.0-rc.3"
+    "@idfkit/schemas": "0.3.0",
+    "@idfkit/weather": "0.3.0"
   },
   "devDependencies": {
     "@aws-sdk/client-cloudformation": "^3.700.0",
