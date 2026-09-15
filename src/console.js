@@ -181,6 +181,10 @@ export function mountConsole({
   // that has to take the focus back.
   let whenButton = null;
   let engaged = new Set(); // which channels the model says are in the path
+  // channel id -> why a channel that is not patched out is still not in the path
+  // (its `requires`, resolved by `channelState`). An offer on such a channel has
+  // no patch to press, so it says this instead of "patch it in".
+  let blocked = new Map();
   let ghost = {}; // where each control stood when the current gesture began
   // Whether a study can be taken at all, and the sentence for when it cannot.
   // Off until the caller says otherwise: the engine is not resident at mount.
@@ -428,17 +432,23 @@ export function mountConsole({
    * The question every swept control carries: what would the rest of your
    * face do?
    *
-   * Not on a priced channel — nothing it owns reaches the engine, so a sweep
-   * of it could only redraw the numbers already on the sheet. `name` is the
+   * On a priced channel too. Nothing a Plant or Tariff face owns reaches the
+   * engine, which is exactly why its sweep is cheap rather than pointless: the
+   * desk's one run, priced at each position, is the whole curve, and those
+   * figures are not on the sheet until something draws them. `name` is the
    * subject as the offer says it, which for one wall of a plan key is that
    * wall and not the group: four buttons under one label would otherwise all
    * announce themselves identically.
    */
   function studyOffer(key, name, control, channel) {
-    if (channel?.prices) return null;
     const btn = el('button', 'study', 'Study');
     btn.type = 'button';
+    // A withdrawn priced face is named by its refusal rather than its sweep, for
+    // a reader who cannot see the dimmed row. The sentence also stands in view
+    // under the row (`buildScale`), so this is never its only carrier. One
+    // thunk, so `syncStudyOffer` and `reletter` cannot disagree about which.
     const said = () =>
+      control.withdrawnAt?.(params) ??
       `Study ${name}: sweep from ${control.format(control.min)} to ${control.format(control.max)}`;
     btn.setAttribute('aria-label', said());
     btn.addEventListener('click', () => onStudy?.(key));
@@ -462,7 +472,6 @@ export function mountConsole({
    * chosen too. The button says which of the two it would fill.
    */
   function surveyOffer(key, channel) {
-    if (channel?.prices) return null;
     const btn = el('button', 'study survey-offer', 'Survey');
     btn.type = 'button';
     btn.addEventListener('click', () => onSurvey?.(key));
@@ -479,7 +488,7 @@ export function mountConsole({
     const title = !sweepGate.ok
       ? sweepGate.reason
       : out
-        ? 'This path is out of the model — patch it in to survey it.'
+        ? blocked.get(channel.id) ?? 'This path is out of the model — patch it in to survey it.'
         : idle
           ? unreached ?? 'Set, but not reaching the model — there is nothing to survey along.'
           : axis
@@ -512,16 +521,16 @@ export function mountConsole({
    * Written only on change: this runs for every control on every synced frame
    * of a drag, and attribute writes are never free.
    */
-  function syncStudyOffer(btn, channel, { idle, unreached = null }) {
+  function syncStudyOffer(btn, channel, { idle, unreached = null, withdrawn = null }) {
     if (!btn || btn.dataset.running) return;
     const out = !engaged.has(channel.id);
     const disabled = !sweepGate.ok || out || idle;
     const title = !sweepGate.ok
       ? sweepGate.reason
       : out
-        ? 'This path is out of the model — patch it in to sweep it.'
+        ? blocked.get(channel.id) ?? 'This path is out of the model — patch it in to sweep it.'
         : idle
-          ? unreached ?? 'Set, but not reaching the model — there is nothing to sweep.'
+          ? withdrawn ?? unreached ?? 'Set, but not reaching the model — there is nothing to sweep.'
           : 'Sweep this control across its face: the desk solved at a score of positions, drawn as a curve.';
     if (btn.disabled !== disabled) btn.disabled = disabled;
     if (btn.title !== title) btn.title = title;
@@ -637,6 +646,14 @@ export function mountConsole({
     derivedLines.set(control.key, derived);
     if (control.note) row.append(noteFold(control));
 
+    // Why a withdrawn priced face cannot be studied, in view. A sibling of the
+    // row rather than a child, because `.ctl.idle` dims the row with opacity
+    // and no child can take its ink back from that; a refusal lettered at 0.4
+    // is a refusal half read. It is also the anchor a study card hangs after,
+    // so the card stands under the sentence rather than between it and its row.
+    const withdrawnLine = control.withdrawn ? el('p', 'ctl-withdrawn') : null;
+    if (withdrawnLine) withdrawnLine.hidden = true;
+
     input.addEventListener('input', () => {
       markGesture(control.key);
       onChange(control.key, Number(input.value));
@@ -677,13 +694,26 @@ export function mountConsole({
       const idle = control.idle(params);
       row.hidden = !control.shown(params);
       row.classList.toggle('idle', idle);
-      syncStudyOffer(studyBtn, channel, { idle });
+      const withdrawn = control.withdrawnAt(params);
+      syncStudyOffer(studyBtn, channel, { idle, withdrawn });
+      if (withdrawnLine) {
+        const standing = Boolean(withdrawn) && !row.hidden;
+        if (withdrawnLine.hidden === standing) withdrawnLine.hidden = !standing;
+        if (standing && withdrawnLine.textContent !== withdrawn) withdrawnLine.textContent = withdrawn;
+        // The label changes only where a face can be withdrawn, so only those
+        // rows pay for re-reading it on every synced frame.
+        const label = studySweeps.get(control.key)();
+        if (studyBtn.getAttribute('aria-label') !== label) studyBtn.setAttribute('aria-label', label);
+      }
       // Dragging the swept control just walks the study's tick along its curve.
       cards.get(control.key)?.syncTick?.();
     };
     faces.set(control.key, redraw);
-    rows.set(control.key, row);
-    return row;
+    rows.set(control.key, withdrawnLine ?? row);
+    if (!withdrawnLine) return row;
+    const both = document.createDocumentFragment();
+    both.append(row, withdrawnLine);
+    return both;
   }
 
   /** A small set of exclusive states on one segmented rule. */
@@ -2373,6 +2403,7 @@ export function mountConsole({
     /** Letter every strip against the state the model reports. */
     setState(state) {
       engaged = new Set([...state].filter(([, s]) => s.engaged).map(([id]) => id));
+      blocked = new Map([...state].filter(([, s]) => s.blocked).map(([id, s]) => [id, s.blocked]));
       for (const channel of CHANNELS) {
         const here = strips.get(channel.id);
         const s = state.get(channel.id);

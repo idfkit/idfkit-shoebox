@@ -33,6 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Study and survey the plant and the tariff.** Seasonal efficiency, both COPs,
+  the two prices and the grid intensity now carry Study, and are axes on E-02.
+  Each costs no run beyond the one its shape needs: the run is priced at every
+  position, so a ground of U-factor against boiler efficiency costs only the
+  U-factor runs. A reading a priced control cannot move, such as efficiency
+  against heating demand, is refused with the readings it can move, and a face
+  its selector has withdrawn says why under the row. The pull still ranks only
+  what shapes the building.
+
 - **The sheet reads in SI or IP.** One segmented control in the header stamp
   re-letters every figure on the page: the strips and their margin numbers, the
   axonometric and its datums, the plate, the schedules, the scoreboard, the
@@ -123,6 +132,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before this feature continue to open with no studies, as they did before.
 
 ### Fixed
+
+- **E-02 re-prices when the tariff or plant moves.** A ground read for cost,
+  carbon or energy use intensity kept lettering the price it was measured at
+  after the Tariff or Plant strip changed; its spot heights now follow the bill,
+  with no run.
 
 - **A window-to-wall ratio now includes its frame, and a large framed window no
   longer stops the run.** The ratio is measured over the whole opening, frame

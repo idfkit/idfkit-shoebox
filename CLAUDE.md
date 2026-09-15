@@ -178,7 +178,12 @@ geometry earlier ones wrote).
   uses EMS. AFN costs ~+20 ms per design day.
 - **Priced channels** (`Plant`, `Tariff`, `prices: true`): nothing reaches the IDF,
   keys are in `PRICED_KEYS` and excluded from `shapeKey`, `commit` routes them to
-  `reprice()`, meters are `derived`.
+  `reprice()`, meters are `derived`. Their faces are sweepable: one run per shape,
+  priced at each point by the scheduler's `priceAt` through `pricedReadings`, the
+  only application of the bill to a retained basis. `Quantity.movedBy` declares
+  reach; `refusesPairing` refuses the 54 pairings that cannot move (card, chooser,
+  `makeSurvey`, `decodeSurvey`); `Scale.withdrawn` is the in-view sentence for an
+  idle priced face. The pull still leaves them out.
 - **Gains (10) / TM59:** at `roomType: 'As drawn'` output is byte-identical to before;
   a named room type writes `Occupancy`, `EquipmentUse`, `LightingUse` with absolute
   `People` and `EquipmentLevel`. `TM59_SPACES` must equal `PROFILE_IDS`
@@ -270,6 +275,9 @@ geometry earlier ones wrote).
   drawn by absence (no geometry emitted). `Coverage` asserts its sum. The relief is
   hand-written WebGL2, orthographic, no exaggeration control, one hue. `cutAt` is
   where the ground was cut; `standingAt(desk)` is where the desk is.
+  A priced axis costs no runs (`Coverage.runs` counts them); spot heights keep
+  their `basis` and `repriceSurvey` re-prices them on every priced commit, landing
+  an unpriceable one as a `Gap` with the bill's reason.
 - **Reports** (`report.js`, `report-sheet.js`): `report.js` is DOM-free (records,
   `buildBody`, `handoff`, the trail, the error log, the `provide`/`ask`
   registry). `report-sheet.js` is a **second module entry, loaded before

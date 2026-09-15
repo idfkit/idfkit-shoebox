@@ -15,7 +15,8 @@ import { END_USES } from './bill.js';
 // because this is where they are declared *about*: every importer that had
 // them from `study.js` still does.
 import { RunContents, VariableRequest } from './contents.js';
-import { CHANNELS, CHANNEL_BY_ID } from './controls.js';
+import { CHANNELS, CHANNEL_BY_ID, controlFor, labelFor } from './controls.js';
+import { BUDGETS, withinBudget } from './copy.js';
 import { readDemand, readExtremes, readOverheat, readPeaks } from './readings.js';
 import { PRESETS } from './schemes.js';
 import { COUNT_CATEGORY, CRITERION_BY_ID, readCriterionA, readCriterionB, readCriterionC } from './tm59.js';
@@ -229,6 +230,7 @@ export class Quantity {
     meterScope = null,
     wholeYear = false,
     priced = null,
+    movedBy = [],
   }) {
     if (!id || !label || !unit) throw new Error(`the study quantity "${id || '(unnamed)'}" lacks its identity or lettering`);
     if (!Number.isInteger(digits) || digits < 0) {
@@ -257,6 +259,9 @@ export class Quantity {
     if (priced !== null && priced !== 'cost' && priced !== 'carbon') {
       throw new Error(`the study quantity "${id}" declares unknown priced field "${priced}"`);
     }
+    if (!Array.isArray(movedBy) || movedBy.some((key) => typeof key !== 'string' || !key)) {
+      throw new Error(`the study quantity "${id}" declares movedBy as something other than a list of control keys`);
+    }
     const lines = series ?? [new QuantitySeries({ id, label, pen })];
     if (!Array.isArray(lines) || !lines.length || lines.some((line) => !(line instanceof QuantitySeries))) {
       throw new Error(`the study quantity "${id}" needs at least one declared series`);
@@ -277,6 +282,14 @@ export class Quantity {
     this.meterScope = meterScope;
     this.wholeYear = Boolean(wholeYear);
     this.priced = priced;
+    // The priced controls that can move this reading, and only those. A Plant
+    // or Tariff face is applied to the bill after the run, so it reaches a
+    // reading only through `computeBill`'s arithmetic, and that arithmetic is
+    // narrow: every other reading on the roster is taken before it starts.
+    // Declared rather than derived, and checked against the real bill by the
+    // reach harness, so a study of efficiency against demand is refused by a
+    // declaration instead of drawn as a flat line that reads as a finding.
+    this.movedBy = Object.freeze(new Set(movedBy));
     Object.freeze(this);
   }
 
@@ -421,6 +434,9 @@ export function contentsFor(quantity, channels = []) {
   });
 }
 
+/** The plant faces, which divide delivered energy before anything is priced. */
+const PLANT_REACH = Object.freeze(['heatEfficiency', 'heatCOP', 'coolCOP']);
+
 export const QUANTITIES = Object.freeze([
   new Quantity({
     id: 'extremes', label: 'High + low zone temperature', unit: '°C', quantityKind: 'temperature', digits: 1, needs: EXTREMES,
@@ -448,6 +464,11 @@ export const QUANTITIES = Object.freeze([
   new Quantity({
     id: 'eui', label: 'Energy use intensity', unit: 'kWh/m²·yr', quantityKind: 'energyIntensity', digits: 1, needs: BILL,
     meterScope: 'building',
+    // `Bill.intensity('metered')` is delivered energy over the plant's divisor
+    // (`divisorFor` in `bill.js`: the heating option's efficiency or COP, and
+    // the cooling COP), taken before any rate is applied. So the three plant
+    // faces move it and no price or grid factor can.
+    movedBy: PLANT_REACH,
     wholeYear: true,
     read: (landed) => finite(landed.bill?.wholeYear ? landed.bill.intensity('metered') : null),
   }),
@@ -455,6 +476,9 @@ export const QUANTITIES = Object.freeze([
     id: 'cost', label: 'Cost', unit: 'local currency', quantityKind: 'currency', digits: 1, needs: BILL,
     meterScope: 'all',
     priced: 'cost',
+    // `metered × costRate`, where `assume` in `rates.js` puts the two prices
+    // into the cost rates and nowhere else.
+    movedBy: [...PLANT_REACH, 'elecPrice', 'gasPrice'],
     read: (landed) => {
       const value = completeBillTotal(landed.bill, 'cost');
       return value === null ? null : Object.freeze({ value, currency: landed.bill.currency });
@@ -472,6 +496,9 @@ export const QUANTITIES = Object.freeze([
     id: 'carbon', label: 'Carbon', unit: 'kgCO₂e', quantityKind: 'carbonMass', digits: 1, needs: BILL,
     meterScope: 'all',
     priced: 'carbon',
+    // `metered × carbonRate / 1000`, where `assume` puts the grid intensity
+    // into the electricity carbon rate only. Prices never reach it.
+    movedBy: [...PLANT_REACH, 'gridFactor'],
     read: (landed) => completeBillTotal(landed.bill, 'carbon'),
   }),
   new Quantity({
@@ -536,6 +563,55 @@ export function openingQuantity({ annual, system, chasingTm59, gains, season, ru
  */
 const EVERY_NEED = RunContents.union(QUANTITIES.map((quantity) => quantity.needs));
 
+/**
+ * A reading's label set inside a sentence: lower-cased, unless it opens on an
+ * acronym, because "tEDI" and "hours above 25 °c" are nobody's spelling.
+ */
+export const inSentence = (label) => (/^[A-Z]{2,}\b/.test(label) ? label : label[0].toLowerCase() + label.slice(1));
+
+/** "a", "a or b", "a, b or c". */
+const either = (items) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} or ${items.at(-1)}`);
+
+const declaredQuantity = (quantity, caller) => {
+  if (!QUANTITIES.includes(quantity)) {
+    throw new Error(`${caller}: expected a declared study quantity, not ${quantity?.id ?? String(quantity)}`);
+  }
+};
+
+/**
+ * Why a priced control cannot be swept for this reading, or null where it can.
+ *
+ * One sentence for the study card, the survey chooser, the ground and the
+ * survey link (FR-006), built from the declarations rather than written per
+ * pair, so the 54 refused pairings cannot come to give 54 slightly different
+ * reasons. Null for any control that shapes the run, whatever the reading: a
+ * shaping control that happens not to move a reading has been measured not to,
+ * which is a finding, where a price that cannot move demand is arithmetic.
+ *
+ * A face whose kind is money is called a price here, because its label is the
+ * fuel's ("Electricity"), and a fuel is not what is applied after the run.
+ */
+export function refusesPairing(key, quantity) {
+  declaredQuantity(quantity, 'refusesPairing');
+  const { channel } = controlFor(key); // throws naming an unowned key
+  if (!channel.prices || quantity.movedBy.has(key)) return null;
+  return `${subjectOf(key)} is applied after the run and cannot move ${inSentence(quantity.label)}.`;
+}
+
+function subjectOf(key) {
+  const { control } = controlFor(key);
+  return control.quantityKind?.id === 'money' ? `${labelFor(key)} price` : labelFor(key);
+}
+
+/** The fix beside a refused pairing: every reading this priced control can move. */
+export function pairingFix(key) {
+  const { channel } = controlFor(key);
+  if (!channel.prices) throw new Error(`pairingFix: "${key}" shapes the run, so no pairing of it is ever refused`);
+  const moved = QUANTITIES.filter((quantity) => quantity.movedBy.has(key));
+  if (!moved.length) throw new Error(`pairingFix: "${key}" moves no declared reading`);
+  return `Choose ${either(moved.map((quantity) => inSentence(quantity.label)))}.`;
+}
+
 /** All declared quantities measured against current run capabilities. */
 export function offersFor({
   annual = false,
@@ -543,6 +619,10 @@ export function offersFor({
   season = false,
   channels = [],
   pricing = null,
+  // The study's own control, when the offers are for one card. Its pairing
+  // refusal is asked after every other refusal, so a reading that also wants a
+  // weather file says so first: the weather file is the first thing to fix.
+  key = null,
 } = {}) {
   const engaged = new Set(channels);
   const possible = new RunContents({
@@ -607,6 +687,8 @@ export function offersFor({
         return new Offer({ quantity, available: false, reason: status.reason, fix: status.fix });
       }
     }
+    const pairing = key === null ? null : refusesPairing(key, quantity);
+    if (pairing) return new Offer({ quantity, available: false, reason: pairing, fix: pairingFix(key) });
     return new Offer({
       quantity,
       available: possible.answers(quantity.needs),
@@ -636,6 +718,68 @@ export function assertQuantityReachability(quantities, reachableOffers) {
         throw new Error(`the study quantity "${quantity.id}" needs unknown channel "${channel}"`);
       }
     }
+  }
+
+  // Reach, both ways round. A key named in `movedBy` must be a priced face a
+  // sweep can walk, or the pairing refusal would be keyed on a control that is
+  // never offered; and every priced face must be named somewhere, or a new
+  // Tariff face would be refused against every reading on the roster, which
+  // is a study nobody could ever draw. And only a bill reading may be moved:
+  // anything else is read off the run before the plant or tariff is applied.
+  for (const quantity of QUANTITIES) {
+    if (quantity.movedBy.size && quantity.needs !== BILL) {
+      throw new Error(
+        `the study quantity "${quantity.id}" declares priced controls that move it, and does not read the bill`,
+      );
+    }
+    for (const key of quantity.movedBy) {
+      const { channel, control } = controlFor(key); // throws naming an unowned key
+      if (!channel.prices) {
+        throw new Error(
+          `the study quantity "${quantity.id}" is moved by "${key}", which shapes the run; ` +
+            'movedBy names only priced faces, since a shaping control is measured, never refused',
+        );
+      }
+      if (refusesSweep(control)) {
+        throw new Error(`the study quantity "${quantity.id}" is moved by "${key}", which has no face to sweep`);
+      }
+    }
+  }
+  for (const channel of CHANNELS.filter((candidate) => candidate.prices)) {
+    for (const control of channel.controls) {
+      if (refusesSweep(control)) continue;
+      if (!QUANTITIES.some((quantity) => quantity.movedBy.has(control.key))) {
+        throw new Error(
+          `the priced face "${control.key}" moves no study quantity, so every study of it would be refused`,
+        );
+      }
+    }
+  }
+
+  // Every priced pairing, once: refused with a sentence that stands in view, or
+  // drawn. Twelve draw — the three plant faces against the three bill readings,
+  // and each tariff face against the one reading it prices — and the count is
+  // asserted so a reach declaration widened by accident fails here rather than
+  // as a curve that should have been refused.
+  let refusedPairings = 0;
+  let pairings = 0;
+  for (const channel of CHANNELS.filter((candidate) => candidate.prices)) {
+    for (const control of channel.controls) {
+      if (refusesSweep(control)) continue;
+      for (const quantity of QUANTITIES) {
+        pairings += 1;
+        const sentence = refusesPairing(control.key, quantity);
+        if (sentence === null) continue;
+        refusedPairings += 1;
+        withinBudget(BUDGETS.STANDING, `pairing ${control.key} × ${quantity.id}`, sentence);
+      }
+      withinBudget(BUDGETS.STANDING, `pairing fix ${control.key}`, pairingFix(control.key));
+    }
+  }
+  if (pairings !== 66 || refusedPairings !== 54) {
+    throw new Error(
+      `${refusedPairings} of ${pairings} priced pairings are refused, where the reach table refuses 54 of 66`,
+    );
   }
 
   const targetIds = new Set(PRESETS.flatMap((preset) => preset.targets.map((target) => target.metric)));

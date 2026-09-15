@@ -675,6 +675,55 @@ type that may be absent is worth writing as a question either way.
 - They have no applier in `applyModel`. Their meters are `derived`, fed through
   `derivedReadings` like the geometry ones.
 
+**They are swept, and a sweep of one costs one run** (spec 011, issue #78). The
+old rule withheld Study and Survey from both channels on the grounds that a sweep
+"could only redraw the numbers already on the sheet". It is the same building at
+every position, which is exactly why the sweep is cheap, but the figures at the
+other positions are not on the sheet. What made it cost one run needed no code:
+`sampleIdentity` is built from `deskKey`, which drops `PRICED_KEYS`, so every
+position of a `heatEfficiency` study has one identity, the first dispatch runs it
+and the other twenty ride its pending promise.
+
+- **Price at the point, not in the cache.** One cache entry cannot hold
+  twenty-one prices. The scheduler's `priceAt(job, value, sample)` hook prices
+  each curve point in `pointAt`, which both `land` and `curveFor` go through, via
+  `pricedReadings(readings, basis, pricingAt(job, value))` in `main.js`: live
+  `params` with the job's own priced swept keys laid over at that position. It
+  is the one application of the bill to a retained basis; `repriceStudies` and
+  `repriceSurvey` call it too. Unlike `refuses`, `priceAt` is deliberately
+  impure, and `reprice()` rebuilds every curve and ground whenever the priced
+  settings move.
+- **Reach is declared.** `Quantity.movedBy` names the priced keys that can move a
+  reading: the three plant faces move EUI, cost and carbon (`divisorFor`); the two
+  prices move cost and the grid intensity carbon (`assume`). Everything else on
+  the roster is read before the plant is applied. Asserted at load both ways
+  round, and against the real `computeBill` by
+  `specs/011-sweep-priced-controls/verify/reach.mjs`.
+- **A pairing that cannot move is refused, not drawn.** `refusesPairing(key,
+  quantity)` is one sentence for the study card (through `offersFor({ key })`,
+  after every other refusal), the survey chooser, `makeSurvey` and `decodeSurvey`;
+  54 of 66 pairings, asserted at load. A flat efficiency-against-demand line would
+  read as a finding. A pairing that can move a reading and does not here (a gas
+  price on direct electric) is drawn flat: that is a measurement.
+- **A withdrawn priced face says so in view.** `Scale.withdrawn(params)` on the
+  five faces with `needs`, asserted at load against `STANDING`. An idle shaping
+  control still reaches the document; `heatEfficiency` under a heat pump reaches
+  nothing, not even the bill. The console letters the sentence under the dimmed
+  row as a sibling (the row's opacity cannot be undone by a child), the study card
+  stands refused with it (`studyRefusal`), the scheduler refuses the position with
+  it, and a ground whose axis is withdrawn stands refused with its points kept.
+- **Counts say what they count.** `curveFor(job).runs` and `Coverage.runs` are
+  distinct cache identities; the study's drawn line, the coverage line, the Runs
+  stamp and the aria label letter runs beside positions where the two differ.
+- **The pull still leaves them out**, by decision rather than cost: it ranks what
+  is pulling the building, and `PullReading.said` says Plant and Tariff are not
+  ranked.
+- **The traverse records buildings.** A priced-only step adds no stop. `commit`
+  records on release when the gesture moved any shaping key (`gestureShaped`),
+  not when the releasing key is a shaping one: standing on a point is two commits
+  and with Y priced the release is Y's, so a step along a shaping X used to leave
+  no stop, and so did a traverse restore that ended on a Tariff key.
+
 `Channel.requires.test` is handed `(params, on, off)`. `on(id)` reads whether an
 earlier channel is engaged, so Plant can require System; channels are declared in
 physical order, which is the order those dependencies run in, so a channel can
@@ -985,8 +1034,10 @@ by `linkAttachPending` — the button gate does not cover this path, and a
 sample built during a link attach would fatal on zero environments. A Stop or
 the global "Set studies aside" suppresses a key until the rest of the desk
 next moves. Studies and the sample cache clear on a station change — sample
-shapes deliberately carry no climate — and studies are absent on priced
-channels.
+shapes deliberately carry no climate. A study of a priced control prices one
+run at every position (see "Channels that price rather than simulate"); a
+priced commit re-mints every study through `redrawStudiesForQuantity({ queue:
+false })` without marking it stale, since its rest shape has not moved.
 
 **Setting a study aside and clearing it are different acts**, and the desk has
 a global control for each. "Set studies aside" (status row) sheds the queue and
@@ -2099,6 +2150,20 @@ link carries axes, readings and extents and nothing else: not the measured
 values, since the recipient re-measures to identical numbers, and not the
 camera, by the chase pin's rule that how a thing is being looked at is not what
 it is. `LINK_VERSION` stays `v1` and `MIGRATIONS` stays empty.
+
+**A priced axis costs nothing and keeps its price.** Spec 011 superseded "priced
+controls must not be axes": along a priced axis every spot height of a row is the
+same run priced again, so a ground of a shaping axis against a priced one costs
+the shaping axis's positions and two priced axes cost one run. Measured on the
+page: U-factor by seasonal efficiency at 11 × 12 is 132 positions from 11 runs.
+`absorbSurveyRow` lands each point's priced readings, not `sample.readings`, and
+a `SpotHeight` keeps its run's `basis` so `repriceSurvey` can re-price it without
+the bounded cache. **Before this, nothing re-priced E-02 at all**: on `main`,
+turning the gas price from 0.070 to 0.250 re-lettered the bill's gas line from
+$192 to $687 and left every spot height at $2,389 (verify/README.md, T002). A
+spot that stops pricing becomes a `Gap` carrying the `Absent` rate's reason and
+its basis, so it comes back with no run when the rate does; a `SpotHeight` with
+a null reading is never built, or coverage would count it measured.
 
 **The pull costs one run per control, and the run kind is stated.** 18 channels,
 144 control keys, 9 priced, **90 sweepable numeric faces** — counted, and

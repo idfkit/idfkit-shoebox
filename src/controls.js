@@ -524,7 +524,34 @@ export class Scale extends Ruled {
   constructor(spec) {
     super(spec);
     this.kind = 'scale';
+    // Why this face does not reach the bill as the desk stands, and what would
+    // bring it back, as one sentence of the desk. Declared only on the priced
+    // faces that carry `needs`, and asserted so at load.
+    //
+    // A priced face needs its own sentence where a shaping one does not. An
+    // idle shaping control still reaches the document, so a study of it is a
+    // measurement; `heatEfficiency` under a heat pump reaches nothing at all,
+    // not even the bill, so a curve of it would be a flat line of arithmetic
+    // that never used the swept value. Such a study is refused rather than
+    // drawn, and the refusal is lettered in view under the dimmed row, where
+    // the generic "set, but not reaching the model" title cannot say which
+    // selector above it to turn.
+    const { withdrawn = null } = spec;
+    if (withdrawn !== null && typeof withdrawn !== 'function') {
+      throw new Error(`${spec.key} declares withdrawn as something other than a function of the desk`);
+    }
+    this.withdrawn = withdrawn;
     Object.freeze(this);
+  }
+
+  /**
+   * The withdrawn sentence where this face is idle on `params`, or null.
+   *
+   * The one reading of it, for the console's line under the row, the study
+   * card, the scheduler, the survey and the axis chooser alike.
+   */
+  withdrawnAt(params) {
+    return this.withdrawn && this.idle(params) ? this.withdrawn(params) : null;
   }
 }
 
@@ -3275,6 +3302,50 @@ const assertCopy = () => {
   }
 };
 
+/**
+ * That every priced face which can be withdrawn says why, in view-sized words.
+ *
+ * A priced face is now a study subject and a survey axis, and one whose `needs`
+ * fails reaches nothing, so every surface that offers it has to refuse it with
+ * a sentence. The sentence is declared on the face (`Scale.withdrawn`); this
+ * refuses the declaration that forgot one, and the one that grew past a
+ * standing message. Measured at a desk where the face really is withdrawn,
+ * found by walking the channel's own selectors over its defaults, because the
+ * sentence is a function of the desk and a desk where `needs` holds would be
+ * measuring a sentence nobody is ever shown.
+ */
+const assertWithdrawn = () => {
+  for (const channel of CHANNELS) {
+    for (const control of channel.controls) {
+      if (control.kind !== 'scale') continue;
+      if (!channel.prices) {
+        if (control.withdrawn) {
+          throw new Error(`${control.key} declares withdrawn, which only a face on a priced channel letters`);
+        }
+        continue;
+      }
+      if (Boolean(control.needs) !== Boolean(control.withdrawn)) {
+        throw new Error(
+          control.needs
+            ? `${control.key} is a priced face with needs and no withdrawn sentence to refuse a study with`
+            : `${control.key} declares withdrawn and no needs, so it can never be withdrawn`,
+        );
+      }
+      if (!control.needs) continue;
+      const base = Object.fromEntries(channel.controls.map((c) => [c.key, c.value]));
+      const desks = [base];
+      for (const selector of channel.controls.filter((c) => c.kind === 'selector')) {
+        for (const desk of [...desks]) {
+          for (const option of selector.options) desks.push({ ...desk, [selector.key]: option.value });
+        }
+      }
+      const desk = desks.find((candidate) => !control.needs(candidate));
+      if (!desk) throw new Error(`${control.key} declares needs that no option of its own channel withdraws`);
+      withinBudget(BUDGETS.STANDING, `${control.key} withdrawn`, control.withdrawn(desk));
+    }
+  }
+};
+
 const assertSetpointModes = () => {
   // One loop over every set of mode literals a declaration keeps beside a
   // selector, because the hazard is the same in each: a set and the options it
@@ -4706,12 +4777,14 @@ export const CHANNELS = Object.freeze([
         min: 0.5, max: 1.05, step: 0.01, digits: 2,
         landmarks: BOILER,
         needs: (p) => p.heatSource !== 'HeatPump',
+        withdrawn: () => 'Seasonal efficiency applies only to a boiler or direct electric plant, not a heat pump.',
         note: 'Fuel in against useful heat out, across the season.',
       }),
       new Scale({
         key: 'heatCOP', quantityKind: 'ratio', label: 'Seasonal COP', value: 3, min: 1.5, max: 5.5, step: 0.1, digits: 1,
         landmarks: HEAT_COP,
         needs: (p) => p.heatSource === 'HeatPump',
+        withdrawn: () => 'Seasonal COP applies only to a heat pump; choose Heat pump as the plant.',
         note: 'Heat delivered per unit of electricity, across the season.',
       }),
       new Scale({
@@ -4746,10 +4819,12 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'elecPrice', quantityKind: 'money', label: 'Electricity', value: 0.15, min: 0.02, max: 0.6, step: 0.005, digits: 3,
         unit: '/kWh', needs: (p) => p.rateBasis === 'Assumed',
+        withdrawn: () => 'The tariff is Published; set it to Assumed to price electricity here.',
       }),
       new Scale({
         key: 'gasPrice', quantityKind: 'money', label: 'Gas', value: 0.07, min: 0.01, max: 0.3, step: 0.005, digits: 3,
         unit: '/kWh', needs: (p) => p.rateBasis === 'Assumed',
+        withdrawn: () => 'The tariff is Published; set it to Assumed to price gas here.',
       }),
       new Selector({
         key: 'factorBasis', label: 'Grid factor', value: 'Published',
@@ -4764,6 +4839,7 @@ export const CHANNELS = Object.freeze([
         // behind guarded nothing.
         key: 'gridFactor', quantityKind: 'carbonIntensity', label: 'Grid intensity', value: 200, min: 0, max: 900, step: 0.25, digits: 2,
         unit: 'gCO₂e/kWh', landmarks: GRID, needs: (p) => p.factorBasis === 'Assumed',
+        withdrawn: () => 'The grid factor is Published; set it to Assumed to set grid intensity here.',
         note: 'The building will outlive the grid it was designed against. Wind this down to find out what it costs then.',
       }),
     ],
@@ -5050,6 +5126,7 @@ const assertReachableGrids = () => {
 };
 
 assertHideable();
+assertWithdrawn();
 assertSetpointModes();
 assertCopy();
 assertReachableGrids();
