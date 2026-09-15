@@ -36,7 +36,7 @@
  */
 
 import { CHANNEL_BY_ID, controlFor } from './controls.js';
-import { QUANTITY_BY_ID, refusesSweep, sampleOrder, samplePoints } from './study.js';
+import { QUANTITY_BY_ID, inSentence, refusesPairing, refusesSweep, sampleOrder, samplePoints } from './study.js';
 import { deltaKindOf, figureIn, letter, suffixIn } from './units.js';
 
 /* ══ how big the ground is ═══════════════════════════════════════════════ */
@@ -377,16 +377,35 @@ export function axisFor(key, { from = null, to = null, count = COARSE_GRID, stan
  * through `axisFor` and a shared link through `decodeSurvey` — because two
  * copies of the rule are how a link comes to cut a ground the desk itself
  * refuses, or to be refused for a different reason from the desk's.
+ *
+ * A priced face is an axis like any other (spec 011 FR-007, superseding spec
+ * 006 FR-004). It is the same building at every position along it, which is
+ * what makes it cheap rather than empty: the positions price one run, and on
+ * a ground the shaping axis bends how steeply they do. What it cannot be is an
+ * axis of a reading it does not move, and that is a pairing, asked of the whole
+ * survey in `makeSurvey`, not of the key alone.
  */
 export function refusesAxis(key) {
-  const { channel, control } = controlFor(key);
+  const { control } = controlFor(key);
   const faceless = refusesSweep(control);
   if (faceless) return `the control "${key}" has no numeric face to survey along: ${faceless}`;
-  if (channel.prices) {
-    return (
-      `the control "${key}" is on the ${channel.name} channel, which prices the run rather than shaping it. ` +
-      'Nothing it owns reaches the IDF, so a ground cut along it would be the same building at every position'
-    );
+  return null;
+}
+
+/**
+ * The first pairing of an axis and a reading that a priced axis cannot move, as
+ * `{ key, sentence }` with `refusesPairing`'s own sentence, or null.
+ *
+ * Shared by `makeSurvey`, the survey link's decoder and the chooser, so a ground
+ * the desk refuses is refused everywhere for the same reason, and the same pair
+ * is named first (FR-006). The key is returned so a caller can add its fix.
+ */
+export function refusesSurveyPairing(keys, readings) {
+  for (const key of keys) {
+    for (const reading of readings) {
+      const sentence = refusesPairing(key, reading.quantity);
+      if (sentence) return { key, sentence };
+    }
   }
   return null;
 }
@@ -407,8 +426,7 @@ export function improvingClause(readings) {
   if (!readings.length || readings.some((reading) => !reading.better)) return null;
   // Lower-cased to sit inside a sentence, except an acronym: "a lower tedi"
   // is not a metric anybody publishes.
-  const noun = (label) => (/^[A-Z]{2,}\b/.test(label) ? label : label[0].toLowerCase() + label.slice(1));
-  return readings.map((reading) => `a ${reading.better} ${noun(reading.label)}`).join(' and ');
+  return readings.map((reading) => `a ${reading.better} ${inSentence(reading.label)}`).join(' and ');
 }
 
 /**
@@ -422,14 +440,21 @@ export function improvingClause(readings) {
  * completed.
  */
 export class SpotHeight {
-  constructor({ ix, iy, x, y, readings, floorArea, cacheKey }) {
+  constructor({ ix, iy, x, y, readings, basis = null, floorArea, cacheKey }) {
     if (!Number.isInteger(ix) || !Number.isInteger(iy)) throw new Error('a spot height needs lattice indices');
     if (!readings) throw new Error('a spot height with no readings is a gap, and must be recorded as one');
     this.ix = ix;
     this.iy = iy;
     this.x = x;
     this.y = y;
+    // Priced at this position: where an axis is priced, several spot heights
+    // share one run and differ only in the price their readings were read at.
     this.readings = readings;
+    // The run's meter totals, carried opaquely so the spot can be re-priced
+    // when the tariff turns without asking the bounded sample cache, which a
+    // fine ground beside a few studies can evict out from under it. Nothing in
+    // this module reads inside it.
+    this.basis = basis;
     this.floorArea = floorArea ?? null;
     this.cacheKey = cacheKey ?? null;
     Object.freeze(this);
@@ -446,7 +471,7 @@ export class SpotHeight {
  * and those are different facts.
  */
 export class Gap {
-  constructor({ ix, iy, reason, retried = false }) {
+  constructor({ ix, iy, reason, retried = false, readings = null, basis = null, cacheKey = null }) {
     if (!Number.isInteger(ix) || !Number.isInteger(iy)) throw new Error('a gap needs lattice indices');
     if (typeof reason !== 'string' || !reason.trim()) {
       throw new Error(`the gap at ${ix},${iy} carries no reason, and a gap with no reason is not a reading`);
@@ -455,6 +480,13 @@ export class Gap {
     this.iy = iy;
     this.reason = reason;
     this.retried = Boolean(retried);
+    // Present only on a gap whose run completed and whose reading could not be
+    // priced — a rate the bill holds as absent — so a later re-price can stand
+    // it back up as a spot height with no run. A failed or refused position has
+    // none, and never comes back by re-pricing. `landPoint` decides; this holds.
+    this.readings = readings;
+    this.basis = basis;
+    this.cacheKey = cacheKey;
     Object.freeze(this);
   }
 }
@@ -470,7 +502,7 @@ export class Gap {
  * the drawing to the lettering and must not later be softened as cosmetic.
  */
 export class Coverage {
-  constructor({ wanted, measured, gaps, density }) {
+  constructor({ wanted, measured, gaps, density, runs, unpriced = 0 }) {
     // `unsurveyed` is the remainder, so the sum holds by construction; what
     // can fail is a remainder below zero, or a count that is not a number.
     const unsurveyed = wanted - measured - gaps;
@@ -480,12 +512,30 @@ export class Coverage {
           'a schedule of spot heights must never be able to disagree about how much was measured',
       );
     }
+    // The engine runs behind the measured positions, which is their count only
+    // while no axis is priced. It can never exceed them, and a measured ground
+    // stands on at least one (FR-026, FR-027).
+    if (measured === 0 ? runs !== 0 : !(runs >= 1 && runs <= measured)) {
+      throw new Error(
+        `coverage counts ${runs} runs behind ${measured} measured positions. Every measured position is one ` +
+          'completed run, and several may share one only along a priced axis',
+      );
+    }
     this.wanted = wanted;
     this.measured = measured;
     this.gaps = gaps;
     this.unsurveyed = unsurveyed;
     this.density = density;
+    this.runs = runs;
+    // Gaps whose run completed and whose reading could not be priced: not runs
+    // that failed, and a rate that returns stands them back up.
+    this.unpriced = unpriced;
     Object.freeze(this);
+  }
+
+  /** " from N runs", where the runs are not the measured positions, else "". */
+  get fromRuns() {
+    return this.runs === this.measured ? '' : ` from ${this.runs} ${this.runs === 1 ? 'run' : 'runs'}`;
   }
 }
 
@@ -679,7 +729,13 @@ export class Survey {
  * later as a ground that quietly measured the wrong thing.
  */
 export function makeSurvey({ x, y, readings, stance, patch, annual = false, epw = null }) {
-  return new Survey({ x, y, readings, stance, patch, annual, epw });
+  const survey = new Survey({ x, y, readings, stance, patch, annual, epw });
+  // Before anything is measured: a ground of seasonal efficiency read for
+  // demand would be the same figure at every position along that axis, drawn
+  // as though it were a finding about the plant.
+  const pairing = refusesSurveyPairing([survey.x.key, survey.y.key], survey.readings);
+  if (pairing) throw new Error(pairing.sentence);
+  return survey;
 }
 
 /**
@@ -740,18 +796,24 @@ export function rowsFor(survey, { needed, carried, restShape, origin = 'survey',
  * could: the only two things it can write are a `SpotHeight` built from a
  * sample and a `Gap` built from a reason.
  */
-export function landPoint(survey, { ix, iy, sample, reason = null, floorArea = null, cacheKey = null }) {
+export function landPoint(
+  survey,
+  { ix, iy, readings = null, basis = null, reason = null, floorArea = null, cacheKey = null },
+) {
   if (ix < 0 || ix >= survey.x.count || iy < 0 || iy >= survey.y.count) {
     throw new Error(`landPoint: ${ix},${iy} is off a ground of ${survey.density}`);
   }
   const key = pointKey(ix, iy);
-  const readings = sample?.readings ?? null;
   // A sample that came back with no reading for the survey's own first
   // quantity is a gap, not a spot height at zero. The scheduler already treats
   // a failed run as a gap rather than a cached fact; this is the same rule one
   // level up, where the reason can be said in words.
   const value = readings ? survey.readings[0].valueOf(readings) : null;
   if (value === null) {
+    // Kept only where a price could bring the reading back: the run completed
+    // and the reading is a priced one, so a rate that returns stands the spot
+    // back up with no run. Any other gap is final until something re-runs it.
+    const repriceable = Boolean(readings) && Boolean(survey.readings[0].quantity.priced);
     survey.points.set(
       key,
       new Gap({
@@ -763,6 +825,9 @@ export function landPoint(survey, { ix, iy, sample, reason = null, floorArea = n
             ? `The run completed but carried no ${survey.readings[0].label.toLowerCase()}.`
             : 'The run did not complete.'),
         retried: survey.at(ix, iy) instanceof Gap,
+        readings: repriceable ? readings : null,
+        basis: repriceable ? basis : null,
+        cacheKey: repriceable ? cacheKey : null,
       }),
     );
     return survey;
@@ -775,6 +840,7 @@ export function landPoint(survey, { ix, iy, sample, reason = null, floorArea = n
       x: survey.x.positions[ix],
       y: survey.y.positions[iy],
       readings,
+      basis,
       floorArea,
       cacheKey,
     }),
@@ -786,11 +852,18 @@ export function landPoint(survey, { ix, iy, sample, reason = null, floorArea = n
 export function coverageOf(survey) {
   let measured = 0;
   let gaps = 0;
+  let unpriced = 0;
+  const runs = new Set();
   for (const point of survey.points.values()) {
-    if (point instanceof SpotHeight) measured += 1;
-    else gaps += 1;
+    if (point instanceof SpotHeight) {
+      measured += 1;
+      runs.add(point.cacheKey);
+    } else {
+      gaps += 1;
+      if (point.basis) unpriced += 1;
+    }
   }
-  return new Coverage({ wanted: survey.wanted, measured, gaps, density: survey.density });
+  return new Coverage({ wanted: survey.wanted, measured, gaps, density: survey.density, runs: runs.size, unpriced });
 }
 
 /* ══ the one representation both drawings consume ════════════════════════ */

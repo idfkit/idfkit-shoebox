@@ -148,10 +148,16 @@ export class PullReading {
   }
 
   /** The sentence that must accompany the ranking wherever it is drawn. */
+  //
+  // It says Plant and Tariff are not ranked (spec 011 FR-021), because they can
+  // be studied and surveyed and a reader who finds them missing here would
+  // otherwise take the absence for a finding that they pull on nothing.
   get said() {
-    return this.kind === 'annual'
-      ? `Read against ${this.reading.label.toLowerCase()} over the attached weather year, one run per control.`
-      : `Read against ${this.reading.label.toLowerCase()} over the two design days, one run per control.`;
+    const over = this.kind === 'annual' ? 'the attached weather year' : 'the two design days';
+    return (
+      `Read against ${this.reading.label.toLowerCase()} over ${over}, one run per control. ` +
+      'Plant and Tariff price the run rather than shape it, so they are not ranked.'
+    );
   }
 }
 
@@ -192,8 +198,13 @@ export function pullProbes(stance, patch, { quantity, engaged, annual, epw = nul
   const probes = [];
   const inert = [];
   for (const channel of CHANNELS) {
-    // Nothing a priced channel owns reaches the IDF, so a probe of one would
-    // be a run that could only reproduce the number already on the sheet.
+    // Left out by decision rather than by cost (spec 011, clarification of
+    // 2026-09-14, FR-021). A priced probe would be free, since it prices the
+    // stance's own run, but the pull ranks what is pulling the building, and a
+    // tariff or a boiler efficiency is not the building. Plant and Tariff are
+    // studied and surveyed instead, and `PullReading.said` says they are not
+    // ranked here, nor listed as inert: they are not absent from the building
+    // at this stance, they are not part of it.
     if (channel.prices) continue;
     for (const control of channel.controls) {
       if (refusesSweep(control)) continue; // no numeric face; there is nothing to step along

@@ -2996,6 +2996,18 @@
       }
       /* Set, but not reaching the model in the current configuration. */
       .ctl.idle { opacity: 0.4; }
+      /* Why a withdrawn priced face cannot be studied or surveyed, under its
+         dimmed row. The refusal box `.strip-blocked` draws, at full ink: it is
+         a sibling of the row, not a child, so the row's 0.4 never reaches it. */
+      .ctl-withdrawn {
+        margin: -5px 0 0;
+        padding: 5px 7px;
+        border: 1px dashed var(--rule-focus);
+        border-radius: var(--r);
+        font: 400 10.5px/1.45 var(--sans);
+        color: var(--redline);
+      }
+      .ctl-withdrawn[hidden] { display: none; }
 
       /* ── the study: one control swept across its face ─────────────── */
 

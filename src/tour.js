@@ -175,7 +175,7 @@ export const NOTES = Object.freeze([
     step: 'Choose two controls and a reading, and cut a ground of real runs.',
     body:
       'Choose two controls and a reading, and the sheet cuts a ground through ' +
-      'the desk as it stands — one real EnergyPlus run at every position of a ' +
+      'the desk as it stands — a real EnergyPlus run behind every position of a ' +
       'grid, contoured and drawn in relief. The contours between the runs are ' +
       'interpolation and carry no figure; only the ticks do. Stand on any ' +
       'measured point and the whole of E-01 becomes that building. Read the ' +

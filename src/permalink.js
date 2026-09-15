@@ -50,7 +50,7 @@ import {
   serializePattern,
 } from './controls.js';
 import { QUANTITY_BY_ID } from './study.js';
-import { READING_BY_ID, refusesAxis } from './survey.js';
+import { READING_BY_ID, refusesAxis, refusesSurveyPairing } from './survey.js';
 
 export const LINK_VERSION = 'v1';
 
@@ -335,6 +335,14 @@ function decodeSurvey(raw) {
   for (const id of ids) {
     if (!READING_BY_ID[id]) throw new Error(`no survey reading is called "${id}"`);
   }
+  // After every name has resolved, so a malformed link is still refused for
+  // what is malformed about it. A priced axis with a reading it cannot move is
+  // a ground no desk can cut, so the link is refused whole with the sentence
+  // the chooser greys that reading with. A study link is not refused this way:
+  // its reading is chosen after the studies, so that desk is reachable and is
+  // reproduced with the card standing refused (spec 011 FR-019).
+  const pairing = refusesSurveyPairing([x, y], ids.map((id) => READING_BY_ID[id]));
+  if (pairing) throw new Error(pairing.sentence);
   return { x, y, readings: ids, extents };
 }
 

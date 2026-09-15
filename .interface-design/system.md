@@ -1133,6 +1133,28 @@ A block that is not drawn changes the strip's height when the model is
 switched. That is accepted, and it is the point: the strip is a different
 instrument, and it should look like one.
 
+**A dimmed priced face says why, in view** (`.ctl-withdrawn`). A Plant or
+Tariff face that is idle reaches nothing at all, not even the bill, so a study
+or survey of it is refused, and the reason is a sentence the reader has to be
+able to read without hovering: "The tariff is Published; set it to Assumed to
+price gas here." It stands directly under the dimmed row in the dashed
+`--rule-focus` refusal box, in `--redline`, at full ink. It is the row's
+sibling, never its child: `.idle` dims with opacity, and nothing inside a
+0.4 row can take its ink back. A study card hangs after the sentence, not
+between it and its row. The disabled Study button repeats it as its title and
+accessible name, which is never its only carrier. Shaping controls keep the
+generic title: their idle state still reaches the document.
+
+**A ground standing refused keeps its points.** When the desk withdraws a
+priced axis under an open survey (the plant switched to a heat pump under a
+ground of seasonal efficiency), E-02 letters the withdrawn sentence where a
+refused cut is lettered, stops drawing the plan, the relief and the schedule
+(every figure on them would be one price at every position of that axis), and
+keeps the coverage line, because the measured points are kept. The descent and
+standing on a point are refused with the same sentence. The face returning
+draws the ground again with no run. Nothing is remembered: the refusal is asked
+of the desk on every draw.
+
 ### Dimming conventions
 
 - `.idle` at `opacity: 0.4`: the control is set but not currently reaching the

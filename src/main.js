@@ -50,6 +50,7 @@ import {
   contentsFor,
   offersFor as studyOffersFor,
   openingQuantity,
+  pairingFix,
   refusesSweep,
   samplePoints,
   sampleOrder,
@@ -75,6 +76,7 @@ import {
   pointKey,
   meshOf,
   refineOrder,
+  refusesSurveyPairing,
   rowsFor,
   arrisesOf,
   blockOf,
@@ -1548,10 +1550,13 @@ function billFrom(run) {
 }
 
 /** Re-letter the bill from the meters already read, with no new run. */
-function reprice() {
+// `key` is the priced control that moved, where one did, so the ground can skip
+// a re-price that cannot move any figure on it; null re-prices everything.
+function reprice(key = null) {
   if (!lastRun) return;
   bill = billFrom(lastRun);
   repriceStudies();
+  repriceSurvey(key);
   renderBill();
   desk?.setReadings(engagedReadings(), derivedReadings(geometryFacts(model)), lastAt, readouts());
   desk?.setDerived(derivedLines());
@@ -2605,6 +2610,12 @@ function paintFinding(f) {
  * commit — which is where the annual run solves and where a design day catches
  * its last shape.
  */
+// Whether the gesture in hand has moved a key that reaches the IDF, which is
+// what earns it a traverse stop on release. Asked of the gesture rather than of
+// the key that releases it: standing on a point is two commits, and with axis Y
+// priced the release is Y's while the building moved along X.
+let gestureShaped = false;
+
 function commit(key, value, done = false) {
   if (params[key] !== value) {
     // A priced control changes what the energy was worth, not how much of it
@@ -2613,6 +2624,7 @@ function commit(key, value, done = false) {
     // bill still wants a ghost of where it stood when you took hold.
     const priced = PRICED_KEYS.has(key);
     beginGesture({ priced });
+    if (!priced) gestureShaped = true;
     params[key] = value;
     // Lettered by the declaration, so the trail names a control exactly as
     // the desk does; keyed, so a drag collapses to where it came to rest.
@@ -2634,7 +2646,7 @@ function commit(key, value, done = false) {
       desk?.sync();
     }
     applyGeometry();
-    if (priced) reprice();
+    if (priced) reprice(key);
     else if (continuous()) pump();
   }
   if (done) {
@@ -2646,7 +2658,9 @@ function commit(key, value, done = false) {
     // ground. Recorded in the one funnel every control comes through rather
     // than at the survey's own gestures, because the reader walks the design
     // space with the sliders as often as with the drawing.
-    if (!PRICED_KEYS.has(key)) recordTraverse();
+    // A gesture of priced keys alone adds no stop (FR-017a): the traverse is a
+    // record of buildings.
+    if (gestureShaped) recordTraverse();
     endGesture();
     desk?.settle();
     if (autoOn()) pump();
@@ -3959,6 +3973,7 @@ let solvedParams = null; // the shape those results describe
 function beginGesture({ priced = false } = {}) {
   if (gesture) return;
   gesture = true;
+  gestureShaped = false;
   // Money gets the same treatment the plate gives temperature: a figure that
   // changes with no record of what it changed from is a flicker, not a reading.
   billGhost = bill;
@@ -4734,8 +4749,9 @@ function restoreLinkedStudies(state) {
   for (const key of state.studies ?? []) {
     const job = jobForStudy(key);
     const quantity = quantityOf(studyQuantity);
-    const offers = studyOffers(job.snapshot, job.patch, job.epw);
+    const offers = studyOffers(job.snapshot, job.patch, job.epw, key);
     const selected = offers.find((offer) => offer.quantity.id === quantity.id);
+    const refusal = studyRefusal(key, job.snapshot, selected);
     const waiting = {
       label: shapeLabel(job.snapshot),
       restShape: job.restShape,
@@ -4746,7 +4762,7 @@ function restoreLinkedStudies(state) {
       waiting: {
         quantity: quantity.label,
         missing: job.total,
-        reason: selected.available ? null : `${selected.reason} ${selected.fix}`,
+        reason: refusal,
       },
       curve: [],
       coarse: false,
@@ -4754,7 +4770,7 @@ function restoreLinkedStudies(state) {
     openStudies.add(key);
     studies.set(key, waiting);
     desk.setStudy(key, waiting, { stale: false });
-    if (selected.available && autoOn()) studyScheduler.enqueue(job);
+    if (!refusal && autoOn()) studyScheduler.enqueue(job);
   }
   syncStudyControls();
 }
@@ -7499,12 +7515,21 @@ class LandedRun {
   }
 }
 
+// The station's published card, resolved once per station rather than once per
+// bill: a priced drag prices every study position and every spot height on
+// every frame, and the card depends on nothing but the station.
+let publishedCard = { station: undefined, card: null };
+const publishedRates = () => {
+  if (publishedCard.station !== station) publishedCard = { station, card: resolveRates(station) };
+  return publishedCard.card;
+};
+
 function billFromBasis(basis, pricing) {
   if (!basis || !Object.keys(basis.series).length) return null;
   return computeBill({
     series: new Map(Object.entries(basis.series)),
     params: pricing,
-    card: assume(resolveRates(station), pricing),
+    card: assume(publishedRates(), pricing),
     floorArea: basis.floorArea,
     hours: basis.hours,
     engaged: new Set(basis.engaged),
@@ -7560,7 +7585,9 @@ function engagedChannels(snapshot, patch) {
   return [...channelState(snapshot, patch)].filter(([, value]) => value.engaged).map(([id]) => id);
 }
 
-function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? null) {
+// `key` is the study's own control, where the offers are for one card: a priced
+// control refuses the readings it cannot move, after every other refusal.
+function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? null, key = null) {
   const channels = engagedChannels(snapshot, patch);
   const engaged = new Set(channels);
   const card = assume(resolveRates(station), snapshot);
@@ -7593,6 +7620,7 @@ function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? nul
     season: Boolean(epw) && touchesSeason(snapshot.months),
     channels,
     pricing,
+    key,
   });
 }
 
@@ -7637,19 +7665,135 @@ function sampleContentsFor(quantities, snapshot, patch, annual) {
   return { needed, carried };
 }
 
+/**
+ * One run's readings with the bill's three readings re-read at `pricing`.
+ *
+ * The only place the bill is applied to a retained meter basis (FR-012). The
+ * cache reprice, every position of a priced sweep and every spot height of a
+ * ground all come through here, so a figure on a curve is the figure the bill
+ * would letter with the desk standing there, by the one arithmetic.
+ */
+function pricedReadings(readings, basis, pricing) {
+  const landed = { bill: billFromBasis(basis, pricing) };
+  const priced = { ...readings };
+  for (const quantity of BILL_QUANTITIES) priced[quantity.id] = quantity.read(landed);
+  return Object.freeze(priced);
+}
+
+/** The readings a price can move, by their own `movedBy` declaration. */
+const BILL_QUANTITIES = Object.freeze(QUANTITIES.filter((quantity) => quantity.movedBy.size));
+
+/** A job's swept keys as a list: a study's one key, a survey row's two axes. */
+const sweptKeys = (job) => (Array.isArray(job.omits) ? job.omits : [job.omits]);
+
+/** Whether a job sweeps any priced key, which is what earns it per-position pricing. */
+const sweepsPriced = (job) => sweptKeys(job).some((key) => PRICED_KEYS.has(key));
+
+/**
+ * Live `params` with the priced keys among `positions` laid over.
+ *
+ * Live rather than a job's snapshot for the priced keys not swept, which is what
+ * `repriceStudies` has always done (spec 004 FR-020): a tariff turned under an
+ * open study re-prices it at the tariff now showing. `positions` is a list of
+ * `[key, value]`; a shaping key among them is ignored, since its value is
+ * already in the run.
+ */
+function pricingOver(positions) {
+  const pricing = { ...params };
+  for (const [key, value] of positions) {
+    if (PRICED_KEYS.has(key)) pricing[key] = value;
+  }
+  return pricing;
+}
+
+/** The priced settings one position of a sweep is priced at: the swept key at `value`, a row's Y at the row's. */
+const pricingAt = (job, value) =>
+  pricingOver(sweptKeys(job).map((key) => [key, key === job.key ? value : job.snapshot[key]]));
+
+/**
+ * Re-price every measured position of the ground at the desk's priced settings.
+ *
+ * A spot height holds the readings it was landed with, so before this nothing
+ * re-priced E-02 at all: turning the gas price with a ground surveyed for cost
+ * re-lettered the bill and left every spot height at the old price (measured on
+ * `main`, specs/011-sweep-priced-controls/verify/README.md, T002). Each spot
+ * carries its run's meter basis, so this needs no cache entry and no run.
+ *
+ * A priced axis is taken at the spot's own position and every other priced key
+ * off live `params`, as a study's positions are. A spot that no longer prices
+ * becomes a gap carrying the bill's own reason and keeps its basis, so the rate
+ * returning stands it back up with no run (FR-015); a spot height with no
+ * reading is never built, since coverage would count it as measured.
+ */
+function repriceSurvey(key = null) {
+  if (!survey) return;
+  // Only the bill's readings carry a price, and a priced drag lands here every
+  // frame: a ground of temperatures has nothing to re-price, and a face the
+  // ground's readings do not list in `movedBy` (the grid intensity under a
+  // ground of cost) moves no figure on it. A selector is always re-priced,
+  // since it decides which faces reach the bill at all. A priced axis moved
+  // by hand re-prices nothing either: every spot takes that axis at its own
+  // position. It still redraws, for the stance mark.
+  if (!survey.quantities.some((quantity) => quantity.movedBy.size)) return;
+  const face = key === null ? null : controlFor(key).control;
+  if (face?.kind === 'scale') {
+    const isAxis = key === survey.x.key || key === survey.y.key;
+    if (isAxis || !survey.quantities.some((quantity) => quantity.movedBy.has(key))) {
+      renderSurveySoon();
+      return;
+    }
+  }
+  // A withdrawn axis is left priced as it stood; `renderSurvey` draws nothing
+  // while it stands, and the re-price that follows the face's return is at the
+  // desk as it then is.
+  if (surveyWithdrawn(survey)) {
+    renderSurveySoon();
+    return;
+  }
+  for (const point of [...survey.points.values()]) {
+    if (!point.basis) continue;
+    const pricing = pricingOver([
+      [survey.x.key, survey.x.positions[point.ix]],
+      [survey.y.key, survey.y.positions[point.iy]],
+    ]);
+    const readings = pricedReadings(point.readings, point.basis, pricing);
+    landPoint(survey, {
+      ix: point.ix,
+      iy: point.iy,
+      readings,
+      basis: point.basis,
+      // Asked only where the spot will land as a gap: it prices the bill a
+      // second time, and this runs for every point on every frame of a drag.
+      reason:
+        survey.readings[0].valueOf(readings) === null
+          ? unpricedReason(point.basis, pricing, survey.readings[0].quantity)
+          : null,
+      floorArea: point.basis.floorArea,
+      cacheKey: point.cacheKey,
+    });
+  }
+  renderSurveySoon();
+}
+
+/**
+ * The bill's own reason a reading could not be priced here, or null.
+ *
+ * The `Absent` rate on the first line left without a figure, which is exactly
+ * the sentence the bill letters beside its own em dash. Null for a reading the
+ * rates do not reach, where `landPoint`'s own sentence is the true one.
+ */
+function unpricedReason(basis, pricing, quantity) {
+  if (!quantity.priced) return null;
+  const priced = billFromBasis(basis, pricing);
+  const line = priced?.lines.find((candidate) => !Number.isFinite(candidate[quantity.priced]));
+  const rate = line && (quantity.priced === 'cost' ? line.costRate : line.carbonRate);
+  return rate?.reason ?? null;
+}
+
 function repriceStudies() {
   if (!studyScheduler) return;
-  studyScheduler.reprice((readings, basis) => {
-    const priced = billFromBasis(basis, params);
-    const landed = { bill: priced };
-    return Object.freeze({
-      ...readings,
-      eui: QUANTITY_BY_ID.eui.read(landed),
-      cost: QUANTITY_BY_ID.cost.read(landed),
-      carbon: QUANTITY_BY_ID.carbon.read(landed),
-    });
-  });
-  if (studyQuantity) redrawStudiesForQuantity({ queue: false });
+  studyScheduler.reprice((readings, basis) => pricedReadings(readings, basis, params));
+  if (studyQuantity) redrawStudiesForQuantity({ queue: false, requeueLifted: true });
 }
 
 /**
@@ -7708,6 +7852,21 @@ function sampleIdentity(job, value, carried) {
  * ground cut across two walls asks one channel twice, which `sampleRefusal`
  * answers on the first and is why there is no dedupe here to go stale.
  */
+/**
+ * The withdrawn sentence of the first priced key that is idle on `desk`, or null.
+ *
+ * One reading for the scheduler's per-position refusal, the survey's standing
+ * refusal and the axis chooser, so all three say what the console letters
+ * under the row.
+ */
+function withdrawnRefusal(keys, desk) {
+  for (const key of keys) {
+    const refusal = controlFor(key).control.withdrawnAt?.(desk);
+    if (refusal) return refusal;
+  }
+  return null;
+}
+
 const sweptChannels = (omits) => [omits].flat().map((key) => controlFor(key).channel.id);
 
 studyScheduler = createStudyScheduler({
@@ -7724,7 +7883,23 @@ studyScheduler = createStudyScheduler({
   // sweeps: a study's own control, and a survey row's two axes — the one it
   // steps along and the one the row stands at. `makeStudyJob` defaults it to
   // the key, so a study asks exactly what it asked before.
-  refuses: (job, value) => sampleRefusal(deskAt(job, value), job.patch, sweptChannels(job.omits)),
+  //
+  // Then a withdrawn priced face, asked of the job's own desk so the hook stays
+  // pure. An idle shaping control still reaches the document, so its curve is a
+  // measurement; `heatEfficiency` under a heat pump reaches nothing, not even
+  // the bill, and every position of it would be the same figure drawn as though
+  // the swept value had been used.
+  refuses: (job, value) => {
+    const desk = deskAt(job, value);
+    const refusal = sampleRefusal(desk, job.patch, sweptChannels(job.omits));
+    if (refusal) return refusal;
+    return withdrawnRefusal(sweptKeys(job), desk);
+  },
+  // Every position of a priced sweep shares one run, so it is priced here, at
+  // its own value, rather than read at whichever price the cache entry holds.
+  // A job sweeping only shaping keys takes the cache's readings untouched.
+  priceAt: (job, value, sample) =>
+    sweepsPriced(job) ? pricedReadings(sample.readings, sample.meterBasis, pricingAt(job, value)) : sample.readings,
   runSample: async ({ idf, epw }) => {
     const result = await studyPool.run({ idf, epw });
     // The counter counts engine runs, so cache hits — honestly — do not turn it.
@@ -7957,13 +8132,29 @@ function jobForStudy(key, { origin = 'refresh', n = SWEEP_SAMPLES, openingBasis 
   });
 }
 
+/**
+ * Why one study card stands refused rather than drawn, or null.
+ *
+ * A withdrawn priced face first, since it is a fact about the desk and the
+ * selector that fixes it sits above the row; then whatever refused the
+ * selected reading, the pairing refusal included. Both stand the card in its
+ * waiting state with the sentence and draw no curve: a heat pump under a study
+ * of seasonal efficiency would otherwise letter twenty-two refused positions
+ * as though a channel had gone out, and a price against demand a flat line.
+ * The card comes back, with no run, when the face or the reading does.
+ */
+function studyRefusal(key, snapshot, selected) {
+  return withdrawnRefusal([key], snapshot) ?? (selected.available ? null : `${selected.reason} ${selected.fix}`);
+}
+
 /** Queue one study of the desk as it stands right now. */
 function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES, openingBasis = null } = {}) {
   const job = jobForStudy(key, { origin, n, openingBasis });
   const quantity = quantityOf(job.quantity);
-  const offers = studyOffers(job.snapshot, job.patch, job.epw);
+  const offers = studyOffers(job.snapshot, job.patch, job.epw, key);
   const selected = offers.find((offer) => offer.quantity.id === quantity.id);
-  if (!selected.available) {
+  const refusal = studyRefusal(key, job.snapshot, selected);
+  if (refusal) {
     const prior = studies.get(key);
     const waiting = {
       ...(prior ?? {}),
@@ -7973,7 +8164,7 @@ function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES, openingBa
       wholeYear: job.annual && isWholeYear(job.snapshot.months),
       quantity: quantity.id,
       offers,
-      waiting: { quantity: quantity.label, missing: job.total, reason: `${selected.reason} ${selected.fix}` },
+      waiting: { quantity: quantity.label, missing: job.total, reason: refusal },
       curve: [],
       coarse: n === COARSE_SAMPLES,
     };
@@ -7986,22 +8177,26 @@ function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES, openingBa
   studyScheduler.enqueue(job, { front });
 }
 
-function redrawStudiesForQuantity({ queue = true } = {}) {
+function redrawStudiesForQuantity({ queue = true, requeueLifted = false } = {}) {
   if (!studyScheduler || !studyQuantity) return;
   const quantity = quantityOf(studyQuantity);
-  const offers = studyOffers();
+  // The desk's offers are the same for every card; only a priced key refuses
+  // readings of its own, so only those are asked again with the key.
+  const deskOffers = studyOffers();
   for (const [key, prior] of studies) {
+    const offers = PRICED_KEYS.has(key) ? studyOffers(params, patching(), epwText ?? null, key) : deskOffers;
     const job = jobForStudy(key, { n: prior.coarse ? COARSE_SAMPLES : SWEEP_SAMPLES });
     const cached = studyScheduler.curveFor(job);
     const selected = offers.find((offer) => offer.quantity.id === quantity.id);
-    const unavailable = !selected.available;
+    const refusal = studyRefusal(key, params, selected);
+    const unavailable = Boolean(refusal);
     const study = {
       ...prior,
       quantity: quantity.id,
       offers,
       curve: unavailable ? [] : cached.curve,
       waiting: unavailable
-        ? { quantity: quantity.label, missing: job.total, reason: `${selected.reason} ${selected.fix}` }
+        ? { quantity: quantity.label, missing: job.total, reason: refusal }
         : cached.missing
           ? { quantity: quantity.label, missing: cached.missing, reason: null }
           : null,
@@ -8009,7 +8204,19 @@ function redrawStudiesForQuantity({ queue = true } = {}) {
     };
     studies.set(key, study);
     desk.setStudy(key, study, { stale: false });
-    if (!unavailable && cached.missing && queue && autoOn() && !studyScheduler.has(key)) {
+    // A card that stood refused and no longer does is queued even on a re-price:
+    // the refusal lifts through a priced selector (the plant switched back from
+    // a heat pump), which moves no shape, so `refreshStudies` never sees it and
+    // a card refused before its first run would otherwise wait for nothing.
+    // A Stop still holds: the priced switch moved no rest shape, so the desk
+    // has not moved past it.
+    const lifted =
+      requeueLifted &&
+      !linkAttachPending &&
+      Boolean(prior.waiting?.reason) &&
+      !unavailable &&
+      studyStops.get(key) !== restShapeKey(key);
+    if (!unavailable && cached.missing && (queue || lifted) && autoOn() && !studyScheduler.has(key)) {
       studyScheduler.enqueue(job);
     }
   }
@@ -8093,7 +8300,7 @@ const partialStudy = (job) => ({
   // period that stops in May are not "the annual peak".
   wholeYear: job.annual && isWholeYear(job.snapshot.months),
   quantity: job.quantity,
-  offers: studyOffers(job.snapshot, job.patch, job.epw),
+  offers: studyOffers(job.snapshot, job.patch, job.epw, job.key),
   waiting: null,
   openingBasis: job.openingBasis,
   // Samples still in flight are simply absent, so the silhouette spans them
@@ -8262,8 +8469,15 @@ function onStudyUpdate(job, event) {
       ? 'annual'
       : 'run-period';
 
+  // A priced face withdrawn while its one run was in flight. The job's own
+  // snapshot still has the face live, so `refuses` passes every position, but
+  // `priceAt` prices at the live desk, where the swept value reaches nothing:
+  // drawn, the curve is the flat line `studyRefusal` exists to refuse. The run
+  // stays in the cache, so the face returning redraws it with no run.
+  const withdrawn = withdrawnRefusal([key], params);
+
   if (event === 'point') {
-    desk.setStudy(key, partialStudy(job), { stale: false });
+    if (!withdrawn) desk.setStudy(key, partialStudy(job), { stale: false });
     desk.setStudyProgress(key, { done: job.done, total: job.total });
     syncStudyStatus();
   } else if (event === 'done') {
@@ -8273,10 +8487,12 @@ function onStudyUpdate(job, event) {
       annual: job.annual,
       wholeYear: job.annual && isWholeYear(job.snapshot.months),
       quantity: job.quantity,
-      offers: studyOffers(job.snapshot, job.patch, job.epw),
-      waiting: null,
+      offers: studyOffers(job.snapshot, job.patch, job.epw, key),
+      waiting: withdrawn
+        ? { quantity: quantityOf(job.quantity).label, missing: job.total, reason: withdrawn }
+        : null,
       openingBasis: job.openingBasis,
-      curve: job.curve,
+      curve: withdrawn ? [] : job.curve,
       // A coarse first pass is a real study, drawn honestly at eleven points;
       // the flag is what tells the idle densify it is worth finishing.
       coarse: job.asked === COARSE_SAMPLES,
@@ -8292,7 +8508,22 @@ function onStudyUpdate(job, event) {
     // A refused position reached no engine, so it is not a run.
     const refused = job.curve.filter((point) => point?.refused).length;
     const note = refused ? `, ${refused} positions refused` : '';
-    syncStudyStatus(`Study drawn — ${job.total - refused} ${kind} runs across ${said}${note}.`, {
+    // Positions and runs are one count only while every position is its own
+    // building. A priced study's twenty-two positions price one run, and
+    // lettering them as twenty-two runs is a count of the wrong thing, so the
+    // runs are counted from the meter bases behind the points and both are said
+    // where the two differ (FR-027).
+    const positions = job.total - refused;
+    // Only a priced sweep can share runs between positions. A shaping study
+    // whose run failed, or was evicted from the cache, also counts fewer
+    // identities than positions, and is not "priced from" anything.
+    const runs = sweepsPriced(job)
+      ? new Set(job.curve.map((point) => point?.sample?.meterBasis).filter(Boolean)).size
+      : positions;
+    const counted = runs === positions
+      ? `${positions} ${kind} runs`
+      : `${positions} positions, priced from ${runs} ${kind} ${runs === 1 ? 'run' : 'runs'},`;
+    syncStudyStatus(`Study drawn — ${counted} across ${said}${note}.`, {
       quietly: job.origin !== 'manual',
     });
   } else if (event === 'failed') {
@@ -8360,7 +8591,20 @@ function surveyRefusal(sv) {
   const ids = new Set(sv.readings.map((reading) => reading.id));
   const refused = surveyReadingOffers(sv.stance, sv.patch, sv.epw)
     .find((offer) => ids.has(offer.reading.id) && !offer.available);
-  return refused?.reason ?? null;
+  return refused?.reason ?? surveyWithdrawn(sv);
+}
+
+/**
+ * A priced axis whose face the live desk has withdrawn, as its sentence, or null.
+ *
+ * Against live `params`, not the stance: the selector that withdraws a priced
+ * face is itself priced, so switching the plant under an open ground moves no
+ * shape and cancels nothing, and the ground has to be told some other way that
+ * one of its axes has stopped meaning anything (a heat pump under a ground of
+ * seasonal efficiency).
+ */
+function surveyWithdrawn(sv) {
+  return withdrawnRefusal([sv.x.key, sv.y.key], params);
 }
 
 /** The rest of the desk, excluding both axes — see `deskKey`'s note. */
@@ -8435,10 +8679,18 @@ function absorbSurveyRow(job) {
     // records the run rather than the old refusal.
     const already = survey.at(ix, iy);
     if (already instanceof SpotHeight) continue;
+    // A gap that kept its run could not be priced, and `repriceSurvey` owns it:
+    // this row's curve still holds the figure priced when the point landed, so
+    // re-landing it here would stand the gap up at a price the desk has left.
+    if (already?.basis) continue;
+    // The point's own readings, priced at its position by `priceAt`, and not
+    // `point.sample.readings`, which is the one run priced wherever it first
+    // landed: along a priced axis every spot height shares that run.
     landPoint(survey, {
       ix,
       iy,
-      sample: point.sample ?? null,
+      readings: point.readings,
+      basis: point.sample?.meterBasis ?? null,
       // Or `landPoint`'s own fallback would call it "The run did not complete"
       // over a position where no run was ever started. The distinction itself
       // is the scheduler's, at `land`.
@@ -8559,6 +8811,9 @@ function refineSurvey() {
   if (!survey || !studyScheduler || !autoOn() || gesture || linkAttachPending) return;
   if (surveyPass !== null) return;
   if (surveyStop === surveyRestShape(survey)) return;
+  // Every position along a withdrawn axis is refused, and a refused gap is
+  // never re-measured, so a densify now would fill the ground with holes.
+  if (surveyWithdrawn(survey)) return;
   const refined = makeSurvey({
     x: axisFor(survey.x.key, { from: survey.x.from, to: survey.x.to, count: FINE_GRID, stance: survey.stance }),
     y: axisFor(survey.y.key, { from: survey.y.from, to: survey.y.to, count: FINE_GRID, stance: survey.stance }),
@@ -8586,7 +8841,8 @@ function refineSurvey() {
     landPoint(refined, {
       ix,
       iy,
-      sample: point.readings ? { readings: point.readings } : null,
+      readings: point.readings ?? null,
+      basis: point.basis ?? null,
       reason: point.reason ?? null,
       floorArea: point.floorArea ?? null,
       cacheKey: point.cacheKey ?? null,
@@ -8615,6 +8871,16 @@ function openSurvey({ xKey, yKey, readingIds, extents = {}, count = COARSE_GRID 
     if (!reading) throw new Error(`no survey reading is declared as "${id}"`);
     return reading;
   });
+  // Asked before `makeSurvey`, which throws with the same sentence: from the
+  // chooser a reader can name the reading first and a priced axis second, and
+  // that is a refusal to letter in place, not an exception.
+  const pairing = pairingRefusal([xKey, yKey], readings);
+  if (pairing) {
+    closeSurvey();
+    surveyRefused = pairing;
+    renderSurvey();
+    return;
+  }
   const cut = makeSurvey({
     x: axisFor(xKey, { ...(extents[xKey] ?? {}), count, stance }),
     y: axisFor(yKey, { ...(extents[yKey] ?? {}), count, stance }),
@@ -8699,7 +8965,8 @@ function axisOffers(snapshot = params, patch = patching()) {
   const state = channelState(snapshot, patch);
   const offers = [];
   for (const channel of CHANNELS) {
-    if (channel.prices) continue; // nothing it owns reaches the IDF
+    // Priced channels are offered too (spec 011 FR-001): nothing they own
+    // reaches the IDF, so an axis along one prices the shaping axis's runs.
     const engaged = state.get(channel.id)?.engaged;
     for (const control of channel.controls) {
       const sides = control.kind === 'facade' ? control.sides : [null];
@@ -8719,11 +8986,19 @@ function axisOffers(snapshot = params, patch = patching()) {
       for (const side of sides) {
         const key = side ? side.key : control.key;
         const channelOut = !faceless && !engaged;
+        // A priced channel is never patched out, only blocked (Plant, with
+        // System out), and says so in its own sentence; a priced face whose
+        // selector has withdrawn it says what the console letters under it.
+        const withdrawn = control.withdrawnAt?.(snapshot);
         const reason = faceless
           ? null
           : !engaged
-            ? `Patch ${channel.name} in; with it out of the path this control reaches no object.`
-            : control.inert?.(snapshot)
+            ? channel.prices
+              ? state.get(channel.id).blocked
+              : `Patch ${channel.name} in; with it out of the path this control reaches no object.`
+            : withdrawn
+              ? withdrawn
+              : control.inert?.(snapshot)
               ? control.note
               : side && !side.reaches(snapshot)
                 ? side.reasonFor(snapshot)
@@ -8754,17 +9029,33 @@ function axisOffers(snapshot = params, patch = patching()) {
   return offers;
 }
 
-/** Every reading a ground may be surveyed for, against this desk's own offers. */
-function surveyReadingOffers(snapshot = params, patch = patching(), epw = epwText ?? null) {
+/**
+ * Every reading a ground may be surveyed for, against this desk's own offers.
+ *
+ * `axes` are the controls chosen so far. A reading a priced axis cannot move is
+ * greyed with the study card's own sentence and fix, after the desk's own
+ * refusals, so a reading that also wants a weather file asks for that first.
+ */
+function surveyReadingOffers(snapshot = params, patch = patching(), epw = epwText ?? null, axes = []) {
   const offers = studyOffers(snapshot, patch, epw);
   return SURVEY_READINGS.map((reading) => {
     const offer = offers.find((candidate) => candidate.quantity.id === reading.quantity.id);
+    const pairing = offer.available ? pairingRefusal(axes, [reading]) : null;
     return {
       reading,
-      available: offer.available,
-      reason: offer.available ? null : `${offer.reason} ${offer.fix}`,
+      available: offer.available && !pairing,
+      reason: !offer.available ? `${offer.reason} ${offer.fix}` : pairing,
     };
   });
+}
+
+/**
+ * The first refused pairing of these axes and readings, as its sentence and
+ * fix, or null. The study card letters exactly this, from the same two calls.
+ */
+function pairingRefusal(keys, readings) {
+  const refused = refusesSurveyPairing(keys.filter(Boolean), readings);
+  return refused && `${refused.sentence} ${pairingFix(refused.key)}`;
 }
 
 /**
@@ -9193,6 +9484,9 @@ function extentField(which) {
  * the selection, or the desk the offers are measured against.
  */
 let chooserDrawn = null; // { choice, standing } as last drawn
+const PRICED_SELECTORS = Object.freeze(
+  [...PRICED_KEYS].filter((key) => controlFor(key).control.kind === 'selector'),
+);
 
 function renderSurveyChoose() {
   const host = $('survey-choose');
@@ -9209,12 +9503,17 @@ function renderSurveyChoose() {
   // IP sheet, the same fault pointing the other way. It is the `setStudy`
   // identity guard again, one surface along: a cache whose key cannot see the
   // system will hold a converted string past the switch that invalidated it.
-  const standing = `${shapeKey(params)}|${Boolean(epwText)}|${system()}`;
+  // And the priced selectors, which `shapeKey` drops: switching the plant to a
+  // heat pump withdraws seasonal efficiency as an axis without moving a shape.
+  // The selectors and not the faces, whose values the chooser never letters,
+  // or every frame of a price drag would rebuild it.
+  const pricedNow = PRICED_SELECTORS.map((key) => params[key]).join('|');
+  const standing = `${shapeKey(params)}|${pricedNow}|${Boolean(epwText)}|${system()}`;
   if (chooserDrawn?.choice === surveyChoice && chooserDrawn.standing === standing) return;
   chooserDrawn = { choice: surveyChoice, standing };
   host.textContent = '';
   const axes = axisOffers();
-  const readings = surveyReadingOffers();
+  const readings = surveyReadingOffers(params, patching(), epwText ?? null, [surveyChoice.x, surveyChoice.y]);
   const named = (key) => (key ? labelFor(key) : '');
 
   const axisOptions = (other) =>
@@ -9926,7 +10225,7 @@ function surveyAriaLabel(sv) {
   return (
     `${sv.readings.map((reading) => reading.label).join(' and ')} over ${labelFor(sv.x.key)} and ` +
     `${labelFor(sv.y.key)}, on a ${sv.density} ground with ${coverage.measured} of ${coverage.wanted} ` +
-    'positions measured. Contours are drawn between measured points and carry no figure.'
+    `positions measured${coverage.fromRuns}. Contours are drawn between measured points and carry no figure.`
   );
 }
 
@@ -9945,6 +10244,13 @@ function surveyAriaLabel(sv) {
  */
 function standOn(sv, spot) {
   if (!(spot && spot.readings)) return;
+  // A ground standing refused says why rather than moving the desk onto an
+  // axis that means nothing as the desk is set.
+  const withdrawn = surveyWithdrawn(sv);
+  if (withdrawn) {
+    surveySay(withdrawn);
+    return;
+  }
   const already =
     params[sv.x.key] === spot.x && params[sv.y.key] === spot.y;
   if (already) return;
@@ -10257,8 +10563,17 @@ function renderCoverage(sv) {
     el('b', null, `${coverage.measured} of ${coverage.wanted}`),
     document.createTextNode(' positions measured'),
   );
-  if (coverage.gaps) {
-    host.append(document.createTextNode(` · ${coverage.gaps} could not be run`));
+  // Along a priced axis several positions price one run, so the positions are
+  // not a count of runs, and the runs are said beside them wherever the two
+  // differ (FR-027).
+  if (coverage.fromRuns) host.append(document.createTextNode(coverage.fromRuns));
+  // A gap that kept its run could not be priced, which is not a run that
+  // failed, and a tariff that returns stands it back up.
+  if (coverage.gaps - coverage.unpriced) {
+    host.append(document.createTextNode(` · ${coverage.gaps - coverage.unpriced} could not be run`));
+  }
+  if (coverage.unpriced) {
+    host.append(document.createTextNode(` · ${coverage.unpriced} could not be priced`));
   }
   if (coverage.unsurveyed) {
     host.append(el('span', 'loose', ` · ${coverage.unsurveyed} not yet measured`));
@@ -10326,7 +10641,7 @@ function renderSurveyFinding(sv) {
   const host = $('survey-finding');
   if (!coverage.measured) {
     host.textContent = coverage.gaps
-      ? `Nothing on this ground could be measured: all ${coverage.gaps} runs failed. There is no relief to draw, and none is drawn.`
+      ? `Nothing on this ground could be measured: all ${coverage.gaps} positions failed. There is no relief to draw, and none is drawn.`
       : '';
     return;
   }
@@ -10784,6 +11099,11 @@ function letItFall() {
 
 function fallOnce() {
   if (!falling || !survey) return;
+  const withdrawn = surveyWithdrawn(survey);
+  if (withdrawn) {
+    stopFalling(withdrawn);
+    return;
+  }
   const at = survey.positionOf(params);
   const next = fallStep(survey, at, { visited: falling.visited });
   if (!next || next.stopped) {
@@ -11098,9 +11418,15 @@ function renderSurvey() {
   section.hidden = false;
   renderSurveyChoose();
 
+  // A ground whose priced axis the desk has withdrawn stands refused in place,
+  // with every measured point kept: the plant switched back brings it back
+  // with no run. Asked on every draw rather than remembered, so there is no
+  // flag to forget to clear.
   const refusal = $('survey-refusal');
-  refusal.hidden = !surveyRefused;
-  if (surveyRefused) refusal.textContent = surveyRefused;
+  const withdrawn = survey ? surveyWithdrawn(survey) : null;
+  const standing = surveyRefused ?? withdrawn;
+  refusal.hidden = !standing;
+  if (standing) refusal.textContent = standing;
 
   const drawing = $('survey-drawing');
   $('survey-fall').hidden = !survey;
@@ -11116,8 +11442,8 @@ function renderSurvey() {
     $('survey-spots-scope').textContent = '';
     $('survey-axes').textContent = '';
     $('survey-lede').textContent =
-      'Choose two controls and a reading, and the sheet surveys that reading over that ground — one real ' +
-      'EnergyPlus run at every position. Contours and relief are drawn between the runs and carry no figure ' +
+      'Choose two controls and a reading, and the sheet surveys that reading over that ground — a real ' +
+      'EnergyPlus run behind every position. Contours and relief are drawn between the runs and carry no figure ' +
       'of their own. Standing on a measured point moves the whole of E-01 to that design.';
     for (const [id, text] of [['s-ground', '—'], ['s-reading', '—'], ['s-runs', '—']]) {
       $(id).textContent = text;
@@ -11125,6 +11451,17 @@ function renderSurvey() {
     return;
   }
 
+  // Standing refused, the ground draws nothing: every figure on it would be
+  // priced at a face the desk has withdrawn, which is the same figure at every
+  // position of that axis. The coverage stays, because the measured points
+  // are kept, and the ground is drawn again when the face returns.
+  if (withdrawn) {
+    drawing.hidden = true;
+    for (const id of ['survey-finding', 'survey-spot', 'survey-spots', 'survey-spots-scope']) $(id).textContent = '';
+    renderPull();
+    renderCoverage(survey);
+    return;
+  }
   drawing.hidden = false;
   const coverage = coverageOf(survey);
   $('survey-axes').textContent =
@@ -11132,7 +11469,9 @@ function renderSurvey() {
   $('survey-lede').textContent =
     `${survey.readings.map((reading) => reading.label).join(' and ')} over ` +
     `${phraseFor(survey.x.key)} and ${phraseFor(survey.y.key)}, cut through the desk as it stands. ` +
-    `Every figure below is a completed ${survey.annual ? 'annual' : 'design-day'} run.`;
+    `Every figure below is a completed ${survey.annual ? 'annual' : 'design-day'} run` +
+    // Still true along a priced axis, and only if it says the rest (FR-028).
+    ([survey.x, survey.y].some((axis) => PRICED_KEYS.has(axis.key)) ? ', priced at its position.' : '.');
 
   drawGround(survey);
   renderGroundKey(survey);
@@ -11152,8 +11491,11 @@ function renderSurvey() {
   $('s-ground-sub').textContent = `${coverage.wanted} positions asked for`;
   $('s-reading').textContent = survey.readings.map((reading) => reading.label).join(' + ');
   $('s-reading-sub').textContent = survey.readings.map((reading) => reading.unitNow).join(' · ');
-  $('s-runs').textContent = String(coverage.measured);
-  $('s-runs-sub').textContent = coverage.gaps ? `${coverage.gaps} could not be run` : 'Completed simulations';
+  // Runs, not positions: along a priced axis the two part company.
+  $('s-runs').textContent = String(coverage.runs);
+  $('s-runs-sub').textContent = coverage.runs !== coverage.measured
+    ? `Priced at ${coverage.measured} positions`
+    : coverage.gaps ? `${coverage.gaps} could not be run` : 'Completed simulations';
 }
 
 /**
@@ -11180,6 +11522,16 @@ function refreshSurvey() {
   // nothing to do: it only rebuilds when the desk's own shape key has moved.
   renderSurveyChoose();
   if (!survey || !studyScheduler || !autoOn() || linkAttachPending) return;
+  // A ground whose priced axis is withdrawn stands refused with its points and
+  // is neither re-cut nor refined. Re-cut, `openSurvey` would take the withdrawn
+  // sentence for a ground that cannot be cut and close the survey, so a shaping
+  // drag under a heat pump threw away every measured point, and switching back
+  // to a boiler brought nothing back. The release of the switch back is a
+  // gesture too, so it lands here with the face live and re-cuts then.
+  if (surveyWithdrawn(survey)) {
+    renderSurvey();
+    return;
+  }
   const rest = surveyRestShape(survey);
   if (surveyRestShape(survey, survey.stance, survey.patch) === rest) {
     // The ground still describes this desk. Only the stance mark moves.

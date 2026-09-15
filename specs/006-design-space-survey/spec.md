@@ -258,12 +258,14 @@ The schedule is folded shut by default, because open it is some five hundred lin
 - **FR-002**: The readings offered MUST be the roster the studies already offer, with the same availability rules, the same refusals and the same reasons, so the sheet has one vocabulary of outcomes rather than two.
 - **FR-003**: Any control the studies can sweep MUST be available as an axis, and any control they cannot MUST be refused with the same sentence they refuse it with.
 - **FR-004**: Controls declared on priced channels MUST NOT be axes, because nothing they own reaches the model.
+  - *Superseded by [spec 011 FR-007](../011-sweep-priced-controls/spec.md): priced controls are axes, refused only by pairing (FR-003) or a withdrawn face (FR-005).*
 - **FR-005**: The ground MUST be cut through the desk's current stance, so that the point the reader already understands is on the drawing.
 - **FR-006**: The extent of each axis MUST default to the control's full declared range and MUST be narrowable by the reader, with the extent stated.
 
 ### Measuring
 
 - **FR-007**: Every point drawn as measured MUST correspond to one completed EnergyPlus run of a document built by the same applier the live desk uses.
+  - *Amended by [spec 011 FR-026](../011-sweep-priced-controls/spec.md): several points may share one run, priced at each position, only along a priced axis.*
 - **FR-008**: Positions MUST be snapped to each control's own step grid, so no measured design is one the desk itself could not hold.
 - **FR-009**: Measurement MUST be progressive: a coarse grid first, refining afterwards, with the relief legible from the first complete coarse pass.
 - **FR-010**: Refinement MUST prefer ground that is steep, ground that separates two very different readings, and ground the reader is working near, over ground that is already flat and well described.
