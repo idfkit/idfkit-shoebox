@@ -268,11 +268,18 @@ jobs:
             echo "Opened automatically by idfkit-js's notify-downstream.yml. It never merges itself."
           } > "$RUNNER_TEMP/body.md"
 
+      # `add-paths` names what an adoption changes, because the default stages the whole workspace
+      # and the register checkout above lives inside it. Unnamed, `governance/` went in as a gitlink
+      # with no .gitmodules entry (#79), and every later actions/checkout of that branch died with
+      # "No url found for submodule path 'governance'".
       - name: Open the pull request
         id: pr
         if: inputs.decline_reason == ''
         uses: peter-evans/create-pull-request@v7
         with:
+          add-paths: |
+            package.json
+            package-lock.json
           branch: bot/bump-idfkit-js-${{ steps.ver.outputs.version }}
           title: 'Adopt idfkit-js ${{ steps.ver.outputs.version }}'
           commit-message: 'Adopt idfkit-js ${{ steps.ver.outputs.version }}'
