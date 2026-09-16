@@ -111,7 +111,7 @@ A reader sends a colleague a link to a survey or a study they cut against the st
 - **Improving direction**: each newly offered reading declares which way is better (fewer exceedance hours, fewer hot nights), so the survey's descent and its improving region behave for the stricter category exactly as they do for the existing one, rather than refusing them.
 - **The stricter category's reading on a ground where every measured design fails** (likely, since it is the stricter line): the survey states which side of the line the whole ground is on, as it already does for any threshold that crosses no measured ground.
 - **A reader switches category on ground already surveyed**: the switch must not invalidate or discard runs that have already been made, since both categories are read from the same simulated period.
-- **Both categories plotted at once**: not offered. A reader chooses one reading at a time, as they already do for every other reading on the roster.
+- **Both categories plotted at once**: a design space survey already carries an optional second reading, whose figures are lettered under the first, so a reader may put the two categories side by side on one ground. That falls out of the existing arrangement and is neither added nor prevented here. The published threshold line goes on following the first reading only, as it already does for any second reading.
 - **Copy and layout at 390 px**: two more entries in every reading chooser, each carrying a category in its name, must remain readable at phone width without hover and without horizontal scrolling.
 
 ## Requirements *(mandatory)*
