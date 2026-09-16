@@ -9845,8 +9845,6 @@ function groundLinesFor(sv, lattice) {
   return new GroundLines({ set, bands: groundBands(lattice, set) });
 }
 
-
-
 /**
  * Draw the ground.
  *
