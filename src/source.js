@@ -285,7 +285,12 @@ const BASE64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012345678
  * inside a UTF-8 multi-byte sequence, whose trailing bytes are all ≥ 0x80.
  *
  * **Measured**: SHA-256 over a 1.66 MiB EPW is 4.75 ms, median of 25 passes
- * under Node 22. Paid once per attach and nowhere near the solve path.
+ * under Node 22 (research R5), re-measured here at 4.57 ms. The byte pass in
+ * front of it costs about half as much again — 7.5 ms for the scan and the rest
+ * for the buffer it fills — so the whole call is about 20 ms on a file that
+ * size. Which is a lot next to the 50 ms a warm design day solves in, and
+ * completely irrelevant: it is paid once, at the moment the reader picks a file
+ * out of a dialog, and never again. Nothing on the solve path calls this.
  *
  * Sixteen characters is 96 bits, far past any collision a human-scale set of
  * weather files could produce, and short enough to sit in a link beside
@@ -413,9 +418,9 @@ export function sourceFromStation(station, files, label) {
  * the engine reads it the same way. At the 198.8 bytes a record measured over
  * the 1,741,631-byte, 8,760-record file in research R5, a whole year fits under
  * 32 MiB at up to nineteen records an hour — so every hourly, half-hourly,
- * 15-minute and 10-minute file is admitted with room to spare.
+ * 15-minute, 10-minute and 5-minute file is admitted with room to spare.
  *
- * What it excludes is deliberate: a one-minute file is about 104 MiB, and by the
+ * What it excludes is deliberate: a one-minute file is about 100 MiB, and by the
  * time it has been decoded to a UTF-16 string and split into 525,600 line
  * strings it is most of a gigabyte of a tab that is meant to stay interactive
  * during a drag. Nobody assesses a building against one. The refusal names the

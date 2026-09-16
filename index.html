@@ -731,6 +731,56 @@
         color: var(--ink-3);
       }
       .site-note.bad { color: var(--redline); }
+      /* The reader's own file, under the picker's foot. A second sheet laid on
+         the same board, so it takes the panel's own surface and a hairline rule
+         to separate it — not a box, not a shadow, nothing that reads as a
+         dialog over the list above it. */
+      .site-own {
+        padding: 10px 13px 12px;
+        border-top: 1px solid var(--rule);
+        display: grid;
+        gap: 7px;
+      }
+      .site-own[hidden] { display: none; }
+      .site-own-label {
+        font: 500 11px/1.3 var(--mono);
+        color: var(--ink-2);
+      }
+      /* An input receives content, so it is darker than what surrounds it — the
+         inset rule, which is what says "put something here" without a heavy
+         border. The button half is the platform's; only its frame is ours. */
+      .site-file {
+        width: 100%;
+        font: 400 10.5px/1.3 var(--mono);
+        color: var(--ink-2);
+        background: var(--inset);
+        border: 1px solid var(--rule);
+        border-radius: 0;
+        padding: 6px;
+      }
+      .site-file:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+      .site-file::file-selector-button {
+        font: 500 10.5px/1.3 var(--mono);
+        color: var(--ink-2);
+        background: var(--vellum);
+        border: 1px solid var(--rule);
+        border-radius: 0;
+        padding: 4px 9px;
+        margin-right: 9px;
+      }
+      .site-file::file-selector-button:hover { border-color: var(--rule-firm); color: var(--redline); }
+      .site-own-note,
+      .site-own-kept {
+        margin: 0;
+        font: 400 10.5px/1.35 var(--mono);
+        color: var(--ink-ghost);
+      }
+      /* What the browser is holding, and how to make it stop. Never folded: a
+         reader has to be able to see that a file of theirs is being kept without
+         going looking for it. */
+      .site-own-kept { color: var(--ink-3); }
+      .site-own-kept[hidden] { display: none; }
+
       .site-foot {
         display: flex;
         justify-content: space-between;
@@ -5384,6 +5434,32 @@
                 <div class="site-foot" id="site-foot">
                   <button type="button" class="link" id="site-near">Near me</button>
                   <span id="site-source">climate.onebuilding.org</span>
+                </div>
+                <!-- The second way in. A licensed file — CIBSE's DSY1, which a
+                     TM59 assessment is required to use — is bought and lands on
+                     the reader's own machine, so the picker above can never
+                     reach it. Read here, in this page, and never sent anywhere:
+                     that is not a limitation to work around, it is the only
+                     arrangement under which a licensed file can be used at all.
+
+                     The input is the platform's own, not a styled stand-in: a
+                     file dialog is one of the few things a page genuinely
+                     cannot build, and every keyboard and screen reader already
+                     knows this one. -->
+                <div class="site-own" id="site-own">
+                  <label class="site-own-label" for="site-file">Or attach a weather file of your own</label>
+                  <input
+                    class="site-file"
+                    id="site-file"
+                    type="file"
+                    accept=".epw,.ddy,.zip"
+                    multiple
+                  />
+                  <p class="site-own-note" id="site-own-note">
+                    An EPW, with a DDY beside it if you have one, or the ZIP they came in.
+                    It is read on this machine and never uploaded.
+                  </p>
+                  <p class="site-own-kept" id="site-own-kept" hidden></p>
                 </div>
               </div>
             </div>

@@ -1,10 +1,13 @@
 import { createEnergyPlus } from '@idfkit/engine';
 import { httpSource, SchemaBundle, writeIdf } from '@idfkit/core';
 import {
+  WALLS,
+  WINDOW_CONSTRUCTION,
   applyModel,
   boundaryKeyFor,
   buildModel,
   channelState,
+  clearDesignDays,
   designConditionsFrom,
   designDayDatums,
   geometryFacts,
@@ -14,10 +17,9 @@ import {
   sampleRefusal,
   setAnnual,
   setDesignConditions,
+  setSiteLocation,
   shadeGeometry,
   surfaceGeometry,
-  WALLS,
-  WINDOW_CONSTRUCTION,
   windowGeometry,
 } from './model.js';
 import {
@@ -104,6 +106,7 @@ import {
   searchSites,
   siteName,
   siteRegion,
+  unzip,
   weatherFor,
 } from './weather.js';
 import {
@@ -115,6 +118,7 @@ import {
   readLocation,
   siteLocationValues,
 } from './epw.js';
+import { sourceFromFile, sourceFromStation } from './source.js';
 import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
 import { mountChangelog } from './changelog.js';
 import CHANGELOG_SOURCE from '../CHANGELOG.md?raw';
@@ -1468,8 +1472,56 @@ const BILL_COLUMNS = Object.freeze([
 // The sheet ships with Denver's two design days, so it ships with Colorado's
 // tariffs. This is not a default standing in for a missing answer -- it is the
 // site the stock model actually describes, and it is replaced whole the moment
-// a station is picked.
-let station = { country: 'USA', state: 'CO' };
+// a climate is attached.
+//
+// A place rather than a station, because a station is no longer the only thing
+// that can say where the building is: a weather file the reader attached says
+// it in the same two fields, off its own LOCATION record, and `resolveRates`
+// takes whichever of them is on the desk without being told which it is.
+const SHIPPED_PLACE = Object.freeze({ country: 'USA', region: 'CO' });
+
+/**
+ * The climate on the desk: a picked station, an attached file, or nothing yet.
+ *
+ * One at a time, always. This used to be `station`, and the rename is most of
+ * the feature in one variable -- nearly everything that asked "which station"
+ * was really asking "which climate", and only the link token and the picker's
+ * own list ever wanted the station itself.
+ */
+let weatherSource = null;
+
+/**
+ * The index row the picker took, held only for the link token.
+ *
+ * A station is named in a link by its WMO number and its 15-year window, and
+ * `flavorWindow` reads onebuilding's archive-name grammar — which `weather.js`
+ * keeps exactly one copy of and which `source.js` cannot import, since that
+ * module has to stay callable from a Node harness. So the row stays here,
+ * beside the token it is the only input to, rather than being re-derived from a
+ * URL in a second place.
+ *
+ * Null whenever the desk is on a file, which is what keeps the two tokens from
+ * both claiming a desk that has one climate.
+ */
+let pickedStation = null;
+
+/** Where the building is, for anything that prices or letters a place. */
+const deskPlace = () => weatherSource?.place ?? SHIPPED_PLACE;
+
+/** The name the sheet calls the attached climate by. */
+const sourceName = (source) => source.place.city ?? source.label;
+
+/**
+ * `Denver Centennial, CO` -- the title block's location line.
+ *
+ * Read off the source's place rather than off the picker's row, so a file and a
+ * station letter the same way, and a qualifier the file does not declare is
+ * absent rather than an empty comma.
+ */
+const placeLine = (source) =>
+  [sourceName(source), [source.place.region, source.place.country].filter(Boolean).join(', ')]
+    .filter(Boolean)
+    .join(', ');
 let bill = null;
 let pinned = null; // { bill, label } — a scheme held to be measured against
 let billGhost = null; // the bill as it stood when this gesture began
@@ -1527,7 +1579,7 @@ let lastBundle = null;
 let lastEngineErrors = [];
 
 /** The published card with the Tariff strip's assumptions written over it. */
-const rateCard = () => assume(resolveRates(station), params);
+const rateCard = () => assume(resolveRates(deskPlace()), params);
 
 /**
  * Price the meters of one solved run.
@@ -3728,18 +3780,68 @@ let sitePicked = null;
 
 function renderSiteSub() {
   if (!sitePicked) return;
-  const { station, label } = sitePicked;
+  const source = sitePicked;
+  // `climateZone` and `climateDescription` split one published string, and the
+  // grammar for that split lives in `weather.js` and stays there: the source
+  // carries the label whole. An attached file carries null, because a file
+  // declares no ASHRAE zone and there is nothing to infer one from -- so the
+  // chip letters the em dash `climateZone` already returns for a station whose
+  // index row is blank, which is the same fact arriving by another road.
+  const zoned = { ashraeClimateZone: source.climateZone ?? '' };
   const zone = document.createElement('span');
   zone.className = 'cz';
-  zone.textContent = climateZone(station);
+  zone.textContent = climateZone(zoned);
   $('site-sub').replaceChildren(
     zone,
+    // A space, so the chip and the line beside it are two things read aloud as
+    // two things. The chip's padding separates them on screen; a screen reader
+    // gets the markup, where `5A` and `Cool, Humid` were running together.
+    document.createTextNode(' '),
     document.createTextNode(
-      [climateDescription(station), `TMYx ${label}`, siteElevation(station.elevation)]
+      [
+        climateDescription(zoned),
+        // A station is one of five samples of a site and the flavour is which;
+        // a file is itself, and its name is the only honest label for it.
+        source.kind === 'station' ? `TMYx ${source.label}` : source.label,
+        // Measured off the file's own hours or published by the index, and the
+        // reading says which -- a figure this page computed and a figure it is
+        // repeating are not the same claim.
+        sourceDegreeDays(source),
+        siteElevation(source.place.elevation),
+      ]
         .filter(Boolean)
         .join(' · '),
     ),
   );
+}
+
+/**
+ * The degree days under the picker, and where they came from.
+ *
+ * The station index publishes HDD18 and CDD10 per station; an attached file
+ * publishes nothing, so they are summed here out of the 365 daily means the
+ * comfort line already pays for. Two different provenances lettered identically
+ * would be the page claiming, of a figure it computed, the authority of one
+ * somebody else published — so the measured ones say so, in the word.
+ *
+ * The bases stay Celsius in both unit systems for the reason `weather.js` gives
+ * where it letters a station's: HDD18 is a published statistic on an 18 °C base,
+ * and converting the count while the label still read 18 would be arithmetic
+ * nobody can check.
+ */
+function sourceDegreeDays(source) {
+  const days = source.degreeDays;
+  if (!days) return '';
+  // Rounded, because a degree day is a count of degree-days and the index
+  // publishes it as one. Summed over 365 daily means it comes out with a
+  // fraction on it -- `2,812.204 HDD18` is four digits of precision this
+  // arithmetic does not have, beside a published figure written as `2,801`.
+  const said = [
+    Number.isFinite(days.hdd18) ? `${Math.round(days.hdd18).toLocaleString('en-US')} HDD18` : null,
+    Number.isFinite(days.cdd10) ? `${Math.round(days.cdd10).toLocaleString('en-US')} CDD10` : null,
+  ].filter(Boolean);
+  if (!said.length) return '';
+  return `${said.join(' · ')} · °C bases${days.measured ? ', measured from this file' : ''}`;
 }
 
 const shelfStore = (() => {
@@ -4474,7 +4576,46 @@ async function attach(row, pick, sizing) {
     return refuse('cannot be used', error.message);
   }
 
-  sitePicked = { station: picked, label: pick.label };
+  return attachClimate(sourceFromStation(picked, files, pick.label), {
+    sizing,
+    studyContext,
+    conditions,
+    station: picked,
+  });
+}
+
+/**
+ * Put a climate on the desk: the one path, whatever supplied it.
+ *
+ * A station and a file arrive completely differently — one is a few hundred
+ * kilobytes through a proxy with a spinner over it, the other is a dialog and a
+ * `FileReader` — and from the moment the bytes exist they are the same event,
+ * so they share one path from here. That is not tidiness. Eight things happen
+ * below and six of them are clears, each carrying the mismatch it exists to
+ * prevent: curves sampled under the departed weather, spot heights that are
+ * runs against it, 365 daily means of one city's year, a bill pricing one
+ * city's energy at another's tariffs, a target read in Denver answering for a
+ * building in Bavaria. A second attach path would have to repeat all six, and
+ * the failure mode of getting one of them wrong is not a crash — it is a
+ * reading that looks right under the wrong title block.
+ *
+ * `conditions` is the parsed design conditions where the source came with a
+ * DDY, and null where it did not. A file attached without one leaves the desk
+ * with **no design days at all** rather than Denver's: `model.js:2329` records
+ * that nothing here is autosized, so a document carrying none is complete, and
+ * the alternative is the exact lie in ink the picker's own DDY refusal exists
+ * to prevent.
+ */
+function attachClimate(source, { sizing = 'No', studyContext = null, conditions = null, station = null } = {}) {
+  sitePicked = source;
+  // The field, from here rather than from the picker, because a file never goes
+  // through the picker at all and a field still reading "Choose a weather
+  // location" over an attached year is the sheet not knowing what it is solving.
+  site.classList.add('picked');
+  $('site-main').textContent = placeLine(source);
+  // Set together, so a desk cannot be on a file while the link still names the
+  // station it was on a moment ago.
+  pickedStation = station;
   renderSiteSub();
 
   // Studies in flight were sampling the outgoing climate — their captured
@@ -4506,14 +4647,33 @@ async function attach(row, pick, sizing) {
 
   // The whole climate arrives together: the year on the EPW, the design days
   // and the location on the DDY. Denver's come out, this station's go in.
-  epwText = files.epw;
-  setDesignConditions(model, conditions);
-  desk?.setWeatherHolidays(weatherHolidays(files.epw), parseEpwStartDay(files.epw));
+  epwText = source.epw;
+  if (conditions) {
+    setDesignConditions(model, conditions);
+  } else {
+    // No DDY came with this file, so there are no design conditions to write —
+    // and Denver's cannot be left standing under this file's title block, which
+    // is the lie in ink the picker's own DDY refusal exists to prevent. The
+    // place still comes off the file: `Site:Location` is the one thing an EPW's
+    // own LOCATION record can supply without a design day anywhere near it.
+    //
+    // The design days go rather than being zeroed, on `applyModel`'s own rule
+    // that bypass removes and does not zero, and the desk runs the file's year
+    // alone. `sizingPeriods` is committed to 'No' below, and the Run strip
+    // withdraws the choice with its reason rather than offering a run that
+    // would reach the engine with nothing to size on.
+    clearDesignDays(model);
+    setSiteLocation(model, {
+      name: source.place.city ?? source.label,
+      values: siteLocationValues(source.place),
+    });
+  }
+  desk?.setWeatherHolidays(weatherHolidays(source.epw), parseEpwStartDay(source.epw));
 
   // The drawing follows the weather, and reads it off the model exactly as it
   // did for Denver: the datum lines from the design days, the co-ordinates from
   // `Site:Location`. Only the place name comes from the picker.
-  $('t-location').textContent = `${siteName(picked)}, ${siteRegion(picked)}`;
+  $('t-location').textContent = placeLine(source);
   $('t-site').textContent = siteLine(modelFacts(model));
   DATUMS = designDayDatums(model);
 
@@ -4531,7 +4691,7 @@ async function attach(row, pick, sizing) {
   // prevent, in another column. A pinned scheme goes too: one priced in
   // Colorado cannot be differenced against one priced in Bavaria, in another
   // currency and against another grid.
-  station = picked;
+  weatherSource = source;
   pinned = null;
   bill = null;
   lastRun = null;
@@ -4598,8 +4758,14 @@ async function attach(row, pick, sizing) {
   statusEl.className = 'status';
   statusEl.textContent =
     sizing === 'Yes'
-      ? `${siteName(picked)} attached, design conditions and all — the run covers ${hours} hours, sizing days included.`
-      : `${siteName(picked)} attached, design conditions and all — the run covers ${hours} hours, with the sizing days skipped.`;
+      ? `${sourceName(source)} attached, design conditions and all — the run covers ${hours} hours, sizing days included.`
+      : conditions
+        ? `${sourceName(source)} attached, design conditions and all — the run covers ${hours} hours, with the sizing days skipped.`
+        // Said plainly rather than left for the reader to notice the datum lines
+        // missing: a file with no DDY beside it is a complete climate for a
+        // year and no climate at all for a design day, and those are two
+        // different things to know about the desk you are now on.
+        : `${sourceName(source)} attached — the run covers ${hours} hours. No DDY came with it, so the desk has no design days.`;
   syncAuto();
   markStale();
   // Filed on the attach itself, wherever it came from: a reader arriving on a
@@ -4609,6 +4775,198 @@ async function attach(row, pick, sizing) {
   return true;
 }
 
+/* ── a weather file the reader holds ──────────────────────────────────────
+ *
+ * The picker above reaches climate.onebuilding.org, and that is every file this
+ * page can fetch for itself. It is not every file a reader needs: CIBSE
+ * licenses its weather data, and WFR:2026 requires a TM59 assessment to use the
+ * DSY1 file for the site — bought, and sitting on the buyer's own machine. So
+ * the one part of that method this page could actually honour was the one part
+ * it withheld.
+ *
+ * Read here, in this page, and handed to the same WebAssembly engine as
+ * everything else. **No byte of it reaches the network**, which is not a
+ * constraint being worked around but the only arrangement under which a
+ * licensed file can be used at all: there is nowhere to upload it to, and there
+ * is not going to be.
+ */
+
+/** What a file's extension says it is, lowercased and without its dot. */
+const extensionOf = (name) => (name.match(/\.([^.]+)$/)?.[1] ?? '').toLowerCase();
+
+const asText = (bytes) => new TextDecoder().decode(bytes);
+
+/**
+ * The EPW and the DDY out of whatever the reader picked.
+ *
+ * Three shapes reach here and all three are ordinary: a bare `.epw`; an `.epw`
+ * and a `.ddy` chosen together; or the `.zip` a purchase arrives in, which is
+ * what the picker's own archives are and so goes through `unzip` from
+ * `@idfkit/weather` — the same reader, not a second one.
+ *
+ * An archive holding several weather files is not guessed at. The reader is
+ * told which ones are in it and asked to pick, because choosing for them would
+ * be choosing which year their assessment runs against.
+ *
+ * Throws naming what was wrong, and the caller refuses the whole attach with
+ * that sentence.
+ */
+async function filesFrom(chosen) {
+  const named = new Map();
+  for (const file of chosen) {
+    const kind = extensionOf(file.name);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (kind === 'zip') {
+      let members;
+      try {
+        members = await unzip(bytes);
+      } catch (error) {
+        throw new Error(`${file.name} could not be unpacked: ${error.message}`);
+      }
+      for (const [member, body] of members) {
+        // A ZIP carries directory entries and macOS resource forks beside the
+        // files somebody meant to send; neither is a weather file and neither
+        // is worth reporting as one.
+        if (member.endsWith('/') || member.includes('__MACOSX/')) continue;
+        const inner = extensionOf(member);
+        if (inner === 'epw' || inner === 'ddy') named.set(member.split('/').pop(), { bytes: body, kind: inner });
+      }
+      continue;
+    }
+    if (kind === 'epw' || kind === 'ddy') {
+      named.set(file.name, { bytes, kind });
+      continue;
+    }
+    throw new Error(
+      `${file.name} is not a weather file: this reads an EPW, a DDY beside it, or the ZIP they came in`,
+    );
+  }
+
+  const epws = [...named].filter(([, m]) => m.kind === 'epw');
+  const ddys = [...named].filter(([, m]) => m.kind === 'ddy');
+  if (!epws.length) {
+    throw new Error('there is no EPW in what you chose, and the EPW is the year the engine is run on');
+  }
+  if (epws.length > 1) {
+    throw new Error(
+      `that holds ${epws.length} weather files — ${epws.map(([n]) => n).join(', ')} — and which year this ` +
+        'building is assessed against is not a choice this page is going to make for you. Attach one of them',
+    );
+  }
+  if (ddys.length > 1) {
+    throw new Error(
+      `that holds ${ddys.length} DDY files — ${ddys.map(([n]) => n).join(', ')} — and only one set of design ` +
+        'conditions can describe this site. Attach the one you mean',
+    );
+  }
+  const [name, epw] = epws[0];
+  return { name, bytes: epw.bytes, ddyText: ddys.length ? asText(ddys[0][1].bytes) : null };
+}
+
+/**
+ * Attach a file the reader chose. The mirror of `choose` above, and it ends in
+ * the same place: `attachClimate`, which owns every one of the eight things
+ * that happen when a climate lands.
+ *
+ * Nothing is narrated as a download, because nothing is downloaded. What the
+ * reader waits on is a pass over their own file — `dailyMeans` at about 3 ms
+ * and a fingerprint at about 20 ms on a 1.66 MiB year — which is under a frame
+ * and over before a spinner would have appeared.
+ */
+async function attachOwnFile(chosen) {
+  if (!chosen.length) return;
+  // Captured before the first await, for the reason `describeDesk` is: the
+  // reader can drag a slider while a file is being read, and the studies that
+  // are about to be restored have to be the ones that were open when they
+  // picked it.
+  const studyContext = desk?.captureStudyContext();
+  // The picker's own fetch is abandoned. A reader who typed a city, waited, and
+  // then reached for their own file has answered the question the list was
+  // asking, and a station landing on top of their file a second later would be
+  // the desk overruling them.
+  inflight?.abort();
+
+  const refuse = (reason) => {
+    trail.push('refusal', `Weather file refused: ${reason}`);
+    lastStationRefusal = reason;
+    statusEl.className = 'status bad';
+    statusEl.textContent = reason;
+    say(reason, true);
+    // The field is handed back empty so the same file can be chosen again once
+    // whatever was wrong with it is fixed: a file input holding a rejected file
+    // fires no `change` when that same file is picked a second time.
+    $('site-file').value = '';
+  };
+
+  let picked;
+  try {
+    picked = await filesFrom(chosen);
+  } catch (error) {
+    return refuse(`That file cannot be used: ${error.message}.`);
+  }
+
+  let source;
+  try {
+    source = await sourceFromFile({ ...picked, schema });
+  } catch (error) {
+    // The parser's own sentence, unwrapped. `dailyMeans` names the record or
+    // the day it could not read, and that is the only part of this a reader can
+    // act on.
+    return refuse(`${picked.name} cannot be used: ${error.message}.`);
+  }
+
+  // The design conditions, where a DDY came with it. Parsed here rather than in
+  // `source.js` because the source carries the file's own text and this is the
+  // one place that turns text into the objects the model holds — the same call
+  // the picker makes of an archive's DDY, so an unusable DDY is refused in one
+  // sentence rather than two.
+  let conditions = null;
+  if (source.ddy) {
+    try {
+      conditions = designConditionsFrom(source.ddy, schema);
+    } catch (error) {
+      return refuse(`The DDY beside ${picked.name} cannot be used: ${error.message}.`);
+    }
+    // A DDY for another city is worse than no DDY at all: its design days would
+    // stand under this file's title block, which is the lie in ink the picker's
+    // own refusal exists to prevent. Both places are printed, because which of
+    // them is the wrong one is the reader's to know.
+    const ddyPlace = conditions.location.name;
+    const epwPlace = source.place.city;
+    if (ddyPlace && epwPlace && !sameSite(ddyPlace, epwPlace)) {
+      return refuse(
+        `The DDY beside ${picked.name} describes ${ddyPlace} and the weather file describes ${epwPlace}, ` +
+          'so one of them is not this building’s.',
+      );
+    }
+  }
+
+  closePanel();
+  say('');
+  site.classList.add('picked');
+  $('site-file').value = '';
+  attachClimate(source, { studyContext, conditions });
+}
+
+/**
+ * Whether two place names are the same site, for the DDY check above.
+ *
+ * Deliberately loose, and deliberately only used to *refuse*: a DDY and an EPW
+ * from one purchase write the same city with different punctuation and
+ * different trailing qualifiers, and refusing a matched pair over a full stop
+ * would be the false refusal that teaches a reader to stop reading refusals.
+ * What it catches is the case worth catching — London against Manchester — and
+ * anything it lets through is a pair the reader chose together.
+ */
+const sameSite = (a, b) => {
+  const plain = (name) => name.toLowerCase().replace(/[^a-z]+/g, ' ').trim().split(' ')[0];
+  return plain(a) === plain(b);
+};
+
+$('site-file').addEventListener('change', (event) => {
+  void attachOwnFile([...event.target.files]);
+});
+
 /* ══ the permalink ═══════════════════════════════════════════════════════ */
 
 /**
@@ -4617,7 +4975,24 @@ async function attach(row, pick, sizing) {
  * only a tariff region and no archive, which is what `url` distinguishes.
  */
 const stationToken = () =>
-  station?.url ? { wmo: String(station.wmo), window: flavorWindow(station) } : null;
+  weatherSource?.kind === 'station' && pickedStation
+    ? { wmo: String(pickedStation.wmo), window: flavorWindow(pickedStation) }
+    : null;
+
+/**
+ * The attached file as the link carries it: a fingerprint of its contents and
+ * the phrase the file uses about itself. Null for a station, or for a desk that
+ * has attached nothing.
+ *
+ * The file cannot ride here and must not — megabytes, and a bought one is not
+ * the sender's to redistribute. What rides is enough to tell a recipient which
+ * file to fetch from their own purchase and whether the one they attached is
+ * it.
+ */
+const fileToken = () =>
+  weatherSource?.kind === 'file'
+    ? { fingerprint: weatherSource.fingerprint, declares: weatherSource.declares.declares }
+    : null;
 
 // True from the moment a link's station lookup starts until it attaches, is
 // refused, or is superseded. It holds the address bar still (see
@@ -4637,6 +5012,7 @@ const schemeHash = (p = params) =>
     params: p,
     bypass: patching(),
     station: stationToken(),
+    file: fileToken(),
     pin: pinnedHour,
     quantity: studyQuantity,
     studies: openStudies,
@@ -6931,6 +7307,31 @@ statusEl.textContent =
  * there is exactly one caller and it waits.
  */
 async function solve() {
+  // A desk asked to run design days it does not have.
+  //
+  // Reachable, and reachable by an ordinary gesture: a weather file attached
+  // without a DDY beside it leaves the model with no `SizingPeriod:DesignDay`
+  // at all (`attachClimate`), and Design days on the Run strip is still a
+  // control the reader can turn back to Run. What the engine does with that is
+  // a get-input fatal about zero environments, blamed on nothing the reader
+  // did — so it is refused here instead, before a run starts, naming the two
+  // things that would fix it.
+  //
+  // Refused rather than withdrawn, and the difference is worth stating: a
+  // withdrawn control would have to be hidden from `controls.js`, whose
+  // declarations see only `params`, and whether the desk holds design days is a
+  // property of what was attached rather than of any parameter. A refusal in
+  // view says the same thing in the place the reader is looking.
+  if (params.sizingPeriods === 'Yes' && !designDayDatums(model).length) {
+    stopAuto();
+    clearResults();
+    statusEl.className = 'status bad';
+    statusEl.textContent =
+      'This desk has no design days: the attached weather file came without a DDY beside it. ' +
+      'Set Design days to Skip on the Run strip to run the file’s year, or attach the DDY that came with it.';
+    return;
+  }
+
   // Read the shape and write the IDF in the same breath. `params` and `model`
   // both keep moving under a drag, and a result filed against the wrong shape
   // would leave the pump chasing a target it had already hit.
@@ -6957,8 +7358,9 @@ async function solve() {
     // beside it is a count — the bill divides by it and the manifest spells it
     // out, and one name over two shapes is a trap for whoever edits next.
     monthMask: epwText ? snapshot.months : null,
-    weatherStem:
-      epwText && station?.url ? station.url.split('/').pop().replace(/\.zip$/i, '') : null,
+    // The archive's name for a station, the reader's own file name for a file,
+    // narrowed in `source.js` to what a ZIP member may carry.
+    weatherStem: epwText && weatherSource ? weatherSource.stem : null,
     location: $('t-location').textContent,
     permalink: schemeUrl(snapshot),
   };
@@ -7496,12 +7898,19 @@ class LandedRun {
   }
 }
 
-// The station's published card, resolved once per station rather than once per
-// bill: a priced drag prices every study position and every spot height on
-// every frame, and the card depends on nothing but the station.
-let publishedCard = { station: undefined, card: null };
+// The published card, resolved once per place rather than once per bill: a
+// priced drag prices every study position and every spot height on every frame,
+// and the card depends on nothing but where the building is.
+//
+// Keyed on the place object's identity rather than on a station's. `deskPlace()`
+// returns the frozen `SHIPPED_PLACE` or the frozen `Place` an attach built, and
+// both are replaced whole rather than mutated -- so identity is the right test,
+// and an attach that happened not to change the country still invalidates a
+// card resolved for somewhere else.
+let publishedCard = { place: undefined, card: null };
 const publishedRates = () => {
-  if (publishedCard.station !== station) publishedCard = { station, card: resolveRates(station) };
+  const place = deskPlace();
+  if (publishedCard.place !== place) publishedCard = { place, card: resolveRates(place) };
   return publishedCard.card;
 };
 
@@ -7571,7 +7980,7 @@ function engagedChannels(snapshot, patch) {
 function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? null, key = null) {
   const channels = engagedChannels(snapshot, patch);
   const engaged = new Set(channels);
-  const card = assume(resolveRates(station), snapshot);
+  const card = assume(resolveRates(deskPlace()), snapshot);
   const uses = END_USES.filter((use) => !use.needs || engaged.has(use.needs));
   const pricingStatus = (field) => {
     const missing = [];

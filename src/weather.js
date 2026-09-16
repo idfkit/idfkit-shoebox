@@ -7,7 +7,20 @@
  * between that and the sheet: it decides *when* to pay for the index, which of
  * a station's several flavours to offer, and how a station reads in one line.
  */
-import { fetchWeatherFiles, loadStationIndex } from '@idfkit/weather';
+import { fetchWeatherFiles, loadStationIndex, unzip } from '@idfkit/weather';
+
+/**
+ * The package's ZIP reader, re-exported rather than imported straight into
+ * `main.js`.
+ *
+ * A reader's own weather files arrive in the ZIP their purchase came in, which
+ * is the same shape the picker's archives are — so they go through the same
+ * reader, not a second one written beside it. It lives behind this module for
+ * the reason everything from `@idfkit/weather` does: this is the one place that
+ * knows the package, and a second importer is a second thing to change the day
+ * it moves.
+ */
+export { unzip };
 
 /**
  * Staged out of the package's `data/` by `scripts/stage-weather.mjs`.
@@ -220,3 +233,178 @@ export const climateDescription = (station) =>
     .split(/\s*-\s*/)
     .slice(1)
     .join(', ');
+
+/* ── remembering a file the reader attached ───────────────────────────────
+ *
+ * A station is a URL: the link carries its WMO number and the archive is
+ * fetched again on the other side. A file the reader holds is not, and it must
+ * not be — it is megabytes, and a bought one is not theirs to redistribute. So
+ * the link carries a fingerprint of it (`wf` in `permalink.js`) and the bytes
+ * are kept here, in the reader's own browser, where the constitution says the
+ * only persistence this page has lives.
+ *
+ * **The address bar remembers which file; this remembers its bytes. Neither can
+ * put a climate on the desk without the other agreeing.** That division is what
+ * keeps Principle II intact, and it is worth stating because the obvious design
+ * quietly breaks it: re-attaching a remembered file on any load at all would
+ * make `shoebox.idfkit.com` mean one thing on the machine that once attached a
+ * file and another on every other machine, which is exactly what "the same URL
+ * reproduces the same drawing, in any browser, on any machine" forbids. A
+ * remembered file is therefore attached only where the fragment's `wf` matches
+ * it, and on a bare desk it is *offered*, never attached.
+ *
+ * Gzipped, because a `localStorage` value is stored as UTF-16 and an EPW is a
+ * couple of megabytes of ASCII. Measured on a synthetic 8,760-row file:
+ * 1.66 MiB of text compresses to 388 KB, which base64s to 518 K characters and
+ * so costs about 1.0 MiB of a roughly 5 MiB quota — comfortably inside it,
+ * beside the kept schemes and the general notes. Costs, same file: 44.5 ms to
+ * compress, once, after an attach has already landed and never inside a
+ * gesture; 15.4 ms to inflate, once, on a boot that re-attaches. `gzip` rather
+ * than the `deflate-raw` `bundle.js` uses, because this is the mirror of the
+ * `DecompressionStream` the station index already arrives through and there is
+ * no ZIP member here to be a member of.
+ *
+ * Every figure above is over a *synthetic* file. A real bought file may not
+ * compress the same, which is why nothing here assumes it will: a write that
+ * does not fit is a stated outcome, not an error.
+ */
+
+const KEPT = 'shoebox-weather-file-v1';
+
+/**
+ * `localStorage`, or null where the browser will not give it.
+ *
+ * Probed by writing rather than by testing for the object, because Safari in
+ * private browsing hands out a `localStorage` that throws on `setItem`, and a
+ * feature detected by its presence is a feature that fails at the one moment it
+ * is used.
+ */
+const kept = (() => {
+  const probe = '__shoebox_weather_probe__';
+  try {
+    window.localStorage.setItem(probe, '1');
+    window.localStorage.removeItem(probe);
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+})();
+
+/** Whether this browser will keep a file at all, for the sentence that says so. */
+export const canRemember = () => kept !== null;
+
+const gzip = async (text) =>
+  new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+
+const gunzip = async (bytes) =>
+  new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+
+// `btoa` wants a binary string and a two-megabyte one spread over `String.
+// fromCharCode(...bytes)` overflows the argument list, which is a stack
+// overflow rather than an error a reader could act on. Chunked at 8 KB, which
+// is well under every engine's limit and costs 0.43 ms over the whole file.
+const toBase64 = (buffer) => {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let at = 0; at < bytes.length; at += 8192) {
+    binary += String.fromCharCode(...bytes.subarray(at, at + 8192));
+  }
+  return btoa(binary);
+};
+
+const fromBase64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+
+/**
+ * Keep a file, or say why it could not be kept.
+ *
+ * Returns `{ kept: true }` or `{ kept: false, reason }` and never throws, and
+ * that is the whole point: a file that will not fit is not a failed attach. The
+ * desk is already solving it. What the reader loses is the next reload, and the
+ * sheet has to say so rather than let them find out.
+ *
+ * Called only after an attach has landed, so what is remembered is always a
+ * file that already solved.
+ */
+export async function rememberFile({ fingerprint, name, declares, epw, ddy = null }) {
+  if (!kept) {
+    return {
+      kept: false,
+      reason: 'This browser will not let the page store anything, so the file is attached for this session only.',
+    };
+  }
+  try {
+    const record = {
+      fingerprint,
+      name,
+      declares,
+      gz: toBase64(await gzip(epw)),
+      ddyGz: ddy ? toBase64(await gzip(ddy)) : null,
+    };
+    kept.setItem(KEPT, JSON.stringify(record));
+    return { kept: true };
+  } catch (error) {
+    // Almost always the quota, and the sentence says the useful half of that
+    // rather than the name of an exception. The record is cleared first: a
+    // half-written value is a file that will fail to inflate on the next boot,
+    // which is a worse state than no file at all.
+    forgetFile();
+    return {
+      kept: false,
+      reason: `This file is too large for the browser to keep (${error.name}), so it is attached for this session only.`,
+    };
+  }
+}
+
+/**
+ * What is remembered, without inflating it.
+ *
+ * Two calls rather than one, because the two questions are asked at different
+ * moments and one of them is on the boot path: "is the file this link wants the
+ * one I have" is answered by a fingerprint comparison and must not cost the
+ * 15.4 ms of inflating a file that may turn out to be the wrong one.
+ */
+export function rememberedFile() {
+  if (!kept) return null;
+  const raw = kept.getItem(KEPT);
+  if (!raw) return null;
+  try {
+    const record = JSON.parse(raw);
+    if (!record?.fingerprint || !record?.gz) throw new Error('no fingerprint or no file');
+    return { fingerprint: record.fingerprint, name: record.name ?? null, declares: record.declares ?? null };
+  } catch {
+    // A record this page cannot read is a record from a version of this page
+    // that no longer exists, or a half-written one. Neither is something to
+    // repair, and leaving it would have every boot trip over it.
+    forgetFile();
+    return null;
+  }
+}
+
+/** The file itself, inflated. Null where nothing is kept or it cannot be read. */
+export async function rememberedBytes() {
+  if (!kept) return null;
+  const raw = kept.getItem(KEPT);
+  if (!raw) return null;
+  try {
+    const record = JSON.parse(raw);
+    return {
+      fingerprint: record.fingerprint,
+      name: record.name ?? null,
+      epw: await gunzip(fromBase64(record.gz)),
+      ddy: record.ddyGz ? await gunzip(fromBase64(record.ddyGz)) : null,
+    };
+  } catch {
+    forgetFile();
+    return null;
+  }
+}
+
+/** The reader's own "forget it", and the only thing that clears the record. */
+export function forgetFile() {
+  try {
+    kept?.removeItem(KEPT);
+  } catch {
+    // Nothing to do and nothing to say: a browser that refuses a removal has
+    // already refused the write that would have put something there.
+  }
+}

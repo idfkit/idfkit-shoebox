@@ -25,6 +25,11 @@ public/weather/
 harness/
 .harness/
 
+# Weather files a harness wrote out to look at. The generators live in the
+# verify directories and build their fixtures in memory; a year of EPW is 1.6 MB
+# and a licensed one may not be redistributable at all, so neither kind lands here.
+specs/*/verify/fixtures/
+
 # Feature worktrees, each its own checkout of this repository.
 .claude/worktrees/
 
