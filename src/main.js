@@ -12593,9 +12593,25 @@ async function openFileLink(link) {
   renderTrace();
   wantedFile = link.file;
   statusEl.className = 'status bad';
+  // "in the weather picker above", not "below", and not the "and the desk
+  // solves" it also used to carry.
+  //
+  // The direction was simply wrong for the state a reader reads this in. The
+  // picker's panel is `position: absolute` and drops *under* its field, so the
+  // attach control is below this sentence only while the panel is open — and
+  // the panel is shut, because opening it is the thing the sentence is asking
+  // them to do. The field is above it in both states, so the field is what it
+  // names. A refusal that points the wrong way is worse than one that points
+  // nowhere.
+  //
+  // The rest went to fit the 40-word CEILING budget `copy.js` sets for any one
+  // visible block. It was over at 43 before the direction was even corrected,
+  // because the file's own declaration is a dozen words of it and this sentence
+  // was written against a short one. Measured with a real declaration, which is
+  // the only honest way to count a sentence that carries one.
   statusEl.textContent =
     `This desk was run against a weather file the link cannot carry: ${link.file.declares ?? 'a file it does not describe'}. ` +
-    'Attach your copy of it below and the desk solves — the sheet checks it is the same file.';
+    'Attach your copy in the weather picker above; the sheet checks it is the same file.';
   renderKeptFile();
 }
 
