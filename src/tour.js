@@ -40,12 +40,21 @@ import { fold } from './console.js';
 // step in view and folds its fuller body. The completion events did not move,
 // but a returning reader's ticks were taken against notes they would no longer
 // recognise, and the rule is that a changed sheet is met as a new one.
-// Bumped to v5 when the station step stopped being only about stations: a
-// reader who had already dismissed v4's note would never have been told that a
-// weather file of their own can go on this desk, which is the one thing the
-// step now exists to say. The key is what decides whether a note is shown
-// again, so a step that changes meaning has to change it.
-const STORE = 'shoebox-general-notes-v5';
+//
+// v5 because E-02's step now teaches something it did not: the ground carries
+// the published lines the reading is judged against, and says which designs
+// pass them. A returning reader's tick against the survey note was taken
+// against a note about contours and spot heights alone, and the rule is that a
+// changed sheet is met as a new one.
+//
+// v6 because the station step stopped being only about stations, and because
+// v5 had already shipped by the time it did. Two features in flight bumped this
+// line for two different reasons, which is the one way this key can go wrong:
+// the second of them cannot reuse the first's number, or a reader who met v5 on
+// the published sheet would never be shown the step that now tells them a
+// weather file of their own can go on this desk. A key is only worth keeping if
+// every meaning it has ever had is its own.
+const STORE = 'shoebox-general-notes-v6';
 const VIEWS = ['open', 'folded', 'retired'];
 
 // A sheet counts its own notes in words, and the count is read off the
@@ -178,15 +187,19 @@ export const NOTES = Object.freeze([
   new Note({
     id: 'survey',
     title: 'Survey the design space',
-    step: 'Choose two controls and a reading, and cut a ground of real runs.',
+    step: 'Cut a ground of real runs, and see which designs pass a published line.',
     body:
       'Choose two controls and a reading, and the sheet cuts a ground through ' +
       'the desk as it stands — a real EnergyPlus run behind every position of a ' +
       'grid, contoured and drawn in relief. The contours between the runs are ' +
-      'interpolation and carry no figure; only the ticks do. Stand on any ' +
-      'measured point and the whole of E-01 becomes that building. Read the ' +
-      'pull first if you do not know which two controls are worth cutting ' +
-      'along: it ranks all ninety by how far each moves the reading here.',
+      'interpolation and carry no figure; only the ticks do. Where a standard ' +
+      'publishes a limit for that reading, its line is drawn across the ground ' +
+      'as a chain-dash and the ground that meets it is hatched — every ' +
+      'applicable standard at once, or one alone while you are chasing it, and ' +
+      'a reading no standard sets a limit for says so. Stand on any measured ' +
+      'point and the whole of E-01 becomes that building. Read the pull first ' +
+      'if you do not know which two controls are worth cutting along: it ranks ' +
+      'all ninety by how far each moves the reading here.',
     target: '#survey',
     focus: '#survey-choose',
   }),

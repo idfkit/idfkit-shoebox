@@ -36,7 +36,17 @@
  */
 
 import { CHANNEL_BY_ID, controlFor } from './controls.js';
-import { QUANTITY_BY_ID, inSentence, refusesPairing, refusesSweep, sampleOrder, samplePoints } from './study.js';
+import { PRESET_BY_ID, targetsForMetric } from './schemes.js';
+import {
+  OVERHEAT_ABOVE,
+  QUANTITY_BY_ID,
+  TM59_STUDY_CATEGORY,
+  inSentence,
+  refusesPairing,
+  refusesSweep,
+  sampleOrder,
+  samplePoints,
+} from './study.js';
 import { deltaKindOf, figureIn, letter, suffixIn } from './units.js';
 
 /* ══ how big the ground is ═══════════════════════════════════════════════ */
@@ -1679,4 +1689,664 @@ export function refineOrder(survey, { reading = survey.readings[0], stance }) {
   }
   wanted.sort((left, right) => right.score - left.score || left.iy - right.iy || left.ix - right.ix);
   return wanted;
+}
+
+/* ══ somebody else's line, cut across the ground ═════════════════════════ */
+
+/**
+ * A published pass/fail figure belonging to the plotted reading, and which
+ * side of it passes.
+ *
+ * **Nothing here is copied.** `limit` is a getter onto `target.limit`, the
+ * label reads the preset's own name and the target's own, and `passes`
+ * delegates to the one published comparator. The scoreboard row and this line
+ * are one declaration, which is the whole of FR-009: a line drawn at a figure
+ * of its own would be free to disagree with the verdict lettered beside the
+ * same reading, and the drift would show only at exactly the value the
+ * criterion is decided on.
+ *
+ * The pass side is *probed* rather than declared a second time, for the same
+ * reason (research R-2). `Target.meets` is the comparator the board uses; a
+ * `passes: 'below'` field here would be a second opinion about it. Today every
+ * target on the sheet passes at or below its limit and the probe records that
+ * as a measurement — so a target published the other way round draws its band
+ * on the other side with nothing in this file edited.
+ */
+export class Threshold {
+  constructor({ preset, target, reading }) {
+    if (!preset || !target || !reading) {
+      throw new Error('a threshold needs the standard that published it, its target and the reading it is read on');
+    }
+    if (target.limit == null) {
+      throw new Error(
+        `"${preset.name} · ${target.label}" names no limit, so it is an absence with a reason and never a line`,
+      );
+    }
+    if (target.quantityKind !== reading.quantityKind) {
+      throw new Error(
+        `"${preset.name} · ${target.label}" letters in ${target.quantityKind.id} and the survey reading ` +
+          `"${reading.label}" in ${reading.quantityKind.id}, so a line drawn at that limit would be ` +
+          'lettered in the wrong system on an IP sheet',
+      );
+    }
+    this.preset = preset;
+    this.target = target;
+    this.reading = reading;
+    // Either side of the limit, at a step big enough to survive the reading's
+    // own magnitude: an absolute epsilon is meaningless against a limit of 55
+    // and catastrophic against one of 0.03.
+    const step = Math.max(1, Math.abs(target.limit)) * 1e-6;
+    const below = target.meets(target.limit - step);
+    const above = target.meets(target.limit + step);
+    if (below === true && above === false) {
+      this.passesBelow = true;
+    } else if (below === false && above === true) {
+      this.passesBelow = false;
+    } else {
+      throw new Error(
+        `"${preset.name} · ${target.label}" answers ${String(below)} below its limit and ${String(above)} ` +
+          'above it, which is not a comparator with a passing side, so there is no ground for this sheet to shade',
+      );
+    }
+    Object.freeze(this);
+  }
+
+  /** The published figure itself, never a copy of it. */
+  get limit() {
+    return this.target.limit;
+  }
+
+  get label() {
+    return `${this.preset.name} · ${this.target.label}`;
+  }
+
+  /**
+   * The standard's name as it goes on the drawing, which is its first word.
+   *
+   * A label on the line stands in a field of measured spot figures, and a
+   * measurement is the one thing on this drawing a label may not cover
+   * (FR-010). "LETI, commercial office" is twenty-three characters and
+   * "Passivhaus Classic · LETI, commercial office" is forty-four, which at the
+   * mono face is half the width of the ground — a label that long either
+   * prints over two measurements or cannot be placed at all. The first word
+   * names the standard unambiguously across this roster (Passivhaus,
+   * EnerPHit, LETI, TM59) and the key beside the drawing carries every one of
+   * them in full, with its criterion and its pass side. The label's job is to
+   * say whose line this is; the key's is to say what it asks.
+   */
+  get standard() {
+    return this.preset.name.split(/[\s,]+/)[0];
+  }
+
+  /** The criterion in the publisher's own words. */
+  get asks() {
+    return this.target.asks;
+  }
+
+  /** Whether a reading clears this line, or null where there is no reading. */
+  passes(value) {
+    return this.target.meets(value);
+  }
+
+  /**
+   * The limit lettered as the ground letters its own figures: converted by the
+   * reading's kind, at the reading's precision, carrying no unit. The axis and
+   * the key carry the unit once, which is the arrangement the contour labels
+   * are the other half of.
+   */
+  figure() {
+    return this.reading.figure(this.limit);
+  }
+}
+
+/**
+ * What the survey draws for one reading at one moment.
+ *
+ * `lines` and `absence` are mutually exclusive and jointly exhaustive, and the
+ * constructor refuses anything else. That is Principle IV expressed as a type
+ * rather than as a rule somebody has to remember at three render sites: there
+ * is no state in which this drawing shows nothing and says nothing.
+ */
+export class ThresholdSet {
+  constructor({ reading, chased = null, lines = [], absence = null }) {
+    if (!reading) throw new Error('a threshold set needs the reading it was read for');
+    const has = lines.length > 0;
+    const said = typeof absence === 'string' && absence.trim().length > 0;
+    if (has === said) {
+      throw new Error(
+        `the survey has ${has ? 'lines to draw and an absence to state' : 'neither a line nor a reason'} for ` +
+          `"${reading.label}". A drawing that shows nothing must say why, and one that shows something must not`,
+      );
+    }
+    this.reading = reading;
+    this.chased = chased;
+    this.lines = Object.freeze([...lines]);
+    this.absence = said ? absence : null;
+    Object.freeze(this);
+  }
+}
+
+/**
+ * The measured ground lying on one threshold's passing side.
+ *
+ * One per drawn line and never merged across thresholds (FR-011): a band says
+ * where one published line falls on measured ground, and a union of two bands
+ * would be a combined verdict nobody published.
+ *
+ * `passing` against `measured` is asserted the way `Coverage` asserts its own
+ * sum, and for the same reason — a shaded band and the count of what was
+ * measured must never be able to disagree about how much ground there is.
+ *
+ * The two counts are named against `Coverage`'s own vocabulary rather than
+ * against this function's local one. `Coverage.measured` is how many positions
+ * carry a run and `Coverage.unsurveyed` is how many do not, so a field here
+ * called `unmeasured` holding the count of measured positions that *fail* the
+ * line would be the same word meaning two things in one module. There is no
+ * third count to carry: passing and failing are the whole of the measured
+ * ground, and the failing half is the subtraction.
+ */
+export class PassingGround {
+  constructor({ threshold, cells, segments, passing, measured, wholly = null }) {
+    if (!Number.isInteger(passing) || !Number.isInteger(measured) || !(measured - passing >= 0)) {
+      throw new Error(
+        `the passing ground does not sum: ${passing} passing against ${measured} measured positions on the ` +
+          'ground. A band and the schedule of spot heights behind it must never be able to disagree',
+      );
+    }
+    if (wholly !== null && wholly !== 'passing' && wholly !== 'failing') {
+      throw new Error(`a passing ground stands wholly "${wholly}", which is neither side of a line`);
+    }
+    this.threshold = threshold;
+    this.cells = Object.freeze(cells.map((cell) => Object.freeze(cell)));
+    this.segments = Object.freeze(segments);
+    this.passing = passing;
+    this.measured = measured;
+    // Set only where the line crosses no measured ground at all (FR-007), so
+    // the key can say which side the whole ground is on rather than the
+    // drawing showing nothing because there was no crossing to draw.
+    this.wholly = wholly;
+    Object.freeze(this);
+  }
+
+  /**
+   * Whether this band put a hatch on the ground, and whether it drew a rule.
+   *
+   * Named here because two surfaces ask it — `markSentence` below and the
+   * key's own swatch over in `main.js` — and the defect both were fixed for
+   * was a key asserting a mark the drawing did not carry.
+   * Spelled `cells.length` at each site, the next refinement of what counts as
+   * a drawn hatch lands at one of them and the two halves of one entry
+   * disagree again, silently, because only one of them has words in it.
+   *
+   * Neither is `wholly`, and that is the distinction worth keeping: `wholly`
+   * is a fact about the reading — which side of the line the ground is on —
+   * and a band can fail to hatch a ground that is wholly passing, when every
+   * passing design sits on a cell that was never fully measured.
+   *
+   * Getters, so they sit on the prototype and the constructor's freeze still
+   * holds: no second field to keep in step with the geometry it is read off.
+   */
+  get hatched() {
+    return this.cells.length > 0;
+  }
+
+  get ruled() {
+    return this.segments.length > 0;
+  }
+}
+
+/**
+ * One published line, as the sentence the key and the aria label both use.
+ *
+ * `ground` is passed rather than taken off `line.threshold`, and that is not
+ * a spare argument: where two standards publish one figure the band is built
+ * from the first of them, so the second is lettered against a ground whose
+ * own threshold is the other line.
+ *
+ * Worded as "meets this standard's published threshold" and nothing else: a
+ * band says where one published figure falls on measured ground, and it is not
+ * a recommendation, not an optimum, and not a verdict across standards
+ * (FR-011).
+ *
+ * **The criterion's own full wording is deliberately not here**, and that was
+ * measured rather than decided. `Target.asks` is a short clause for the energy
+ * lines ("≤ 15 kWh/(m²a)") and the whole criterion for TM59's — criterion a's
+ * runs to forty-five words — so the entry it built came out at seventy-five
+ * words in view against a forty-word ceiling. The board is where a standard
+ * says what it asks, in its own words, on the row for this very target; the
+ * key is where the drawing says what a mark *is*. So the entry names the
+ * standard, the criterion, the figure and the side that passes, which is the
+ * whole of what the mark means.
+ */
+export function thresholdSentence(line, ground) {
+  const unit = line.reading.unitNow;
+  const side = line.passesBelow ? 'at or below' : 'at or above';
+  const opening = `${line.label}: passes ${side} ${line.figure()}${unit ? ` ${unit}` : ''}.`;
+  return `${opening} ${markSentence(ground)}`;
+}
+
+/**
+ * What this band actually put on the ground, said in the same breath as the
+ * line it belongs to.
+ *
+ * The hatch clause used to be unconditional, which made the key assert a mark
+ * the drawing did not always carry. Three of the five states below draw no
+ * hatch at all, and one of them — the scattered ground — draws no rule either,
+ * so the entry stood over a blank ground saying "hatched is measured ground
+ * meeting this standard's published threshold" with nothing hatched anywhere.
+ * That is an absence with no reason given, which is the one thing this sheet's
+ * key is for refusing.
+ *
+ * `hatched` is asked before `wholly`, and the order is the whole of the fix,
+ * for the reason the getters above are declared: one is a fact about the
+ * drawing and the other about the reading.
+ *
+ * **It lives beside the object it reads rather than beside the drawing**,
+ * which is this sheet's rule and not an exception to it — `withdrawnAt`,
+ * `Gap.reason`, `tm59.js`'s absences and `absenceIn` below all letter their
+ * sentence where the fact is known, and `main.js` returns it. What makes it
+ * matter here is that these branches decide whether the sheet claims a mark
+ * it did not draw, and one of them exists only for a reader with no drawing
+ * to check it against. `main.js` imports the engine and drives the DOM, so
+ * nothing in it can be loaded by a throwaway Node harness; everything from
+ * `thresholdSentence` down can, which is the whole of why the pair sits here.
+ */
+export function markSentence(ground) {
+  const { hatched, passing, measured, wholly } = ground;
+  // Before the first sample lands there is no ground at all. The line is not
+  // absent and not refused — nothing has been measured for it to cross yet.
+  if (!measured) return 'No position on this ground carries a run yet, so there is nothing to draw this line across.';
+  // FR-007: where the line crosses none of the measured ground, saying which
+  // side the whole of it is on is the answer. Drawing nothing would leave a
+  // reader unable to tell an absent line from a defect. Built once and used by
+  // both sides, since the key and the aria label share this wording and a
+  // second spelling of it is a second thing to keep in step.
+  const crossesNone = (side) => `The line crosses no measured ground: ${side} design here meets it.`;
+  if (hatched) {
+    const said = "Hatched is measured ground meeting this standard's published threshold.";
+    return wholly === 'passing' ? `${said} ${crossesNone('every')}` : said;
+  }
+  // Nothing hatched, and the reason is the reading rather than the drawing:
+  // not one measured design is on the passing side.
+  if (wholly === 'failing') return crossesNone('no');
+  // Nothing hatched although designs do pass. A region needs a cell with four
+  // measured corners, so a passing design whose neighbours were never run has
+  // nothing to be bounded by — the same rule that leaves unsurveyed ground
+  // bare of contours, arriving where it costs a band. The count is the honest
+  // answer in the meantime, and refining is what fixes it.
+  const met = wholly === 'passing'
+    ? 'Every measured design here meets it'
+    : `${passing} of ${measured} measured designs meet it`;
+  return `${met}, but each has unmeasured neighbours, so there is no region to bound — let the ground refine.`;
+}
+
+/**
+ * The qualifier a target has to agree with before it is this reading's line.
+ *
+ * **This is the one place the feature can be silently wrong**, and it is worth
+ * saying exactly how. `tm59a`'s quantity reads criterion a at one category
+ * (`TM59_STUDY_CATEGORY`, Category II) while TM59 declares the criterion at
+ * two; matching on `metric` alone draws Category I's line across a Category II
+ * ground, and because both categories carry the same *limit* today the drawing
+ * looks perfectly correct while citing a criterion the ground does not answer.
+ * `tm59.js` met this exact problem first — `clearedCount` matches on criterion
+ * **and** category — so the rule is that module's, restated where the ground
+ * needs it.
+ *
+ * Two different facts are kept apart here, and conflating them is what makes
+ * a qualifier fail quietly:
+ *
+ *   - a target whose qualifier is **decidable and different** describes another
+ *     reading. Category I is a real criterion, correctly declared, and simply
+ *     not the one this ground is cut for. It is not matched, and that is a fact
+ *     about the roster rather than a defect.
+ *   - a target whose qualifier the survey **cannot decide** — an `overheat`
+ *     target naming no temperature, a TM59 criterion read by category naming
+ *     none, a criterion carrying one where the reading has none — throws at
+ *     module load naming both declarations. Falling through to a match there
+ *     is the silent fallback, and it is the shape that hides afterwards.
+ */
+class Qualifier {
+  constructor({ field, reads, says, decidable }) {
+    this.field = field;
+    // What the reading itself is read at, off the declaration that reads it.
+    this.reads = reads;
+    this.says = says;
+    this.decidable = decidable;
+    Object.freeze(this);
+  }
+
+  /** The qualifier a target carries, refused where the survey cannot decide it. */
+  on(target, preset, reading) {
+    const carried = target[this.field];
+    if (!this.decidable(carried)) {
+      throw new Error(
+        `"${preset.name} · ${target.label}" answers "${reading.label}" but declares ${this.field} as ` +
+          `${String(carried?.label ?? carried)}, and this survey reads that criterion at ${this.says}. A ` +
+          'line whose qualifier cannot be decided is a line drawn across a ground that does not answer it',
+      );
+    }
+    return carried;
+  }
+}
+
+/**
+ * Which qualifier each metric is read under, declared rather than tested
+ * inline, so a metric that grows one is a row here and not a branch in the
+ * matching loop.
+ */
+const QUALIFIER_BY_METRIC = Object.freeze({
+  overheat: new Qualifier({
+    field: 'above',
+    reads: OVERHEAT_ABOVE,
+    says: `hours above ${OVERHEAT_ABOVE} °C`,
+    decidable: (value) => Number.isFinite(value),
+  }),
+  tm59a: new Qualifier({
+    field: 'category',
+    reads: TM59_STUDY_CATEGORY,
+    says: TM59_STUDY_CATEGORY.label,
+    decidable: (value) => value !== null,
+  }),
+  tm59b: new Qualifier({
+    field: 'category',
+    reads: TM59_STUDY_CATEGORY,
+    says: TM59_STUDY_CATEGORY.label,
+    decidable: (value) => value !== null,
+  }),
+  // Criterion c is 26 °C for both categories, so a declaration carrying one
+  // is a criterion this sheet does not read rather than one it can narrow.
+  tm59c: new Qualifier({
+    field: 'category',
+    reads: null,
+    says: 'both categories at once, which is what makes it carry none',
+    decidable: (value) => value === null,
+  }),
+});
+
+/** Which run contents a target's `needs` asks for, as a question of the reading's own. */
+const NEEDS_IMPLIED = Object.freeze({
+  run: () => true,
+  season: (contents) => contents.season,
+  year: (contents) => contents.annual,
+});
+
+/**
+ * Every target of every published standard that names a figure for this
+ * reading, matched, with the load-time invariants asserted on the way past.
+ *
+ * Standards only: `targetsForMetric` filters on `Preset.kind`, because a parti
+ * is this sheet's own arrangement and cites nothing, and drawing a line at one
+ * of its numbers would be the sheet asserting under cover of citing.
+ */
+function matchedTargets(reading) {
+  return targetsForMetric(reading.id).filter(({ preset, target }) => {
+    // Kind agreement, on every metric match rather than only on the ones that
+    // go on to be drawn. Unit *strings* are deliberately not compared: a
+    // converting kind owns its unit string outright, so `kWh/m²·yr` and
+    // `kWh/(m²a)` are one kind spelled two ways by two publishers, and the kind
+    // is the comparison.
+    if (target.quantityKind !== reading.quantityKind) {
+      throw new Error(
+        `"${preset.name} · ${target.label}" answers "${reading.label}" and the two letter in different ` +
+          `kinds — ${target.quantityKind.id} against ${reading.quantityKind.id} — so on an IP sheet the ` +
+          'line and the ground it crosses would be converted two different ways',
+      );
+    }
+    const implied = NEEDS_IMPLIED[target.needs];
+    if (!implied) {
+      throw new Error(`"${preset.name} · ${target.label}" needs a run that "${target.needs}", which this survey cannot ask for`);
+    }
+    if (!implied(reading.quantity.needs)) {
+      throw new Error(
+        `"${preset.name} · ${target.label}" asks for a run that "${target.needs}" and the survey reading ` +
+          `"${reading.label}" never asks its samples for one, so the ground would carry figures this line ` +
+          'has no right to judge',
+      );
+    }
+    const qualifier = QUALIFIER_BY_METRIC[reading.id] ?? null;
+    if (qualifier) return qualifier.on(target, preset, reading) === qualifier.reads;
+    // An unqualified reading against a qualified target: the line is read at
+    // something this ground does not measure, and there is nothing here to
+    // narrow it against.
+    for (const field of ['above', 'category']) {
+      if (target[field] != null) {
+        throw new Error(
+          `"${preset.name} · ${target.label}" is read at ${field} ${String(target[field]?.label ?? target[field])} ` +
+            `and the survey reading "${reading.label}" declares no such qualifier, so nothing here can say ` +
+            'whether that line describes this ground',
+        );
+      }
+    }
+    return true;
+  });
+}
+
+/** Two limits are one line when they differ by less than this. */
+const coincidence = (limit) => Math.max(1, Math.abs(limit)) * 1e-9;
+
+/** The matched targets a chase narrows this ground to, or all of them. */
+const scopedTargets = (reading, chased) => {
+  const matched = matchedTargets(reading);
+  return chased ? matched.filter(({ preset }) => preset.id === chased) : matched;
+};
+
+/**
+ * The reason there is no line, given the targets already in scope.
+ *
+ * Split from the export below so `thresholdsFor` can decide the absence and
+ * the lines off **one** walk of the roster rather than two: the exported
+ * wrapper walked it, and then the caller that wanted the lines walked it again
+ * to filter the same list on the same chase.
+ */
+function absenceIn(reading, scope, chased) {
+  if (scope.some(({ target }) => target.limit != null)) return null;
+  if (scope.length) {
+    // Each standard with its own wording. Joining the names and then taking
+    // one `asks` put the first standard's words in every other standard's
+    // mouth — with one limitless criterion on the roster today that reads
+    // correctly, and it would have gone on reading correctly right up to the
+    // second, which is the shape of a citation that is quietly wrong.
+    const said = scope.map(({ preset, target }) => `${preset.name} names ${target.asks}`).join(' and ');
+    return `${said} for ${reading.label}, so there is no line to draw across this ground.`;
+  }
+  if (chased) {
+    const name = PRESET_BY_ID[chased]?.name ?? chased;
+    return `${name} publishes no limit for ${reading.label}, so this ground carries no line while it is chased.`;
+  }
+  return `No standard on this sheet publishes a limit for ${reading.label}, so this ground carries no threshold line.`;
+}
+
+/**
+ * The reason there is no line, or null where there is one.
+ *
+ * One wording, because the key, the plan caption and the aria label all state
+ * it and three spellings of one absence is three things to keep in step. Each
+ * sentence is a reason rather than a blank: the publisher's own words for what
+ * it asks (`target.asks`, which is the string the scoreboard letters in its
+ * "Asks for" cell for the same target) where a standard names a criterion whose
+ * value is climate- or building-specific, and the plain fact otherwise.
+ */
+export function thresholdAbsence(reading, { chased = null } = {}) {
+  return absenceIn(reading, scopedTargets(reading, chased), chased);
+}
+
+/**
+ * Every published line the survey should draw across this ground, or the
+ * stated reason there is none.
+ *
+ * Pure and uncached. `conformance()` is recomputed on every apply for the
+ * reason that applies here twice over: a cache would have to carry the chase
+ * state *and* the unit system in its key, and this codebase has now met that
+ * trap three times (`chooserDrawn`, `tm59Notes`, `setStudy`'s identity guard).
+ * Recomputing is a walk of four standards' targets.
+ *
+ * `chased` is handed in rather than imported, exactly as `improvingRegion` is
+ * handed the stance: this module learns nothing about page state, so a Node
+ * harness drives the real function.
+ */
+export function thresholdsFor(reading, { chased = null } = {}) {
+  const scope = scopedTargets(reading, chased);
+  const absence = absenceIn(reading, scope, chased);
+  if (absence) return new ThresholdSet({ reading, chased, absence });
+  const lines = scope
+    .filter(({ target }) => target.limit != null)
+    .map(({ preset, target }) => new Threshold({ preset, target, reading }))
+    // Ascending, then by the standard's name, so the order a reader meets the
+    // lines in is the order they cross the ground rather than the order the
+    // register happens to list the standards in (FR-012).
+    .sort((left, right) => left.limit - right.limit || left.preset.name.localeCompare(right.preset.name));
+  return new ThresholdSet({ reading, chased, lines });
+}
+
+/**
+ * The distinct levels a set draws at, coincidence-collapsed.
+ *
+ * Two standards at one figure is the common case and not an edge one — TEDI
+ * carries Passivhaus 15 and LETI 15, `overheat` carries Passivhaus 10 and
+ * EnerPHit 10 — so one line labelled with both is what the drawing owes the
+ * reader rather than two lines a hair apart, which is one line drawn twice.
+ */
+export function thresholdLevels(set) {
+  const levels = [];
+  for (const line of set.lines) {
+    if (!levels.some((level) => Math.abs(level - line.limit) <= coincidence(line.limit))) levels.push(line.limit);
+  }
+  return levels.sort((left, right) => left - right);
+}
+
+/** Every line in the set drawn at one level, in the set's own order. */
+export function thresholdsAt(set, level) {
+  return set.lines.filter((line) => Math.abs(line.limit - level) <= coincidence(level));
+}
+
+/**
+ * The measured ground on one threshold's passing side, per cell.
+ *
+ * Not a new tracer: the same cells `contoursOf` walks, filled per cell, with
+ * the identical edge interpolation and the identical saddle rule — so the band
+ * cannot part company with its own boundary, and a cell whose mask is not full
+ * emits nothing at all. That last clause is what makes FR-004 structural: the
+ * geometry over unsurveyed ground is never generated, exactly as no contour is
+ * ever carried across it, so there is nothing to style into looking measured.
+ *
+ * Lattice coordinates out, fractional indices, as `contoursOf` returns. The
+ * module draws nothing.
+ */
+export function passingGround(lattice, threshold) {
+  const { values, mask, nx, ny } = lattice;
+  const level = threshold.limit;
+  const at = (ix, iy) => values[ix + iy * nx];
+  const has = (ix, iy) => mask[ix + iy * nx] === 1;
+  // `Target.meets` is `value <= limit`, so the passing corners are the ones
+  // `contoursOf` does *not* count as over. Asked of the probed side rather
+  // than of `meets` per corner, because the shading has to agree with the
+  // boundary the same `> level` test drew.
+  const passes = (value) => (threshold.passesBelow ? !(value > level) : value > level);
+
+  let passing = 0;
+  let measured = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    if (!mask[i]) continue;
+    measured += 1;
+    if (passes(values[i])) passing += 1;
+  }
+
+  const cells = [];
+  for (let iy = 0; iy < ny - 1; iy += 1) {
+    for (let ix = 0; ix < nx - 1; ix += 1) {
+      if (!has(ix, iy) || !has(ix + 1, iy) || !has(ix, iy + 1) || !has(ix + 1, iy + 1)) continue;
+      const bl = at(ix, iy);
+      const br = at(ix + 1, iy);
+      const tr = at(ix + 1, iy + 1);
+      const tl = at(ix, iy + 1);
+      // Corner positions and values anticlockwise from the bottom left, the
+      // ordering the 16-case table is written against.
+      const corners = [[ix, iy], [ix + 1, iy], [ix + 1, iy + 1], [ix, iy + 1]];
+      const heights = [bl, br, tr, tl];
+      // The four edge crossings, spelled exactly as `contoursOf` spells them
+      // so the band's boundary and the drawn line are one arithmetic.
+      const lerp = (a, b) => (level - a) / (b - a);
+      const edges = [
+        [ix + lerp(bl, br), iy], // bottom, p0 → p1
+        [ix + 1, iy + lerp(br, tr)], // right, p1 → p2
+        [ix + lerp(tl, tr), iy + 1], // top, p2 → p3
+        [ix, iy + lerp(bl, tl)], // left, p3 → p0
+      ];
+      const inside = heights.map(passes);
+      const count = inside.filter(Boolean).length;
+      if (count === 0) continue;
+      if (count === 4) {
+        cells.push(corners);
+        continue;
+      }
+      if (count === 2 && inside[0] === inside[2] && inside[1] === inside[3]) {
+        // The saddle, and the one case a clip cannot answer on its own: the
+        // two passing corners are diagonal, and whether they join through the
+        // middle or stand as two separate corners is exactly the question
+        // `contoursOf` settles by the cell's own mean. Settled the same way
+        // here, or the band would join ground the line keeps apart.
+        const mean = (bl + br + tr + tl) / 4;
+        const overJoined = mean > level;
+        const joined = threshold.passesBelow ? !overJoined : overJoined;
+        if (!joined) {
+          for (const k of [0, 1, 2, 3]) {
+            if (!inside[k]) continue;
+            // The corner and its two own edge crossings: edge k leaves it and
+            // edge k-1 arrives at it.
+            cells.push([edges[(k + 3) % 4], corners[k], edges[k]]);
+          }
+          continue;
+        }
+      }
+      // Sutherland–Hodgman against the level, which for every case but the
+      // saddle is the region the marching square draws, by construction.
+      const clipped = [];
+      for (let k = 0; k < 4; k += 1) {
+        const next = (k + 1) % 4;
+        if (inside[k]) clipped.push(corners[k]);
+        if (inside[k] !== inside[next]) clipped.push(edges[k]);
+      }
+      if (clipped.length > 2) cells.push(clipped);
+    }
+  }
+
+  const segments = contoursOf(lattice, [level])[0]?.segments ?? [];
+  // Which side the whole ground is on, where the line crosses none of it
+  // (FR-007). A ground with measured positions on both sides and no crossing
+  // — passing points whose neighbours were never measured — is neither, and
+  // says so by carrying no sentence rather than by picking one.
+  const wholly =
+    segments.length || measured === 0
+      ? null
+      : passing === measured
+        ? 'passing'
+        : passing === 0
+          ? 'failing'
+          : null;
+  return new PassingGround({ threshold, cells, segments, passing, measured, wholly });
+}
+
+/**
+ * The four invariants, over the whole `READINGS × targets` cross product, at
+ * module load.
+ *
+ * Gate 5 of the constitution's workflow, and the substance of this feature's
+ * correctness. Every one of them throws naming the declarations on both sides,
+ * so the message says what to fix rather than that something is wrong — and it
+ * throws **here**, once, rather than on the frame a reader happens to plot the
+ * offending reading on.
+ */
+{
+  for (const reading of READINGS) {
+    for (const { preset, target } of matchedTargets(reading)) {
+      if (target.limit == null) continue;
+      // Constructing it is the pass-side probe, so a comparator with no side
+      // is refused at load rather than shading half a ground at draw time.
+      new Threshold({ preset, target, reading });
+    }
+    // And that every reading gives one or the other, which is the lines-xor-
+    // absence invariant asked of the roster rather than of a caller.
+    thresholdsFor(reading);
+  }
 }

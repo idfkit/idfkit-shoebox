@@ -5002,6 +5002,55 @@
          fourth surface. */
       .ground .improving { fill: url(#survey-hatch); stroke: none; }
 
+      /* Somebody else's published line, and the ground on its passing side.
+         No hue is spent on either: --redline is the markup pen and says "the
+         desk is here" on four drawings already, and --cold/--warm encode a
+         signed physical quantity, which a pass/fail limit is not. They are
+         told apart by drafting and by words instead.
+
+         The line is a chain-dash — the surveyor's convention for a boundary —
+         at --ink, which sits above both contour weights (--ink-ghost hairline,
+         every fifth --ink-3 at 1px) without being either of them. Several
+         lines differ by *signature*, never by weight: weight would rank one
+         standard over another and nobody published a weighting to rank them
+         with. Each also carries its own label and its own row in the key.
+
+         The bands are hatched at 0°, 90°, 135° and 22.5° (BAND_ANGLES in
+         main.js, which builds the patterns beside the improving hatch). None
+         of them is the improving region's 45°, and none is another's. Four
+         classes for four angles, and a fifth band takes the first one's
+         signature again: `Band.signature` wraps, and it is the sole index
+         behind these four names, the four dashes below, the pattern ids and
+         the relief's hatch angle, so none of them can be asked for a rule
+         this page does not declare. Every target on this sheet passes at or
+         below its limit, so the bands are nested and their overlap reads as
+         cross-hatch — the union of two bands, never a third verdict; the key
+         words each standard separately. */
+      .ground .passing { stroke: none; }
+      .ground .passing-0 { fill: url(#survey-band-0); }
+      .ground .passing-1 { fill: url(#survey-band-1); }
+      .ground .passing-2 { fill: url(#survey-band-2); }
+      .ground .passing-3 { fill: url(#survey-band-3); }
+
+      .ground .threshold {
+        fill: none;
+        stroke: var(--ink);
+        stroke-width: 1.1;
+        stroke-linecap: round;
+      }
+      .ground .threshold-0 { stroke-dasharray: 7 2.5 1 2.5; }
+      .ground .threshold-1 { stroke-dasharray: 7 2.5 1 2.5 1 2.5; }
+      .ground .threshold-2 { stroke-dasharray: 12 2.5 1 2.5; }
+      .ground .threshold-3 { stroke-dasharray: 4 2 1 2; }
+
+      .ground .threshold-label {
+        font: 500 8.5px/1 var(--mono);
+        fill: var(--ink);
+        paint-order: stroke;
+        stroke: var(--inset);
+        stroke-width: 3px;
+      }
+
       /* The survey offer sits under the Study offer on a plan key's legend,
          in the same 50px column, so it takes the same shape rather than a new
          one — the difference between them is which drawing they reach, and
