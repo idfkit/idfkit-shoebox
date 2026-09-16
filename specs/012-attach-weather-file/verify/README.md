@@ -246,3 +246,30 @@ Re-confirmed during implementation: `curl https://climate.onebuilding.org/` →
    `check_model_integrity`. No local EnergyPlus and no MCP tools here; the WASM
    runner stands in for `run_simulation` alone.
 5. **The fingerprint in a browser against the fingerprint under Node.**
+
+### T021, the station path, stated precisely
+
+The refactor this feature starts with — `choose()` split so that a station and a
+file share one `attachClimate` — is the change with the most reach and the least
+direct coverage here, so what was and was not exercised is worth being exact
+about.
+
+**Exercised, in a browser:**
+
+- the picker's search, grouping and flavour list, which work entirely offline
+  because the station index is staged into `public/weather/`;
+- the station **refusal** path, which is reached for real: the archive fetch
+  fails at the proxy and the sheet letters *"Denver Intl AP could not be
+  fetched: …"*, leaving the desk's climate untouched, with no page error;
+- `attachClimate` itself, in full, on every file attach — it is one function and
+  the file path is the same eight steps;
+- `sourceFromStation`, in a Node harness over a synthetic archive;
+- `setDesignConditions`, unchanged in behaviour and asserted byte-identical.
+
+**Not exercised:** the dozen lines between a successful archive download and
+`attachClimate` — the fetch landing, `designConditionsFrom` over a real DDY from
+onebuilding, and `sourceFromStation` being handed it. Reaching them needs
+climate.onebuilding.org, which this environment denies. A maintainer with
+network should pick three stations and confirm the IDF each writes is
+byte-identical to what `main` writes for the same desk, which is what T021 asks
+for.

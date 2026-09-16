@@ -75,7 +75,7 @@ behave identically at the end of it.
 - [X] T018 Extract `attachClimate(source)` out of `choose()` in `src/main.js`, carrying all eight steps — the six clears (`studyScheduler.clearAll()`, `studyStops.clear()`, `closeSurvey({ forgetTraverse: true })`, `meanCache = null`, `bill`/`lastRun`, `lastOutcome`), the model write and the title-block re-letter — and make the station picker its first and only caller (research R1)
 - [X] T019 [P] Write `specs/012-attach-weather-file/verify/readers.mjs`: `readLocation`, `periodCovered`, `dailyMeans` and `degreeDaysOf` over every fixture, asserting each absence comes back `null`, each refusal names its day, and the measured degree days sit close to the index's published figures for the same station (quickstart gate 3)
 - [X] T020 [P] Write `specs/012-attach-weather-file/verify/fingerprint.mjs`: CRLF equals LF, trailing newline equals none, one changed character differs, changed in-field whitespace differs, every output matches `[A-Za-z0-9_-]{16}` (quickstart gate 4)
-- [ ] T021 Verify the refactor changed nothing: pick three stations on the page, and in `specs/012-attach-weather-file/verify/station-unchanged.mjs` assert the IDF written for each is byte-identical to the one `main` writes for the same desk and station
+- [ ] T021 **[NOT RUN — the station download is denied by this environment; see verify/README.md]** Verify the refactor changed nothing: pick three stations on the page, and in `specs/012-attach-weather-file/verify/station-unchanged.mjs` assert the IDF written for each is byte-identical to the one `main` writes for the same desk and station
 
 **Checkpoint**: a station behaves exactly as before, the readers are proved against real
 files, and `attachClimate` has a second caller waiting. User stories can begin.
@@ -127,10 +127,10 @@ used is legible without opening a fold.
 - [X] T038 [US2] Split the local-time qualification in `src/tm59.js`: the standing half keeps TM59:2026 §3.7.1's rule, and a run-dependent half states what **this** file's `HOLIDAYS/DAYLIGHT SAVINGS` record declares, read through `parseEpwCalendar` (FR-013, research R13)
 - [X] T039 [US2] Make the new half agree with the run in `src/tm59.js`: `applyRun` writes `use_weather_file_daylight_saving_period: params.dst`, so the sentence says which of the two states this run is in rather than asserting what files generally declare
 - [X] T040 [US2] Confirm `qualificationsFor` and `WeatherFile.declares` need no change for an attached file in `src/tm59.js`, and that the weather qualification still prints the declaration beside `WFR_REQUIREMENT` asserting no relation (FR-012, FR-015)
-- [ ] T041 [US2] Letter each criterion's absence in `src/main.js` where the attached file does not cover the seed week of 23–29 April or the 1 May – 30 September period, naming the missing period and computing nothing over a shortened one (FR-014)
-- [ ] T042 [US2] Carry a `dailyMeans` refusal into criterion a's margin cell and into the degree-day reading in `src/main.js`, in the sentence the parser wrote, leaving criteria b and c reading (research R11, R12)
-- [ ] T043 [P] [US2] Write `specs/012-attach-weather-file/verify/criteria-over-file.mjs`: all five criteria over a real DSY against the same arithmetic over a TMYx year; a seeded-week-short file; a season-short file; `TM59_SPACES` still equal to `PROFILE_IDS`; no threshold moved (quickstart gate 7)
-- [ ] T044 [US2] Drive the page (`npm run dev`, `index.html`) against gate 7's lettering in `specs/012-attach-weather-file/quickstart.md`: the weather qualification, the local-time qualification in both states, and each criterion's absence sentence, all readable without opening a fold
+- [ ] T041 **[NOT DONE — criteria absence for a file that does not cover the seed week or the season]** [US2] Letter each criterion's absence in `src/main.js` where the attached file does not cover the seed week of 23–29 April or the 1 May – 30 September period, naming the missing period and computing nothing over a shortened one (FR-014)
+- [ ] T042 **[NOT DONE — a dailyMeans refusal carried into criterion a and the degree-day reading]** [US2] Carry a `dailyMeans` refusal into criterion a's margin cell and into the degree-day reading in `src/main.js`, in the sentence the parser wrote, leaving criteria b and c reading (research R11, R12)
+- [ ] T043 **[NOT DONE — the criteria-over-a-file harness]** [P] [US2] Write `specs/012-attach-weather-file/verify/criteria-over-file.mjs`: all five criteria over a real DSY against the same arithmetic over a TMYx year; a seeded-week-short file; a season-short file; `TM59_SPACES` still equal to `PROFILE_IDS`; no threshold moved (quickstart gate 7)
+- [ ] T044 **[NOT DONE — the overheating block driven on the page]** [US2] Drive the page (`npm run dev`, `index.html`) against gate 7's lettering in `specs/012-attach-weather-file/quickstart.md`: the weather qualification, the local-time qualification in both states, and each criterion's absence sentence, all readable without opening a fold
 
 **Checkpoint**: the page states nothing false about its own run, which is the reason the
 feature exists.
@@ -157,7 +157,7 @@ reason.
 - [X] T050 [US3] Hold the address bar still while a desk waits on a file in `src/main.js`, as `linkAttachPending` does for a linked station, so the link being honoured cannot lose its own token
 - [X] T051 [US3] Letter the absence of every reading that needs a year on a waiting desk in `src/main.js`, with the reason in view rather than in a fold, and never from the design days (FR-019, FR-024)
 - [X] T052 [US3] Refuse a mismatched file against a `wf` link in `src/main.js`, printing both what the link asked for and what the file declares, and offering the file on a fresh desk instead (FR-020)
-- [ ] T053 [US3] Name the file a kept scheme was solved against in its row in `src/schemes.js`, and make a kept scheme minted under a file follow the link's rule when recalled (FR-022)
+- [ ] T053 **[NOT DONE — a kept scheme naming the file it was solved against]** [US3] Name the file a kept scheme was solved against in its row in `src/schemes.js`, and make a kept scheme minted under a file follow the link's rule when recalled (FR-022)
 - [X] T054 [P] [US3] Write `specs/012-attach-weather-file/verify/link-roundtrip.mjs`: a file desk encodes, decodes and re-encodes byte-identically with a `wfd` carrying commas, spaces and `·`; each malformed class refused whole; `LINK_VERSION` still `v1` and `DEFAULTS_BY_VERSION` unchanged (quickstart gate 6)
 - [X] T055 [US3] Decode T005's `links-before.json` on the branch in `specs/012-attach-weather-file/verify/links-after.mjs` and diff: every link minted before this feature must decode to exactly what it decoded to before
 - [X] T056 [US3] Drive the page (`npm run dev`, `index.html`) against gate 6's three outcomes in `specs/012-attach-weather-file/quickstart.md`: the matching file, a different file, and a file renamed but unchanged — which the fingerprint must accept, since it is taken over contents
@@ -199,7 +199,7 @@ surviving between them.
 **Purpose**: what the change owes the rest of the repository (research R15), and the two
 gates that can only be run over the finished feature.
 
-- [ ] T066 [P] Declare a budget for every new always-visible string in `src/copy.js` — the attach control, the remembered line, the waiting-desk sentence, each refusal — and assert them at load, moving any long text into a `blurb`, `note` or `body`
+- [X] T066 [P] Declare a budget for every new always-visible string in `src/copy.js` — the attach control, the remembered line, the waiting-desk sentence, each refusal — and assert them at load, moving any long text into a `blurb`, `note` or `body`
 - [X] T067 [P] Update `NOTES` and the `tour?.note(...)` call sites in `src/tour.js` for the second way a year reaches the desk, and bump `shoebox-general-notes-v4` to `-v5` (constitution workflow gate 6)
 - [X] T068 [P] Record the file-attach control, the remembered line and the waiting-desk state as patterns in `.interface-design/system.md`, in this change rather than in the stylesheet (constitution workflow gate 8)
 - [X] T069 [P] Write the design-notes section in `docs/design-notes.md`: the real measurements from T006, the fingerprint rule and why line endings are the one thing normalised, the Principle II reasoning behind R9, and the no-design-days desk
@@ -208,7 +208,7 @@ gates that can only be run over the finished feature.
 - [X] T072 Run gate 8.6 of `specs/012-attach-weather-file/quickstart.md` over `index.html` at 390 px with a coarse pointer over every surface this feature touches, confirming nothing is hover-only and folded controls leave the tab order (FR-023, Principle VII)
 - [X] T073 Switch units in both directions on `index.html` with a file attached and confirm every figure re-letters, nothing re-runs, and the fingerprint, period and place are unchanged (quickstart gate 8.7)
 - [X] T074 Run every remaining quickstart gate end to end and record the outcome in `specs/012-attach-weather-file/verify/README.md`, naming any gate that could not be run and why (a fixture that could not be obtained is a gate not run, never a gate assumed passed)
-- [ ] T075 Confirm `.github/workflows/check.yml` still passes: no governed package moved, so the consumer register in idfkit-conformance is untouched
+- [X] T075 Confirm `.github/workflows/check.yml` still passes: no governed package moved, so the consumer register in idfkit-conformance is untouched
 
 ---
 
