@@ -53,3 +53,15 @@ Two wordings were checked against the house style rather than left as written:
   (FR-012, FR-015, SC-008), because the page cannot check provenance and a claim
   it cannot check is one it must not make. This matches the stance already
   written into `src/tm59.js`.
+
+## Planning amendment, 2026-09-16
+
+`/speckit-plan` moved one requirement, recorded in the spec's Clarifications and in
+research R9. FR-021 and User Story 4 had a remembered file re-attached on every load;
+that would make a bare URL mean one thing on the machine that once attached a file and
+another everywhere else, which Principle II forbids. Re-attachment now happens where
+the link names the file — which an ordinary reload does, since the address bar carries
+the fingerprint — and a link naming no file offers the remembered one instead.
+
+The checklist still passes as written: the requirement is narrower and more testable
+than before, and no [NEEDS CLARIFICATION] marker was introduced.

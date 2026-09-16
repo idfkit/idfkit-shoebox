@@ -29,6 +29,7 @@ Four constraints from the constitution shape everything below.
 
 - Q: What happens to a shared link, or a kept scheme, minted while a reader-supplied file was attached? → A: The link carries what the file declares about itself and a fingerprint of its contents, not the file. The recipient's desk loads whole, states which file the sender ran against, and refuses every reading that needs a year until a file whose fingerprint matches is attached. A file that does not match is refused with both descriptions printed.
 - Q: Does the browser remember an attached file between reloads and sessions? → A: Yes, in the reader's own browser, and the sheet says so and offers to forget it. A remembered file is re-attached on load without a second trip to the filesystem.
+- **Amended in planning (2026-09-16)**, research R9: FR-021 and User Story 4 originally had a remembered file re-attached on every load. Planning found that this would make a bare URL mean one thing on the machine that had once attached a file and another everywhere else, which Principle II forbids. The address bar already carries the file's fingerprint after an attach, so an ordinary reload is a link naming the file and re-attaches by that route; a link naming no file offers the remembered one instead of attaching it.
 - Q: The archive a station arrives in carries a DDY, and a purchased EPW usually arrives without one. Where do the design days come from? → A: A DDY may be attached beside the EPW and supplies them. Where none is, the desk has no design days at all: they are removed, the Run strip's design-day choice is withdrawn with its reason, the datum lines are absent, and the file's year is the whole run.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -91,18 +92,19 @@ The engineer sends a colleague the link to a desk that clears criterion a. The c
 
 ### User Story 4 - Keep working across reloads, and put the file down (Priority: P3)
 
-The engineer reloads the page mid-afternoon and their file is still attached, because the browser remembered it, and the sheet says so and offers to forget it. Later they go back to a TMYx station to compare, then return to their own file. Each change of climate is a change of climate: nothing from the one before survives into the readings.
+The engineer reloads the page mid-afternoon and their file is still attached, because the address bar named it and the browser had kept its bytes, and the sheet says so and offers to forget it. Later they go back to a TMYx station to compare, then return to their own file. Each change of climate is a change of climate: nothing from the one before survives into the readings.
 
 **Why this priority**: it is the difference between a demonstration and a tool somebody works in, but every story above is testable without it.
 
-**Independent Test**: attach a file, reload, and confirm it is re-attached and stated. Forget it and reload, and confirm the desk comes back with no climate. Swap between a file and a station three times and confirm that no reading, curve, spot height or priced figure from one survives into the other.
+**Independent Test**: attach a file, reload, and confirm it is re-attached and stated. Clear the address bar's fragment and reload, and confirm the desk comes back with no climate and offers the remembered file rather than attaching it. Forget it and reload, and confirm the offer is gone. Swap between a file and a station three times and confirm that no reading, curve, spot height or priced figure from one survives into the other.
 
 **Acceptance Scenarios**:
 
-1. **Given** a file was attached, **When** the page is reloaded, **Then** it is re-attached from the reader's own browser without a filesystem prompt, and the sheet states that it is remembered and how to forget it.
-2. **Given** a remembered file, **When** the reader forgets it, **Then** it is gone from the browser, the desk has no climate attached, and the readings that needed one are absent with that reason.
-3. **Given** an attached file, **When** the reader picks a station instead, **Then** the station's climate replaces it whole and the file is no longer attached.
-4. **Given** a browser that cannot keep the file, **When** the reader attaches one, **Then** the desk works for the session, and the sheet says the file will not be remembered rather than failing silently or claiming it will.
+1. **Given** a file was attached, **When** the page is reloaded, **Then** the link the desk carries names that file, it is re-attached from the reader's own browser without a filesystem prompt, and the sheet states that it is remembered and how to forget it.
+2. **Given** a remembered file and a desk whose link names no file, **When** the page is loaded, **Then** the desk comes back with no climate attached and the remembered file is offered in one click rather than attached, so that the same bare address means the same thing on every machine.
+3. **Given** a remembered file, **When** the reader forgets it, **Then** it is gone from the browser, the desk has no climate attached, and the readings that needed one are absent with that reason.
+4. **Given** an attached file, **When** the reader picks a station instead, **Then** the station's climate replaces it whole and the file is no longer attached.
+5. **Given** a browser that cannot keep the file, **When** the reader attaches one, **Then** the desk works for the session, and the sheet says the file will not be remembered rather than failing silently or claiming it will.
 
 ---
 
@@ -158,7 +160,7 @@ The engineer reloads the page mid-afternoon and their file is still attached, be
 - **FR-018**: A link minted while a file is attached MUST carry what the file declares about itself and a fingerprint of its contents, and MUST NOT carry the file. The fingerprint MUST be taken over contents, so the same file under another name satisfies the same link.
 - **FR-019**: Opening such a link MUST apply every parameter, patch and pin it carries, state which file the desk needs and what it was said to declare, and withhold every reading that needs a year, with that reason in view, until a file is attached.
 - **FR-020**: A file attached against such a link whose fingerprint does not match MUST be refused for that link, with what the link asked for and what the file declares both printed, and the reader MUST be offered the file on a fresh desk instead.
-- **FR-021**: An attached file MUST be remembered in the reader's own browser and re-attached on load without a second trip to the filesystem; the sheet MUST state that it is remembered and MUST offer to forget it. A browser that cannot keep it MUST be told about, not worked around.
+- **FR-021**: An attached file MUST be remembered in the reader's own browser. Where the link being opened names that file, it MUST be re-attached on load without a second trip to the filesystem. Where the link names no file, the remembered one MUST be offered rather than attached, so that the same bare address means the same thing on every machine. The sheet MUST state that a file is remembered and MUST offer to forget it. A browser that cannot keep it MUST be told about, not worked around.
 - **FR-022**: A kept scheme minted while a file was attached MUST follow the same rule as the link and MUST name the file it was solved against in its row.
 
 **Interface**
