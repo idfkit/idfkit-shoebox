@@ -3065,3 +3065,114 @@ Nothing else about the three runs differs.
 Cloudflare Pages cannot host this at all: its hard per-asset limit is 25 MiB and
 the engine binary is 28.40 MiB. GitHub Pages, which serves `idfkit.com`, cannot
 do the `/onebuilding` rewrite.
+
+### Attaching a weather file (src/source.js, src/epw.js, the file path in main.js)
+
+The station picker fetches from climate.onebuilding.org and that is every file
+this page can get for itself. It has never included the one a CIBSE TM59
+assessment is actually required to use: WFR:2026 §3 names the DSY1 file for the
+site at the 2050s, RCP8.5, 50th percentile, and CIBSE licenses it. It is bought,
+and it lands on the buyer's machine. So the one part of the method this page
+could honour was the part it withheld — and `tm59.js` had been written, from the
+start, to stay true "the day a reader attaches a licensed DSY of their own".
+
+Everything below is the day.
+
+**The clearing list is the feature.** `choose()` did eight things when a station
+landed and six of them were clears — the study scheduler and its stops, the
+survey ground and its traverse, the running-mean cache, the bill and the last
+run, the register's outcome — each with a comment naming the mismatch it exists
+to prevent. A second attach path would have had to repeat all six, and the
+failure mode of missing one is not a crash: it is Denver's curve under a British
+title block, which looks exactly like a reading. So the eight steps were lifted
+into `attachClimate(source)` before anything else was written, and the picker
+became its first caller, verified by writing the same IDF for the same station
+before and after.
+
+**A file is not a station wearing a hat.** The sheet read `station.url`,
+`station.hdd18`, `station.ashraeClimateZone`. Handing it a file object with
+those undefined would letter an absence as a value, which is the one thing
+Principle IV forbids — so both kinds became a frozen `WeatherSource` whose every
+field is passed and whose every absence is `null` on purpose. A file's
+`climateZone` is null because a file declares no ASHRAE zone and there is
+nothing to infer one from; the em dash appears where it is lettered, never in
+the model.
+
+**The fingerprint is over the file's records, not over how its lines end.** A
+link cannot carry a multi-megabyte licensed file and must not, so it carries
+sixteen base64url characters of a SHA-256 instead, plus the phrase the file uses
+about itself. The one normalisation — CRLF and lone CR to LF, trailing newlines
+dropped, done on the bytes before any decoding — is there because a bought file
+copied between Windows and macOS, or opened and saved once by an editor, changes
+its line terminators and not one value EnergyPlus reads. Refusing a colleague's
+identical data over that would be a false refusal, which is worse than no check
+at all: it teaches the reader to stop trusting the check. Nothing else is
+normalised. Doing it on the bytes also means a Latin-1 city name cannot move the
+fingerprint, because the decoder never runs.
+
+**The address bar remembers which file; `localStorage` remembers its bytes.**
+This division is the Principle II finding, and the obvious design quietly breaks
+it. `updatePermalink` rewrites the fragment on every gesture, so a desk with a
+file attached already carries `wf` — which means an ordinary reload *is* a link
+being honoured, and re-attaching from the browser on that path costs nothing and
+breaks nothing. Re-attaching on a **bare** address would be different: it would
+make `shoebox.idfkit.com` mean one thing on the machine that once attached a
+file and another on every other machine, which is exactly what "the same URL
+reproduces the same drawing, in any browser, on any machine" forbids. So a bare
+desk *offers* the remembered file and attaches nothing. Driven in a browser: the
+reload comes back on the file and solves 8,760 hours; the bare address comes
+back to Denver with the file offered beside the picker.
+
+**A desk waiting on a file letters an em dash, not a city.** A link naming a
+file the recipient does not hold loads the whole desk and then stops: no run, no
+reading, and the shipped design days taken out. Leaving them would put Denver's
+two days, solved and lettered, under a title block naming somewhere else — the
+lie in ink the picker's DDY refusal already exists to prevent, arriving by
+another road. The title block reads `—` until the file lands.
+
+**No DDY means no design days.** A purchased year usually arrives without one.
+`model.js`'s own comment on the economizer's cooling flow limit already records
+why removing them is safe — *"Nothing here is autosized (the console does not
+run a sizing pass)"* — so a document with no `SizingPeriod:DesignDay` and
+`run_simulation_for_sizing_periods: 'No'` is complete. `Site:Location` still
+comes off the EPW's LOCATION record, which is the first place in this repository
+to spell `latitude`, `longitude`, `time_zone` and `elevation` out loud: the
+station path never had to, because `designConditionsFrom` copies the DDY's
+parsed object through `toJSON()`. All four are confirmed against the 26.1.0
+schema by `specs/012-attach-weather-file/verify/schema-fields.mjs` rather than
+recalled, per this repository's standing rule about field names drifting.
+
+A run asked for design days the desk has not got is refused in view before it
+starts, rather than reaching the engine as a get-input fatal blamed on nothing.
+Refused rather than withdrawn, and the difference is worth recording: a
+withdrawn control would have to be hidden from `controls.js`, whose declarations
+see only `params`, and whether the desk holds design days is a property of what
+was attached.
+
+**The measurements are synthetic, and that is a gap, not a result.** Every
+figure below was taken over a generated EPW — 8,760 records of the right shape
+around a plausible dry-bulb series — because the environment this was built in
+denies climate.onebuilding.org (CONNECT answers 403) and CIBSE data is
+purchased. Two synthetic files already disagree with each other by a lot: one
+compresses to 22.3 % of its size and the other to 13.9 %, which is itself the
+argument that a synthetic compression ratio settles nothing about a bought file.
+The remembering budget rests on that ratio, so **it is measured on a real file
+before it is relied on** (quickstart gate 1).
+
+| over a synthetic 1.66 MiB EPW | cost | when |
+| --- | --- | --- |
+| `dailyMeans` | 3.2 ms | once per attach; the comfort line pays it anyway |
+| SHA-256 alone | 4.75 ms | inside the fingerprint |
+| `fingerprint()` end to end | ~20 ms | once per attach, never on the solve path |
+| gzip | 44.5 ms | once, after the attach has already landed |
+| gunzip | 15.4 ms | once, on a boot that re-attaches |
+| stored | 388 KB gzipped → 518 K base64 chars → ~1.0 MiB of quota | `localStorage` is UTF-16 |
+
+**Three lettering defects the harnesses could not have found**, all caught by
+driving the real page and worth knowing about for the next feature: the site
+field went on reading "Choose a weather location" over an attached year, because
+only the picker had ever set it; the measured degree days came out as
+`2,812.204 HDD18`, four digits of precision this arithmetic does not have,
+beside an index figure published as `2,801`; and the climate-zone chip ran
+straight into the line beside it in the markup, so a screen reader read `5A` and
+`Cool, Humid` as one word while CSS padding hid it on screen.

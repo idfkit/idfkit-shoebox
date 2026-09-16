@@ -40,7 +40,12 @@ import { fold } from './console.js';
 // step in view and folds its fuller body. The completion events did not move,
 // but a returning reader's ticks were taken against notes they would no longer
 // recognise, and the rule is that a changed sheet is met as a new one.
-const STORE = 'shoebox-general-notes-v4';
+// Bumped to v5 when the station step stopped being only about stations: a
+// reader who had already dismissed v4's note would never have been told that a
+// weather file of their own can go on this desk, which is the one thing the
+// step now exists to say. The key is what decides whether a note is shown
+// again, so a step that changes meaning has to change it.
+const STORE = 'shoebox-general-notes-v5';
 const VIEWS = ['open', 'folded', 'retired'];
 
 // A sheet counts its own notes in words, and the count is read off the
@@ -103,11 +108,12 @@ export const NOTES = Object.freeze([
   new Note({
     id: 'station',
     title: 'Attach a year of weather',
-    step: 'Pick a weather station to run a full 8,760-hour year there.',
+    step: 'Pick a station, or attach a weather file of your own.',
     body:
-      'Pick any of 17,292 stations. The run becomes a full 8,760-hour year ' +
-      'at that place, design conditions and all. Patch in System or Gains ' +
-      'and the bill of quantities follows, priced from published tariffs.',
+      'Pick any of 17,292 stations, or attach a weather file you hold — a ' +
+      'licensed CIBSE DSY among them, read on this machine and never ' +
+      'uploaded. The run becomes a full 8,760-hour year at that place. Patch ' +
+      'in System or Gains and the bill follows, priced from published tariffs.',
     target: '#site',
     focus: '#site-field',
   }),

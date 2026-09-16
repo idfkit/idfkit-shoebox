@@ -203,7 +203,16 @@ function members(run) {
     run.epw && {
       name: `${run.weatherStem ?? 'weather'}.epw`,
       text: run.epw,
-      note: 'the weather file, exactly as downloaded',
+      // Two provenances, said apart. A station's archive is public and a reader
+      // can be told to go and fetch it; a file the reader attached is theirs,
+      // and may well be licensed — a CIBSE design summer year is bought, and
+      // what may be done with a copy of it is between the buyer and that
+      // licence. Saying so is the whole of what this page can do about it: the
+      // bytes are going to the reader's own disk either way, and this line is
+      // what makes sure they know what is in the ZIP before they forward it.
+      note: run.ownWeather
+        ? 'the weather file you attached, exactly as you supplied it — your licence for it governs sharing this bundle'
+        : 'the weather file, exactly as downloaded',
     },
     run.html && {
       name: 'results/eplustbl.htm',
@@ -255,8 +264,11 @@ function manifest(run, list) {
     ['Run', runLine(run)],
     [
       'Weather',
-      epwFile ??
-        'none — a design-day run, driven by the SizingPeriod:DesignDay objects written into the IDF',
+      epwFile
+        ? run.ownWeather
+          ? `${epwFile} — your own file; your licence for it governs sharing this bundle`
+          : epwFile
+        : 'none — a design-day run, driven by the SizingPeriod:DesignDay objects written into the IDF',
     ],
     ['Location', run.location || '—'],
     ['Outcome', run.failure ? 'Failed' : 'Completed'],

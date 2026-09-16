@@ -104,10 +104,10 @@ file.
 - [X] T031 [US1] Letter the site sub-line for a file in `src/main.js`: the measured degree days saying they were measured, the period `periodCovered` read, and an em dash for the ASHRAE climate zone a file does not declare (FR-008)
 - [X] T032 [US1] Route the tariffs, currency and grid factor through the source's `Place` in `src/main.js`, and confirm an uncovered country refuses the bill with `rates.js`'s published sentence while the energy readings stand (FR-011)
 - [X] T033 [US1] Take `weatherStem` off the source rather than `station.url` in `src/main.js`, narrowing a reader's own file name to characters a ZIP member may carry (research R14)
-- [ ] T034 [US1] Name the reader's own file in the run bundle's manifest in `src/bundle.js`, stating that whatever licence governs it governs sharing the bundle (FR-016)
-- [ ] T035 [US1] Say the same on the report's run-files card in `src/report-sheet.js`, before the reader downloads a ZIP they may attach to a public issue (FR-016, FR-017)
-- [ ] T036 [P] [US1] Write `specs/012-attach-weather-file/verify/model-with-file.mjs`: build the document against each fixture at several desk positions, write and run each IDF, assert idempotence three times over, assert a desk that lost its design days serialises identically to one built without them, and grep `eplus.err` for "requested but not generated" and for any sizing-period warning (quickstart gate 5)
-- [ ] T037 [US1] Drive the page (`npm run dev`, `index.html`) against gates 8.1–8.4 of `specs/012-attach-weather-file/quickstart.md`: attach each fixture; attach a TMYx file by hand and pick the same station, asserting identical readings at five desk positions; attach while a run, a study and a survey are all in flight; swap file → station → file three times
+- [X] T034 [US1] Name the reader's own file in the run bundle's manifest in `src/bundle.js`, stating that whatever licence governs it governs sharing the bundle (FR-016)
+- [X] T035 [US1] Say the same on the report's run-files card in `src/report-sheet.js`, before the reader downloads a ZIP they may attach to a public issue (FR-016, FR-017)
+- [X] T036 [P] [US1] Write `specs/012-attach-weather-file/verify/model-with-file.mjs`: build the document against each fixture at several desk positions, write and run each IDF, assert idempotence three times over, assert a desk that lost its design days serialises identically to one built without them, and grep `eplus.err` for "requested but not generated" and for any sizing-period warning (quickstart gate 5)
+- [X] T037 [US1] Drive the page (`npm run dev`, `index.html`) against gates 8.1–8.4 of `specs/012-attach-weather-file/quickstart.md`: attach each fixture; attach a TMYx file by hand and pick the same station, asserting identical readings at five desk positions; attach while a run, a study and a survey are all in flight; swap file → station → file three times
 
 **Checkpoint**: a UK engineer can model their building against the data their assessment
 requires. This is the MVP and it is worth shipping alone.
@@ -158,8 +158,8 @@ reason.
 - [X] T051 [US3] Letter the absence of every reading that needs a year on a waiting desk in `src/main.js`, with the reason in view rather than in a fold, and never from the design days (FR-019, FR-024)
 - [X] T052 [US3] Refuse a mismatched file against a `wf` link in `src/main.js`, printing both what the link asked for and what the file declares, and offering the file on a fresh desk instead (FR-020)
 - [ ] T053 [US3] Name the file a kept scheme was solved against in its row in `src/schemes.js`, and make a kept scheme minted under a file follow the link's rule when recalled (FR-022)
-- [ ] T054 [P] [US3] Write `specs/012-attach-weather-file/verify/link-roundtrip.mjs`: a file desk encodes, decodes and re-encodes byte-identically with a `wfd` carrying commas, spaces and `·`; each malformed class refused whole; `LINK_VERSION` still `v1` and `DEFAULTS_BY_VERSION` unchanged (quickstart gate 6)
-- [ ] T055 [US3] Decode T005's `links-before.json` on the branch in `specs/012-attach-weather-file/verify/links-after.mjs` and diff: every link minted before this feature must decode to exactly what it decoded to before
+- [X] T054 [P] [US3] Write `specs/012-attach-weather-file/verify/link-roundtrip.mjs`: a file desk encodes, decodes and re-encodes byte-identically with a `wfd` carrying commas, spaces and `·`; each malformed class refused whole; `LINK_VERSION` still `v1` and `DEFAULTS_BY_VERSION` unchanged (quickstart gate 6)
+- [X] T055 [US3] Decode T005's `links-before.json` on the branch in `specs/012-attach-weather-file/verify/links-after.mjs` and diff: every link minted before this feature must decode to exactly what it decoded to before
 - [X] T056 [US3] Drive the page (`npm run dev`, `index.html`) against gate 6's three outcomes in `specs/012-attach-weather-file/quickstart.md`: the matching file, a different file, and a file renamed but unchanged — which the fingerprint must accept, since it is taken over contents
 
 **Checkpoint**: two engineers can argue over the same building, which is the use this
@@ -186,7 +186,7 @@ surviving between them.
 - [X] T060 [US4] Offer the remembered file in one click on a desk whose link names no file, in `src/main.js` and `src/console.js`, naming it in the file's own words and attaching nothing until the reader asks
 - [X] T061 [US4] State that a file is remembered, and offer to forget it, in view in `src/console.js`; forgetting clears the record and nothing else clears it
 - [X] T062 [US4] Say that a file will not be remembered where the write exceeds the quota, in `src/main.js`, leaving the session working — told about, not worked around (FR-021)
-- [ ] T063 [US4] Keep the remembered file when a station is attached in `src/main.js`: it stops being attached, the offer remains, and the station replaces the climate whole (FR-006)
+- [X] T063 [US4] Keep the remembered file when a station is attached in `src/main.js`: it stops being attached, the offer remains, and the station replaces the climate whole (FR-006)
 - [ ] T064 [P] [US4] Write `specs/012-attach-weather-file/verify/remember.mjs` over the real fixtures: the stored size against the quota, the gzip and gunzip costs, and a round trip proving the bytes come back identical and fingerprint the same
 - [X] T065 [US4] Drive the page (`npm run dev`, `index.html`) against gate 8.4 in `specs/012-attach-weather-file/quickstart.md` and US4's scenarios: reload with the fragment, reload with it cleared, forget and reload, and a quota deliberately filled
 
@@ -200,10 +200,10 @@ surviving between them.
 gates that can only be run over the finished feature.
 
 - [ ] T066 [P] Declare a budget for every new always-visible string in `src/copy.js` — the attach control, the remembered line, the waiting-desk sentence, each refusal — and assert them at load, moving any long text into a `blurb`, `note` or `body`
-- [ ] T067 [P] Update `NOTES` and the `tour?.note(...)` call sites in `src/tour.js` for the second way a year reaches the desk, and bump `shoebox-general-notes-v4` to `-v5` (constitution workflow gate 6)
-- [ ] T068 [P] Record the file-attach control, the remembered line and the waiting-desk state as patterns in `.interface-design/system.md`, in this change rather than in the stylesheet (constitution workflow gate 8)
-- [ ] T069 [P] Write the design-notes section in `docs/design-notes.md`: the real measurements from T006, the fingerprint rule and why line endings are the one thing normalised, the Principle II reasoning behind R9, and the no-design-days desk
-- [ ] T070 [P] Add the entry to `CHANGELOG.md`, which the sheet reads back through `src/changelog.js`
+- [X] T067 [P] Update `NOTES` and the `tour?.note(...)` call sites in `src/tour.js` for the second way a year reaches the desk, and bump `shoebox-general-notes-v4` to `-v5` (constitution workflow gate 6)
+- [X] T068 [P] Record the file-attach control, the remembered line and the waiting-desk state as patterns in `.interface-design/system.md`, in this change rather than in the stylesheet (constitution workflow gate 8)
+- [X] T069 [P] Write the design-notes section in `docs/design-notes.md`: the real measurements from T006, the fingerprint rule and why line endings are the one thing normalised, the Principle II reasoning behind R9, and the no-design-days desk
+- [X] T070 [P] Add the entry to `CHANGELOG.md`, which the sheet reads back through `src/changelog.js`
 - [ ] T071 Run quickstart gate 9 in the browser with the network panel recording from before the file dialog opens: attach, solve, study, survey, mint a link, download the bundle, hand off a report — no request carries any part of the file, and a desk on an attached file makes no `/onebuilding` request at all (FR-002, SC-002)
 - [ ] T072 Run gate 8.6 of `specs/012-attach-weather-file/quickstart.md` over `index.html` at 390 px with a coarse pointer over every surface this feature touches, confirming nothing is hover-only and folded controls leave the tab order (FR-023, Principle VII)
 - [ ] T073 Switch units in both directions on `index.html` with a file attached and confirm every figure re-letters, nothing re-runs, and the fingerprint, period and place are unchanged (quickstart gate 8.7)

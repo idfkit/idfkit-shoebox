@@ -97,6 +97,16 @@ const COPY = Object.freeze({
   signed: withinBudget(BUDGETS.SUMMARY, 'report run files signed', 'Run files, signed'),
   unsigned: withinBudget(BUDGETS.SUMMARY, 'report run files unsigned', 'Run files, unsigned'),
   signedNote: withinBudget(BUDGETS.STANDING, 'report signed note', 'The signed model file carries your name.'),
+  // Said before the download, not after. This bundle is about to go to the
+  // reader's own disk carrying a copy of a file that may be licensed, and from
+  // a disk it is one drag onto a public issue away. The page cannot read their
+  // licence and does not police it; what it can do is make sure nobody
+  // forwards a bought weather file without having been told it is in there.
+  ownWeatherNote: withinBudget(
+    BUDGETS.STANDING,
+    'report own weather note',
+    'These files include the weather file you attached.',
+  ),
   noRun: withinBudget(BUDGETS.STANDING, 'report no run', 'No run yet.'),
   close: withinBudget(BUDGETS.SUMMARY, 'report close', 'Close'),
   needsWords: withinBudget(BUDGETS.STANDING, 'report needs words', 'Describe the problem or idea first.'),
@@ -420,6 +430,7 @@ function renderRunFiles() {
       return button;
     }),
     ...(files.signed ? [el('p', 'report-reason', COPY.signedNote)] : []),
+    ...(files.ownWeather ? [el('p', 'report-reason', COPY.ownWeatherNote)] : []),
   );
 }
 

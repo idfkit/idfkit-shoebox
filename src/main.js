@@ -7518,6 +7518,13 @@ async function solve() {
     // The archive's name for a station, the reader's own file name for a file,
     // narrowed in `source.js` to what a ZIP member may carry.
     weatherStem: epwText && weatherSource ? weatherSource.stem : null,
+    // Whether the weather in this bundle is the reader's own. A station's
+    // archive is public and the manifest can simply name it; a file they
+    // attached may be licensed, and the ZIP is about to carry a copy of it to
+    // their disk, from where it is one drag onto an issue away from being
+    // public. Said in the manifest rather than policed, because the licence is
+    // theirs and this page has no way to read it.
+    ownWeather: epwText ? weatherSource?.kind === 'file' : false,
     location: $('t-location').textContent,
     permalink: schemeUrl(snapshot),
   };
@@ -12321,5 +12328,8 @@ provide('refusedLink', () => (refusalNote && arrivedHash ? { raw: arrivedHash, r
 provide('runFiles', () => ({
   available: Boolean(lastBundle),
   signed: Boolean(signature),
+  // So the card can say, before the download rather than after it, that the ZIP
+  // carries a weather file of the reader's own.
+  ownWeather: Boolean(lastBundle?.ownWeather),
   build: (withSignature) => runBundle({ ...lastBundle, author: withSignature ? signature : null }),
 }));

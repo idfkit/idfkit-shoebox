@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Attach a weather file of your own.** The station picker reaches
+  climate.onebuilding.org and that is every file this page can fetch for
+  itself — which has never included the one a CIBSE TM59 assessment is required
+  to use, because CIBSE's design summer years are licensed and land on the
+  buyer's own machine. They can now go straight onto the desk: an EPW, a DDY
+  beside it, or the ZIP they came in, read in this page and handed to the same
+  in-browser engine as everything else. **No byte of the file reaches the
+  network**, which is not a limitation being worked around but the only
+  arrangement under which a licensed file can be used at all.
+- **Everything the sheet says about the place now comes off the file.** The
+  title block, the site line, the period covered, the holidays, the daylight
+  saving rule and the tariffs are all read from the file's own records.
+  Degree days are measured from its 8,760 hours and the reading says they were
+  measured, because a figure this page computed and one it is repeating from
+  the station index are not the same claim. Anything the file does not declare
+  — an ASHRAE climate zone, for one — reads as an em dash.
+- **A link carries the file's fingerprint, never the file.** It is megabytes,
+  and a bought one is not the sender's to redistribute. So the link carries
+  sixteen characters taken over the file's records and the phrase the file uses
+  about itself. A recipient holding the same file gets the sender's desk and
+  the sender's numbers; one holding a different file is told so, with both
+  descriptions printed, before a single reading is drawn.
+- **The browser keeps the file, and says so.** Gzipped into `localStorage`,
+  with a line under the picker naming it and offering to forget it. It is
+  re-attached automatically only where the link names it — which an ordinary
+  reload does — and merely offered on a bare address, so one URL still means
+  one thing on every machine.
+
+### Changed
+
+- A weather file attached without a DDY beside it leaves the desk with **no
+  design days at all**, rather than Denver's standing under somebody else's
+  title block. The datum lines go with them, and a run asked for design days
+  the desk has not got is refused in view rather than reaching the engine.
+- TM59's local-time qualification used to assert that no reachable weather file
+  declares a daylight saving rule. That was measured, and it was true of the
+  picker; it stopped being true of the page the day a reader could attach a
+  British file of their own. It now reads the rule off the file in hand and off
+  the Daylight saving control, and says which of the two states the run is in.
+
 ## [0.4.0] - 2026-09-15
 
 ### Added

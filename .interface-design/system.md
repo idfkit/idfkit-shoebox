@@ -1276,3 +1276,34 @@ a check. Build the artifact, run it, and read the errors. Doing so caught a
 severe error, a control writing a field the engine silently discarded, a summed
 readout that did not actually sum, and a meter averaging to zero. See the
 `local-energyplus-validation` note for the workflow.
+
+## A file the reader brings
+
+The station picker fetches; a licensed file is bought and arrives on the
+reader's own machine. So the picker's panel carries a second way in, below the
+list and the foot, separated by a hairline rule and taking the panel's own
+surface — not a box, not a shadow, nothing that reads as a dialog laid over the
+list. It is a second way to answer one question, not a second question.
+
+The file input is the platform's own `<input type="file">`, restyled and not
+replaced. A file dialog is one of the few things a page genuinely cannot build,
+and every keyboard, screen reader and mobile browser already knows this one. It
+takes the inset surface like every other field that receives content, and its
+button half takes the vellum, so the pair reads as a trough with a control in
+it rather than as a single slab.
+
+Two lines sit under it and neither may ever fold. The first says what the
+control takes and that the file is read on this machine and never uploaded —
+the privacy claim is the product, and a reader deciding whether to hand over a
+purchased file is exactly the reader who needs it in view. The second says what
+the browser is currently keeping and offers to forget it, because a page
+holding a file of somebody's must show that it is holding it, beside the
+control that stops it.
+
+**A desk waiting for a file letters an em dash in the title block, not a
+place.** A link can name a weather file it cannot carry, and the desk that
+opens on it has parameters, a patch bay and a pin but no climate. Leaving the
+shipped city lettered there would be the sheet asserting a place it is not at,
+which is the one thing every rule in this system exists to prevent — so the
+location and the site line read `—` until the file lands, and the status line
+says which file is wanted, in that file's own words.
