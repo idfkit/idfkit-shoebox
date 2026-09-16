@@ -41,11 +41,11 @@ Single project. Modules under `src/`, the page at `index.html`, harnesses under
 **Purpose**: get real weather files in hand and record what is true before the change,
 so that "unchanged" can be proved rather than asserted.
 
-- [ ] T001 Stage the engine, schemas and station index by running `npm install && npm run dev` at the repository root, confirming `public/energyplus/`, `public/schemas/` and `public/weather/` fill
+- [X] T001 Stage the engine, schemas and station index by running `npm install && npm run dev` at the repository root, confirming `public/energyplus/`, `public/schemas/` and `public/weather/` fill
 - [ ] T002 Create `specs/012-attach-weather-file/verify/README.md` naming each harness, what it asserts and which quickstart gate it answers
 - [ ] T003 [P] Create `specs/012-attach-weather-file/verify/kit.mjs` with the shared harness helpers (load the schema through `localBundle()` at the full `'26.1.0'` string, build a document, write an IDF, run one EnergyPlus per process), following `specs/011-sweep-priced-controls/verify/kit.mjs`
 - [ ] T004 [P] Collect the weather fixtures quickstart gate 1 names into `specs/012-attach-weather-file/verify/fixtures/` (gitignored): a TMYx EPW saved from the picker, a licensed CIBSE DSY1 if held, the same file in CRLF and LF, a leap-year file, a part-year file, a sub-hourly file, and a DDY for a different city. Record in `verify/README.md` which were obtainable and which gates therefore cannot run
-- [ ] T005 [P] Mint the pre-feature link corpus: on `main`, write `specs/012-attach-weather-file/verify/links-before.json` from a spread of desks (defaults, every channel bypassed, a station link, a pinned hour, an open study, an open survey), following `specs/011-sweep-priced-controls/verify/links-before.mjs`
+- [X] T005 [P] Mint the pre-feature link corpus: on `main`, write `specs/012-attach-weather-file/verify/links-before.json` from a spread of desks (defaults, every channel bypassed, a station link, a pinned hour, an open study, an open survey), following `specs/011-sweep-priced-controls/verify/links-before.mjs`
 - [ ] T006 Re-measure research R5 and R8 on the real fixtures in `specs/012-attach-weather-file/verify/measure-file.mjs` — raw size, gzip size, base64 length, `localStorage` cost, SHA-256, gzip, gunzip, `dailyMeans` — and write the figures into `specs/012-attach-weather-file/research.md` over the synthetic ones, marking them measured (quickstart gate 1)
 
 **Checkpoint**: real files in hand, the link corpus frozen, and the remembering budget
@@ -61,17 +61,17 @@ behave identically at the end of it.
 
 **⚠️ CRITICAL**: no user story can begin until T018's checkpoint passes.
 
-- [ ] T007 Confirm the `Site:Location` field spellings against the 26.1.0 schema in `specs/012-attach-weather-file/verify/schema-fields.mjs` — `latitude`, `longitude`, `time_zone`, `elevation`, and the type of each through `schema.field('Site:Location', name).t` (quickstart gate 2, research R3). **Nothing below may name a field this task has not confirmed**
-- [ ] T008 Move `readLocation` from `src/main.js` to `src/epw.js` unchanged in behaviour, beside `parseEpwCalendar` and `parseEpwStartDay`, and delete the comment that said it belonged there
-- [ ] T009 Widen `readLocation` in `src/epw.js` to carry `latitude`, `longitude` and `elevation` (LOCATION fields 6, 7 and 9) alongside the six it already reads, keeping the null-for-empty and hyphen-is-absence rules and the sixteen-line bound
-- [ ] T010 [P] Add `siteLocationValues(place)` to `src/epw.js`, returning what `Site:Location` wants under the spellings T007 confirmed
-- [ ] T011 [P] Add `periodCovered(epw)` to `src/epw.js`, reading the `DATA PERIODS` record and the first and last timestamps, returning `{ from, to, perHour }` and never assuming a whole year
+- [X] T007 Confirm the `Site:Location` field spellings against the 26.1.0 schema in `specs/012-attach-weather-file/verify/schema-fields.mjs` — `latitude`, `longitude`, `time_zone`, `elevation`, and the type of each through `schema.field('Site:Location', name).t` (quickstart gate 2, research R3). **Nothing below may name a field this task has not confirmed**
+- [X] T008 Move `readLocation` from `src/main.js` to `src/epw.js` unchanged in behaviour, beside `parseEpwCalendar` and `parseEpwStartDay`, and delete the comment that said it belonged there
+- [X] T009 Widen `readLocation` in `src/epw.js` to carry `latitude`, `longitude` and `elevation` (LOCATION fields 6, 7 and 9) alongside the six it already reads, keeping the null-for-empty and hyphen-is-absence rules and the sixteen-line bound
+- [X] T010 [P] Add `siteLocationValues(place)` to `src/epw.js`, returning what `Site:Location` wants under the spellings T007 confirmed
+- [X] T011 [P] Add `periodCovered(epw)` to `src/epw.js`, reading the `DATA PERIODS` record and the first and last timestamps, returning `{ from, to, perHour }` and never assuming a whole year
 - [ ] T012 Create `src/source.js` (DOM-free, network-free) with the frozen `WeatherSource` and `Place` classes of [data-model.md](./data-model.md), every field passed and `null` a legitimate value for each nullable one
 - [ ] T013 Add `fingerprint(bytes)` to `src/source.js`: CRLF and lone CR to LF and trailing newlines stripped **on the bytes**, SHA-256 through `crypto.subtle`, base64url, truncated to 16 characters (research R5)
 - [ ] T014 Add `degreeDaysOf(means)` to `src/source.js` — `HDD18 = Σ max(0, 18 − mean)`, `CDD10 = Σ max(0, mean − 10)` over `dailyMeans`' 365 numbers, carrying `measured: true` and keeping the Celsius bases in both unit systems (research R11)
 - [ ] T015 Add `sourceFromStation(station, files)` and the async `sourceFromFile({ name, bytes, ddyText })` to `src/source.js`, the second running the gate of [data-model.md](./data-model.md) and rejecting with the parser's own sentence unchanged (research R12)
-- [ ] T016 Split `setDesignConditions` in `src/model.js` into `setSiteLocation(doc, location)` and the design-day half, and add `clearDesignDays(doc)`; make `designDayDatums(doc)` return `[]` for a document with none rather than throwing
-- [ ] T017 Change `pricesFor` in `src/rates.js` to take a `Place` (`{ country, region }`) rather than a station object, leaving every published rate, refusal sentence and `countryName(iso3) ?? iso3` fallthrough exactly as they are (research R10)
+- [X] T016 Split `setDesignConditions` in `src/model.js` into `setSiteLocation(doc, location)` and the design-day half, and add `clearDesignDays(doc)`; make `designDayDatums(doc)` return `[]` for a document with none rather than throwing
+- [X] T017 Change `pricesFor` in `src/rates.js` to take a `Place` (`{ country, region }`) rather than a station object, leaving every published rate, refusal sentence and `countryName(iso3) ?? iso3` fallthrough exactly as they are (research R10)
 - [ ] T018 Extract `attachClimate(source)` out of `choose()` in `src/main.js`, carrying all eight steps — the six clears (`studyScheduler.clearAll()`, `studyStops.clear()`, `closeSurvey({ forgetTraverse: true })`, `meanCache = null`, `bill`/`lastRun`, `lastOutcome`), the model write and the title-block re-letter — and make the station picker its first and only caller (research R1)
 - [ ] T019 [P] Write `specs/012-attach-weather-file/verify/readers.mjs`: `readLocation`, `periodCovered`, `dailyMeans` and `degreeDaysOf` over every fixture, asserting each absence comes back `null`, each refusal names its day, and the measured degree days sit close to the index's published figures for the same station (quickstart gate 3)
 - [ ] T020 [P] Write `specs/012-attach-weather-file/verify/fingerprint.mjs`: CRLF equals LF, trailing newline equals none, one changed character differs, changed in-field whitespace differs, every output matches `[A-Za-z0-9_-]{16}` (quickstart gate 4)
@@ -124,9 +124,9 @@ rule, and one declaring neither. Read the whole block in both cases: every sente
 true of the file in hand, no sentence claims a match or a mismatch, and the file the run
 used is legible without opening a fold.
 
-- [ ] T038 [US2] Split the local-time qualification in `src/tm59.js`: the standing half keeps TM59:2026 §3.7.1's rule, and a run-dependent half states what **this** file's `HOLIDAYS/DAYLIGHT SAVINGS` record declares, read through `parseEpwCalendar` (FR-013, research R13)
-- [ ] T039 [US2] Make the new half agree with the run in `src/tm59.js`: `applyRun` writes `use_weather_file_daylight_saving_period: params.dst`, so the sentence says which of the two states this run is in rather than asserting what files generally declare
-- [ ] T040 [US2] Confirm `qualificationsFor` and `WeatherFile.declares` need no change for an attached file in `src/tm59.js`, and that the weather qualification still prints the declaration beside `WFR_REQUIREMENT` asserting no relation (FR-012, FR-015)
+- [X] T038 [US2] Split the local-time qualification in `src/tm59.js`: the standing half keeps TM59:2026 §3.7.1's rule, and a run-dependent half states what **this** file's `HOLIDAYS/DAYLIGHT SAVINGS` record declares, read through `parseEpwCalendar` (FR-013, research R13)
+- [X] T039 [US2] Make the new half agree with the run in `src/tm59.js`: `applyRun` writes `use_weather_file_daylight_saving_period: params.dst`, so the sentence says which of the two states this run is in rather than asserting what files generally declare
+- [X] T040 [US2] Confirm `qualificationsFor` and `WeatherFile.declares` need no change for an attached file in `src/tm59.js`, and that the weather qualification still prints the declaration beside `WFR_REQUIREMENT` asserting no relation (FR-012, FR-015)
 - [ ] T041 [US2] Letter each criterion's absence in `src/main.js` where the attached file does not cover the seed week of 23–29 April or the 1 May – 30 September period, naming the missing period and computing nothing over a shortened one (FR-014)
 - [ ] T042 [US2] Carry a `dailyMeans` refusal into criterion a's margin cell and into the degree-day reading in `src/main.js`, in the sentence the parser wrote, leaving criteria b and c reading (research R11, R12)
 - [ ] T043 [P] [US2] Write `specs/012-attach-weather-file/verify/criteria-over-file.mjs`: all five criteria over a real DSY against the same arithmetic over a TMYx year; a seeded-week-short file; a season-short file; `TM59_SPACES` still equal to `PROFILE_IDS`; no threshold moved (quickstart gate 7)
@@ -149,9 +149,9 @@ year is lettered. Then attach the matching file, a different file, and a file wi
 same name but different contents — three distinguishable outcomes, each stating its
 reason.
 
-- [ ] T045 [US3] Add `wf` and `wfd` to `RESERVED` in `src/permalink.js`, under the existing collision assertion, and write them from `encodeState` where the desk's source is a file and never beside `stn` ([contracts/permalink-weather.md](./contracts/permalink-weather.md))
-- [ ] T046 [US3] Read both in `decodeState` in `src/permalink.js`, **above** `readValue` with the other reserved keys, returning `file` as `{ fingerprint, declares }` or null
-- [ ] T047 [US3] Refuse the link whole in `src/permalink.js` for `wfd` without `wf`, `wf` with `stn`, and a malformed `wf`, each naming what was wrong in the wording `win`-without-`stn` already uses
+- [X] T045 [US3] Add `wf` and `wfd` to `RESERVED` in `src/permalink.js`, under the existing collision assertion, and write them from `encodeState` where the desk's source is a file and never beside `stn` ([contracts/permalink-weather.md](./contracts/permalink-weather.md))
+- [X] T046 [US3] Read both in `decodeState` in `src/permalink.js`, **above** `readValue` with the other reserved keys, returning `file` as `{ fingerprint, declares }` or null
+- [X] T047 [US3] Refuse the link whole in `src/permalink.js` for `wfd` without `wf`, `wf` with `stn`, and a malformed `wf`, each naming what was wrong in the wording `win`-without-`stn` already uses
 - [ ] T048 [US3] Build the file token in `src/main.js`'s `schemeHash` from the source rather than from `station`, so the address bar carries `wf` and `wfd` the moment a file is attached
 - [ ] T049 [US3] Land a `wf` link on the waiting desk in `src/main.js`: apply every parameter, patch, pin, study and survey, **remove the shipped design days**, solve nothing, and letter what the link asked for in the file's own words (FR-019, research R7)
 - [ ] T050 [US3] Hold the address bar still while a desk waits on a file in `src/main.js`, as `linkAttachPending` does for a linked station, so the link being honoured cannot lose its own token

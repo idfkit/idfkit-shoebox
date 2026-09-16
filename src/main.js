@@ -106,7 +106,15 @@ import {
   siteRegion,
   weatherFor,
 } from './weather.js';
-import { dailyMeans, holidayList, parseEpwCalendar, parseEpwStartDay } from './epw.js';
+import {
+  dailyMeans,
+  holidayList,
+  parseEpwCalendar,
+  parseEpwStartDay,
+  periodCovered,
+  readLocation,
+  siteLocationValues,
+} from './epw.js';
 import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
 import { mountChangelog } from './changelog.js';
 import CHANGELOG_SOURCE from '../CHANGELOG.md?raw';
@@ -4943,50 +4951,6 @@ function nextSchemeName() {
 /* ── the overheating criteria ─────────────────────────────────────────── */
 
 /**
- * What the attached EPW's own LOCATION record says about itself.
- *
- * **This belongs in `src/epw.js`**, beside `parseEpwCalendar`,
- * `parseEpwStartDay` and `dailyMeans`, and it is here only because that module
- * does not carry it yet. It is EPW parsing and its only honest test is a real
- * file, which is the whole argument for keeping every header reader in one
- * place; moving it costs one import and nothing else, because nothing outside
- * this pair of functions knows the record's shape.
- *
- * The record is the first line of every EPW and the fields are positional:
- * `LOCATION,City,State,Country,Source,WMO,Lat,Lon,TimeZone,Elevation`.
- * `WeatherFile` wants six of the ten and refuses a partial object outright, so
- * every one of them is passed and an absent field is passed as `null` — "the
- * file says nothing here" and "nobody read it" must not be the same state, and
- * an empty field between two commas is the first of those. A file carrying no
- * LOCATION record at all is the same statement made six times over, which is
- * exactly what `WeatherFile.declares` letters as "a file whose LOCATION record
- * declares nothing about itself"; there is nothing to throw about and nothing
- * to substitute.
- *
- * Nothing here judges the file. WFR:2026 names a specific one and this page
- * cannot read a file's provenance, so the two descriptions are printed side by
- * side and the reader draws the conclusion (FR-015).
- */
-function readLocation(epw) {
-  // Only the head of the file is searched. The record is the first line of a
-  // conforming EPW, and scanning 8,760 data rows for a header that is not
-  // there would be the one expensive way to answer "no".
-  const line = epw.split(/\r?\n/, 16).find((row) => /^LOCATION\s*,/i.test(row));
-  const fields = line ? line.split(',').map((field) => field.trim()) : [];
-  // onebuilding writes a bare hyphen where a station has no record to publish,
-  // the same convention the DDY uses for a design condition it cannot fill.
-  const at = (i) => (fields[i] && fields[i] !== '-' ? fields[i] : null);
-  return new WeatherFile({
-    city: at(1),
-    region: at(2),
-    country: at(3),
-    source: at(4),
-    wmo: at(5),
-    timeZone: at(8),
-  });
-}
-
-/**
  * The same thing, or null on a desk that has attached no file at all.
  *
  * Deliberately **not** cached, unlike the running mean below, and the
@@ -4995,8 +4959,13 @@ function readLocation(epw) {
  * sixteen lines and never reaches the 8,760 data records. A cache that saves
  * three microseconds twice a solve is a second piece of state to clear on a
  * station change and nothing else.
+ *
+ * `readLocation` itself now lives in `src/epw.js`, where its own comment always
+ * said it belonged, and returns the pair `{ declares, place }`. This is the
+ * half that answers what the file says about itself; `place` is what the model
+ * and the title block are written from.
  */
-const declaredWeather = (epw) => (epw ? readLocation(epw) : null);
+const declaredWeather = (epw) => (epw ? readLocation(epw).declares : null);
 
 /**
  * The comfort line's climate half, cached on the attached file's identity.
@@ -5110,7 +5079,19 @@ function readTm59(eso, snapshot, patched, epw) {
     // block as a whole rather than a row of it.
     line: readings.find((r) => r.criterion === CRITERION_BY_ID.a && r.category === COUNT_CATEGORY)
       ?.line ?? null,
-    qualifications: qualificationsFor(eso, snapshot, patched, declaredWeather(epw)),
+    // The daylight saving period beside what the file declares about itself,
+    // because the two come off different records and the qualification needs
+    // both: `parseEpwCalendar` reads HOLIDAYS/DAYLIGHT SAVINGS, `readLocation`
+    // reads LOCATION. Read rather than cached, for the reason `declaredWeather`
+    // is: the split is bounded at the file's first dozen lines and never
+    // reaches its 8,760 data records.
+    qualifications: qualificationsFor(
+      eso,
+      snapshot,
+      patched,
+      declaredWeather(epw),
+      epw ? parseEpwCalendar(epw).daylight : null,
+    ),
   };
 }
 
