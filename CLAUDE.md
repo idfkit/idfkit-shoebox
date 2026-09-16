@@ -281,6 +281,12 @@ geometry earlier ones wrote).
   A priced axis costs no runs (`Coverage.runs` counts them); spot heights keep
   their `basis` and `repriceSurvey` re-prices them on every priced commit, landing
   an unpriceable one as a `Gap` with the bill's reason.
+  Every standard's published limit for `readings[0]` is drawn as its own chain-dash
+  isoline with the passing ground hatched, on both drawings, narrowed to one standard
+  while it is chased and stated in words where there is none — the `Target` held by
+  reference, the pass side probed off `meets`, the qualifier matched (TM59's two
+  categories carry one limit), the band the same marching square as the line. See
+  "Somebody else's published line, cut across the ground".
 - **Reports** (`report.js`, `report-sheet.js`): `report.js` is DOM-free (records,
   `buildBody`, `handoff`, the trail, the error log, the `provide`/`ask`
   registry). `report-sheet.js` is a **second module entry, loaded before
