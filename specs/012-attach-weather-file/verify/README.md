@@ -182,3 +182,67 @@ the second call throws a bare number *before doing any work*, leaving the first 
 output in `/output` for an unwary harness to read back as agreement. That measurement is
 feature 006's, repeated at the head of `kit.mjs` because it is the reason the file is
 shaped the way it is.
+
+## What was actually run, and what came back
+
+Recorded at the end of the implementation session, per tasks.md's rule that a
+gate which could not be run is recorded as not run and never as passed.
+
+| harness / gate | outcome |
+| --- | --- |
+| `schema-fields.mjs` — gate 2 | **passed.** `latitude`, `longitude`, `time_zone`, `elevation` all resolve on `Site:Location` in the 26.1.0 schema and all four are typed numeric. |
+| `readers.mjs` — gates 3, 4 | **passed**, 28 checks. Two items inside it recorded not-run (below). |
+| `model-with-file.mjs` — gate 5 | **passed**, 11 checks. Includes the one this design rests on: a document with no `SizingPeriod:DesignDay` at all runs to exit 0 with no severe errors and a full ESO. |
+| `links-after.mjs` — gate 6 | **passed**, 24 checks, against `links-before.json` minted on the codec as it stood before the feature. One refusal reworded on purpose and declared as such in the harness. |
+| gate 8, driven in headless Chromium | **partly run** — see below. |
+| gate 9, the network recording | **passed** for everything reachable here: across attaching, solving, minting a link, reloading on it and forgetting the file, **zero requests of any kind after the file dialog opens**, off-site or otherwise, and none carrying a body. |
+
+### Gate 8, driven
+
+The page was driven in headless Chromium against the synthetic fixtures. What
+was exercised and passed:
+
+- attach, with and without a DDY beside the file; title block, site line and
+  degree days all off the file's own records;
+- 8,760 hours solved locally against the attached file, 0 page errors;
+- no DDY beside it → no design days, no datum lines, and the sentence saying so;
+- a link minted on a file desk, opened in a browser that has never seen the
+  file: the desk loads whole, nothing is solved, the title block reads an em
+  dash rather than a city, and the wanted file is named in its own words;
+- the wrong file refused with both descriptions printed; the right one attaches
+  and solves;
+- reload on the link re-attaches from `localStorage` with no filesystem trip;
+  the bare address comes back with **no** climate and the file merely offered,
+  which is the Principle II rule this feature turns on;
+- four refusals provoked deliberately — a PDF, a leap-year file, a part-year
+  file, a file with one record missing — each naming what was missing;
+- 390 px with a coarse pointer: the attach control, its note and the kept line
+  all in view with real dimensions, both controls taking a tab stop, no sideways
+  scroll;
+- the units toggle with a file attached: the elevation re-letters 525 ft → 160 m,
+  the degree days stay on their Celsius bases, the fingerprint in the link does
+  not move and no run starts.
+
+What was **not** run under gate 8: attaching while a study and a survey are both
+in flight, and the background-tab paint check. Both need a driven study, which
+is minutes of engine time per sample.
+
+### Still not runnable here
+
+Re-confirmed during implementation: `curl https://climate.onebuilding.org/` →
+`curl: (56) CONNECT tunnel failed, response 403`.
+
+1. **Gate 1 entirely.** Every size and timing figure in `research.md` and
+   `docs/design-notes.md` is over a synthetic file. Two synthetic files already
+   disagree with each other by a lot — 22.3 % and 13.9 % compression — which is
+   itself the argument that a synthetic ratio settles nothing. The remembering
+   budget in `weather.js` rests on this and must be re-measured on a bought file.
+2. **Every reading over a licensed CIBSE DSY1**, which is the feature's actual
+   subject.
+3. **SC-003**, the identity check between a hand-attached TMYx file and the same
+   station picked from the list. It cannot be approximated: a synthetic file has
+   no station in the list to be identical to.
+4. **The idfkit MCP model checks** — `load_model`, `validate_model`,
+   `check_model_integrity`. No local EnergyPlus and no MCP tools here; the WASM
+   runner stands in for `run_simulation` alone.
+5. **The fingerprint in a browser against the fingerprint under Node.**

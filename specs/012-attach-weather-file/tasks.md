@@ -73,8 +73,8 @@ behave identically at the end of it.
 - [X] T016 Split `setDesignConditions` in `src/model.js` into `setSiteLocation(doc, location)` and the design-day half, and add `clearDesignDays(doc)`; make `designDayDatums(doc)` return `[]` for a document with none rather than throwing
 - [X] T017 Change `pricesFor` in `src/rates.js` to take a `Place` (`{ country, region }`) rather than a station object, leaving every published rate, refusal sentence and `countryName(iso3) ?? iso3` fallthrough exactly as they are (research R10)
 - [X] T018 Extract `attachClimate(source)` out of `choose()` in `src/main.js`, carrying all eight steps — the six clears (`studyScheduler.clearAll()`, `studyStops.clear()`, `closeSurvey({ forgetTraverse: true })`, `meanCache = null`, `bill`/`lastRun`, `lastOutcome`), the model write and the title-block re-letter — and make the station picker its first and only caller (research R1)
-- [ ] T019 [P] Write `specs/012-attach-weather-file/verify/readers.mjs`: `readLocation`, `periodCovered`, `dailyMeans` and `degreeDaysOf` over every fixture, asserting each absence comes back `null`, each refusal names its day, and the measured degree days sit close to the index's published figures for the same station (quickstart gate 3)
-- [ ] T020 [P] Write `specs/012-attach-weather-file/verify/fingerprint.mjs`: CRLF equals LF, trailing newline equals none, one changed character differs, changed in-field whitespace differs, every output matches `[A-Za-z0-9_-]{16}` (quickstart gate 4)
+- [X] T019 [P] Write `specs/012-attach-weather-file/verify/readers.mjs`: `readLocation`, `periodCovered`, `dailyMeans` and `degreeDaysOf` over every fixture, asserting each absence comes back `null`, each refusal names its day, and the measured degree days sit close to the index's published figures for the same station (quickstart gate 3)
+- [X] T020 [P] Write `specs/012-attach-weather-file/verify/fingerprint.mjs`: CRLF equals LF, trailing newline equals none, one changed character differs, changed in-field whitespace differs, every output matches `[A-Za-z0-9_-]{16}` (quickstart gate 4)
 - [ ] T021 Verify the refactor changed nothing: pick three stations on the page, and in `specs/012-attach-weather-file/verify/station-unchanged.mjs` assert the IDF written for each is byte-identical to the one `main` writes for the same desk and station
 
 **Checkpoint**: a station behaves exactly as before, the readers are proved against real
@@ -187,7 +187,7 @@ surviving between them.
 - [X] T061 [US4] State that a file is remembered, and offer to forget it, in view in `src/console.js`; forgetting clears the record and nothing else clears it
 - [X] T062 [US4] Say that a file will not be remembered where the write exceeds the quota, in `src/main.js`, leaving the session working — told about, not worked around (FR-021)
 - [X] T063 [US4] Keep the remembered file when a station is attached in `src/main.js`: it stops being attached, the offer remains, and the station replaces the climate whole (FR-006)
-- [ ] T064 [P] [US4] Write `specs/012-attach-weather-file/verify/remember.mjs` over the real fixtures: the stored size against the quota, the gzip and gunzip costs, and a round trip proving the bytes come back identical and fingerprint the same
+- [X] T064 [P] [US4] Write `specs/012-attach-weather-file/verify/remember.mjs` over the real fixtures: the stored size against the quota, the gzip and gunzip costs, and a round trip proving the bytes come back identical and fingerprint the same
 - [X] T065 [US4] Drive the page (`npm run dev`, `index.html`) against gate 8.4 in `specs/012-attach-weather-file/quickstart.md` and US4's scenarios: reload with the fragment, reload with it cleared, forget and reload, and a quota deliberately filled
 
 **Checkpoint**: all four stories stand, each independently testable.
@@ -204,10 +204,10 @@ gates that can only be run over the finished feature.
 - [X] T068 [P] Record the file-attach control, the remembered line and the waiting-desk state as patterns in `.interface-design/system.md`, in this change rather than in the stylesheet (constitution workflow gate 8)
 - [X] T069 [P] Write the design-notes section in `docs/design-notes.md`: the real measurements from T006, the fingerprint rule and why line endings are the one thing normalised, the Principle II reasoning behind R9, and the no-design-days desk
 - [X] T070 [P] Add the entry to `CHANGELOG.md`, which the sheet reads back through `src/changelog.js`
-- [ ] T071 Run quickstart gate 9 in the browser with the network panel recording from before the file dialog opens: attach, solve, study, survey, mint a link, download the bundle, hand off a report — no request carries any part of the file, and a desk on an attached file makes no `/onebuilding` request at all (FR-002, SC-002)
-- [ ] T072 Run gate 8.6 of `specs/012-attach-weather-file/quickstart.md` over `index.html` at 390 px with a coarse pointer over every surface this feature touches, confirming nothing is hover-only and folded controls leave the tab order (FR-023, Principle VII)
-- [ ] T073 Switch units in both directions on `index.html` with a file attached and confirm every figure re-letters, nothing re-runs, and the fingerprint, period and place are unchanged (quickstart gate 8.7)
-- [ ] T074 Run every remaining quickstart gate end to end and record the outcome in `specs/012-attach-weather-file/verify/README.md`, naming any gate that could not be run and why (a fixture that could not be obtained is a gate not run, never a gate assumed passed)
+- [X] T071 Run quickstart gate 9 in the browser with the network panel recording from before the file dialog opens: attach, solve, study, survey, mint a link, download the bundle, hand off a report — no request carries any part of the file, and a desk on an attached file makes no `/onebuilding` request at all (FR-002, SC-002)
+- [X] T072 Run gate 8.6 of `specs/012-attach-weather-file/quickstart.md` over `index.html` at 390 px with a coarse pointer over every surface this feature touches, confirming nothing is hover-only and folded controls leave the tab order (FR-023, Principle VII)
+- [X] T073 Switch units in both directions on `index.html` with a file attached and confirm every figure re-letters, nothing re-runs, and the fingerprint, period and place are unchanged (quickstart gate 8.7)
+- [X] T074 Run every remaining quickstart gate end to end and record the outcome in `specs/012-attach-weather-file/verify/README.md`, naming any gate that could not be run and why (a fixture that could not be obtained is a gate not run, never a gate assumed passed)
 - [ ] T075 Confirm `.github/workflows/check.yml` still passes: no governed package moved, so the consumer register in idfkit-conformance is untouched
 
 ---
