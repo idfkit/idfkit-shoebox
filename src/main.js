@@ -83,9 +83,9 @@ import {
   strataOf,
   SpotHeight,
   TraverseStop,
-  markSentence,
   passingGround,
   thresholdLevels,
+  thresholdSentence,
   thresholdsAt,
   thresholdsFor,
 } from './survey.js';
@@ -9845,30 +9845,6 @@ function groundLinesFor(sv, lattice) {
   return new GroundLines({ set, bands: groundBands(lattice, set) });
 }
 
-/**
- * One published line, as the sentence the key and the aria label both use.
- *
- * Worded as "meets this standard's published threshold" and nothing else: a
- * band says where one published figure falls on measured ground, and it is not
- * a recommendation, not an optimum, and not a verdict across standards
- * (FR-011).
- *
- * **The criterion's own full wording is deliberately not here**, and that was
- * measured rather than decided. `Target.asks` is a short clause for the energy
- * lines ("≤ 15 kWh/(m²a)") and the whole criterion for TM59's — criterion a's
- * runs to forty-five words — so the entry it built came out at seventy-five
- * words in view against a forty-word ceiling. The board is where a standard
- * says what it asks, in its own words, on the row for this very target; the
- * key is where the drawing says what a mark *is*. So the entry names the
- * standard, the criterion, the figure and the side that passes, which is the
- * whole of what the mark means.
- */
-function thresholdSentence(line, ground) {
-  const unit = line.reading.unitNow;
-  const side = line.passesBelow ? 'at or below' : 'at or above';
-  const opening = `${line.label}: passes ${side} ${line.figure()}${unit ? ` ${unit}` : ''}.`;
-  return `${opening} ${markSentence(ground)}`;
-}
 
 
 /**

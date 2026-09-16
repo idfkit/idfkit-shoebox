@@ -2511,13 +2511,22 @@ precedent it follows: the absence path already letters its finished sentence
 in that module, and the key, the plan caption and the aria label all reuse the
 one wording rather than spelling it three times. The reason is that this is
 the copy the page cannot check. `main.js` imports the engine and drives the
-DOM, so nothing in it loads under Node — the six branches were first verified
-by *scraping* `markSentence`'s source text out of the file and rebuilding it
-with `new Function`, which is a verification a rename ends silently. Imported
-from `survey.js` the same rename is a `SyntaxError` at module load. The
-opening that names the standard and letters its figure stays in `main.js`,
-because that is lettering; this is the claim about what was drawn, and it is
-the claim that had to be provable.
+DOM, so nothing in it loads under Node — the branches were first verified by
+*scraping* `markSentence`'s source text out of the file and rebuilding it with
+`new Function`, which is a verification a rename ends silently. Imported from
+`survey.js` the same rename is a `SyntaxError` at module load.
+
+**Both halves had to go, and the first attempt moved only one.** Leaving the
+opening — the standard's name, the side that passes, the figure — in `main.js`
+looked defensible ("that is lettering; this is the claim") and was not, for a
+reason the harness demonstrated rather than argued: unable to import the
+opening, it spelled its own, so `passes at or below` existed twice and the
+forty-word ceiling was measured against about sixty per cent of the entry a
+reader actually sees. A second spelling of one sentence is what the rest of
+this feature is built to refuse, and it had been relocated into the
+verification rather than removed. `thresholdSentence` sits beside
+`markSentence` now, both directly under `PassingGround`, and the harness
+measures the block the key shows: worst case 35 words of the 40.
 
 **What the harness covers that the page could not.** `climate.onebuilding.org`
 is unreachable from the container this was built in (403 through the proxy), so
