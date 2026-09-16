@@ -99,7 +99,7 @@ file.
 - [X] T026 [US1] Refuse in `src/main.js` whatever the gate refuses, whole: the reason in view, the previous climate untouched, and the reason the parser's own sentence (FR-004, FR-024)
 - [X] T027 [US1] Write `Site:Location` from the file's LOCATION record through `setSiteLocation` and `siteLocationValues` in `src/main.js`, and letter the title block and site line from the document as the station path does (FR-007)
 - [X] T028 [US1] Attach a DDY where one came with the file: `designConditionsFrom` as today, refusing with both places printed where it describes another site (FR-009)
-- [ ] T029 [US1] Where no DDY came with the file, call `clearDesignDays`, commit `sizingPeriods` to `'No'`, and withdraw the Run strip's design-day choice with its reason stated in `src/controls.js`'s `requires` (FR-009, research R4)
+- [X] T029 [US1] Where no DDY came with the file, call `clearDesignDays`, commit `sizingPeriods` to `'No'`, and withdraw the Run strip's design-day choice with its reason stated in `src/controls.js`'s `requires` (FR-009, research R4)
 - [X] T030 [US1] Letter the absence of the datum lines in `src/main.js`'s `renderTrace` and on the plate, with the reason, rather than drawing the outgoing climate's (FR-009, Principle IV)
 - [X] T031 [US1] Letter the site sub-line for a file in `src/main.js`: the measured degree days saying they were measured, the period `periodCovered` read, and an em dash for the ASHRAE climate zone a file does not declare (FR-008)
 - [X] T032 [US1] Route the tariffs, currency and grid factor through the source's `Place` in `src/main.js`, and confirm an uncovered country refuses the bill with `rates.js`'s published sentence while the energy readings stand (FR-011)
@@ -152,15 +152,15 @@ reason.
 - [X] T045 [US3] Add `wf` and `wfd` to `RESERVED` in `src/permalink.js`, under the existing collision assertion, and write them from `encodeState` where the desk's source is a file and never beside `stn` ([contracts/permalink-weather.md](./contracts/permalink-weather.md))
 - [X] T046 [US3] Read both in `decodeState` in `src/permalink.js`, **above** `readValue` with the other reserved keys, returning `file` as `{ fingerprint, declares }` or null
 - [X] T047 [US3] Refuse the link whole in `src/permalink.js` for `wfd` without `wf`, `wf` with `stn`, and a malformed `wf`, each naming what was wrong in the wording `win`-without-`stn` already uses
-- [ ] T048 [US3] Build the file token in `src/main.js`'s `schemeHash` from the source rather than from `station`, so the address bar carries `wf` and `wfd` the moment a file is attached
-- [ ] T049 [US3] Land a `wf` link on the waiting desk in `src/main.js`: apply every parameter, patch, pin, study and survey, **remove the shipped design days**, solve nothing, and letter what the link asked for in the file's own words (FR-019, research R7)
-- [ ] T050 [US3] Hold the address bar still while a desk waits on a file in `src/main.js`, as `linkAttachPending` does for a linked station, so the link being honoured cannot lose its own token
-- [ ] T051 [US3] Letter the absence of every reading that needs a year on a waiting desk in `src/main.js`, with the reason in view rather than in a fold, and never from the design days (FR-019, FR-024)
-- [ ] T052 [US3] Refuse a mismatched file against a `wf` link in `src/main.js`, printing both what the link asked for and what the file declares, and offering the file on a fresh desk instead (FR-020)
+- [X] T048 [US3] Build the file token in `src/main.js`'s `schemeHash` from the source rather than from `station`, so the address bar carries `wf` and `wfd` the moment a file is attached
+- [X] T049 [US3] Land a `wf` link on the waiting desk in `src/main.js`: apply every parameter, patch, pin, study and survey, **remove the shipped design days**, solve nothing, and letter what the link asked for in the file's own words (FR-019, research R7)
+- [X] T050 [US3] Hold the address bar still while a desk waits on a file in `src/main.js`, as `linkAttachPending` does for a linked station, so the link being honoured cannot lose its own token
+- [X] T051 [US3] Letter the absence of every reading that needs a year on a waiting desk in `src/main.js`, with the reason in view rather than in a fold, and never from the design days (FR-019, FR-024)
+- [X] T052 [US3] Refuse a mismatched file against a `wf` link in `src/main.js`, printing both what the link asked for and what the file declares, and offering the file on a fresh desk instead (FR-020)
 - [ ] T053 [US3] Name the file a kept scheme was solved against in its row in `src/schemes.js`, and make a kept scheme minted under a file follow the link's rule when recalled (FR-022)
 - [ ] T054 [P] [US3] Write `specs/012-attach-weather-file/verify/link-roundtrip.mjs`: a file desk encodes, decodes and re-encodes byte-identically with a `wfd` carrying commas, spaces and `·`; each malformed class refused whole; `LINK_VERSION` still `v1` and `DEFAULTS_BY_VERSION` unchanged (quickstart gate 6)
 - [ ] T055 [US3] Decode T005's `links-before.json` on the branch in `specs/012-attach-weather-file/verify/links-after.mjs` and diff: every link minted before this feature must decode to exactly what it decoded to before
-- [ ] T056 [US3] Drive the page (`npm run dev`, `index.html`) against gate 6's three outcomes in `specs/012-attach-weather-file/quickstart.md`: the matching file, a different file, and a file renamed but unchanged — which the fingerprint must accept, since it is taken over contents
+- [X] T056 [US3] Drive the page (`npm run dev`, `index.html`) against gate 6's three outcomes in `specs/012-attach-weather-file/quickstart.md`: the matching file, a different file, and a file renamed but unchanged — which the fingerprint must accept, since it is taken over contents
 
 **Checkpoint**: two engineers can argue over the same building, which is the use this
 page is for.
@@ -181,14 +181,14 @@ Forget it and reload — the offer is gone. Swap file and station three times wi
 surviving between them.
 
 - [X] T057 [US4] Add `rememberFile`, `rememberedFile` and `forgetFile` to `src/weather.js` (which is already the browser-only weather module), storing the `RememberedFile` of [data-model.md](./data-model.md) gzipped and base64'd under `shoebox-weather-file-v1`
-- [ ] T058 [US4] Write the record only after an attach has landed in `src/main.js` — what is remembered is a file that already solved
-- [ ] T059 [US4] Re-attach on boot in `src/main.js` **only** where the fragment's `wf` equals the remembered fingerprint, so an ordinary reload works and a bare URL means the same thing on every machine (FR-021, research R9)
-- [ ] T060 [US4] Offer the remembered file in one click on a desk whose link names no file, in `src/main.js` and `src/console.js`, naming it in the file's own words and attaching nothing until the reader asks
-- [ ] T061 [US4] State that a file is remembered, and offer to forget it, in view in `src/console.js`; forgetting clears the record and nothing else clears it
-- [ ] T062 [US4] Say that a file will not be remembered where the write exceeds the quota, in `src/main.js`, leaving the session working — told about, not worked around (FR-021)
+- [X] T058 [US4] Write the record only after an attach has landed in `src/main.js` — what is remembered is a file that already solved
+- [X] T059 [US4] Re-attach on boot in `src/main.js` **only** where the fragment's `wf` equals the remembered fingerprint, so an ordinary reload works and a bare URL means the same thing on every machine (FR-021, research R9)
+- [X] T060 [US4] Offer the remembered file in one click on a desk whose link names no file, in `src/main.js` and `src/console.js`, naming it in the file's own words and attaching nothing until the reader asks
+- [X] T061 [US4] State that a file is remembered, and offer to forget it, in view in `src/console.js`; forgetting clears the record and nothing else clears it
+- [X] T062 [US4] Say that a file will not be remembered where the write exceeds the quota, in `src/main.js`, leaving the session working — told about, not worked around (FR-021)
 - [ ] T063 [US4] Keep the remembered file when a station is attached in `src/main.js`: it stops being attached, the offer remains, and the station replaces the climate whole (FR-006)
 - [ ] T064 [P] [US4] Write `specs/012-attach-weather-file/verify/remember.mjs` over the real fixtures: the stored size against the quota, the gzip and gunzip costs, and a round trip proving the bytes come back identical and fingerprint the same
-- [ ] T065 [US4] Drive the page (`npm run dev`, `index.html`) against gate 8.4 in `specs/012-attach-weather-file/quickstart.md` and US4's scenarios: reload with the fragment, reload with it cleared, forget and reload, and a quota deliberately filled
+- [X] T065 [US4] Drive the page (`npm run dev`, `index.html`) against gate 8.4 in `specs/012-attach-weather-file/quickstart.md` and US4's scenarios: reload with the fragment, reload with it cleared, forget and reload, and a quota deliberately filled
 
 **Checkpoint**: all four stories stand, each independently testable.
 

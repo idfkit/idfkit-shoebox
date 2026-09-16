@@ -97,12 +97,17 @@ import { errors, provide, trail } from './report.js';
 import { END_USES, GROUPS, computeBill, meterTotal } from './bill.js';
 import { assume, isRate, placeName, resolveRates } from './rates.js';
 import {
+  canRemember,
   climateDescription,
   climateZone,
   degreeDays,
   flavorWindow,
+  forgetFile,
   here,
   nearestSites,
+  rememberFile,
+  rememberedBytes,
+  rememberedFile,
   searchSites,
   siteName,
   siteRegion,
@@ -4791,6 +4796,22 @@ function attachClimate(source, { sizing = 'No', studyContext = null, conditions 
  * is not going to be.
  */
 
+/**
+ * The file a link asked for, while the desk waits on it. Null otherwise.
+ *
+ * Held so the attach can check what arrives against what was asked for. A
+ * recipient who attaches the wrong year has to be told before a single reading
+ * is drawn from it, because the whole worth of the link is that two people end
+ * up reading the same numbers.
+ *
+ * Declared here, beside the attach that reads it, rather than beside the boot
+ * dispatch that writes it: `attachOwnFile` is reachable from the moment the
+ * markup exists, minutes before a cold cache finishes the engine, and a `let`
+ * declared further down the module would be in its temporal dead zone for
+ * exactly that window.
+ */
+let wantedFile = null;
+
 /** What a file's extension says it is, lowercased and without its dot. */
 const extensionOf = (name) => (name.match(/\.([^.]+)$/)?.[1] ?? '').toLowerCase();
 
@@ -4915,6 +4936,25 @@ async function attachOwnFile(chosen) {
     return refuse(`${picked.name} cannot be used: ${error.message}.`);
   }
 
+  // A desk waiting on a link's file checks that this is that file, before a
+  // single reading is drawn from it. The whole worth of the link is that two
+  // people end up reading the same numbers, and a colleague who reaches for the
+  // wrong year of the same purchase would otherwise get a desk that looks
+  // exactly like the sender's and is not.
+  //
+  // Both descriptions are printed, because which of the two is the wrong one is
+  // the reader's to know and this page cannot tell them — it has a fingerprint
+  // and a phrase, and no way to see inside somebody else's purchase.
+  if (wantedFile && wantedFile.fingerprint !== source.fingerprint) {
+    return refuse(
+      `That is not the weather file this link was run against. The link asks for ` +
+        `${wantedFile.declares ?? 'a file it does not describe'}, and ${picked.name} says it is ` +
+        `${source.declares.declares}. Reload this page without the link to run your file on a fresh desk.`,
+    );
+  }
+  // Satisfied, or never asked for: either way the desk is no longer waiting.
+  wantedFile = null;
+
   // The design conditions, where a DDY came with it. Parsed here rather than in
   // `source.js` because the source carries the file's own text and this is the
   // one place that turns text into the objects the model holds — the same call
@@ -4946,6 +4986,123 @@ async function attachOwnFile(chosen) {
   site.classList.add('picked');
   $('site-file').value = '';
   attachClimate(source, { studyContext, conditions });
+
+  // Kept only now, after the attach has landed: what the browser remembers is
+  // always a file that already solved. The await is deliberately not waited on
+  // — compressing 1.5 MB takes about 45 ms and the desk is already running the
+  // file — but its answer is, because a file that will not be kept is something
+  // the reader has to be told rather than discover on their next reload.
+  void rememberFile({
+    fingerprint: source.fingerprint,
+    name: source.label,
+    declares: source.declares.declares,
+    epw: source.epw,
+    ddy: source.ddy,
+  }).then((kept) => {
+    renderKeptFile(kept.kept ? null : kept.reason);
+  });
+}
+
+/**
+ * What the browser is holding, and how to make it stop.
+ *
+ * Never folded and never on hover: a reader has to be able to see that a file
+ * of theirs is being kept, and to stop it, without going looking. `reason` is
+ * the sentence from a keep that did not happen — a quota, or a browser that
+ * stores nothing — and it is lettered in place of the offer rather than beside
+ * it, because in that state there is nothing to forget.
+ */
+function renderKeptFile(reason = null) {
+  const line = $('site-own-kept');
+  if (reason) {
+    line.hidden = false;
+    line.textContent = reason;
+    return;
+  }
+  const kept = rememberedFile();
+  if (!kept) {
+    line.hidden = true;
+    line.replaceChildren();
+    return;
+  }
+  line.hidden = false;
+  line.replaceChildren(
+    document.createTextNode(
+      weatherSource?.kind === 'file' && weatherSource.fingerprint === kept.fingerprint
+        ? `${kept.name} is kept in this browser, so a link to this desk reopens on it. `
+        : `${kept.name} is kept in this browser. `,
+    ),
+  );
+  // Offered rather than attached, and that is the whole of Principle II in one
+  // control: a remembered file is put on the desk automatically only where the
+  // link names it, because otherwise the bare address would mean one thing on
+  // this machine and another everywhere else.
+  if (!(weatherSource?.kind === 'file' && weatherSource.fingerprint === kept.fingerprint)) {
+    const attach = document.createElement('button');
+    attach.type = 'button';
+    attach.className = 'link';
+    attach.textContent = 'Attach it';
+    attach.addEventListener('click', () => void attachRemembered());
+    line.append(attach, document.createTextNode(' · '));
+  }
+  const forget = document.createElement('button');
+  forget.type = 'button';
+  forget.className = 'link';
+  forget.textContent = 'Forget it';
+  forget.addEventListener('click', () => {
+    forgetFile();
+    renderKeptFile();
+  });
+  line.append(forget);
+}
+
+/**
+ * Put the remembered file back on the desk.
+ *
+ * The bytes come out of the browser rather than off the filesystem, so there is
+ * no dialog — but everything after that is the ordinary attach, gate included.
+ * Re-gated rather than trusted: what was written was a file that solved, and
+ * what comes back is a string this page has to read again, so it goes through
+ * `sourceFromFile` like any other.
+ */
+async function attachRemembered() {
+  const held = await rememberedBytes();
+  if (!held) {
+    renderKeptFile();
+    return false;
+  }
+  const studyContext = desk?.captureStudyContext();
+  let source;
+  try {
+    source = await sourceFromFile({
+      name: held.name ?? 'weather.epw',
+      bytes: new TextEncoder().encode(held.epw),
+      ddyText: held.ddy,
+      schema,
+    });
+  } catch (error) {
+    // A kept file that no longer reads is not repaired and not half-used: it is
+    // forgotten, said, and the desk is left where it was.
+    forgetFile();
+    statusEl.className = 'status bad';
+    statusEl.textContent = `The weather file this browser was keeping cannot be read: ${error.message}. It has been forgotten.`;
+    renderKeptFile();
+    return false;
+  }
+  let conditions = null;
+  if (source.ddy) {
+    try {
+      conditions = designConditionsFrom(source.ddy, schema);
+    } catch {
+      // The year stands without it. The DDY was kept beside the file and a DDY
+      // that has stopped parsing costs the design days, not the climate.
+      conditions = null;
+    }
+  }
+  closePanel();
+  attachClimate(source, { studyContext, conditions });
+  renderKeptFile();
+  return true;
 }
 
 /**
@@ -11969,6 +12126,73 @@ renderSurvey();
 // idle milliseconds for the first study starting on a warm engine.
 whenIdle(() => studyPool.prewarm(), { fallback: 1500 });
 
+/**
+ * A link minted on a desk that was running a file the reader holds.
+ *
+ * The file cannot ride in the link and must not, so what arrives is a
+ * fingerprint of it and the phrase the file uses about itself. Two outcomes:
+ *
+ *   - **this browser is keeping that exact file**, which is what an ordinary
+ *     reload is — the address bar is rewritten on every gesture, so a desk with
+ *     a file attached already carries `wf`, and coming back to it is a link
+ *     being honoured. It is re-attached with no trip to the filesystem and the
+ *     desk solves;
+ *   - **it is not**, which is a colleague opening the link. The desk loads
+ *     whole — every parameter, patch and pin the link carries — and then stops.
+ *     Nothing is solved and no reading that needs a year is lettered, because
+ *     there is no year; what is lettered is which file this desk needs, in that
+ *     file's own words.
+ *
+ * The shipped design days are taken out in that second case, and that is the
+ * point of it. Leaving them would put a run on the sheet — Denver's two days,
+ * solved and lettered — under a title block naming somewhere else, which is
+ * exactly the lie in ink the picker's DDY refusal exists to prevent, arriving
+ * by another road.
+ */
+async function openFileLink(link) {
+  const kept = rememberedFile();
+  if (kept?.fingerprint === link.file.fingerprint) {
+    linkAttachPending = true;
+    syncSweepGate();
+    statusEl.className = 'status';
+    statusEl.textContent = 'Re-attaching the weather file this link names, from this browser…';
+    try {
+      if (await attachRemembered()) return;
+    } finally {
+      linkAttachPending = false;
+      syncSweepGate();
+    }
+  }
+
+  // Nothing to solve, and the reason is a file rather than a setting.
+  stopAuto();
+  clearResults();
+  clearDesignDays(model);
+  DATUMS = designDayDatums(model);
+  // And the title block stops naming Denver. The shipped `Site:Location` is
+  // still in the document — nothing is going to be solved against it, and
+  // removing it would leave the model incomplete for no gain — but the sheet
+  // must not letter a city over a desk that is waiting for a file from
+  // somewhere else. Which place this is cannot be known until the file arrives,
+  // and an em dash is how this sheet says that: zero is a measurement, missing
+  // is not.
+  $('t-location').textContent = '—';
+  $('t-site').textContent = '—';
+  renderTrace();
+  wantedFile = link.file;
+  statusEl.className = 'status bad';
+  statusEl.textContent =
+    `This desk was run against a weather file the link cannot carry: ${link.file.declares ?? 'a file it does not describe'}. ` +
+    'Attach your copy of it below and the desk solves — the sheet checks it is the same file.';
+  renderKeptFile();
+}
+
+// What this browser is already holding, before any link is honoured: a reader
+// arriving on a bare address with a file kept from an earlier session has to be
+// told it is there, and offered it, rather than having to attach it again from
+// a filesystem they have already been to once.
+renderKeptFile();
+
 // The verdict on a link the page was opened with, now that boot has finished
 // writing the status line. A refusal stops auto-solve, so no pump starts and
 // the reason stays readable. A station link defers the first solve to the
@@ -11980,6 +12204,8 @@ if (linkError) {
   refuseLink(`This link could not be read — ${linkError.message} — so the sheet is at its defaults.`);
 } else if (linked?.station) {
   attachFromLink(linked);
+} else if (linked?.file) {
+  void openFileLink(linked);
 } else if (params.sizingPeriods === 'No' && !epwText) {
   // A shared station link with its `stn` pair trimmed off still carries the
   // station's `sizingPeriods=No`. That desk holds no environments at all, and
