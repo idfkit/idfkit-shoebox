@@ -950,7 +950,14 @@ export const PRESETS = Object.freeze([
       new Target({
         id: 'tm59-a-I',
         label: `${CRITERION_BY_ID.a.label} · ${CATEGORY_BY_ID.I.label}`,
-        metric: 'tm59a',
+        // The Category I reading, not the criterion: `metric` names the one
+        // reading that answers this line, and since the roster carries criterion
+        // a at both categories there is one per category. Left at 'tm59a' this
+        // line would be matched to the Category II ground and drawn across it at
+        // exactly the right height — both categories clear at 3 % — while citing
+        // a criterion that ground does not answer. The invariant at the foot of
+        // this module is what refuses that rather than trusting this line.
+        metric: 'tm59aI',
         needs: 'season',
         category: CATEGORY_BY_ID.I,
         limit: CRITERION_BY_ID.a.limit,
@@ -983,7 +990,7 @@ export const PRESETS = Object.freeze([
       new Target({
         id: 'tm59-b-I',
         label: `${CRITERION_BY_ID.b.label} · ${CATEGORY_BY_ID.I.label}`,
-        metric: 'tm59b', digits: 0,
+        metric: 'tm59bI', digits: 0,
         needs: 'season',
         category: CATEGORY_BY_ID.I,
         limit: CRITERION_BY_ID.b.limit,

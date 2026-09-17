@@ -19,7 +19,17 @@ import { CHANNELS, CHANNEL_BY_ID, controlFor, labelFor } from './controls.js';
 import { BUDGETS, withinBudget } from './copy.js';
 import { readDemand, readExtremes, readOverheat, readPeaks } from './readings.js';
 import { PRESETS } from './schemes.js';
-import { COUNT_CATEGORY, CRITERION_BY_ID, readCriterionA, readCriterionB, readCriterionC } from './tm59.js';
+import {
+  CATEGORIES,
+  CATEGORY_BY_ID,
+  Category,
+  CRITERIA,
+  CRITERION_BY_ID,
+  Criterion,
+  readCriterionA,
+  readCriterionB,
+  readCriterionC,
+} from './tm59.js';
 import { kindFor, letter, unitIn } from './units.js';
 
 export { RunContents, VariableRequest };
@@ -171,25 +181,33 @@ export function samplePoints(control, current, n = SWEEP_SAMPLES, { from = contr
 /* ══ what a sweep is read for ════════════════════════════════════════════ */
 
 /**
- * The category the criterion curve is read at, and why there is only one of it.
+ * Why every by-category criterion is on the roster twice, and what that does not
+ * change about the drawing.
  *
- * `COUNT_CATEGORY` is Category II, and `tm59.js` sets out the argument there:
- * it is the category TM59:2026 names for "all other dwellings", it is the one
- * the sheet's own count is taken at, and lettering every combination still
- * leaves the reader to pick one. Taken from that constant rather than restated,
- * so the curve and the count can never disagree about which line the reading
- * was judged against.
+ * It used to be on the roster once, at `COUNT_CATEGORY`, and the argument for
+ * that was half sound. The sound half: Category II is what TM59:2026 names for
+ * "all other dwellings" and is the category the sheet's own count is taken at,
+ * so a curve read there could never disagree with the count beside it. The half
+ * that was a scope decision rather than a finding: that lettering both still
+ * leaves the reader to pick one. It does — and picking is the reader's to do. A
+ * modeller assessing a care home has to meet Category I, and offering them one
+ * figure read against a line 1 K above theirs left them judging a stricter line
+ * by eye against a result computed for a different one.
  *
- * There is a second reason not to draw both lines, and it belongs to the
- * drawing rather than to the method: the desk has exactly one pen pair,
- * `--warm` against `--cold`, and it is reserved for signed physical quantities
- * — the rail's watts, TEDI against CEDI, the summer peak against the winter
- * low. Two exceedance shares are neither signed nor a pair, so drawing them in
- * that pair would spend the one encoding this page has for direction on two
- * readings that have none. Category I is read on the sheet, beside Category II
- * and saying what it presumes, which is where a reader can act on it.
+ * So both are declared, and the count does not move: `COUNT_CATEGORY` is still
+ * Category II, `COUNT_SCOPE` still says so in full, and a Category I reading
+ * still stands outside the count exactly as criterion c does.
+ *
+ * **The pen argument survives intact, because it was never about the choice.**
+ * The desk has one pen pair, `--warm` against `--cold`, reserved for signed
+ * physical quantities — the rail's watts, TEDI against CEDI, the summer peak
+ * against the winter low. Two exceedance shares are neither signed nor a pair,
+ * so drawing them in that pair would spend the one encoding this page has for
+ * direction on two readings that have none. Nothing here draws two: a study
+ * plots one reading and a ground is cut for one. That a survey may letter a
+ * second reading's figures *under* the first is the same arrangement it already
+ * had for every other pair on the roster, and it spends no hue either.
  */
-export const TM59_STUDY_CATEGORY = COUNT_CATEGORY;
 
 /**
  * The temperature the `overheat` quantity counts hours above.
@@ -245,6 +263,8 @@ export class Quantity {
     wholeYear = false,
     priced = null,
     movedBy = [],
+    criterion = null,
+    category = null,
   }) {
     if (!id || !label || !unit) throw new Error(`the study quantity "${id || '(unnamed)'}" lacks its identity or lettering`);
     if (!Number.isInteger(digits) || digits < 0) {
@@ -276,6 +296,43 @@ export class Quantity {
     if (!Array.isArray(movedBy) || movedBy.some((key) => typeof key !== 'string' || !key)) {
       throw new Error(`the study quantity "${id}" declares movedBy as something other than a list of control keys`);
     }
+    // Which criterion this reading answers, and at which of that criterion's
+    // categories. The whole declarations rather than an id or a letter, for the
+    // reason `Target` refuses a bare category: a truthy string standing in for a
+    // category nobody declared is one careless comparison away from a line drawn
+    // across a ground that does not answer it, and both categories publish the
+    // same limit, so nothing downstream would look wrong.
+    if (criterion !== null && !(criterion instanceof Criterion)) {
+      throw new Error(
+        `the study quantity "${id}" carries a criterion that is not one of TM59's declared ones, ` +
+          `but ${String(criterion?.id ?? criterion)}`,
+      );
+    }
+    if (category !== null && !(category instanceof Category)) {
+      throw new Error(
+        `the study quantity "${id}" carries a category that is not one of TM59's declared pair, ` +
+          `but ${String(category?.label ?? category)}`,
+      );
+    }
+    // A category belongs to a criterion, and which criteria have one is the
+    // method's statement rather than ours. Asserted per declaration here and
+    // over the whole roster below: this half catches the declaration that is
+    // wrong, that half catches the one that is missing.
+    if (category !== null && criterion === null) {
+      throw new Error(
+        `the study quantity "${id}" is read at ${category.label} and names no criterion, and a category ` +
+          'is a property of a criterion rather than of a reading',
+      );
+    }
+    if (criterion !== null && criterion.byCategory !== (category !== null)) {
+      throw new Error(
+        criterion.byCategory
+          ? `the study quantity "${id}" answers ${criterion.label}, which TM59 states at each of its two ` +
+            'categories, and names none — a figure read against one of two lines 1 K apart cannot say which'
+          : `the study quantity "${id}" answers ${criterion.label} at ${category.label}, and TM59 states ` +
+            'one line for both categories there, so a reading of it carries no category to narrow',
+      );
+    }
     const lines = series ?? [new QuantitySeries({ id, label, pen })];
     if (!Array.isArray(lines) || !lines.length || lines.some((line) => !(line instanceof QuantitySeries))) {
       throw new Error(`the study quantity "${id}" needs at least one declared series`);
@@ -304,6 +361,8 @@ export class Quantity {
     // reach harness, so a study of efficiency against demand is refused by a
     // declaration instead of drawn as a flat line that reads as a finding.
     this.movedBy = Object.freeze(new Set(movedBy));
+    this.criterion = criterion;
+    this.category = category;
     Object.freeze(this);
   }
 
@@ -536,18 +595,56 @@ export const QUANTITIES = Object.freeze([
     read: fieldFrom(readPeaks, 'peakCool'),
   }),
   new Quantity({
-    id: 'tm59a', label: `${CRITERION_BY_ID.a.label} · ${TM59_STUDY_CATEGORY.label}`,
+    // The four by-category readings are declared as two pairs rather than
+    // generated from `CRITERIA × CATEGORIES`, and the loop was considered. It
+    // would hide everything that actually differs between them: criterion a
+    // needs the occupancy series and the running mean and criterion b needs
+    // neither, so they carry different `RunContents` and different `context`;
+    // and the two Category II ids are `tm59a` and `tm59b` by history rather
+    // than by rule, since a reading id is a value inside a shared link and
+    // renaming one would quietly refuse every survey link ever sent at it.
+    // Four declarations, and the invariant below is what holds them to the
+    // method instead.
+    id: 'tm59a', label: `${CRITERION_BY_ID.a.label} · ${CATEGORY_BY_ID.II.label}`,
     unit: CRITERION_BY_ID.a.unit, quantityKind: 'count', digits: 1, needs: TM59_AB,
+    criterion: CRITERION_BY_ID.a, category: CATEGORY_BY_ID.II,
     context: (desk) => ({ trm: desk.runningMean, floor: desk.occupiedFloor }),
-    read: (landed, { context }) => criterionValue(readCriterionA(landed.eso, context.trm, TM59_STUDY_CATEGORY, context.floor)),
+    read: (landed, { context }) => criterionValue(readCriterionA(landed.eso, context.trm, CATEGORY_BY_ID.II, context.floor)),
   }),
   new Quantity({
-    id: 'tm59b', label: `${CRITERION_BY_ID.b.label} · ${TM59_STUDY_CATEGORY.label}`,
+    id: 'tm59aI', label: `${CRITERION_BY_ID.a.label} · ${CATEGORY_BY_ID.I.label}`,
+    // Unit, kind and precision off the same criterion its Category II pair
+    // reads, so the two cannot come to letter one criterion two ways. Only the
+    // category differs, and it is the whole difference: Category I's adaptive
+    // line runs 1 K below Category II's, and the published limit is the same
+    // 3 % either side of it.
+    unit: CRITERION_BY_ID.a.unit, quantityKind: 'count', digits: 1, needs: TM59_AB,
+    criterion: CRITERION_BY_ID.a, category: CATEGORY_BY_ID.I,
+    context: (desk) => ({ trm: desk.runningMean, floor: desk.occupiedFloor }),
+    read: (landed, { context }) => criterionValue(readCriterionA(landed.eso, context.trm, CATEGORY_BY_ID.I, context.floor)),
+  }),
+  new Quantity({
+    id: 'tm59b', label: `${CRITERION_BY_ID.b.label} · ${CATEGORY_BY_ID.II.label}`,
     unit: CRITERION_BY_ID.b.unit, quantityKind: 'count', digits: 0, needs: TM59_B,
-    read: (landed) => criterionValue(readCriterionB(landed.eso, TM59_STUDY_CATEGORY)),
+    criterion: CRITERION_BY_ID.b, category: CATEGORY_BY_ID.II,
+    read: (landed) => criterionValue(readCriterionB(landed.eso, CATEGORY_BY_ID.II)),
+  }),
+  new Quantity({
+    id: 'tm59bI', label: `${CRITERION_BY_ID.b.label} · ${CATEGORY_BY_ID.I.label}`,
+    unit: CRITERION_BY_ID.b.unit, quantityKind: 'count', digits: 0, needs: TM59_B,
+    criterion: CRITERION_BY_ID.b, category: CATEGORY_BY_ID.I,
+    // 26 °C rather than 27 °C, off the category rather than written here: the
+    // night limit is fixed per category and `readCriterionB` takes it from the
+    // declaration, which is why this reader differs from its pair by one
+    // argument and nothing else.
+    read: (landed) => criterionValue(readCriterionB(landed.eso, CATEGORY_BY_ID.I)),
   }),
   new Quantity({
     id: 'tm59c', label: CRITERION_BY_ID.c.label, unit: CRITERION_BY_ID.c.unit, quantityKind: 'count', digits: 1, needs: TM59_AB,
+    // No category, and `Criterion.byCategory` is what says so: 26 °C is the line
+    // at both, so there is nothing here for a category to narrow and the
+    // constructor refuses one.
+    criterion: CRITERION_BY_ID.c,
     context: (desk) => ({ floor: desk.occupiedFloor }),
     read: (landed, { context }) => criterionValue(readCriterionC(landed.eso, context.floor)),
   }),
@@ -737,6 +834,41 @@ export function assertQuantityReachability(quantities, reachableOffers) {
     }
   }
 
+  // The roster against the method, which is the invariant this feature rests on.
+  //
+  // The constructor already refuses a declaration that disagrees with
+  // `Criterion.byCategory` one at a time. This is the other half, and it catches
+  // the opposite error: not a reading declared wrong, but a reading *missing*.
+  // For a year the roster carried criterion a and criterion b at Category II
+  // alone, which is a perfectly consistent set of declarations and was still
+  // wrong — a reader assessing a care home had no way to ask for the category
+  // their project has to meet. Nothing could have thrown, because nothing
+  // compared the roster against the method it names.
+  //
+  // Stated over the criteria the roster answers rather than over all four TM59
+  // states: criterion d is read by nobody and deliberately so (this model holds
+  // no communal circulation for it), and requiring it here would be this
+  // assertion deciding a question of scope.
+  const byCriterion = new Map();
+  for (const quantity of QUANTITIES) {
+    if (!quantity.criterion) continue;
+    if (!byCriterion.has(quantity.criterion)) byCriterion.set(quantity.criterion, []);
+    byCriterion.get(quantity.criterion).push(quantity);
+  }
+  for (const [criterion, quantities] of byCriterion) {
+    const wanted = criterion.byCategory ? CATEGORIES : [null];
+    for (const category of wanted) {
+      const found = quantities.filter((quantity) => quantity.category === category);
+      if (found.length === 1) continue;
+      const at = category ? ` at ${category.label}` : '';
+      throw new Error(
+        `the roster carries ${found.length} readings of ${criterion.label}${at}, and TM59 states it ` +
+          `${criterion.byCategory ? `at each of ${CATEGORIES.map((c) => c.label).join(' and ')}` : 'once, for both categories'}` +
+          `. The roster has ${quantities.map((q) => q.id).join(', ')}`,
+      );
+    }
+  }
+
   // Reach, both ways round. A key named in `movedBy` must be a priced face a
   // sweep can walk, or the pairing refusal would be keyed on a control that is
   // never offered; and every priced face must be named somewhere, or a new
@@ -774,10 +906,14 @@ export function assertQuantityReachability(quantities, reachableOffers) {
   }
 
   // Every priced pairing, once: refused with a sentence that stands in view, or
-  // drawn. Twelve draw — the three plant faces against the three bill readings,
-  // and each tariff face against the one reading it prices — and the count is
+  // drawn. Six sweepable priced faces against thirteen readings is 78, of which
+  // twelve draw — the three plant faces against the three bill readings, and
+  // each tariff face against the one reading it prices — and the count is
   // asserted so a reach declaration widened by accident fails here rather than
-  // as a curve that should have been refused.
+  // as a curve that should have been refused. The figures moved from 66 and 54
+  // when TM59's two by-category criteria went onto the roster at both
+  // categories: neither new reading declares `movedBy`, so all twelve of the new
+  // pairings are refused, and both numbers rose by the same twelve.
   let refusedPairings = 0;
   let pairings = 0;
   for (const channel of CHANNELS.filter((candidate) => candidate.prices)) {
@@ -793,9 +929,9 @@ export function assertQuantityReachability(quantities, reachableOffers) {
       withinBudget(BUDGETS.STANDING, `pairing fix ${control.key}`, pairingFix(control.key));
     }
   }
-  if (pairings !== 66 || refusedPairings !== 54) {
+  if (pairings !== 78 || refusedPairings !== 66) {
     throw new Error(
-      `${refusedPairings} of ${pairings} priced pairings are refused, where the reach table refuses 54 of 66`,
+      `${refusedPairings} of ${pairings} priced pairings are refused, where the reach table refuses 66 of 78`,
     );
   }
 
@@ -810,6 +946,37 @@ export function assertQuantityReachability(quantities, reachableOffers) {
   for (const quantity of QUANTITIES) {
     if (!targetIds.has(quantity.id) && !nonTargets.has(quantity.id)) {
       throw new Error(`the study quantity "${quantity.id}" is neither a target metric nor a declared non-target outcome`);
+    }
+  }
+
+  // A target's metric against its category, which is the one place this can be
+  // silently wrong.
+  //
+  // `metric` names the reading that answers a line, and `category` says which of
+  // TM59's two the line is read at. With a reading per category those are two
+  // statements of one fact, and the failure they permit is the worst kind this
+  // sheet has: both categories clear criterion a at 3 % of occupied hours and
+  // criterion b at four nights, so a Category I target left pointing at the
+  // Category II reading draws its line across that ground at exactly the right
+  // height. Nothing looks wrong. The ground simply answers a criterion the line
+  // does not describe, and a reader assessing a care home reads a pass off it.
+  //
+  // It lives here rather than in `schemes.js` for an import reason worth
+  // recording: this module reads `PRESETS`, so `schemes.js` cannot read the
+  // roster back without closing a cycle. Here both sides are in hand, and it
+  // sits beside the assertion above that already holds a metric to a declared
+  // reading.
+  for (const preset of PRESETS) {
+    for (const target of preset.targets) {
+      const quantity = QUANTITY_BY_ID[target.metric];
+      if (!quantity) continue; // a series-level metric; the assertion above owns those
+      if (target.category === quantity.category) continue;
+      throw new Error(
+        `the target "${preset.id} · ${target.id}" is read at ${target.category?.label ?? 'no category'} and ` +
+          `answers "${quantity.id}", which is read at ${quantity.category?.label ?? 'no category'}. Both of ` +
+          "TM59's categories publish the same limit, so this line would be drawn at the right height across a " +
+          'ground that does not answer it',
+      );
     }
   }
 

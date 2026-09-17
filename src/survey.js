@@ -40,7 +40,6 @@ import { PRESET_BY_ID, targetsForMetric } from './schemes.js';
 import {
   OVERHEAT_ABOVE,
   QUANTITY_BY_ID,
-  TM59_STUDY_CATEGORY,
   inSentence,
   refusesPairing,
   refusesSweep,
@@ -118,8 +117,8 @@ const CONVENTION = 'Convention of practice rather than a published figure.';
  * such thing and should not: a study draws a curve and lets the reader read
  * it, which needs no direction at all.
  *
- * Ten of the thirteen are compliance metrics or costs, where less is the whole
- * point and the definition says so. The zone's own two extremes are the pair
+ * Thirteen of the fifteen are compliance metrics or costs, where less is the
+ * whole point and the definition says so. The zone's own two extremes are the pair
  * that needed thinking about, because "better" for a free-running temperature
  * is a comfort judgement and nobody publishes it as a target. They are
  * declared as conventions and say so, which is the same treatment the
@@ -149,7 +148,13 @@ const SENSE = Object.freeze({
   peakHeat: { better: 'lower', why: 'A smaller peak heating load is a smaller plant.' },
   peakCool: { better: 'lower', why: 'A smaller peak cooling load is a smaller plant.' },
   tm59a: { better: 'lower', why: 'CIBSE TM59 criterion a passes at or below 3 % of occupied hours.' },
+  // The same published limit as its Category II pair, against a line 1 K lower.
+  // The limit is what the direction is declared from, so both read the same way
+  // — and saying so here is what stops a reader of this table concluding that a
+  // stricter category must have a stricter number.
+  tm59aI: { better: 'lower', why: 'CIBSE TM59 criterion a passes at or below 3 % of occupied hours, at Category I’s own line.' },
   tm59b: { better: 'lower', why: 'CIBSE TM59 criterion b passes at four nights or fewer.' },
+  tm59bI: { better: 'lower', why: 'CIBSE TM59 criterion b passes at four nights or fewer, against Category I’s 26 °C.' },
   tm59c: { better: 'lower', why: 'CIBSE TM59 criterion c passes at or below 3 % of occupied hours.' },
 });
 
@@ -183,6 +188,12 @@ export class Reading {
     // would be free to disagree with the card drawing the same number.
     this.quantityKind = quantity.quantityKind;
     this.digits = quantity.digits;
+    // Which of TM59's categories this reading is read at, or null. Taken off the
+    // quantity for the same reason the kind and the precision are: a second
+    // declaration of it here would be free to disagree with the reader that
+    // computed the number, and because both categories publish the same limit,
+    // the disagreement would letter a plausible figure under the wrong line.
+    this.category = quantity.category;
     /** 'lower' | 'higher' | null — null where the direction is not ours to declare. */
     this.better = sense?.better ?? null;
     this.senseWhy = sense?.why ?? null;
@@ -290,8 +301,8 @@ export const READING_BY_ID = Object.freeze(
 {
   // The uniqueness the link format depends on, asserted rather than observed:
   // `sv` carries a series id and nothing else, so two quantities declaring one
-  // series id would make a survey link mean two grounds at once. Thirteen
-  // series across eleven quantities today.
+  // series id would make a survey link mean two grounds at once. Fifteen
+  // series across thirteen quantities today.
   const ids = READINGS.map((reading) => reading.id);
   if (new Set(ids).size !== ids.length) {
     throw new Error('two study quantities declare the same series id, so a survey link cannot name one');
@@ -1984,14 +1995,14 @@ export function markSentence(ground) {
  * The qualifier a target has to agree with before it is this reading's line.
  *
  * **This is the one place the feature can be silently wrong**, and it is worth
- * saying exactly how. `tm59a`'s quantity reads criterion a at one category
- * (`TM59_STUDY_CATEGORY`, Category II) while TM59 declares the criterion at
- * two; matching on `metric` alone draws Category I's line across a Category II
- * ground, and because both categories carry the same *limit* today the drawing
- * looks perfectly correct while citing a criterion the ground does not answer.
- * `tm59.js` met this exact problem first — `clearedCount` matches on criterion
- * **and** category — so the rule is that module's, restated where the ground
- * needs it.
+ * saying exactly how. TM59 states criterion a and criterion b at each of two
+ * categories whose lines are 1 K apart, and the roster carries a reading for
+ * each. Matching on `metric` alone would draw one category's line across the
+ * other's ground, and because both categories carry the same *limit* — 3 % of
+ * occupied hours, four nights — the drawing looks perfectly correct while citing
+ * a criterion the ground does not answer. `tm59.js` met this exact problem first
+ * — `clearedCount` matches on criterion **and** category — so the rule is that
+ * module's, restated where the ground needs it.
  *
  * Two different facts are kept apart here, and conflating them is what makes
  * a qualifier fail quietly:
@@ -2009,7 +2020,13 @@ export function markSentence(ground) {
 class Qualifier {
   constructor({ field, reads, says, decidable }) {
     this.field = field;
-    // What the reading itself is read at, off the declaration that reads it.
+    // Both are asked of the reading rather than stated per metric, and the
+    // difference matters. Written out per metric, each row restated the category
+    // it reads — and with four by-category readings on the roster, a fifth added
+    // by copying a row would carry the category it was copied from, match the
+    // wrong target and draw a line at the right height across the wrong ground.
+    // That is precisely the failure this class exists to refuse, so the class
+    // stopped being told and started asking.
     this.reads = reads;
     this.says = says;
     this.decidable = decidable;
@@ -2019,14 +2036,19 @@ class Qualifier {
   /** The qualifier a target carries, refused where the survey cannot decide it. */
   on(target, preset, reading) {
     const carried = target[this.field];
-    if (!this.decidable(carried)) {
+    if (!this.decidable(carried, reading)) {
       throw new Error(
         `"${preset.name} · ${target.label}" answers "${reading.label}" but declares ${this.field} as ` +
-          `${String(carried?.label ?? carried)}, and this survey reads that criterion at ${this.says}. A ` +
+          `${String(carried?.label ?? carried)}, and this survey reads that criterion at ${this.says(reading)}. A ` +
           'line whose qualifier cannot be decided is a line drawn across a ground that does not answer it',
       );
     }
     return carried;
+  }
+
+  /** What this reading is read at, which a matched target must equal. */
+  readAt(reading) {
+    return this.reads(reading);
   }
 }
 
@@ -2035,31 +2057,37 @@ class Qualifier {
  * inline, so a metric that grows one is a row here and not a branch in the
  * matching loop.
  */
+
+/**
+ * One declaration for every reading TM59 states by category, shared rather than
+ * repeated. It asks the reading which category it is read at, so the four
+ * readings on the roster today and any fifth added tomorrow are all matched by
+ * this one object and none of them can be registered at the wrong one.
+ */
+const BY_CATEGORY = new Qualifier({
+  field: 'category',
+  reads: (reading) => reading.category,
+  says: (reading) => reading.category.label,
+  decidable: (value) => value !== null,
+});
+
 const QUALIFIER_BY_METRIC = Object.freeze({
   overheat: new Qualifier({
     field: 'above',
-    reads: OVERHEAT_ABOVE,
-    says: `hours above ${OVERHEAT_ABOVE} °C`,
+    reads: () => OVERHEAT_ABOVE,
+    says: () => `hours above ${OVERHEAT_ABOVE} °C`,
     decidable: (value) => Number.isFinite(value),
   }),
-  tm59a: new Qualifier({
-    field: 'category',
-    reads: TM59_STUDY_CATEGORY,
-    says: TM59_STUDY_CATEGORY.label,
-    decidable: (value) => value !== null,
-  }),
-  tm59b: new Qualifier({
-    field: 'category',
-    reads: TM59_STUDY_CATEGORY,
-    says: TM59_STUDY_CATEGORY.label,
-    decidable: (value) => value !== null,
-  }),
+  tm59a: BY_CATEGORY,
+  tm59aI: BY_CATEGORY,
+  tm59b: BY_CATEGORY,
+  tm59bI: BY_CATEGORY,
   // Criterion c is 26 °C for both categories, so a declaration carrying one
   // is a criterion this sheet does not read rather than one it can narrow.
   tm59c: new Qualifier({
     field: 'category',
-    reads: null,
-    says: 'both categories at once, which is what makes it carry none',
+    reads: () => null,
+    says: () => 'both categories at once, which is what makes it carry none',
     decidable: (value) => value === null,
   }),
 });
@@ -2105,7 +2133,7 @@ function matchedTargets(reading) {
       );
     }
     const qualifier = QUALIFIER_BY_METRIC[reading.id] ?? null;
-    if (qualifier) return qualifier.on(target, preset, reading) === qualifier.reads;
+    if (qualifier) return qualifier.on(target, preset, reading) === qualifier.readAt(reading);
     // An unqualified reading against a qualified target: the line is read at
     // something this ground does not measure, and there is nothing here to
     // narrow it against.
@@ -2338,6 +2366,35 @@ export function passingGround(lattice, threshold) {
  * offending reading on.
  */
 {
+  // That a reading read at a category is matched at one, asserted here rather
+  // than beside `SENSE` because `QUALIFIER_BY_METRIC` is declared seventeen
+  // hundred lines further down and a load block above it reads an uninitialised
+  // binding. A reading carrying a category with no qualifier falls through
+  // `matchedTargets` to every target of its criterion regardless of category —
+  // the wrong-category line again, arriving by omission rather than by a wrong
+  // declaration. The two directions are separate mistakes and get separate
+  // sentences: a reading that grew a category and no qualifier, and a qualifier
+  // left behind by a reading that lost one.
+  for (const reading of READINGS) {
+    const qualifier = QUALIFIER_BY_METRIC[reading.id] ?? null;
+    // What the qualifier will hold a target to, which must be the category the
+    // reading was actually computed at. Comparing the two rather than asking
+    // whether a category qualifier exists at all: criterion c's qualifier reads
+    // the same field and exists precisely to insist a target carries *no*
+    // category, so its presence says nothing about whether a reading is read at
+    // one.
+    const readsAt = qualifier?.field === 'category' ? qualifier.readAt(reading) : null;
+    if (readsAt === reading.category) continue;
+    throw new Error(
+      reading.category
+        ? `the survey reading "${reading.label}" is read at ${reading.category.label} and is matched to ` +
+          `published lines at ${String(readsAt?.label ?? readsAt)}, so a line read at another category ` +
+          'would be drawn across it — and both of TM59’s categories publish the same limit, so it would ' +
+          'be drawn at the right height'
+        : `the survey reading "${reading.label}" is read at no category and is matched to published lines ` +
+          `at ${readsAt.label}, which is a narrowing this ground has nothing to be narrowed by`,
+    );
+  }
   for (const reading of READINGS) {
     for (const { preset, target } of matchedTargets(reading)) {
       if (target.limit == null) continue;

@@ -1476,7 +1476,18 @@ of the occupied period the openings are held shut, which is a fact about a
 window model this desk does not carry and guessing it would be the sheet
 asserting under cover of citing. Category I is read and lettered beside Category
 II and is likewise outside the count. Criterion d is unread and is named as
-such. Criteria that could not be read are reported one by one rather than folded
+such. Both categories are on the reading roster and either can be plotted as a
+study curve or cut as a survey ground; neither reaches the count, which stays at
+Category II and states its scope in full. The roster carried criterion a and b at
+Category II alone until feature 013, and that was a scope decision rather than a
+finding: it was consistent, nothing could throw, and a modeller assessing a care
+home was left judging a stricter line by eye against a figure computed for a
+different one. Measured on a synthetic season with every night mean at 26.5 °C,
+Category I reads 152 failing nights where Category II reads 0 — one number was
+never going to answer both. The two readings cost a landed sample +0.72 ms
+(0.99 → 1.70 ms over 3,672 hourly points, median of 200), ask a run for
+byte-identical contents, and therefore cost no engine run at all: a sample run
+for one category answers the other out of the cache. Criteria that could not be read are reported one by one rather than folded
 into either number, because a criterion the run could not answer neither passed
 nor failed and the only useful thing to say about it is which one it is and what
 would fix it. The row takes no marker, no rule, no figure face and no colour:
@@ -2369,24 +2380,57 @@ side and must never be used as one: it is a direction of improvement, it is
 exactly the two readings that carry no limit at all.
 
 **The TM59 category trap, which is the one place this can be silently wrong.**
-`tm59a`'s quantity reads criterion a at one category (`TM59_STUDY_CATEGORY`,
-Category II) while TM59 declares the criterion at two, and **both categories
-carry the same limit**. Matched on `metric` alone, a Category I line is drawn
-across a Category II ground and looks perfectly correct while citing a
-criterion the ground does not answer. `tm59.js` met this first — `clearedCount`
+TM59 states criterion a and criterion b at each of two categories whose adaptive
+lines are 1 K apart, and the roster carries a reading for each — `tm59a` and
+`tm59aI`, `tm59b` and `tm59bI`. **Both categories carry the same limit**: 3 % of
+occupied hours, four nights. So a line matched from the wrong category is drawn
+at exactly the right height across a ground that does not answer it, and nothing
+on the drawing can contradict it. `tm59.js` met this first — `clearedCount`
 matches on criterion *and* category — so the rule is that module's, restated in
 `matchedTargets`.
 
 Two facts are kept apart there, and conflating them is what makes a qualifier
 fail quietly. A qualifier that is **decidable and different** describes another
-reading: Category I is correctly declared and simply not this ground's, so it is
-not matched and that is a fact about the roster. A qualifier the survey
-**cannot decide** — an `overheat` target naming no temperature, a TM59 criterion
-read by category naming none, a criterion carrying one where the reading has
-none — throws at load naming both declarations, because falling through to a
-match there is the silent fallback. `OVERHEAT_ABOVE` was named in `study.js` for
-this: the reading has to be able to *state* what it reads at before anything can
-check a target against it.
+reading: Category I's targets are correctly declared and simply not a Category II
+ground's, so they are not matched and that is a fact about the roster. A
+qualifier the survey **cannot decide** — an `overheat` target naming no
+temperature, a TM59 criterion read by category naming none, a criterion carrying
+one where the reading has none — throws at load naming both declarations,
+because falling through to a match there is the silent fallback. `OVERHEAT_ABOVE`
+was named in `study.js` for this: the reading has to be able to *state* what it
+reads at before anything can check a target against it.
+
+**A qualifier that is told its category will one day be told the wrong one.**
+`QUALIFIER_BY_METRIC` used to carry a row per metric, each restating the category
+it read. With four by-category readings that is four rows a fifth can be copied
+from, and a copied row carries the category it was copied from — the wrong-
+category line again, arriving by copy-paste. So `Qualifier.reads` and `says`
+became functions of the reading and the four readings share **one** declaration,
+`BY_CATEGORY`, which asks `reading.category`. Three load-time invariants close
+the rest:
+
+  - **the roster against the method** (`study.js`): every criterion the roster
+    answers is carried once per declared `Category` where `Criterion.byCategory`
+    is true, and once with no category where it is false. Run against the roster
+    as it stood before this feature, it throws — "the roster carries 0 readings
+    of Criterion a at Category I" — which is the defect caught by its own
+    assertion, and the reason it exists.
+  - **a target's metric against its category** (`study.js`, not `schemes.js`:
+    `study.js` reads `PRESETS`, so the reverse import would close a cycle). A
+    target whose metric names a reading read at another category cannot mount.
+    This is the one that catches a swap of the two criterion-a targets, which no
+    other assertion would: every metric still names a declared reading, and the
+    lines are simply crossed.
+  - **qualifier coverage** (`survey.js`, at the foot of the module beside the
+    cross product, because `QUALIFIER_BY_METRIC` is declared seventeen hundred
+    lines below the `SENSE` block and a load block above it reads an
+    uninitialised binding). It compares what the qualifier *reads* against what
+    the reading is read *at*, not whether a category qualifier exists: criterion
+    c's qualifier reads the same field and exists to insist a target carries no
+    category, so its presence says nothing.
+
+Verified by breaking each declaration on purpose and reading what came out;
+all six cases throw at import naming both declarations.
 
 **Kinds are compared, unit strings are not.** The `demand` quantity says
 `kWh/m²·yr` and the Passivhaus target says `kWh/(m²a)`; a converting kind owns
