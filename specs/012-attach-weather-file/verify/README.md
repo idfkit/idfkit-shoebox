@@ -51,6 +51,12 @@ as evidence that the feature works on a file somebody bought.
 | `fixtures.mjs` | shared | Shared. Every weather file the gates run over, generated in memory. Two real stations, fourteen EPW variants, two DDYs, and `assertStationsMatchIndex()`, which re-reads the staged index and throws if the hardcoded metadata has drifted from it. |
 | `kit.mjs` | shared | Shared. The 26.1.0 schema through `localBundle()` at the full version string, `documentFor`/`idfFor` at a desk position, `thrice` for the idempotence assertion, and the engine: `runOnce` (one run, in this process, refused a second time) and `runIdf` (one run per spawned process, call it as often as you like). Also `harness()`, whose `notRun(label, why)` is how a gate that could not be answered is recorded. |
 | `schema-fields.mjs` | 2 | `latitude`, `longitude`, `time_zone` and `elevation` resolved against the 26.1.0 schema, each asserted numeric, before anything writes `Site:Location` from an EPW. |
+| `readers.mjs` | 3, 4 | The header readers, the extent, the degree days and the fingerprint. Also where the extent/fault distinction is asserted: a part year is carried day by day, a day missing from *inside* the file's own stretch is refused. |
+| `model-with-file.mjs` | 5 | The document written and run with a file attached, idempotent three times over, and the one this design rests on: a desk with no `SizingPeriod:DesignDay` at all runs to exit 0. |
+| `links-after.mjs` | 6 | `wf` / `wfd` through the codec, against `links-before.json` minted before the feature. |
+| `criteria-over-file.mjs` | 7 | All five criteria over a whole year, a part year reaching the season but not the 23 April seed, and a file reaching neither — plus the control: a narrowed calendar does not move the comfort line, because the line is read off the file and not off the run. One EnergyPlus per file, through `runIdf`. |
+| `page-gate7.mjs` | 7, 8 | **The only harness here that is not DOM-free**, and it has to be: "readable without opening a fold" is a question about rendered markup. Drives the built page in Chromium. Needs `npx vite preview` and a `playwright` install, and records itself not-run without them. |
+| `station-unchanged.mjs` | T021 / T084 | That the refactor changed nothing. `main` is checked out into a worktree and **its own `src/model.js` is imported and run**, so the byte-identity claim is against the old code rather than against a paraphrase of it. |
 
 Nothing is checked in. A generated year is about 1.6 MB, which is why `.gitignore` now
 ignores a `fixtures/` directory under any feature's verify folder — but the intended use
@@ -167,7 +173,27 @@ being minted on `main` first, which is a separate task and not this one.
 npm install && npm run predev        # stages the engine, the schemas and the index
 
 node specs/012-attach-weather-file/verify/schema-fields.mjs
+node specs/012-attach-weather-file/verify/readers.mjs
+node specs/012-attach-weather-file/verify/model-with-file.mjs
+node specs/012-attach-weather-file/verify/links-after.mjs
+node specs/012-attach-weather-file/verify/criteria-over-file.mjs
+node specs/012-attach-weather-file/verify/station-unchanged.mjs
 ```
+
+`page-gate7.mjs` needs the built page and a browser, neither of which this
+repository carries:
+
+```bash
+npm run build && npx vite preview --port 4173 &
+(cd /tmp/scratch && npm i playwright)
+ln -s /tmp/scratch/node_modules/playwright node_modules/playwright    # ESM ignores NODE_PATH
+SHOEBOX_CHROME=/path/to/chrome node specs/012-attach-weather-file/verify/page-gate7.mjs
+```
+
+Linked rather than installed, deliberately: `package.json` is where this
+repository's idfkit level is declared and the consumer register describes it, so a
+dependency added for a throwaway harness is a register change nobody asked for.
+Without the link the harness records itself not-run and exits 0.
 
 `fixtures.mjs` and `kit.mjs` are imported, not run. A harness of your own starts:
 
@@ -194,6 +220,9 @@ gate which could not be run is recorded as not run and never as passed.
 | `readers.mjs` — gates 3, 4 | **passed**, 28 checks. Two items inside it recorded not-run (below). |
 | `model-with-file.mjs` — gate 5 | **passed**, 11 checks. Includes the one this design rests on: a document with no `SizingPeriod:DesignDay` at all runs to exit 0 with no severe errors and a full ESO. |
 | `links-after.mjs` — gate 6 | **passed**, 24 checks, against `links-before.json` minted on the codec as it stood before the feature. One refusal reworded on purpose and declared as such in the harness. |
+| `criteria-over-file.mjs` — gate 7 | **passed**, 26 checks, four engine runs. No threshold moved and `TM59_SPACES` is still `PROFILE_IDS`. Two items inside it recorded not-run (a licensed DSY, and gate 7's lettering, which is the harness below). |
+| `page-gate7.mjs` — gate 7's lettering | **passed**, 18 checks, in headless Chromium against the synthetic fixtures. Each criterion's absence names a file rather than the Run strip, in view and not in a fold; the Run-strip sentence is not shown beside it. |
+| `station-unchanged.mjs` — T021 / T084 | **passed**, 13 checks. A station desk writes an IDF byte-identical to the one `main` writes for the same desk and the same parsed DDY. The three *real* stations stay not-run (below). |
 | gate 8, driven in headless Chromium | **partly run** — see below. |
 | gate 9, the network recording | **passed** for everything reachable here: across attaching, solving, minting a link, reloading on it and forgetting the file, **zero requests of any kind after the file dialog opens**, off-site or otherwise, and none carrying a body. |
 
@@ -226,6 +255,24 @@ was exercised and passed:
 What was **not** run under gate 8: attaching while a study and a survey are both
 in flight, and the background-tab paint check. Both need a driven study, which
 is minutes of engine time per sample.
+
+### What driving the page turned up, in the convergence pass
+
+Worth recording, because it is the argument for `page-gate7.mjs` existing at all:
+neither of these was visible in any Node harness.
+
+- **A reachable engine fatal.** With a part-year file admitted at the gate, a desk
+  still calendared for the year sends EnergyPlus to a month with no records in it.
+  It terminates in `GetNextEnvironment` and the sheet letters *Program terminates
+  due to preceding condition* — true, and useless. `solve` now refuses before the
+  run, naming the file's extent, beside the design-days refusal it is a twin of.
+- **The attach sentence is overwritten on the first attach of a session**, every
+  time. `attachClimate` writes it and then calls `markStale`, which on a desk whose
+  shape the attach changed replaces it with *Model changed — solving when you let
+  go* inside the same task. That ordering is correct — the run is the newer news —
+  but it means the sentence cannot be polled for, and the first file a session sees
+  never letters one. `page-gate7.mjs` attaches twice for this reason and records
+  the status row from a `MutationObserver` rather than reading it.
 
 ### Still not runnable here
 
@@ -269,7 +316,15 @@ about.
 **Not exercised:** the dozen lines between a successful archive download and
 `attachClimate` — the fetch landing, `designConditionsFrom` over a real DDY from
 onebuilding, and `sourceFromStation` being handed it. Reaching them needs
-climate.onebuilding.org, which this environment denies. A maintainer with
-network should pick three stations and confirm the IDF each writes is
-byte-identical to what `main` writes for the same desk, which is what T021 asks
-for.
+climate.onebuilding.org, which this environment denies.
+
+`station-unchanged.mjs` now answers as much of T021 as can be answered without
+that network, and answers it against `main` rather than against a description of
+`main`: the branch is checked out into a worktree under `.claude/worktrees/`, its
+own `src/model.js` is imported, and the two IDFs are compared byte for byte. That
+covers the whole of what reaches the *document* — `setDesignConditions` split into
+`setSiteLocation` and the design-day half, and `clearDesignDays` added beside them.
+What it cannot cover is a real archive: the harness probes the host, and where it
+is denied it records the three-station gate not-run with the proxy's own sentence.
+A maintainer with network should run it there, where the probe will say so and the
+gate becomes the one it was written for.

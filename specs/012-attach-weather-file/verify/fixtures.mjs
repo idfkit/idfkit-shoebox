@@ -456,9 +456,13 @@ export const epwPartYear = (station = STATIONS.london) =>
  * Short deliberately: a sub-hourly year is 35,040 records and about 6 MB, and
  * nothing it would prove is not proved by seven days. `periodCovered` reads the
  * records-per-hour off the header and the extent off the timestamps, and both
- * are exercised here. `dailyMeans` refuses this file — it wants 96 records for
- * every day of the year and has them for seven — and that refusal is about the
- * part year, not about the sub-hourly stamp.
+ * are exercised here.
+ *
+ * `dailyMeansCarried` reads its seven days and leaves the other 358 null, so the
+ * attach gate admits this file; `dailyMeans` refuses it for being seven days and
+ * not a year, which is the sentence the comfort line needs. Neither refusal is
+ * about the sub-hourly stamp — 96 records a day is a count this reader takes off
+ * the header, not a shape it objects to.
  */
 export const epwSubHourly = (station = STATIONS.london) =>
   epw({ station, from: { month: 1, day: 1 }, to: { month: 1, day: 7 }, perHour: 4 });

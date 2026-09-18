@@ -31,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   about itself. A recipient holding the same file gets the sender's desk and
   the sender's numbers; one holding a different file is told so, with both
   descriptions printed, before a single reading is drawn.
+- **A file covering less than a year is read for what it has.** A design summer
+  year cut to 1 May – 30 September is the file the method is read over, and it
+  is now admitted rather than refused: the sheet letters the period it found,
+  the criteria it can answer are answered, and each one it cannot says so by
+  name — the degree days because a degree-day total is a year's, the comfort
+  line because it is seeded from 23 April. A day missing from inside the file's
+  own stretch is still refused, because that is a fault and not an extent. A
+  calendar asking for months the file has not got is refused before the run
+  rather than left to end in an engine error.
 - **The browser keeps the file, and says so.** Gzipped into `localStorage`,
   with a line under the picker naming it and offering to forget it. It is
   re-attached automatically only where the link names it — which an ordinary
@@ -38,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one thing on every machine.
 
 ### Changed
+
+- A kept scheme now names the weather file it was solved against, and restoring
+  one solved against a different file reloads to ask for that file instead of
+  being applied in place. Before, a scheme kept under an attached file restored
+  against whatever climate happened to be on the desk, and nothing said so.
 
 - A weather file attached without a DDY beside it leaves the desk with **no
   design days at all**, rather than Denver's standing under somebody else's

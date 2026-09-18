@@ -73,10 +73,11 @@ Other modules: `readings.js` (ESO readers, DOM-free), `describe.js` (the generat
 paragraph), `bill.js` / `rates.js` (the priced schedule), `permalink.js`,
 `schemes.js` (standards and kept schemes), `tm59.js` (overheating), `tour.js`
 (onboarding), `scheduler.js` / `study.js` / `pool.js` (studies), `survey.js` /
-`pull.js` / `relief.js` (E-02 design space survey), `weather.js` / `epw.js`,
-`copy.js` (copy budgets), `units.js` (SI or IP, lettering only). Keep
-`readings.js`, `describe.js`, `tm59.js`, `units.js` and the `permalink.js` codec
-DOM-free and network-free so Node harnesses call the real code.
+`pull.js` / `relief.js` (E-02 design space survey), `weather.js` / `epw.js` /
+`source.js` (what the desk is solving against), `copy.js` (copy budgets),
+`units.js` (SI or IP, lettering only). Keep `readings.js`, `describe.js`,
+`tm59.js`, `units.js`, `source.js` and the `permalink.js` codec DOM-free and
+network-free so Node harnesses call the real code.
 
 ### Controls (`src/controls.js`)
 
@@ -437,11 +438,48 @@ and never states the level itself.
 
 ## Weather data
 
-`src/weather.js` wraps `@idfkit/weather`. The 1.7 MB station index loads on the
-first keystroke in the picker. climate.onebuilding.org sends no CORS header, so
-requests go through `/onebuilding` (Vite proxy in dev, a second CloudFront origin in
-production, or `VITE_WEATHER_PROXY`). `asIndexed()` is a temporary workaround. The
-README predates the model console.
+Two ways a year reaches the desk, and **one `WeatherSource` from the moment the
+bytes exist**: `sourceFromStation` and `sourceFromFile` in `src/source.js` build
+it, `attachClimate` in `main.js` is the single path either one ends at, and its
+eight steps (six of them clears) are what stop a curve, a spot height, a comfort
+line or a bill outliving the climate it was measured under. `pickedStation` and
+`weatherSource.fingerprint` are the two link tokens and exactly one of them exists
+at a time.
+
+- **The picker.** `src/weather.js` wraps `@idfkit/weather`. The 1.7 MB station
+  index loads on the first keystroke. climate.onebuilding.org sends no CORS
+  header, so requests go through `/onebuilding` (Vite proxy in dev, a second
+  CloudFront origin in production, or `VITE_WEATHER_PROXY`). `asIndexed()` is a
+  temporary workaround.
+- **A file the reader holds.** CIBSE licenses its data and WFR:2026 requires a
+  DSY1, so the file is on the buyer's machine and **no byte of it reaches the
+  network** — that is the only arrangement under which a licensed file can be used
+  at all, not a constraint being worked around. `src/source.js` is DOM-free and
+  network-free (`crypto.subtle` aside) so the Node harnesses fingerprint and gate
+  the same file the browser does.
+- **The gate reads what the file carries, and refuses only the readings its months
+  cannot support.** `dailyMeansCarried` returns `null` per day it has not got;
+  `assertCarriesItsPeriod` refuses a day missing from inside the file's own extent,
+  because an extent is a fact about a file and a hole is a fault in one;
+  `dailyMeans` is the whole-year contract the comfort line needs and nothing else.
+  A part-year file letters its extent, lands its degree days as a stated absence,
+  and takes `ABSENCE.fileSeason` on the criteria — never `ABSENCE.season`, whose
+  press is a Run strip that has nothing left to change.
+- **A calendar the file cannot cover is refused in `solve`**, beside the
+  design-days refusal and for the same reason: `applyRun` writes a `RunPeriod`
+  across whole months, and the engine's own answer is a `GetNextEnvironment` fatal
+  blamed on nothing the reader did. Refused, never narrowed — `months` is on
+  `params` and a link carries it.
+- **The fingerprint is over the records, not over how the lines end.** CRLF and a
+  lone CR become LF and trailing newlines are dropped, on the bytes, before any
+  decoding; nothing else is normalised. `wf` / `wfd` ride the link, the file never
+  does, and a desk waiting on one solves nothing and letters what the link asked
+  for in the file's own words.
+- **A kept scheme carries its climate**, and `restoreScheme` compares both
+  tokens. Compared on the station alone, a scheme kept under a file matched any
+  other file's `null` and restored in place against somebody else's year.
+
+The README predates the model console.
 
 ## Deployment
 

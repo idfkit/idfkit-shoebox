@@ -10,9 +10,15 @@
  * It needs two things this repository does not carry:
  *
  *     npm run build && npx vite preview --port 4173     # the page
- *     npm i playwright                                  # in a scratch directory
+ *     ln -s /elsewhere/node_modules/playwright node_modules/playwright
  *
- * and a Chromium. This environment has one staged under `PLAYWRIGHT_BROWSERS_PATH`
+ * **Not `npm i playwright` here.** `package.json` is where this repository's idfkit
+ * level is declared and the consumer register in idfkit-conformance describes it,
+ * so a dependency added for a throwaway harness is a register change nobody asked
+ * for. ESM does not honour `NODE_PATH` either, so a scratch install has to be
+ * linked into `node_modules/` rather than pointed at.
+ *
+ * And a Chromium. This environment has one staged under `PLAYWRIGHT_BROWSERS_PATH`
  * and no matching Playwright download, so the executable is passed explicitly and
  * `SHOEBOX_CHROME` overrides it. Run from the repository root:
  *

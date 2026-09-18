@@ -75,7 +75,7 @@ behave identically at the end of it.
 - [X] T018 Extract `attachClimate(source)` out of `choose()` in `src/main.js`, carrying all eight steps — the six clears (`studyScheduler.clearAll()`, `studyStops.clear()`, `closeSurvey({ forgetTraverse: true })`, `meanCache = null`, `bill`/`lastRun`, `lastOutcome`), the model write and the title-block re-letter — and make the station picker its first and only caller (research R1)
 - [X] T019 [P] Write `specs/012-attach-weather-file/verify/readers.mjs`: `readLocation`, `periodCovered`, `dailyMeans` and `degreeDaysOf` over every fixture, asserting each absence comes back `null`, each refusal names its day, and the measured degree days sit close to the index's published figures for the same station (quickstart gate 3)
 - [X] T020 [P] Write `specs/012-attach-weather-file/verify/fingerprint.mjs`: CRLF equals LF, trailing newline equals none, one changed character differs, changed in-field whitespace differs, every output matches `[A-Za-z0-9_-]{16}` (quickstart gate 4)
-- [ ] T021 **[NOT RUN — the station download is denied by this environment; see verify/README.md]** Verify the refactor changed nothing: pick three stations on the page, and in `specs/012-attach-weather-file/verify/station-unchanged.mjs` assert the IDF written for each is byte-identical to the one `main` writes for the same desk and station
+- [X] T021 **[PARTLY RUN — `verify/station-unchanged.mjs` compares against `main` itself; the three *real* stations stay not-run, the proxy denies climate.onebuilding.org. Restated and closed as T084]** Verify the refactor changed nothing: pick three stations on the page, and in `specs/012-attach-weather-file/verify/station-unchanged.mjs` assert the IDF written for each is byte-identical to the one `main` writes for the same desk and station
 
 **Checkpoint**: a station behaves exactly as before, the readers are proved against real
 files, and `attachClimate` has a second caller waiting. User stories can begin.
@@ -127,10 +127,10 @@ used is legible without opening a fold.
 - [X] T038 [US2] Split the local-time qualification in `src/tm59.js`: the standing half keeps TM59:2026 §3.7.1's rule, and a run-dependent half states what **this** file's `HOLIDAYS/DAYLIGHT SAVINGS` record declares, read through `parseEpwCalendar` (FR-013, research R13)
 - [X] T039 [US2] Make the new half agree with the run in `src/tm59.js`: `applyRun` writes `use_weather_file_daylight_saving_period: params.dst`, so the sentence says which of the two states this run is in rather than asserting what files generally declare
 - [X] T040 [US2] Confirm `qualificationsFor` and `WeatherFile.declares` need no change for an attached file in `src/tm59.js`, and that the weather qualification still prints the declaration beside `WFR_REQUIREMENT` asserting no relation (FR-012, FR-015)
-- [ ] T041 **[NOT DONE — criteria absence for a file that does not cover the seed week or the season]** [US2] Letter each criterion's absence in `src/main.js` where the attached file does not cover the seed week of 23–29 April or the 1 May – 30 September period, naming the missing period and computing nothing over a shortened one (FR-014)
-- [ ] T042 **[NOT DONE — a dailyMeans refusal carried into criterion a and the degree-day reading]** [US2] Carry a `dailyMeans` refusal into criterion a's margin cell and into the degree-day reading in `src/main.js`, in the sentence the parser wrote, leaving criteria b and c reading (research R11, R12)
-- [ ] T043 **[NOT DONE — the criteria-over-a-file harness]** [P] [US2] Write `specs/012-attach-weather-file/verify/criteria-over-file.mjs`: all five criteria over a real DSY against the same arithmetic over a TMYx year; a seeded-week-short file; a season-short file; `TM59_SPACES` still equal to `PROFILE_IDS`; no threshold moved (quickstart gate 7)
-- [ ] T044 **[NOT DONE — the overheating block driven on the page]** [US2] Drive the page (`npm run dev`, `index.html`) against gate 7's lettering in `specs/012-attach-weather-file/quickstart.md`: the weather qualification, the local-time qualification in both states, and each criterion's absence sentence, all readable without opening a fold
+- [X] T041 **[DONE as T079]** [US2] Letter each criterion's absence in `src/main.js` where the attached file does not cover the seed week of 23–29 April or the 1 May – 30 September period, naming the missing period and computing nothing over a shortened one (FR-014)
+- [X] T042 **[DONE as T082, once T078 admitted such a file]** [US2] Carry a `dailyMeans` refusal into criterion a's margin cell and into the degree-day reading in `src/main.js`, in the sentence the parser wrote, leaving criteria b and c reading (research R11, R12)
+- [X] T043 **[DONE as T081 — `verify/criteria-over-file.mjs`]** [P] [US2] Write `specs/012-attach-weather-file/verify/criteria-over-file.mjs`: all five criteria over a real DSY against the same arithmetic over a TMYx year; a seeded-week-short file; a season-short file; `TM59_SPACES` still equal to `PROFILE_IDS`; no threshold moved (quickstart gate 7)
+- [X] T044 **[DONE as T083 — `verify/page-gate7.mjs`]** [US2] Drive the page (`npm run dev`, `index.html`) against gate 7's lettering in `specs/012-attach-weather-file/quickstart.md`: the weather qualification, the local-time qualification in both states, and each criterion's absence sentence, all readable without opening a fold
 
 **Checkpoint**: the page states nothing false about its own run, which is the reason the
 feature exists.
@@ -157,7 +157,7 @@ reason.
 - [X] T050 [US3] Hold the address bar still while a desk waits on a file in `src/main.js`, as `linkAttachPending` does for a linked station, so the link being honoured cannot lose its own token
 - [X] T051 [US3] Letter the absence of every reading that needs a year on a waiting desk in `src/main.js`, with the reason in view rather than in a fold, and never from the design days (FR-019, FR-024)
 - [X] T052 [US3] Refuse a mismatched file against a `wf` link in `src/main.js`, printing both what the link asked for and what the file declares, and offering the file on a fresh desk instead (FR-020)
-- [ ] T053 **[NOT DONE — a kept scheme naming the file it was solved against]** [US3] Name the file a kept scheme was solved against in its row in `src/schemes.js`, and make a kept scheme minted under a file follow the link's rule when recalled (FR-022)
+- [X] T053 **[DONE as T076 and T077]** [US3] Name the file a kept scheme was solved against in its row in `src/schemes.js`, and make a kept scheme minted under a file follow the link's rule when recalled (FR-022)
 - [X] T054 [P] [US3] Write `specs/012-attach-weather-file/verify/link-roundtrip.mjs`: a file desk encodes, decodes and re-encodes byte-identically with a `wfd` carrying commas, spaces and `·`; each malformed class refused whole; `LINK_VERSION` still `v1` and `DEFAULTS_BY_VERSION` unchanged (quickstart gate 6)
 - [X] T055 [US3] Decode T005's `links-before.json` on the branch in `specs/012-attach-weather-file/verify/links-after.mjs` and diff: every link minted before this feature must decode to exactly what it decoded to before
 - [X] T056 [US3] Drive the page (`npm run dev`, `index.html`) against gate 6's three outcomes in `specs/012-attach-weather-file/quickstart.md`: the matching file, a different file, and a file renamed but unchanged — which the fingerprint must accept, since it is taken over contents
@@ -326,17 +326,38 @@ T042, T043, T044, T053) and are restated here with what the code actually shows.
 were found by reading the code against the spec: one of them is a determinism violation
 that the task list did not have.
 
-- [ ] T076 **CRITICAL** Make `restoreScheme` in `src/main.js` honour a kept scheme's `wf` token: it decides its path on `sameStation(state.station, stationToken())` alone, and a scheme kept under a file carries `station: null`, so it is applied in place against whatever climate is attached — a different file, or none — and the same stored hash reproduces different numbers per Constitution II (contradicts)
-- [ ] T077 Name the file a kept scheme was solved against in its row in `src/schemes.js`, and carry it on `Scheme` beside `station`, which today holds only the lettered place per FR-022 (missing)
-- [ ] T078 Admit a file that covers less than a whole year in `src/source.js`'s attach gate, refusing only the readings it cannot answer rather than the file: `dailyMeans` demands all 365 days' records and refuses a 1 May – 30 September file whole, which `periodCovered`'s own docstring calls "a perfectly good file to read TM59 over" per spec Edge Cases and FR-010 (contradicts)
-- [ ] T079 Letter each criterion's absence in `src/main.js` where the attached file does not cover the seed week of 23–29 April or the 1 May – 30 September period, naming the missing period and computing nothing over a shortened one — the old T041, still unwritten, and reachable only once T078 lands per FR-014 (missing)
-- [ ] T080 Call `periodCovered` and letter the period the file covers in `src/main.js`: it is imported and never called, `renderSiteSub` letters zone, label, degree days and elevation only, and the attach sentence letters `runHours()`, which is the desk's calendar rather than the file's extent per FR-010 and FR-008 (missing)
-- [ ] T081 Write `specs/012-attach-weather-file/verify/criteria-over-file.mjs` — all five criteria over a whole year against a part year, a seed-week-short file, a season-short file, `TM59_SPACES` still equal to `PROFILE_IDS`, no threshold moved — the old T043 per quickstart gate 7 (missing)
-- [ ] T082 Land a daily-mean series shorter than a year as a stated absence rather than a throw in `src/source.js`'s `degreeDaysOf`, in the parser's own sentence, once T078 admits such a file — the degree-day half of the old T042 per FR-008 and Principle IV (partial)
-- [ ] T083 Drive gate 7's lettering in `specs/012-attach-weather-file/quickstart.md` — the weather qualification, the local-time qualification in both states, and each criterion's absence sentence, all readable without opening a fold — and record the outcome in `verify/README.md`, which today lists gates 2, 3, 4, 5, 6, 8 and 9 and not gate 7 — the old T044 (missing)
-- [ ] T084 Write `specs/012-attach-weather-file/verify/station-unchanged.mjs` asserting the IDF three picked stations write is byte-identical to what `main` writes for the same desk, and record it not-run with its reason where the archive fetch is still denied — the old T021, covering the dozen lines between a successful fetch and `attachClimate` that `verify/README.md` states are unexercised (missing)
-- [ ] T085 Assert this feature's always-visible strings against `src/copy.js` at load — the attach label and note in `index.html`, the waiting-desk sentence and each refusal in `src/main.js` — the way the units lines are asserted at `src/main.js:4039`; commit `35a62ac` counted one of them by hand at 43 words against the 40-word `CEILING` after it had shipped, which is the class of silent breakage workflow gate 5 asks to be thrown at load (partial)
-- [ ] T086 Record the file path in `CLAUDE.md`: `src/source.js` is absent from the Architecture module list and from the DOM-free list it belongs on, and the Weather data section still describes only the station path, against Governance's rule that it is kept current as part of any change it describes (missing)
+- [X] T076 **CRITICAL** Make `restoreScheme` in `src/main.js` honour a kept scheme's `wf` token: it decides its path on `sameStation(state.station, stationToken())` alone, and a scheme kept under a file carries `station: null`, so it is applied in place against whatever climate is attached — a different file, or none — and the same stored hash reproduces different numbers per Constitution II (contradicts)
+- [X] T077 Name the file a kept scheme was solved against in its row in `src/schemes.js`, and carry it on `Scheme` beside `station`, which today holds only the lettered place per FR-022 (missing)
+- [X] T078 Admit a file that covers less than a whole year in `src/source.js`'s attach gate, refusing only the readings it cannot answer rather than the file: `dailyMeans` demands all 365 days' records and refuses a 1 May – 30 September file whole, which `periodCovered`'s own docstring calls "a perfectly good file to read TM59 over" per spec Edge Cases and FR-010 (contradicts)
+- [X] T079 Letter each criterion's absence in `src/main.js` where the attached file does not cover the seed week of 23–29 April or the 1 May – 30 September period, naming the missing period and computing nothing over a shortened one — the old T041, still unwritten, and reachable only once T078 lands per FR-014 (missing)
+- [X] T080 Call `periodCovered` and letter the period the file covers in `src/main.js`: it is imported and never called, `renderSiteSub` letters zone, label, degree days and elevation only, and the attach sentence letters `runHours()`, which is the desk's calendar rather than the file's extent per FR-010 and FR-008 (missing)
+- [X] T081 Write `specs/012-attach-weather-file/verify/criteria-over-file.mjs` — all five criteria over a whole year against a part year, a seed-week-short file, a season-short file, `TM59_SPACES` still equal to `PROFILE_IDS`, no threshold moved — the old T043 per quickstart gate 7 (missing)
+- [X] T082 Land a daily-mean series shorter than a year as a stated absence rather than a throw in `src/source.js`'s `degreeDaysOf`, in the parser's own sentence, once T078 admits such a file — the degree-day half of the old T042 per FR-008 and Principle IV (partial)
+- [X] T083 Drive gate 7's lettering in `specs/012-attach-weather-file/quickstart.md` — the weather qualification, the local-time qualification in both states, and each criterion's absence sentence, all readable without opening a fold — and record the outcome in `verify/README.md`, which today lists gates 2, 3, 4, 5, 6, 8 and 9 and not gate 7 — the old T044 (missing)
+- [X] T084 Write `specs/012-attach-weather-file/verify/station-unchanged.mjs` asserting the IDF three picked stations write is byte-identical to what `main` writes for the same desk, and record it not-run with its reason where the archive fetch is still denied — the old T021, covering the dozen lines between a successful fetch and `attachClimate` that `verify/README.md` states are unexercised (missing)
+- [X] T085 Assert this feature's always-visible strings against `src/copy.js` at load — the attach label and note in `index.html`, the waiting-desk sentence and each refusal in `src/main.js` — the way the units lines are asserted at `src/main.js:4039`; commit `35a62ac` counted one of them by hand at 43 words against the 40-word `CEILING` after it had shipped, which is the class of silent breakage workflow gate 5 asks to be thrown at load (partial)
+- [X] T086 Record the file path in `CLAUDE.md`: `src/source.js` is absent from the Architecture module list and from the DOM-free list it belongs on, and the Weather data section still describes only the station path, against Governance's rule that it is kept current as part of any change it describes (missing)
+
+### Outcome
+
+Every task in this phase is done. What the pass turned up that the list did not
+have, recorded in `docs/design-notes.md` under "The convergence pass":
+
+- **T076 was a live determinism defect**, and silent: one stored hash produced
+  different numbers depending on what was attached, with nothing wrong with the
+  desk it produced.
+- **T078 opened a second reachable engine fatal**, which only driving the page
+  showed: a part-year file on a whole-year calendar ends in `GetNextEnvironment`.
+  `solve` refuses it now, naming the file's extent, beside the design-days
+  refusal it is a twin of. The calendar is refused rather than narrowed — `months`
+  is on `params` and a link carries it.
+- **The attach sentence is overwritten on the first attach of any session**, by
+  `markStale`, inside the same task. Correct, but it means the sentence cannot be
+  polled for and the first file a session sees never letters one.
+- Gate 7 is now answered in both halves: `verify/criteria-over-file.mjs` for the
+  arithmetic and `verify/page-gate7.mjs` for the lettering. Gate 1, SC-003, every
+  reading over a licensed DSY1 and the three real stations remain **not run**, each
+  recorded in `verify/README.md` with its reason.
 
 ### Notes on this phase
 

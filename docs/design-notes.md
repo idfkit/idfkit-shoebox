@@ -3373,3 +3373,106 @@ only the picker had ever set it; the measured degree days came out as
 beside an index figure published as `2,801`; and the climate-zone chip ran
 straight into the line beside it in the markup, so a screen reader read `5A` and
 `Cool, Humid` as one word while CSS padding hid it on screen.
+
+#### The convergence pass: what reading the code against the spec turned up
+
+Six findings, appended to `tasks.md` as Phase 8 and worth keeping because five of
+them are the same shape: a thing the spec asked for that the implementation had
+answered with its nearest neighbour.
+
+**A kept scheme restored against somebody else's climate, silently.**
+`restoreScheme` decided between "apply in place" and "go through the link" on
+`sameStation(state.station, stationToken())` alone. A scheme kept under an
+attached file carries `station: null`; a desk on an attached file answers
+`stationToken()` with `null` too. The two nulls matched. So a scheme solved
+against a purchased DSY1 was applied in place against whatever was attached — a
+different file, or nothing — the sliders moved, the numbers came back, and
+nothing anywhere said they were another year's. There was nothing wrong with the
+desk: it was a real building solved against a real climate, and only the stored
+hash knew it was the wrong one. That is Constitution II broken in the quietest
+way available, and the fix is one line of comparison plus the knowledge of why a
+fingerprint and not a declaration: two years of one purchase describe themselves
+identically in `wfd`, and the fingerprint is over the bytes.
+
+`Scheme` now carries the file beside the place, too. `station` holds
+`$('t-location').textContent`, and a DSY1 and a TMYx for the same airport letter
+the same title block — which is the entire difference the file was bought for.
+
+**An extent is a fact about a file; a hole is a fault in one.** The attach gate
+was `dailyMeans`, chosen (plan finding 4) so there would be one opinion about
+what a usable file is. What that missed is that a 1 May – 30 September DSY is a
+perfectly good file and `dailyMeans` refuses it — its 365-day contract belongs to
+the comfort line, which recurses from 23 April with an eight-tenths memory and
+genuinely cannot work without a year. Refusing the file to protect the annual
+bill threw away the title block, the summer run and the criteria along with it.
+
+So the reader split in two rather than growing a flag. `dailyMeansCarried`
+returns `null` for each day the file has not got and is what the gate reads;
+`dailyMeans` is the same series refused unless all 365 are filled, and is what
+the comfort line reads. `assertCarriesItsPeriod` keeps the half of the old gate
+that was still a fault: a day missing from between the file's own first and last
+record is a hole, and every reading over those months would be taken over a year
+with a day out of the middle of it.
+
+The refusals then had to name the right thing. `carries 0 of the 24 records
+1 January needs` is what a 1 May file used to be told, which reads as a broken
+file and sends the reader looking for a corrupt record that is not there; it now
+names the extent. `degreeDaysOf` returns a `DegreeDays` carrying `reason` instead
+of a sum, because 92 summer days summed on an 18 °C base come out low and
+plausible and would sit in the sub-line beside a published annual figure as
+though the two were comparable. And `ABSENCE.fileSeason` was added beside
+`ABSENCE.season` because the two send a reader to opposite ends of the sheet:
+`season` is a calendar with months unticked and the Run strip fixes it, while a
+file that stops before May is a desk whose months are *already* ticked, and told
+to "run some of May to September" the reader would go to the Run strip, find them
+there, and have nowhere left to look.
+
+**Admitting the file opened a second engine fatal, and only the page showed it.**
+Nothing in a Node harness could see this: with a part-year file admitted, a desk
+still calendared for the year sends EnergyPlus to a month with no records, and it
+terminates in `GetNextEnvironment`. The sheet letters *Program terminates due to
+preceding condition*, which is true and tells the reader nothing at all. So
+`monthsCovered` counts the whole months a file carries — whole, because
+`applyRun` writes a `RunPeriod` from the first of a contiguous group to the last,
+and a month the file has half of cannot be run — and `solve` refuses before the
+run, naming the file's extent, exactly as it already refuses a desk asked to run
+design days it does not have.
+
+**Refused, never narrowed**, and that is the interesting half. Quietly rewriting
+the month mask to fit the file is the obvious fix and would put the sheet outside
+its own link: `months` is on `params`, a permalink carries it, and the same
+address would then produce one run on the machine that attached the file and
+another everywhere else. The desk does adjust `sizingPeriods` on an attach, which
+looks like a precedent and is not: that commit goes through `commit`, the link
+hands in its own `sizing`, and the Run strip letters the result. There is no such
+route for a mask.
+
+The same ordering trap caught the sentence: `attachClimate` writes its attach
+sentence *after* the commit that starts the solve, so the refusal the pump had
+already written was overwritten by a cheerful "attached" — the sheet disagreeing
+with itself in one row, with the reader believing the more recent half. Both now
+come from one predicate.
+
+**Two things about the status row worth knowing before driving the page again.**
+The attach sentence is overwritten on the first attach of any session, every
+time: `markStale` follows it inside the same task and replaces it with *Model
+changed — solving when you let go* whenever the attach changed the desk's shape,
+which the first one always does by moving Design days to Skip. It cannot be
+polled for either — 500 ms of polling never saw it — so `page-gate7.mjs` records
+the row from a `MutationObserver` and attaches twice.
+
+**A budget nothing enforces is not a budget.** Commit `35a62ac` counted the
+waiting-desk sentence by hand, got 43 words against the 40-word `CEILING`,
+trimmed it, and shipped — with no assertion, and with the count taken *without* a
+file declaration in it, which is the state no reader ever sees it in. Every
+sentence the file path letters is now declared once in `FILE_SAYS` and asserted
+at load, and the one that quotes a declaration is asserted quoting one, two words
+longer than the longest the fixtures produce: a purchased file is named by
+whoever sold it, and a page that only just fits the names it has seen will one
+day be handed a longer one with nothing thrown.
+
+What is deliberately **not** asserted is the part a parser wrote. A refusal quotes
+`dailyMeansCarried`'s or `designConditionsFrom`'s own sentence, naming the record
+or the day, and that is the only part of it a reader can act on: it may not be
+folded, may not be shortened, and is not this page's text to budget. The wrapper
+is what the module wrote and the wrapper is what is counted.
