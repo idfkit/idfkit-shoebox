@@ -43,36 +43,65 @@ That set is the claim side. The rule side comes from `tests/invariants.js` and
 | every `Invariant` marked `unexecutable` carries a reason and is claimed by nothing | an unexecutable entry quietly counted as covered |
 | every `Gate` is claimed or is `evidence: 'human'` with a reason | FR-008 |
 
-## The bijection against the prose
+## The correspondence checks
 
-Separately, and this is the load-bearing one (research D-09): the same check reads
-`CLAUDE.md`, extracts the top-level bullets of the section titled
-`## Invariants that fail quietly`, and asserts a one-to-one correspondence with the
-register by `Invariant.quote`.
+The register↔prose bijection the first draft of this contract specified is **gone**, with the
+prose it ran against (research D-09). Three checks stand where it did.
 
-```
-tests/invariants.js declares 26 invariants.
-CLAUDE.md § Invariants that fail quietly carries 26 bullets.
-Every bullet is claimed by exactly one declaration.
-Every declaration's quote opens exactly one bullet.
-```
+### 1. Register against checks — the bijection that survived
 
-Each of the four failure modes has its own message, naming the bullet or the declaration:
+This is the pair that can actually disagree, and the assertions are the four in the table
+above, run in both directions. A declared invariant claimed by nothing is red; a claimed id
+no declaration resolves is red. Nothing reads `CLAUDE.md`.
 
 ```
-not ok 2 - the register indexes the prose
-  CLAUDE.md § Invariants that fail quietly carries a bullet no declaration claims:
-    "A fifth weekday holiday is fatal; the grammar is closed at four and \"last\"."
-  Declare it in tests/invariants.js with its quote, its evidence class and its tier.
-  Recording a rule and enforcing it are one act (FR-026).
+not ok 2 - every declared invariant is enforced by a check
+  tests/invariants.js declares an invariant no check claims:
+    INV-fifth-weekday-holiday
+  Write its check and claim it with covers('INV-fifth-weekday-holiday', …),
+  or declare it unexecutable with a reason.
+  A rule the suite does not enforce is a rule nothing states (FR-006).
 ```
 
-The same shape is applied to `.specify/memory/constitution.md`'s ten numbered gates.
+### 2. The section stays gone
 
-**Why the quote and not an anchor**: the prose is what a human reads and what the project
-treats as the statement of the rule. Putting `{#inv-north-axis}` markers into it would put
-scaffolding in the document for the benefit of a machine. Quoting the opening clause gives
-the same stability — reword the bullet and the check goes red — and costs the prose nothing.
+`CLAUDE.md` and `docs/design-notes.md` carry no heading matching `Invariants that fail
+quietly`, and no document in the repository restates one of the rules in its own words
+(FR-030a, SC-020). Deleting the section once is a commit; keeping it deleted is a check,
+because a habit of thirteen features will otherwise grow it back one bullet at a time.
+
+```
+not ok 5 - no invariant is stated outside the check that enforces it
+  CLAUDE.md carries a heading matching "Invariants that fail quietly".
+  A rule stated in a document and in an assertion is two statements of one rule.
+  State it beside the check that enforces it (FR-030a).
+```
+
+### 3. Every claiming check carries its reasoning
+
+The discovery pass is already parsing `covers()` call sites to read their first argument, so
+it also asserts a comment node immediately precedes each call claiming an `INV-` id, and
+that a custom ESLint rule enforcing one carries `meta.docs.description` (FR-030, SC-019).
+
+Presence is decidable and is checked. Whether the comment *justifies* the rule rather than
+*narrating the assertion* is not decidable, and is recorded as a human act beside gate 9 —
+which makes the same distinction about the same thing, and is the honest place for it.
+
+### 4. The gates, against the constitution
+
+Unchanged, and deliberately so: `Gate.quote` holds each numbered gate's opening sentence
+verbatim and the check asserts one-to-one correspondence with
+`.specify/memory/constitution.md`, so amending a gate's wording without revisiting its check
+is a failure.
+
+The asymmetry with the invariants is the spec's own. The constitution is ratified governance
+text amended by a stated procedure, not a working note that may be relocated into a test
+file, and a gate is a rule about how the project works where an invariant is a rule about how
+the software behaves. Only the second can be stated as an assertion.
+
+**What this costs, stated once.** No list remains for the suite to diff itself against.
+Nobody can record an invariant without enforcing it, and equally nobody is told they have
+failed to record one. Structural where it applies, silent where it does not.
 
 ## Enumerated declarations
 

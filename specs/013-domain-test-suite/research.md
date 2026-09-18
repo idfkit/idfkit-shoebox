@@ -250,41 +250,91 @@ The child is also where FR-005 is enforced: it runs with no network permitted an
 `locateFile` pointed at the staged assets, so a check that tried to fetch a climate file
 would fail rather than succeed slowly.
 
-## D-09 — The prose is the register; the suite indexes it
+## D-09 — The check is the statement; the register is a roster of identifiers
 
-**Decision**: `tests/invariants.js` declares one `Invariant` per bullet under
-"Invariants that fail quietly". Each carries an `id`, a `quote` — the opening clause of its
-bullet, copied verbatim — and either the tier that executes it or an `unexecutable` reason.
-A fast-tier check reads `CLAUDE.md`, extracts the bullets of that section, and asserts a
-**bijection**: every bullet is claimed by exactly one declaration, and every declaration's
-quote matches the opening of exactly one bullet.
+**Decision**: the twenty-six bullets under "Invariants that fail quietly" are **relocated
+into the suite, not indexed from it**. Each becomes an executing check, the narrative that
+justifies it becomes a comment beside that check, and the section is then deleted from
+`CLAUDE.md` (FR-029, FR-030, FR-030a, SC-020).
 
-**Rationale**: FR-030 and Principle III are the same rule — one statement of one fact. A
-register that restated the twenty-six rules in its own words would be the second source of
-truth, and would drift in exactly the way the prose already drifts from the code. Indexing
-instead of copying makes every drift a failure:
+`tests/invariants.js` survives, stripped to what a roster may hold without becoming a second
+statement: an `id`, an `evidence` class, a `tier`, and a `reason` where the entry is
+unexecutable. It carries **no `quote` and no `where`**, because there is no longer a document
+to quote or point at. The spec settles this in as many words — the coverage record "is a
+roster of identifiers, evidence classes and tiers — it holds no statement of any rule, so it
+is not a second source of one."
+
+**Rationale**: this decision is a reversal, and the reasoning that forced it is worth keeping.
+The original D-09 had `tests/invariants.js` quote each bullet's opening clause verbatim and a
+fast-tier check assert a bijection between register and prose. That defends against drift
+between two artifacts — but a mechanism whose job is to keep two statements of one rule in
+agreement is a *synchroniser between two sources*, which is not what Principle III asks for.
+Principle III asks for one source. The original decision had considered only whether to
+*restate* the rules in the register's own words (correctly rejected); it never considered
+**moving** them, which is the option that actually satisfies the principle.
+
+So the bijection does not weaken — it **moves one artifact along**. What it now runs between
+is the register and the checks, which is the pair that can actually disagree:
 
 | What somebody does | What the suite does |
 | --- | --- |
-| adds a 27th bullet | red: a bullet no declaration claims |
-| deletes a bullet | red: a declaration whose quote matches nothing |
-| rewords a bullet's opening | red: quote no longer matches |
-| deletes a declaration | red: an unclaimed bullet |
+| declares an invariant and writes no check | red: a declared id claimed by nothing (static discovery) |
+| writes `covers('INV-typo')` | red: a claimed id no declaration resolves |
+| deletes a check but leaves its declaration | red: as the first row |
+| marks an entry unexecutable and also checks it | red: an unexecutable entry must be claimed by nothing |
+| restores the prose section to `CLAUDE.md` | red: the section-absence check (below) |
 
-FR-026 is the same mechanism pointed at the other enumerable declarations — `CHANNELS`,
-`KINDS`, `PRESETS`, `DEFAULT_PARAMETERS`, the landmark lists — where the register is the
-declaration itself and the check asserts each member is reached by a check.
+Two defects in the original design dissolve on the way past, and neither was the reason for
+the change but both confirm it:
 
-**Alternatives rejected**: anchors or tags appended to each bullet (`{#inv-north-axis}`) —
-rejected because it puts scaffolding in prose a human reads, and the quote gives the same
-stability for free.
+- **"The opening clause" had no mechanical definition.** The bullets variously open with a
+  code span, a bolded sentence, or plain prose. Any rule for extracting "the opening" would
+  have been a heuristic over text a human writes freely.
+- **Prettier formats Markdown by default.** The reformatting sweep of FR-035 could have
+  rewritten the very text the bijection quoted, turning a cosmetic sweep red for reasons
+  having nothing to do with any invariant.
+
+**What is lost, and it is a real loss.** Without the prose there is no list for the suite to
+diff itself against. Nobody can record an invariant without enforcing it — and equally,
+nobody is told they have *failed* to record one. The guarantee becomes structural where it
+applies and silent where it does not, which the spec records in Edge Cases rather than
+smoothing over. The twenty-six are fixed at the count this feature inherits; a
+twenty-seventh discovered later arrives as a check or does not arrive at all.
+
+**The gates are deliberately not treated this way.** `Gate.quote` keeps its verbatim
+sentence and its correspondence check against `.specify/memory/constitution.md`. The
+asymmetry is the point: the constitution is ratified governance text amended by a stated
+procedure, not a working note that may be relocated into a test file — and a gate is a rule
+about *how the project works*, where an invariant is a rule about *how the software
+behaves*. Only the second can be stated as an assertion, so only the second can be moved
+into one.
+
+**Two checks replace the one that died**, both fast-tier:
+
+- **the section stays gone** — `CLAUDE.md` and `docs/design-notes.md` carry no heading
+  matching `Invariants that fail quietly`, and no document under the repository restates one
+  (FR-030a, SC-020). This is what stops the section growing back by habit.
+- **every claiming check carries a comment** — the static discovery pass already parses
+  `covers()` call sites to read their first argument, so it also asserts a comment node
+  immediately precedes each call that claims an `INV-` id (FR-030, SC-019). Presence is
+  decidable; whether a comment *justifies* the rule rather than *narrating the assertion* is
+  not, and is recorded as a human act beside gate 9, which makes exactly the same distinction
+  about exactly the same thing.
+
+**Alternatives rejected**: keeping the prose and the bijection (the original decision — it
+is a synchroniser between two sources, above); summarising the section into a shorter list
+(a summary is the second statement in miniature, FR-029); anchors or tags appended to each
+bullet (`{#inv-north-axis}`) — moot once the bullets are gone, and scaffolding in prose a
+human reads while they existed.
 
 ## D-10 — Custom lint rules carry an invariant id
 
 **Decision**: `eslint-rules/` holds one module per custom rule. Each rule's `meta.docs`
-carries the invariant id it enforces and the section of `CLAUDE.md` where the rule is
-written down, and its message repeats both (FR-025). The bijection check of D-09 counts a
-custom rule as a check like any other.
+carries the invariant id it enforces, and its message repeats that id (FR-025) — a custom
+rule is the one kind of check whose failure surfaces far from the suite, so the id is what
+carries the reader back to the check that states the rule. `meta.docs.description` carries
+the reasoning, which is where FR-030's comment lives for a rule rather than a test body. The
+static discovery pass of D-09 counts a custom rule as a check like any other.
 
 The rules this feature writes, and the invariant each answers:
 
@@ -389,7 +439,7 @@ counted as covered. Both come from Principle VII rather than from the invariants
   reading is findable) and not decidable in general, because the claim is about what a
   reader can reach rather than about which attribute was used.
 
-All **twenty-six** entries in "Invariants that fail quietly" are executable, at least
+All **twenty-six** invariants this feature inherits are executable, at least
 structurally: five of them structurally only, for the reason in D-04. The coverage record
 carries all twenty-eight rows — twenty-six invariants and the two gate claims — so the
 difference between *executed*, *structurally executed* and *unexecutable* is visible in one

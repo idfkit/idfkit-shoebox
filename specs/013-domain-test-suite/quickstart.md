@@ -79,9 +79,10 @@ To watch one by hand — the units trap, the most expensive lesson in the list:
 npm run verify:fast
 ```
 
-**Expected**: a failure whose first line is
-`INV-temperature-difference: …`, citing `CLAUDE.md § Invariants that fail quietly`, and
-showing `+1 °C` lettering as `+33.8 °F`.
+**Expected**: a failure whose first line is `INV-temperature-difference: …`, pointing at the
+check that states the rule, and showing `+1 °C` lettering as `+33.8 °F`. Open that file: the
+comment above the check is where the reasoning now lives, and it is the only place it
+lives.
 
 ### 3. The fast tier is fast, and includes static analysis — US1, FR-033, SC-005
 
@@ -203,8 +204,11 @@ Add a control to `src/controls.js` and run `npm run verify:fast`.
 
 **Expected**: a failure naming the new key and what it now owes the suite — a codec round
 trip and, for a `Ruled` face, a lettering check in both systems. Add them and it goes green.
-Add a 27th bullet to `CLAUDE.md`'s invariants section and re-run: a failure naming the bullet
-no declaration claims.
+
+Then the other direction: add an `Invariant` to `tests/invariants.js` and write no check for
+it. Re-run: a failure naming the declared id nothing claims. And restore the old
+"Invariants that fail quietly" heading to `CLAUDE.md`: a failure saying a rule stated in a
+document and in an assertion is two statements of one rule (FR-030a, SC-020).
 
 ### 14. The reformatting sweep moved nothing — FR-036, SC-016
 
@@ -241,7 +245,7 @@ everything added is under `devDependencies`.
 | a channel | a `DeskPosition`, a golden, and an `Expectation` unless it is `prices: true` | `tests/support/desk.js`, `tests/engine/expectations.js` |
 | an output variable | nothing — FR-018 confirms every one against the `.rdd` | — |
 | a unit kind | nothing — `KINDS` is enumerated in both systems | — |
-| an invariant to `CLAUDE.md` | an `Invariant` declaration, a check, and a `Mutation` | `tests/invariants.js`, its tier, `tests/mutations/` |
+| an invariant | a check **and its comment** — that comment is the rule's only statement — plus an `Invariant` declaration and a `Mutation`. There is nowhere else to write it down | its tier, `tests/invariants.js`, `tests/mutations/` |
 | a bug fix | a check that fails before the fix and passes after it | the tier that owns it (FR-028) |
 
 The pattern in every row is the same: where the project already enumerates something, the

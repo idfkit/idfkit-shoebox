@@ -15,27 +15,33 @@ Every type below is DOM-free and network-free.
 
 ## `Invariant` — `tests/invariants.js`
 
-One per bullet under "Invariants that fail quietly" in `CLAUDE.md`. It does not restate the
-rule; it points at it (research D-09).
+One per invariant this feature inherits from the prose section it replaces. It neither
+restates the rule nor points at a document that does: after this feature the rule is stated
+exactly once, by the check that enforces it and the comment beside it (research D-09,
+FR-030a). What remains here is a roster entry — an identifier and what kind of proof the
+suite has for it.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `id` | `string`, `INV-kebab-case` | stable name a failure message carries |
-| `quote` | `string` | the opening clause of the bullet, **verbatim** |
-| `where` | `string` | the document and section the rule is written in, e.g. `CLAUDE.md § Invariants that fail quietly` |
+| `id` | `string`, `INV-kebab-case` | stable name a failure message carries, and the only handle between roster and check |
 | `evidence` | `'executed' \| 'structural' \| 'unexecutable'` | what kind of proof the suite has |
 | `reason` | `string \| null` | required when `evidence === 'unexecutable'`, forbidden otherwise |
 | `tier` | `'fast' \| 'model' \| 'engine' \| null` | which tier owns its check; `null` only when unexecutable |
 
+There is deliberately **no `quote` and no `where`**. Both existed to tie a declaration to a
+bullet in `CLAUDE.md`; the bullets are gone, and a field restating the rule in the roster's
+own words is precisely what FR-030a forbids.
+
 **Validation** (all throw at load):
 
 - `id` matches `/^INV-[a-z0-9-]+$/` and is unique across the register.
-- `quote` is non-empty and appears as the opening of exactly one bullet in the named
-  section of `CLAUDE.md` — asserted by the bijection check, not by the constructor, because
-  the constructor must not read a file.
 - `evidence === 'unexecutable'` requires a `reason` and forbids a `tier`; any other value
   requires a `tier` and forbids a `reason`. An unexecutable entry with no reason is the
   thing FR-006 forbids, so it cannot be constructed.
+
+The `id` is the whole contract, so it is chosen to read as a name rather than a number —
+`INV-temperature-difference`, not `INV-17`. A failure message names it, and the check it
+resolves to is where the rule is written down.
 
 **State**: none. The register is recomputed on every run, in the spirit of
 `conformance()` — nothing is remembered.
@@ -55,8 +61,13 @@ One per numbered gate in the constitution's Development Workflow and Quality Gat
 | `reason` | `string \| null` | required when `evidence === 'human'` |
 | `tier` | tier name or `null` | as `Invariant` |
 
-The same bijection applies against `.specify/memory/constitution.md`, so amending a gate's
-wording without revisiting its check is a failure (FR-008, FR-030).
+`Gate` **keeps its `quote`**, and a correspondence check runs against
+`.specify/memory/constitution.md`, so amending a gate's wording without revisiting its check
+is a failure (FR-008). The asymmetry with `Invariant` is deliberate and is the spec's own:
+the constitution is ratified governance text amended by a stated procedure, not a working
+note that may be relocated into a test file, and a gate is a rule about how the project
+works where an invariant is a rule about how the software behaves. Only the second can be
+stated as an assertion, so only the second was moved into one (research D-09).
 
 ## `DeskPosition` — `tests/support/desk.js`
 
@@ -104,6 +115,10 @@ subset FR-017 asks for.
 A check is an ordinary `node:test` test declared through one wrapper:
 
 ```js
+// Lettered through `temperature` a delta carries Fahrenheit's 32, so `+1 °C` read
+// `+33.8 °F` on the sheet. Three separate routes reached this trap — a schedule's
+// delta, a span along a face, a change in a reading — and each was found by a reader
+// noticing an impossible figure rather than by anything in the repository.
 covers('INV-temperature-difference', 'a delta lettered in IP carries no 32', (t) => { … })
 ```
 
@@ -112,6 +127,13 @@ reporter carries it (FR-025), and its literal first argument is what the static 
 pass greps for (contracts/registry.md). It deliberately holds no runtime registry —
 `node:test` runs each file in its own process, and a cross-process registry would be
 machinery in place of a `grep`.
+
+**The comment above the call is part of the check**, and after this feature it is the only
+statement of the rule anywhere (FR-030, SC-019). It carries the measurement, the error
+message, or what the bug cost — never a narration of what the assertion does, which would be
+the second statement of the rule in the one place nothing can catch it. The discovery pass
+asserts a comment is *present* on every call claiming an `INV-` id; whether it justifies
+rather than narrates is a human act, recorded as such beside gate 9.
 
 ## `Mutation` — `tests/mutations/`
 
@@ -208,6 +230,11 @@ committed copy would be the second statement of a fact the declarations already 
 Rows: every `Invariant` and every `Gate`, each with its evidence class, the checks that
 claim it, and — for invariants — the date its mutation last proved it red. The two
 unexecutable Principle VII claims appear with their reasons.
+
+It is a roster of **identifiers, evidence classes and tiers**, and holds no statement of any
+rule — which is what keeps it from being the second source FR-030a forbids. A row says that
+`INV-temperature-difference` is executed in the fast tier and last proved red on a date. It
+does not say what the rule is; the check does.
 
 Beside it, and separately, the line coverage figure from
 `--experimental-test-coverage`, reported and compared with nothing (FR-031, SC-018).

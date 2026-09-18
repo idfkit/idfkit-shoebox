@@ -71,14 +71,17 @@ Probes, by tier:
 `--test-reporter=spec` locally, `--test-reporter=tap` in CI with the GitHub summary written
 beside it. Every failing check's name begins with the id of the invariant, gate, expectation
 or refusal it enforces, because `covers()` put it there (contracts/registry.md), so the
-first line of a failure names the rule and where it is written down before it names an
-assertion (FR-025).
+first line of a failure names the rule before it names an assertion (FR-025).
+
+"Where it is recorded" is now the check's own location, which the reporter already prints:
+after this feature the rule is stated there and nowhere else, so a file and line is a
+complete answer rather than a pointer to a document that would restate it (research D-09).
 
 Example of the shape a failure must have:
 
 ```
 not ok 7 - INV-span-is-a-difference: a face's remaining room is lettered as a difference
-  CLAUDE.md § Invariants that fail quietly
+  at tests/fast/lettering.test.js:118
   Expected the span of 5 K to letter as "9 °F", got "41 °F".
   A span takes deltaKindOf, never quantityKind. See units.js Ruled.spanKind.
 ```

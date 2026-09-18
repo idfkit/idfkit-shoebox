@@ -19,11 +19,14 @@ Three decisions carry most of the design:
   coverage and reporting are already in the platform, and the one property this domain most
   needs — that a second EnergyPlus run can never be graded against the first run's output —
   is the runner's default rather than something to configure.
-- **The prose stays the single statement of each rule** (research D-09). `tests/invariants.js`
-  declares one entry per bullet and quotes its opening clause verbatim; a check asserts a
-  bijection against `CLAUDE.md`. Adding a bullet, deleting one, rewording one or deleting a
-  declaration each turn the suite red. The register indexes the prose; it does not copy it,
-  because a copy is the second source of truth Principle III forbids.
+- **The check is the single statement of each rule** (research D-09). The twenty-six bullets
+  are *relocated into the suite*, not indexed from it: each becomes an executing check, the
+  narrative justifying it becomes the comment beside that check, and the section is then
+  deleted from `CLAUDE.md`. `tests/invariants.js` survives as a roster of identifiers,
+  evidence classes and tiers — no `quote`, no `where`, nothing that states a rule. The
+  bijection does not die, it **moves one artifact along**: it now runs between the register
+  and the checks, which is the pair that can actually disagree. Keeping two documents in
+  agreement is a synchroniser between two sources; Principle III asks for one.
 - **`src/main.js` cannot be imported, and that is a design input, not an obstacle**
   (research D-04). It boots the page on import and awaits a schema over HTTP. Five of the
   twenty-six invariants have their subject there; all five are *structural* claims, so they
@@ -87,7 +90,7 @@ Complexity Tracking table below is empty.*
 | --- | --- |
 | I. Everything runs in the browser | The suite is development tooling and reaches no reader. It runs the same WebAssembly engine the browser runs, under Node, which is what makes SC-007 a demonstration rather than a claim. No service, no endpoint, no upload. **Pass** |
 | II. Deterministic and shareable | Not merely unharmed — **asserted**. FR-010's determinism check builds every position twice under different time zones and locales and compares bytes, which is the first executing statement of the principle's "wall-clock time, locale … MUST NOT reach the document". `LINK_VERSION` untouched; nothing added to the link. **Pass** |
-| III. Read it back off the model | The design's central move. Goldens are the real serialisation; readings come through the real `readings.js` and `bill.js` over real `.eso`/`.mtr`; U-factor comes from `eplustbl.htm` by column head. And the register *indexes* `CLAUDE.md` rather than restating it, so the rule keeps exactly one statement (FR-030). **Pass** |
+| III. Read it back off the model | The design's central move. Goldens are the real serialisation; readings come through the real `readings.js` and `bill.js` over real `.eso`/`.mtr`; U-factor comes from `eplustbl.htm` by column head. And the rule itself keeps exactly one statement: it is moved out of `CLAUDE.md` into the check that enforces it, so there is no second artifact to synchronise (FR-030, FR-030a). **Pass** |
 | IV. No silent fallbacks | An unstaged tier is refused whole, with the reason and the remedy, exit `2` (FR-004). `skip` is not used and its presence fails. A refusal scenario must refuse *for its stated reason*. **Pass** |
 | V. Only `@idfkit/*` at runtime | `dependencies` is unchanged and a check asserts it holds only `@idfkit/*` (SC-014). Four dev dependencies are added under the exemption the principle grants build and deployment tooling; `node:test` was chosen over a framework precisely because the principle prefers platform APIs to packages. **Pass** |
 | VI. Latency is the interface | No engine run, output variable or `shapeKey` change reaches the page. The suite gains a lint rule enforcing the principle's own clause that new outputs stay zone- or site-level, and the engine tier is forbidden from adding a per-surface variable for its own convenience. **Pass** |
@@ -124,6 +127,13 @@ existing style. `CLAUDE.md` and `docs/design-notes.md` lose "There is no test ru
 linter" and their "Verifying changes" sections become a pointer to
 [quickstart.md](./quickstart.md)'s commands — in the same change, per FR-029.
 
+`CLAUDE.md`'s **"Invariants that fail quietly" section is deleted in that same change**, each
+bullet's reasoning having been carried into the comment beside the check that now enforces
+it. Deleted, not summarised: a summary is the second statement in miniature. This is the one
+documentation change that must land *after* its checks rather than beside them — the section
+is the input to the work, and it is read bullet by bullet as each check is written, so the
+deletion is the last commit of the suite rather than the first.
+
 ## Project Structure
 
 ### Documentation (this feature)
@@ -136,7 +146,7 @@ specs/013-domain-test-suite/
 ├── quickstart.md        # Phase 1 output — setup and fifteen validation scenarios
 ├── contracts/
 │   ├── runner.md        # commands, exit statuses, tier refusal, CI
-│   ├── registry.md      # covers(), the bijection against the prose, the coverage record
+│   ├── registry.md      # covers(), the register/check bijection, the coverage record
 │   └── engine.md        # buildDocument, goldens, one process per simulation, reading a run back
 ├── checklists/
 │   └── requirements.md  # written by /speckit-checklist
@@ -147,7 +157,7 @@ specs/013-domain-test-suite/
 
 ```text
 tests/
-├── invariants.js            # one Invariant per CLAUDE.md bullet; quotes it, never restates it
+├── invariants.js            # a roster: id, evidence, tier. It states no rule; the checks do
 ├── gates.js                 # one Gate per numbered constitutional gate
 ├── support/
 │   ├── register.js          # covers(); the static discovery pass
@@ -167,7 +177,7 @@ tests/
 ├── goldens/                 # 19 real .idf files, one per desk position
 ├── mutations/               # one declared breakage per invariant
 ├── fast/                    # declarations, codec, lettering, copy, readings-over-fixtures,
-│                            #   console under jsdom, the register bijection, dependencies
+│                            #   console under jsdom, register/check bijection, dependencies
 ├── model/                   # idempotence, shrink, reporting identity, determinism,
 │                            #   schema validation, integrity, goldens
 └── engine/                  # runs, .err, .rdd, expectations.js, refusals.js, isolation
@@ -221,17 +231,27 @@ remains. The load-bearing ones beyond the three in the Summary:
   expensive, so it is its own tier, run on a schedule, with its last result dated in the
   coverage record. That cost is stated rather than hidden.
 
+D-09 was **reversed** after the spec's 2026-09-18 clarification and is the one decision in
+this plan that changed shape rather than gaining detail. Its history is kept in
+[research.md](./research.md) rather than erased, because the argument that forced the
+reversal — a mechanism keeping two artifacts in agreement is a synchroniser between two
+sources, not the single source Principle III asks for — is the same argument this project
+applies to the sheet, and the two defects it dissolved (no mechanical definition of "the
+opening clause"; Prettier reformatting the very Markdown the bijection quoted) are worth
+not rediscovering.
+
 ## Phase 1 — Design & Contracts
 
 Complete.
 
 - [data-model.md](./data-model.md) — `Invariant`, `Gate`, `DeskPosition`, `Mutation`,
-  `Expectation`, `Refusal`, `Fixture`, `Tier`, `CoverageRecord`, `Verdict`, and the twenty
+  `Expectation`, `Refusal`, `Fixture`, `Tier`, `CoverageRecord`, `Verdict`, and the nineteen
   representative desk positions.
 - [contracts/runner.md](./contracts/runner.md) — the commands, the four exit statuses, how a
   tier refuses, the reporting shape a failure must have, and the two CI jobs.
 - [contracts/registry.md](./contracts/registry.md) — `covers()`, the static discovery pass,
-  the bijection against the prose and the constitution, and what the coverage record prints.
+  the register/check bijection, the section-absence and comment checks, the gates against the
+  constitution, and what the coverage record prints.
 - [contracts/engine.md](./contracts/engine.md) — `buildDocument`, the three byte-identity
   claims, goldens, `runEnergyPlus`, and what a check is allowed to read back off a run.
 - [quickstart.md](./quickstart.md) — setup, the one command, and fifteen validation scenarios
@@ -249,7 +269,10 @@ other:
 
 1. **The suite.** Runner, tiers, register, goldens, fixtures, checks, CI, the constitutional
    amendment and the documentation updates. Large, but every part of it is reviewable on its
-   own terms.
+   own terms. Within it the order is fixed at one point: the twenty-six bullets are read as
+   each check is written, so **`CLAUDE.md`'s section is deleted in the last commit of this
+   change**, once every bullet has arrived somewhere that fails. Deleting it first would
+   throw away the specification of the work while the work was still being done.
 2. **Style, adopted and enforced.** `eslint.config.js` with its reasons, the custom rules,
    `.prettierrc.json`, and `verify:fast` failing on a finding or an unformatted file — then
    the mechanical sweep as the final commit of that same pull request, so the configuration
@@ -265,6 +288,12 @@ from the suite, and it is a commit of its own within the change that agrees the 
 a rule set landing without its sweep would leave `main` red, and a sweep landing without its
 rule set would be a diff nobody could justify.
 
+One hazard the reversed D-09 removed from this sequence: Prettier formats Markdown by
+default, so under the original design the sweep could have rewritten the very bullet text the
+register quoted, turning change 2 red for reasons having nothing to do with any invariant.
+With the bullets gone there is no quoted prose left to collide with, and `CLAUDE.md` can be
+formatted like any other file.
+
 ### Recorded for later, deliberately not done here
 
 `src/main.js`'s five invariant subjects would all be behaviourally checkable if
@@ -278,8 +307,13 @@ have. That is a real improvement and a refactor of an 11,000-line module; it is 
 
 No Constitution Check violations. This table is intentionally empty.
 
-Three judgement calls are recorded above rather than here, because none of them is a
+Four judgement calls are recorded above rather than here, because none of them is a
 principle being bent: five invariants covered structurally only (research D-04, stated as
 `structural` in the coverage record), the proof tier not running on every change (research
-D-11, its cost stated and its last result dated), and the sweep sharing a pull request with
-the rule set that justifies it (sequencing, above).
+D-11, its cost stated and its last result dated), the sweep sharing a pull request with
+the rule set that justifies it (sequencing, above), and the accepted loss in D-09 — with the
+prose gone there is no list for the suite to diff itself against, so nobody can record an
+invariant without enforcing it and equally nobody is told they have failed to record one.
+The last is the only one that trades a guarantee away rather than merely costing something,
+and the spec makes the trade explicitly in its Edge Cases; it is repeated here so a reviewer
+meets it in the plan rather than only in the document it came from.
