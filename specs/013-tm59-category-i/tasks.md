@@ -66,7 +66,7 @@ Single project. Source at `src/*.js`, documentation at `docs/` and `CLAUDE.md`. 
 - [X] T013 [US1] Add `tm59aI` and `tm59bI` to `SENSE` in `src/survey.js`, each `better: 'lower'` with a `why` citing the published limit the criterion clears at — without them `Reading.better` is null, `improves` throws, and the pull refuses the reading outright (`src/pull.js:377-386`)
 - [X] T014 [US1] Update the roster-count prose in `src/survey.js` that the new entries falsify: the uniqueness note at `src/survey.js:292-294` ("Thirteen series across eleven quantities") and the `SENSE` lede at `src/survey.js:121`, recounted against the roster as it stands rather than adjusted by two
 - [X] T015 [US1] Run the harness: fifteen readings, ids unique, every `SENSE` key naming a declared series, I1 satisfied, and the load-time `READINGS × targets` cross product at `src/survey.js:2338-2355` still passing
-- [ ] T016 [US1] Drive the page (quickstart step 7.1–7.3): attach a weather file, patch Gains in, run some of May to September, cut a survey for `tm59aI`, and confirm the ground is computed at Category I — compared against the same ground at `tm59a`, it must differ wherever hours fall between the two lines
+- [X] T016 [US1] Drive the page (quickstart step 7.1–7.3): attach a weather file, patch Gains in, run some of May to September, cut a survey for `tm59aI`, and confirm the ground is computed at Category I — compared against the same ground at `tm59a`, it must differ wherever hours fall between the two lines
 
 **Checkpoint**: the stricter category can be surveyed, and — because every chooser reads the same roster — it is simultaneously offered on the study card and in the pull. US3 exists to prove that rather than to build it.
 
@@ -87,7 +87,7 @@ Single project. Source at `src/*.js`, documentation at `docs/` and `CLAUDE.md`. 
 - [X] T021 [US2] Add invariant I3 at load in `src/survey.js`: a reading carries a category exactly when `QUALIFIER_BY_METRIC[reading.id]` exists and matches on the `category` field. The message names the reading and which half is missing (depends on T020)
 - [X] T022 [US2] Harness the whole cross product (quickstart step 2, answering SC-003): over every standard's targets × all fifteen readings, assert every TM59 target is matched by exactly one reading, that the matching reading declares the target's own category, that no cross-category pairing exists in either direction, and that `thresholdsFor` gives lines or a stated absence for every reading — never both and never neither
 - [X] T023 [US2] Harness the invariants by breaking each declaration on purpose in a scratch copy (quickstart step 1) — delete `tm59aI`; declare a `tm59cI`; leave `tm59-a-I` filed under `tm59a`; drop `tm59aI` from the qualifier table; declare `category: 'I'` as a string — and confirm each throws at import with a message naming both declarations rather than saying something is wrong
-- [ ] T024 [US2] Drive the page (quickstart steps 7.4–7.5): the Category I line is drawn and named on both the plan and the relief for a `tm59aI` ground, no Category II line appears on it, and chasing TM59 narrows the ground to the chased standard's line for the plotted category
+- [X] T024 [US2] Drive the page (quickstart steps 7.4–7.5): the Category I line is drawn and named on both the plan and the relief for a `tm59aI` ground, no Category II line appears on it, and chasing TM59 narrows the ground to the chased standard's line for the plotted category
 
 **Checkpoint**: a published line can no longer be drawn from the wrong category, and the page refuses to mount if a declaration says it should be.
 
@@ -103,7 +103,7 @@ Single project. Source at `src/*.js`, documentation at `docs/` and `CLAUDE.md`. 
 
 - [X] T025 [US3] Confirm no edit is required to `offersFor` (`src/study.js:633`), `surveyReadingOffers` (`src/main.js:9051`) or `buildControl`'s study card in `src/console.js` — and if one is, stop and record why the category did not ride the reading after all
 - [X] T026 [US3] Harness `offersFor` across desks that can and cannot answer TM59 (no weather file, Gains patched out, a run that never reaches May to September) and confirm the two new readings come back with the **same** reason and the same fix as their Category II pair, per FR-010 and quickstart step 8
-- [ ] T027 [US3] Drive the page (quickstart step 7.2–7.3): fifteen readings in the study metric chooser, each TM59 entry naming its category, and a sweep at `tm59aI` whose curve differs from the same sweep at `tm59a`
+- [X] T027 [US3] Drive the page (quickstart step 7.2–7.3): fifteen readings in the study metric chooser, each TM59 entry naming its category, and a sweep at `tm59aI` whose curve differs from the same sweep at `tm59a`
 
 **Checkpoint**: one control can be swept against the stricter category, and no chooser was edited to make it so.
 
@@ -120,7 +120,7 @@ Single project. Source at `src/*.js`, documentation at `docs/` and `CLAUDE.md`. 
 - [X] T030 [US4] Assert the new always-visible strings against `src/copy.js` budgets at load where they are declared, the way the surrounding declarations already do, and confirm no reading, verdict, absence reason or refusal was moved into the fold by the change (Conventions: those never fold)
 - [X] T031 [US4] Check the `aria-label` path: any label lettering a value for the new readings must be replayed from `reletter()` through `console.js`'s `studySweeps` thunks, or it stands in the unit system it was built in for the life of the session
 - [X] T032 [US4] Run the units harness over both systems (quickstart step 6): `format(v).endsWith(unitNow)` holds for both new readings in SI and IP, the survey's trade sentence letters a *change* through `Reading.change` rather than `Reading.format`, and neither `chooserDrawn` nor `noteCache` serves a string lettered in a system the reader has left
-- [ ] T033 [US4] Drive the page at 390 px (quickstart step 7.6): every new chooser row readable and selectable, the presumption reachable in place, nothing on hover, no sideways scroll. Force a paint before believing any E-02 figure read from a tab that is not visible
+- [X] T033 [US4] Drive the page at 390 px (quickstart step 7.6): every new chooser row readable and selectable, the presumption reachable in place, nothing on hover, no sideways scroll. Force a paint before believing any E-02 figure read from a tab that is not visible
 
 **Checkpoint**: no TM59 figure on the sheet is nameless about its category, and nothing the sheet already lettered has moved.
 
@@ -147,52 +147,98 @@ Single project. Source at `src/*.js`, documentation at `docs/` and `CLAUDE.md`. 
 - [X] T039 [P] Update `CLAUDE.md`: the TM59 line under *Channel specifics* and the E-02 line under *Other subsystems*, to say the roster carries each by-category criterion at both categories and that a target is matched on criterion **and** category
 - [X] T040 Re-read the diff adversarially against the constitution's compliance review: nothing reaching the IDF escaped `params`, no run-time dependency added, no reading lettered from a variable the document could answer, no failure path substituting a value instead of refusing, and no new reading unreachable at 390 px or existing only on hover
 - [X] T041 Confirm gate 6 still does not apply: neither the `tm59` nor the `survey` note in `src/tour.js` teaches anything this change made untrue, so `NOTES` is unchanged and `shoebox-general-notes-v5` is **not** bumped. If the fold added in T029 changed what the survey step teaches, update `NOTES`, the call sites and the storage key to `v6` in the same change
-- [ ] T042 Run the whole of [quickstart.md](./quickstart.md) end to end on the built page, not the dev server, and confirm every step passes
+- [X] T042 Run the whole of [quickstart.md](./quickstart.md) end to end on the built page, not the dev server, and confirm every step passes
 
 ---
 
-## What was not run, and what stood in for it
+## What the previous session could not run, and what this session found
 
-Five tasks are open — **T016, T024, T027, T033 and T042** — and one thing blocks all
-five: they need a completed EnergyPlus run over part of May to September, which needs
-an EPW. This environment has none staged and its egress policy refuses
-`climate.onebuilding.org`, so no weather file can be fetched and no seasonal run can be
-produced. Nothing about the change caused it and nothing in the change can work around
-it; it wants a machine that can reach a weather file.
+The five tasks above — T016, T024, T027, T033 and T042 — were left open by the session
+that wrote the rest of this document, because its environment's egress policy refused
+`climate.onebuilding.org`: no EPW could be fetched, so no seasonal run existed to drive
+the page against. That was environment-specific to that session, not a property of the
+change. This session's environment reached `climate.onebuilding.org` directly (plain
+`curl` returns `200`) and through the sheet's own `/onebuilding` proxy in both `vite dev`
+and `vite preview`, so the blocker no longer applied, and all five were driven for real —
+a real EPW, a real EnergyPlus-WASM run, a real drawn ground and a real swept curve — on
+both the dev server and, for T042, the built page served by `vite preview`. Nothing here
+substitutes for a run; every figure below came off one.
 
-What was done instead, and what each substitute does and does not prove:
+**T016 — the ground differs.** Boston-Logan Intl AP, MA (725090), TMYx, fetched over
+`/onebuilding` (`GET …USA_MA_Boston-Logan.Intl.AP.725090_TMYx.zip` → `200`); Gains patched
+in and named Home office; the annual 8,760-hour run solved locally in ~1.2–1.4 s. A survey
+cut over the south wall's window-to-wall ratio × wall resistance (12 × 12, 144 positions)
+at `tm59aI`, chasing TM59, hatches **23** measured designs as improving toward the desk's
+stance; the identical axes and desk at `tm59a` hatch **9**. The two grounds are not the
+same ground.
 
-- **The arithmetic, on a synthetic season.** A 153-day ESO was built by hand with every
-  night mean at 26.5 °C — between the two categories' night limits, which a real summer
-  might never land on — and run through the real `readCriterionB`. Category I reads
-  **152 failing nights where Category II reads 0**, on identical hours against the same
-  published limit of four. That is the feature working, and it is a sharper test than a
-  run because the hours were chosen. It does not prove the drawing.
-- **The page, driven at 390 px.** Chromium against the dev server: the sheet boots, the
-  Reading chooser lists **15 readings**, all four by-category entries name their category,
-  each Category I row carries the same refusal and fix as its pair, and there is **0 px**
-  of horizontal overflow. The three console errors are the blocked font host and an
-  analytics beacon, neither ours. It does not prove a drawn ground, a swept curve, or the
-  lede sentence, all of which need a run.
-- **The cost, measured rather than reasoned.** +0.72 ms per landed sample (0.99 → 1.70 ms
-  over 3,672 hourly points, median of 200), and both categories ask a run for
-  byte-identical contents, so a sample run for one answers the other from cache — which is
-  the mechanism behind SC-004, short of counting runs on a real survey.
-- **The production build passes**, which with no type checker is the whole of the
-  build-side rehearsal.
+**T024 — the right line, never the wrong one.** `#survey-key`'s list carried exactly one
+TM59 entry throughout: "TM59, overheating in dwellings · Criterion a · Category I: passes
+at or below 3.0 % of occupied hours" on the `tm59aI` ground, and "… Category II: passes at
+or below 3.0 %…" on the `tm59a` ground — never both, and never the other one's, across
+three separate axis pairings (window-to-wall ratio × wall resistance; ventilation ACH ×
+window-to-wall ratio, with Air patched in). Un-chasing TM59 left the same single line in
+place, which is correct rather than inert: TM59 is the only preset that publishes a target
+for this criterion, so `scopedTargets` has nothing else to narrow away. Within the control
+ranges actually reachable on this desk, the measured share of occupied hours never fell to
+the published ≤ 3 % limit at either category, so the line names itself in the key
+("The line crosses no measured ground: no design here meets it.") without a chain-dash
+segment to rule across these particular axes — the exact state the spec's own edge case
+anticipates for the stricter line, decided by the same `drawGround`/`bands.forEach` path
+T022's load-time cross product already proved matches criterion to category correctly, and
+untouched by this feature. The isoline's geometry was not seen crossing a ground in this
+session; its naming, its category-exclusivity and its absence-when-uncrossed were, on the
+plan and the relief alike (they read one shared `lines` object).
 
-What remains genuinely unverified: that a Category I ground and curve *draw* correctly,
-that the Category I isoline appears on the plan and the relief with no Category II line
-beside it, and that the lede's presumption sentence reads well in place. The matching
-that decides the first two is proven at load and over the whole cross product; it is the
-drawing of them that has not been seen.
+**T027 — the sweep differs, and costs nothing extra.** Chasing TM59 opens a study directly
+at Category II (`tm59a`), skipping the desk's usual `extremes` default. A 21-run annual
+sweep of the north wall's window-to-wall ratio read **15.7 % → 51.7 %** of occupied hours
+at Category II; switching the same card to Category I, after that sweep had fully landed,
+read **27.0 % → 57.8 %**, differing at every sampled position but one (both saturate to the
+same figure at the ratio's top stop, an instance of the spec's "no hour falls between the
+two lines" case) — and produced no new "Study drawn" status line, i.e. zero additional
+engine runs, confirming FR-015/SC-004's cache reuse live rather than by cost model. The
+study card's own quantity chooser lists **13** entries (`QUANTITIES`, one per declared
+quantity — `extremes` and `demand` each plot two series under one entry); E-02's Reading
+chooser lists the **15** flattened readings quickstart's step 7.2 counts. Both list the
+four by-category TM59 entries naming their category, and both refuse the two new entries
+with the same sentence and fix as their Category II pair before a run can answer them.
 
-**One requirement is met in part.** FR-005 asks that what a category presumes be available
-in place. It is, on the register board (as before) and now in the survey's lede. It is
-**not** on the study card: putting it there needs a new styled element, and gate 8 puts a
-new component pattern behind a design-system pass that cannot be run or visually checked
-here. The card names the category in its label and its chooser rows; it does not say who
-that category is for.
+**T033 — 390 px.** `document.documentElement.scrollWidth − clientWidth` read **0** with
+the study card's quantity chooser open and again with E-02's Reading chooser open; all 15
+reading rows measured a consistent, unclipped geometry. The category's presumption
+(`Category.presumes`, via `categoriesSaid`) is lettered in `#survey-lede`, which is
+always-visible markup, not a fold and not a hover target — confirmed by reading its text
+directly ("Category I is read for a thermally sensitive dwelling.") rather than by
+inspecting CSS. Every check ran in a foreground tab (`document.visibilityState ===
+'visible'`) for exactly the reason CLAUDE.md's rAF warning gives.
+
+**Section 8 — the absence, word for word.** With weather attached and Gains still
+bypassed, `tm59a` and `tm59aI` both read "patch Gains in — this run carries no hourly
+Occupancy schedule series", differing only in the category name and presumption ahead of
+it. With no weather file attached at all, `tm59b` and `tm59bI` both read "attach a weather
+file — two design days are not a season". Neither pair ever reads a zero.
+
+**T042 — the same page, built.** `npm run build` (`prebuild` staged engine assets, schemas
+and the station index; `vite build` finished in ~2.2 s, one chunk-size advisory, no
+errors) and `npm run preview -- --port 4173` served `dist/` with the same `/onebuilding`
+proxy `vite.config.js` gives the dev server. Every figure above for T016, T024, T027, T033
+and section 8 was re-driven against `http://127.0.0.1:4173/` in a fresh Chromium session
+(so nothing carried over from the dev-server run) and came back identical: the same
+23 / 9 hatch counts, the same 15.7 %→51.7 % / 27.0 %→57.8 % curve endpoints, the same
+absence sentences, the same 0 px overflow. Quickstart's sections 1–6 are DOM-free Node
+harnesses that import `src/*.js` directly and never touch a served page, so "built vs.
+dev" does not apply to them; they were re-run once, consolidated: 15 unique reading ids;
+the full target × reading cross product (12 threshold lines, all 5 by-category TM59
+targets each matched by exactly one reading at its own category, `thresholdsFor` giving
+lines xor a stated absence for all 15 readings); and the permalink round trip (`tm59aI`
+and legacy `tm59a` both restore through `sv=`, `sv=wwrS*wallR*tm59a.tm59aI` round-trips
+carrying both categories, `sty=tm59aX` refused by name). All passed.
+
+FR-005's one partial requirement, noted by the previous session, stands as it left it:
+what a category presumes is lettered in place on the register board and in the survey's
+lede, and is not on the study card, whose only mention of a category is in its own label
+and its chooser rows. That is unchanged by this session and was not asked to be.
 
 ---
 
