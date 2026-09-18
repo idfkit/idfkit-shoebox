@@ -312,3 +312,43 @@ Worth naming, since the plan's research is where the answers are:
   bare number before doing any work and leaves the previous ESO in place.
 - Commit after each task or logical group; stop at any checkpoint to validate a story.
 - A gate that could not be run is recorded as not run. It is never recorded as passed.
+
+---
+
+## Phase 8: Convergence
+
+**Purpose**: close the gap between what `spec.md`, `plan.md` and the tasks above call
+for and what the code now does. Appended by `/speckit-converge`; every task below traces
+to the requirement, plan decision or constitution principle it came from.
+
+Three of these were already named as not done at the foot of Phase 4 and Phase 5 (T041,
+T042, T043, T044, T053) and are restated here with what the code actually shows. The rest
+were found by reading the code against the spec: one of them is a determinism violation
+that the task list did not have.
+
+- [ ] T076 **CRITICAL** Make `restoreScheme` in `src/main.js` honour a kept scheme's `wf` token: it decides its path on `sameStation(state.station, stationToken())` alone, and a scheme kept under a file carries `station: null`, so it is applied in place against whatever climate is attached — a different file, or none — and the same stored hash reproduces different numbers per Constitution II (contradicts)
+- [ ] T077 Name the file a kept scheme was solved against in its row in `src/schemes.js`, and carry it on `Scheme` beside `station`, which today holds only the lettered place per FR-022 (missing)
+- [ ] T078 Admit a file that covers less than a whole year in `src/source.js`'s attach gate, refusing only the readings it cannot answer rather than the file: `dailyMeans` demands all 365 days' records and refuses a 1 May – 30 September file whole, which `periodCovered`'s own docstring calls "a perfectly good file to read TM59 over" per spec Edge Cases and FR-010 (contradicts)
+- [ ] T079 Letter each criterion's absence in `src/main.js` where the attached file does not cover the seed week of 23–29 April or the 1 May – 30 September period, naming the missing period and computing nothing over a shortened one — the old T041, still unwritten, and reachable only once T078 lands per FR-014 (missing)
+- [ ] T080 Call `periodCovered` and letter the period the file covers in `src/main.js`: it is imported and never called, `renderSiteSub` letters zone, label, degree days and elevation only, and the attach sentence letters `runHours()`, which is the desk's calendar rather than the file's extent per FR-010 and FR-008 (missing)
+- [ ] T081 Write `specs/012-attach-weather-file/verify/criteria-over-file.mjs` — all five criteria over a whole year against a part year, a seed-week-short file, a season-short file, `TM59_SPACES` still equal to `PROFILE_IDS`, no threshold moved — the old T043 per quickstart gate 7 (missing)
+- [ ] T082 Land a daily-mean series shorter than a year as a stated absence rather than a throw in `src/source.js`'s `degreeDaysOf`, in the parser's own sentence, once T078 admits such a file — the degree-day half of the old T042 per FR-008 and Principle IV (partial)
+- [ ] T083 Drive gate 7's lettering in `specs/012-attach-weather-file/quickstart.md` — the weather qualification, the local-time qualification in both states, and each criterion's absence sentence, all readable without opening a fold — and record the outcome in `verify/README.md`, which today lists gates 2, 3, 4, 5, 6, 8 and 9 and not gate 7 — the old T044 (missing)
+- [ ] T084 Write `specs/012-attach-weather-file/verify/station-unchanged.mjs` asserting the IDF three picked stations write is byte-identical to what `main` writes for the same desk, and record it not-run with its reason where the archive fetch is still denied — the old T021, covering the dozen lines between a successful fetch and `attachClimate` that `verify/README.md` states are unexercised (missing)
+- [ ] T085 Assert this feature's always-visible strings against `src/copy.js` at load — the attach label and note in `index.html`, the waiting-desk sentence and each refusal in `src/main.js` — the way the units lines are asserted at `src/main.js:4039`; commit `35a62ac` counted one of them by hand at 43 words against the 40-word `CEILING` after it had shipped, which is the class of silent breakage workflow gate 5 asks to be thrown at load (partial)
+- [ ] T086 Record the file path in `CLAUDE.md`: `src/source.js` is absent from the Architecture module list and from the DOM-free list it belongs on, and the Weather data section still describes only the station path, against Governance's rule that it is kept current as part of any change it describes (missing)
+
+### Notes on this phase
+
+- **T078 gates T079 and T082.** Both letter an absence over a file the attach gate
+  currently refuses outright, so neither is reachable until the gate admits one. Plan
+  finding 4 chose `dailyMeans` as the gate to avoid a second opinion about a usable file;
+  what that missed is that the spec asks for a third answer beside "run it" and "refuse
+  it" — read it, and refuse the readings its months cannot support. Whichever way it is
+  settled, `periodCovered` and `Coverage` already hold the arithmetic.
+- **T076 is the one finding here that is a live defect rather than unfinished work**, and
+  it is silent: the scheme restores, the desk moves, and the numbers are somebody else's
+  climate. It is worth doing first for that reason.
+- T081, T083 and T084 are gates. A gate that cannot be run in this environment is
+  recorded as not run in `verify/README.md`, never as passed — the rule the rest of this
+  file keeps.
