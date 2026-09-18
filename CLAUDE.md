@@ -264,7 +264,15 @@ geometry earlier ones wrote).
   remembered: `conformance()` is recomputed on every apply. `Spec` vs `Target`;
   `Unjudged` is listed; a target with no line is not a pass. Chase ranks by ratio.
   A full shelf refuses, never evicts.
-- **TM59** (`tm59.js`): one period, 1 May to 30 September (153 days). The running mean
+- **TM59** (`tm59.js`): both categories are on the reading roster — a study or a
+  survey can be cut at either — and a target is matched on criterion **and**
+  category, because both publish the same limit and a line from the wrong one
+  lands at exactly the right height. Three load invariants hold it:
+  the roster against `Criterion.byCategory`, a target's `metric` against its
+  `category` (in `study.js`; `schemes.js` cannot import back), and every
+  by-category reading against the one shared `BY_CATEGORY` qualifier, which asks
+  the reading rather than being told. The count stays at Category II.
+  One period, 1 May to 30 September (153 days). The running mean
   is computed from the EPW (seeded 23 to 29 April, divisor 3.8), not from EnergyPlus.
   **The occupancy floor is 0.1, so `> 0` is not "occupied"**: use
   `occupiedFloor(params)`. dT rounds half-up (`roundDT`). Design days are excluded.

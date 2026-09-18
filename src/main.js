@@ -5974,13 +5974,19 @@ function readOutcome(eso, snapshot, patched, epw) {
 }
 
 /**
- * Which criterion of `tm59.js` each of the three TM59 metrics resolves to.
+ * Which criterion of `tm59.js` a target's metric resolves to, or null.
  *
- * Declared as a table rather than sliced out of the metric's name, because
- * `metric.slice(4)` is a string operation that happens to work and would go on
- * happening to work right up to the day a metric is called something else.
+ * This was a table — `{ tm59a: 'a', tm59b: 'b', tm59c: 'c' }` — declared that
+ * way rather than sliced out of the metric's name, because `metric.slice(4)` is
+ * a string operation that happens to work and would go on happening to work
+ * right up to the day a metric is called something else. That reasoning holds
+ * and the table still failed it: when the roster grew a reading per category,
+ * the metrics became five and a hand-kept list of them was a fourth place the
+ * same fact was written. A metric names a reading and a reading names the
+ * criterion it answers, so the answer is read off that declaration and the list
+ * is gone. The slice is still refused; it is the copy that has been removed.
  */
-const TM59_CRITERION = Object.freeze({ tm59a: 'a', tm59b: 'b', tm59c: 'c' });
+const criterionOf = (target) => QUANTITY_BY_ID[target.metric]?.criterion ?? null;
 
 /**
  * Whether a preset's lines are TM59's criteria, asked of the declaration.
@@ -5989,24 +5995,31 @@ const TM59_CRITERION = Object.freeze({ tm59a: 'a', tm59b: 'b', tm59c: 'c' });
  * for the reason the console reads `--index` back off the stylesheet: a fact
  * spelled in two places is a bug that exists at exactly one of them.
  */
-const carriesTm59 = (preset) => preset.targets.some((target) => target.metric in TM59_CRITERION);
+const carriesTm59 = (preset) => preset.targets.some((target) => criterionOf(target));
 
 /**
  * The reading behind one TM59 target, matched on criterion *and* category.
  *
  * The category is half the key and has to be. Criterion a is lettered twice on
- * this board, once against each of TM59's two adaptive lines, and the two
- * targets carry the same metric — matched on the metric alone, a·I and a·II
- * would both resolve to whichever reading came first in the list and the board
- * would print one number under two labels 1 K apart. Criterion c carries no
- * category and its target carries `null`, so the same comparison holds it.
+ * this board, once against each of TM59's two adaptive lines — matched on the
+ * criterion alone, a·I and a·II would both resolve to whichever reading came
+ * first in the list and the board would print one number under two labels 1 K
+ * apart. Criterion c carries no category and its target carries `null`, so the
+ * same comparison holds it.
+ *
+ * The two targets used to carry the same metric as well, which is why the
+ * comparison was written. They no longer do — each names its own category's
+ * reading, and `study.js` asserts at load that a target's metric and its
+ * category agree. The comparison stays because it is the thing being asserted
+ * elsewhere: a board that matched on the metric alone would be correct only for
+ * as long as that assertion holds, and this way it is correct on its own terms.
  */
 function tm59Reading(target) {
-  const id = TM59_CRITERION[target.metric];
-  if (!id || !lastOutcome?.tm59) return null;
+  const criterion = criterionOf(target);
+  if (!criterion || !lastOutcome?.tm59) return null;
   return (
     lastOutcome.tm59.readings.find(
-      (reading) => reading.criterion.id === id && reading.category === target.category,
+      (reading) => reading.criterion === criterion && reading.category === target.category,
     ) ?? null
   );
 }
@@ -6015,7 +6028,7 @@ function tm59Reading(target) {
 function targetReading(target) {
   if (!lastOutcome) return null;
   const value =
-    target.metric in TM59_CRITERION
+    criterionOf(target)
       ? (tm59Reading(target)?.value ?? null)
       : target.metric === 'overheat'
         ? (lastOutcome.overheat?.get(target.above) ?? null)
@@ -10506,6 +10519,14 @@ function renderSurveyChoose() {
       options: readings.map((offer) => ({
         id: offer.reading.id,
         label: offer.reading.label,
+        // The unit alone, and the category's own noun deliberately not beside it.
+        // It was tried: `% of occupied hours · a dwelling of normal thermal
+        // expectation` is eleven words in a cell beside a label, on four rows of
+        // a fifteen-row list, and `copy.js` refused it. Which is the right
+        // answer rather than an obstacle — the row already names the category in
+        // its label, and who the category is for is said in the lede over the
+        // ground, where there is room for it and where a reader looking at
+        // figures needs it.
         note: offer.available ? offer.reading.unitNow : null,
         available: offer.available,
         reason: offer.reason,
@@ -10528,6 +10549,25 @@ function renderSurveyChoose() {
       },
     }),
   );
+}
+
+/**
+ * Who the plotted categories are for, as one sentence or none.
+ *
+ * Off `Category.noun`, which `tm59.js` declares for precisely this use, rather
+ * than a phrase written here: the board letters what a category presumes from
+ * the same declarations, and a second wording of it would be free to drift into
+ * describing a different set of occupants. Returns the empty string for a ground
+ * whose readings carry no category, which is every reading but four.
+ */
+function categoriesSaid(readings) {
+  const said = [];
+  for (const reading of readings) {
+    if (!reading.category || said.some((c) => c === reading.category)) continue;
+    said.push(reading.category);
+  }
+  if (!said.length) return '';
+  return ` ${said.map((category) => `${category.label} is read for ${category.noun}`).join(', and ')}.`;
 }
 
 /**
@@ -12775,7 +12815,14 @@ function renderSurvey() {
     `${phraseFor(survey.x.key)} and ${phraseFor(survey.y.key)}, cut through the desk as it stands. ` +
     `Every figure below is a completed ${survey.annual ? 'annual' : 'design-day'} run` +
     // Still true along a priced axis, and only if it says the rest (FR-028).
-    ([survey.x, survey.y].some((axis) => PRICED_KEYS.has(axis.key)) ? ', priced at its position.' : '.');
+    ([survey.x, survey.y].some((axis) => PRICED_KEYS.has(axis.key)) ? ', priced at its position.' : '.') +
+    // Which dwelling this ground is read for, where the reading is read at one
+    // of TM59's categories. In view rather than one press down, because it is
+    // not method: it is the question of whether this ground answers the reader's
+    // project at all, and the two categories publish the same limit, so no
+    // figure on the drawing can tell them which they are looking at. Said once
+    // per category, so a ground carrying both readings does not say it twice.
+    categoriesSaid(survey.readings);
 
   // The published lines and the ground each passes, read once for the four
   // surfaces that letter them — the plan, its key, the relief and the aria
