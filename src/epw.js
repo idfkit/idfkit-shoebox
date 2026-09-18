@@ -599,6 +599,40 @@ export function assertCarriesItsPeriod(means, period) {
   }
 }
 
+/**
+ * Which whole months a file's own extent carries, as the twelve-character mask
+ * the Run strip's calendar is written in.
+ *
+ * **Whole months.** `applyRun` writes one `RunPeriod` per contiguous group of
+ * ticked months, from the first of the first to the last of the last, so a file
+ * carrying 1 June to 20 August cannot run August at all — asked to, EnergyPlus
+ * reaches 21 August, finds no record, and terminates in `GetNextEnvironment`
+ * blaming nothing the reader did. A month is therefore runnable only where every
+ * one of its days is in the file, which is what this counts.
+ *
+ * Returns `'111111111111'` for a whole year, which is every archive the picker
+ * fetches, so the caller's comparison is a no-op on the station path.
+ */
+export function monthsCovered(period) {
+  const first = dayIndexOf(period.from);
+  const last = dayIndexOf(period.to);
+  const inside = (index) =>
+    first <= last ? index >= first && index <= last : index >= first || index <= last;
+
+  let mask = '';
+  for (let month = 0; month < 12; month += 1) {
+    let whole = true;
+    for (let day = 0; day < DAYS_IN_MONTH[month]; day += 1) {
+      if (!inside(MONTH_STARTS[month] + day)) {
+        whole = false;
+        break;
+      }
+    }
+    mask += whole ? '1' : '0';
+  }
+  return mask;
+}
+
 /** Which of the 365 days a `{ month, day }` stamp is, zero-based. */
 const dayIndexOf = ({ month, day }) => MONTH_STARTS[month - 1] + day - 1;
 

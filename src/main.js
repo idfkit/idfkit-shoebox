@@ -122,6 +122,7 @@ import {
 import {
   dailyMeansCarried,
   holidayList,
+  monthsCovered,
   parseEpwCalendar,
   parseEpwStartDay,
   periodCovered,
@@ -3817,6 +3818,34 @@ const periodSaid = (period) => {
   return period.perHour === 1 ? said : `${said}, ${period.perHour} records an hour`;
 };
 
+/**
+ * Whether the run's calendar asks for months the attached file has not got.
+ *
+ * One predicate, asked in two places, because the two would otherwise disagree
+ * about the same desk. `solve` asks it to refuse the run before the engine
+ * reaches a month with no records in it; `attachClimate` asks it so that the
+ * sentence it letters on the attach is the refusal rather than a description of a
+ * run that is not going to happen — the attach sentence is written after the
+ * commit that starts the solve, so it lands *after* the refusal and would be the
+ * last thing the reader is left holding.
+ *
+ * `monthsCovered` counts only **whole** months, because `applyRun` writes a
+ * `RunPeriod` from the first of a contiguous group to the last, and a month the
+ * file carries half of cannot be run at all.
+ *
+ * False for a station and for a desk with nothing attached: an archive is a year,
+ * and a desk with no file has no extent to fall outside.
+ */
+function monthsOutsideFile(p = params) {
+  if (weatherSource?.kind !== 'file' || !weatherSource.period) return false;
+  const carried = monthsCovered(weatherSource.period);
+  return [...p.months].some((on, month) => on === '1' && carried[month] !== '1');
+}
+
+/** That refusal, in the one wording, from whatever is attached. */
+const fileMonthsRefusal = () =>
+  FILE_SAYS.monthsOutside(sourceName(weatherSource), periodSaid(weatherSource.period));
+
 function renderSiteSub() {
   if (!sitePicked) return;
   const source = sitePicked;
@@ -4817,20 +4846,24 @@ function attachClimate(source, { sizing = 'No', studyContext = null, conditions 
   // off the calendar: an attach onto a desk with months already taken out is
   // not an annual run and must not be lettered as one.
   syncRunSub();
-  statusEl.className = 'status';
-  // What the run covers — or, where the file cannot cover it, what the *file*
-  // does. `runHours()` is the desk's calendar and says nothing about the year
-  // behind it, so on a file cut to a season it was lettering 8,760 hours over a
-  // file holding 2,208: a number that is true of the Run strip and of nothing
-  // that can be solved. The file's own extent replaces it rather than joining
-  // it, because two periods in one sentence is the reader deciding which one the
-  // readings came from, and because the block has a 40-word budget to keep.
+  // Both periods, where the file has fewer months than the year and the calendar
+  // already fits inside them. `runHours()` alone is the desk's calendar and says
+  // nothing about the year behind it (FR-010); the two do not compete here,
+  // because the case where they would disagree is the refusal below.
   const covers =
     source.kind === 'file' && !wholeYear(source.period)
-      ? `it covers ${periodSaid(source.period)}, and the run’s other months have no weather to solve`
+      ? `it covers ${periodSaid(source.period)}, and the run covers ${hours} hours`
       : `the run covers ${hours} hours`;
-  statusEl.textContent =
-    sizing === 'Yes'
+  // A calendar the file cannot cover is a refusal, not an attach sentence. The
+  // pump the commit above started has already written that refusal into this same
+  // row, and this line is what the reader is left holding: a cheerful "attached"
+  // over a desk that has just declined to solve is the sheet disagreeing with
+  // itself in one row, and the reader believing the more recent half.
+  const outside = monthsOutsideFile();
+  statusEl.className = outside ? 'status bad' : 'status';
+  statusEl.textContent = outside
+    ? fileMonthsRefusal()
+    : sizing === 'Yes'
       ? `${sourceName(source)} attached, design conditions and all — ${covers}, sizing days included.`
       : conditions
         ? `${sourceName(source)} attached, design conditions and all — ${covers}, with the sizing days skipped.`
@@ -4863,6 +4896,117 @@ function attachClimate(source, { sizing = 'No', studyContext = null, conditions 
  * licensed file can be used at all: there is nowhere to upload it to, and there
  * is not going to be.
  */
+
+/**
+ * Every sentence the file path letters, declared once and asserted at load.
+ *
+ * The units lines above are asserted the same way and for the same reason: a
+ * budget nothing enforces is a budget, and this feature already proved it. Commit
+ * `35a62ac` counted the waiting-desk sentence by hand, got 43 words against the
+ * 40-word `CEILING`, and found out *after* it had shipped — which is exactly the
+ * class of silent breakage the workflow's copy gate asks to be thrown at load
+ * instead. Counting by hand is not the failure; counting once is.
+ *
+ * **The sentence that carries a file's own declaration is asserted carrying
+ * one.** `SAMPLE_DECLARES` stands in for a real `WeatherFile.declares` — a place,
+ * a source label and a WMO number — because a sentence measured without its
+ * declaration is measured in a state no reader ever sees it in, which is how 43
+ * words passed for 31. It is deliberately two words **longer** than the longest
+ * declaration the fixtures produce, so the headroom the assertion proves belongs
+ * to the file rather than to the copy: a purchased file is named by whoever sold
+ * it, and a page that only just fits the names it has seen will one day be handed
+ * a longer one with nothing thrown.
+ *
+ * What is **not** asserted is the part a parser wrote. A refusal quotes the
+ * sentence `dailyMeansCarried` or `designConditionsFrom` produced, naming the
+ * record or the day, and that is the only part of it the reader can act on: it
+ * may not be folded, may not be shortened, and is not the sheet's text to
+ * budget. So each refusal's own wording is asserted with a one-word stand-in for
+ * the quotation, which is the whole of what this module wrote.
+ */
+const SAMPLE_DECLARES = 'Kingston upon Thames, Greater London, GBR · CIBSE DSY1 2050s HIGH50 · WMO 037760';
+
+const FILE_SAYS = Object.freeze({
+  /** A file the reader chose that this page will not read. */
+  notAFile: (name) =>
+    `${name} is not a weather file: this reads an EPW, a DDY beside it, or the ZIP they came in`,
+  /** Whatever `filesFrom` refused about the set of files chosen. */
+  chosen: (why) => `That file cannot be used: ${why}.`,
+  /** Whatever the attach gate refused about the EPW itself. */
+  gate: (name, why) => `${name} cannot be used: ${why}.`,
+  /** A DDY that will not parse. The year stands or falls with it at the picker. */
+  ddy: (name, why) => `The DDY beside ${name} cannot be used: ${why}.`,
+  /** A DDY describing somewhere else — worse than no DDY at all. */
+  ddyElsewhere: (name, there, here) =>
+    `The DDY beside ${name} describes ${there} and the weather file describes ${here}, ` +
+    'so one of them is not this building’s.',
+  /** The file that arrived is not the file the link was run against (FR-020). */
+  notTheLink: (asks, name, says) =>
+    `That is not the weather file this link was run against. The link asks for ${asks}, ` +
+    `and ${name} says it is ${says}. Reload this page without the link to run your file on a fresh desk.`,
+  /**
+   * A desk the link cannot supply a climate for (FR-019).
+   *
+   * "in the weather picker above", not "below": the picker's panel is
+   * `position: absolute` and drops *under* its field, so the attach control is
+   * below this sentence only while the panel is open — and the panel is shut,
+   * because opening it is the thing the sentence is asking for. The field is
+   * above in both states. A refusal that points the wrong way is worse than one
+   * that points nowhere.
+   */
+  waiting: (declares) =>
+    `This desk ran against a weather file the link cannot carry: ${declares}. ` +
+    'Attach your copy in the picker above; the sheet checks it.',
+  /**
+   * A calendar asking for months the attached file has not got.
+   *
+   * The second reachable get-input fatal this path opens, beside the design days
+   * one in `solve`. `applyRun` writes a `RunPeriod` across every contiguous group
+   * of ticked months, so a desk calendared for the year over a 1 June – 31 August
+   * file sends the engine to 1 January, where there is no record: it terminates
+   * in `GetNextEnvironment` and the sheet letters *Program terminates due to
+   * preceding condition*, which is true and tells the reader nothing.
+   *
+   * The file's extent is named rather than the months missing from it. Both are
+   * actionable and only one is bounded — a seven-day file is missing all twelve,
+   * and a sentence that lists them is a sentence about a list.
+   */
+  monthsOutside: (name, covers) =>
+    `${name} carries ${covers}, and this run asks for months outside that. Narrow the calendar ` +
+    'on the Run strip to fit the file, or attach one that covers the year.',
+  /** A kept file that no longer reads. It is forgotten rather than half-used. */
+  keptUnreadable: (why) =>
+    `The weather file this browser was keeping cannot be read: ${why}. It has been forgotten.`,
+});
+
+// The control itself, out of the markup, so the two words in view are held to
+// the same budget as every other standing line on the sheet.
+withinBudget(BUDGETS.STANDING, 'the attach label', $('site-own-label').textContent);
+withinBudget(BUDGETS.BLOCK, 'the attach note', $('site-own-note').textContent);
+// The one sentence that carries a declaration, asserted carrying one.
+withinBudget(BUDGETS.CEILING, 'the waiting-desk sentence', FILE_SAYS.waiting(SAMPLE_DECLARES));
+// And each refusal's own wording, with a word standing in for the quotation.
+// Longer than `STANDING` allows, and it earns the room: it names the file, says
+// what it is not, and lists all three things the dialog does accept, which is the
+// difference between a refusal and a reader trying the same file twice.
+withinBudget(BUDGETS.BLOCK, 'the not-a-weather-file refusal', FILE_SAYS.notAFile('x.pdf'));
+withinBudget(BUDGETS.STANDING, 'the chosen-file refusal', FILE_SAYS.chosen('x'));
+withinBudget(BUDGETS.STANDING, 'the attach-gate refusal', FILE_SAYS.gate('x.epw', 'x'));
+withinBudget(BUDGETS.STANDING, 'the DDY refusal', FILE_SAYS.ddy('x.epw', 'x'));
+withinBudget(BUDGETS.BLOCK, 'the DDY-elsewhere refusal', FILE_SAYS.ddyElsewhere('x.epw', 'A', 'B'));
+withinBudget(BUDGETS.BLOCK, 'the kept-file refusal', FILE_SAYS.keptUnreadable('x'));
+// Asserted with the longest extent `periodSaid` writes — a seven-day sub-hourly
+// file — because that is the state a reader most often reads this sentence in.
+withinBudget(
+  BUDGETS.CEILING,
+  'the months-outside-the-file refusal',
+  FILE_SAYS.monthsOutside('x.epw', '1 Jan – 7 Jan, 4 records an hour'),
+);
+// The wrong-file refusal carries **two** declarations and cannot be held to
+// `CEILING` with them in it: 24 of its words are the two files' own, and what is
+// left is a sentence that has to name three things and offer a way out. Its own
+// wording is what this module wrote, and that is what is asserted.
+withinBudget(BUDGETS.CEILING, 'the wrong-file refusal', FILE_SAYS.notTheLink('A', 'x.epw', 'B'));
 
 /**
  * The file a link asked for, while the desk waits on it. Null otherwise.
@@ -4926,9 +5070,7 @@ async function filesFrom(chosen) {
       named.set(file.name, { bytes, kind });
       continue;
     }
-    throw new Error(
-      `${file.name} is not a weather file: this reads an EPW, a DDY beside it, or the ZIP they came in`,
-    );
+    throw new Error(FILE_SAYS.notAFile(file.name));
   }
 
   const epws = [...named].filter(([, m]) => m.kind === 'epw');
@@ -4991,7 +5133,7 @@ async function attachOwnFile(chosen) {
   try {
     picked = await filesFrom(chosen);
   } catch (error) {
-    return refuse(`That file cannot be used: ${error.message}.`);
+    return refuse(FILE_SAYS.chosen(error.message));
   }
 
   let source;
@@ -5001,7 +5143,7 @@ async function attachOwnFile(chosen) {
     // The parser's own sentence, unwrapped. `dailyMeans` names the record or
     // the day it could not read, and that is the only part of this a reader can
     // act on.
-    return refuse(`${picked.name} cannot be used: ${error.message}.`);
+    return refuse(FILE_SAYS.gate(picked.name, error.message));
   }
 
   // A desk waiting on a link's file checks that this is that file, before a
@@ -5015,9 +5157,11 @@ async function attachOwnFile(chosen) {
   // and a phrase, and no way to see inside somebody else's purchase.
   if (wantedFile && wantedFile.fingerprint !== source.fingerprint) {
     return refuse(
-      `That is not the weather file this link was run against. The link asks for ` +
-        `${wantedFile.declares ?? 'a file it does not describe'}, and ${picked.name} says it is ` +
-        `${source.declares.declares}. Reload this page without the link to run your file on a fresh desk.`,
+      FILE_SAYS.notTheLink(
+        wantedFile.declares ?? 'a file it does not describe',
+        picked.name,
+        source.declares.declares,
+      ),
     );
   }
   // Satisfied, or never asked for: either way the desk is no longer waiting.
@@ -5033,7 +5177,7 @@ async function attachOwnFile(chosen) {
     try {
       conditions = designConditionsFrom(source.ddy, schema);
     } catch (error) {
-      return refuse(`The DDY beside ${picked.name} cannot be used: ${error.message}.`);
+      return refuse(FILE_SAYS.ddy(picked.name, error.message));
     }
     // A DDY for another city is worse than no DDY at all: its design days would
     // stand under this file's title block, which is the lie in ink the picker's
@@ -5042,10 +5186,7 @@ async function attachOwnFile(chosen) {
     const ddyPlace = conditions.location.name;
     const epwPlace = source.place.city;
     if (ddyPlace && epwPlace && !sameSite(ddyPlace, epwPlace)) {
-      return refuse(
-        `The DDY beside ${picked.name} describes ${ddyPlace} and the weather file describes ${epwPlace}, ` +
-          'so one of them is not this building’s.',
-      );
+      return refuse(FILE_SAYS.ddyElsewhere(picked.name, ddyPlace, epwPlace));
     }
   }
 
@@ -5153,7 +5294,7 @@ async function attachRemembered() {
     // forgotten, said, and the desk is left where it was.
     forgetFile();
     statusEl.className = 'status bad';
-    statusEl.textContent = `The weather file this browser was keeping cannot be read: ${error.message}. It has been forgotten.`;
+    statusEl.textContent = FILE_SAYS.keptUnreadable(error.message);
     renderKeptFile();
     return false;
   }
@@ -7697,6 +7838,25 @@ async function solve() {
     statusEl.textContent =
       'This desk has no design days: the attached weather file came without a DDY beside it. ' +
       'Set Design days to Skip on the Run strip to run the file’s year, or attach the DDY that came with it.';
+    return;
+  }
+
+  // A desk asked to run months the attached file has not got.
+  //
+  // The other half of admitting a file shorter than a year, and the same shape of
+  // problem as the design days above: reachable by an ordinary gesture, fatal in
+  // the engine, and blamed on nothing the reader did.
+  //
+  // Refused rather than corrected. Narrowing the calendar here would be the desk
+  // overruling a control the reader set, and it would put the sheet outside its
+  // own link: `months` is on `params`, a permalink carries it, and a mask quietly
+  // rewritten at attach time would have the same address produce a different run
+  // on the machine that happened to attach first.
+  if (monthsOutsideFile()) {
+    stopAuto();
+    clearResults();
+    statusEl.className = 'status bad';
+    statusEl.textContent = fileMonthsRefusal();
     return;
   }
 
@@ -12792,25 +12952,12 @@ async function openFileLink(link) {
   renderTrace();
   wantedFile = link.file;
   statusEl.className = 'status bad';
-  // "in the weather picker above", not "below", and not the "and the desk
-  // solves" it also used to carry.
-  //
-  // The direction was simply wrong for the state a reader reads this in. The
-  // picker's panel is `position: absolute` and drops *under* its field, so the
-  // attach control is below this sentence only while the panel is open — and
-  // the panel is shut, because opening it is the thing the sentence is asking
-  // them to do. The field is above it in both states, so the field is what it
-  // names. A refusal that points the wrong way is worse than one that points
-  // nowhere.
-  //
-  // The rest went to fit the 40-word CEILING budget `copy.js` sets for any one
-  // visible block. It was over at 43 before the direction was even corrected,
-  // because the file's own declaration is a dozen words of it and this sentence
-  // was written against a short one. Measured with a real declaration, which is
-  // the only honest way to count a sentence that carries one.
-  statusEl.textContent =
-    `This desk was run against a weather file the link cannot carry: ${link.file.declares ?? 'a file it does not describe'}. ` +
-    'Attach your copy in the weather picker above; the sheet checks it is the same file.';
+  // Declared with the rest of the file path's sentences and asserted there
+  // against the 40-word CEILING *carrying a declaration*, which is the only
+  // honest way to count a sentence that quotes one: this was over at 43 words
+  // and shipped, because it had been counted without the dozen the file's own
+  // description adds.
+  statusEl.textContent = FILE_SAYS.waiting(link.file.declares ?? 'a file it does not describe');
   renderKeptFile();
 }
 
