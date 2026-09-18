@@ -296,3 +296,16 @@ Phase 1 → Phase 2 → Phase 3 (US1). That is a reader able to survey and sweep
 - Commit after each task or logical group; the constitution's gates are per change, not per feature
 - A counted assertion edited to make a throw stop is worthless. T012's numbers are derived from the roster in the comment above them, and the derivation is what is reviewed
 - Nothing in this feature touches `applyModel`, a channel, an applier, `params`, `shapeKey` or an `Output:*`. If a task starts to, stop: something has been misunderstood
+
+---
+
+## Phase 9: Convergence
+
+Found by `/speckit-converge` assessing the codebase against spec.md, plan.md and this file
+as it stood at 42/42 tasks checked. Two gaps, neither in the arithmetic: one is unfinished
+copy work the previous session's own notes already named and left open; the other is a
+design-document location that drifted from the code that implements it, for a documented
+and sound reason.
+
+- [ ] T043 State what the selected category presumes beside the chosen reading on the study card's quantity chooser (`studyQuantityChooser` in `src/console.js:1927-1968`), the way `categoriesSaid` already states it on the survey's `#survey-lede` (`src/main.js:9650-9658`, `11900-11912`) — through `fold()`, off `Category.presumes`, inside the `SUMMARY` word budget, never a second transcription and never on hover — completing what T029 built for the survey only per FR-005 (partial)
+- [ ] T044 Correct `data-model.md`'s and `contracts/readings.md`'s I2 sections, which state the target-against-category invariant is "added at load in `src/schemes.js`", to say it lives in `src/study.js:969-980` instead, with the import-cycle reason already given in that code's own comment (`schemes.js` reading `QUANTITY_BY_ID` back through `study.js`'s read of `PRESETS` would close a cycle) per plan.md Project Structure (contradicts)
