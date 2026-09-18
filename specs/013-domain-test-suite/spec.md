@@ -14,6 +14,8 @@ This repository has been built for twelve features without a test runner. Verifi
 
 The cost of that is already written down. `CLAUDE.md` carries a section called **"Invariants that fail quietly"**: twenty-six rules, each one a bug that was found by driving the page and paid for in debugging. A temperature difference lettered through an absolute temperature kind reads `+1 °C` as `+33.8 °F`. A cache keyed without the unit system serves a figure in a system the reader has left. A hidden browser tab starves the frame callback and three separate figures were chased as lettering bugs before anyone checked `document.visibilityState`. Reading an absent object type used to register it and silently reorder the IDF. Each of these is a lesson recorded in prose, and prose does not fail. Nothing in the repository notices when one of them is broken again.
 
+That section is therefore not preserved by this feature — it is *relocated into it*. Each bullet becomes an executing check, and the narrative that justifies it moves to a comment beside that check, which is where this project's house style has always said the reasoning belongs: prose recording why, frequently with the measurement or the error message that forced the decision. When the work is done the section is deleted, because a rule stated both in a document and in an assertion is two statements of one rule, and the assertion is the one that fails.
+
 This feature turns that record into something that executes. It establishes a test runner and a verification suite organised around the domain — a building model written as an IDF document, handed to an EnergyPlus engine, and read back as physical quantities — rather than around the file layout. The suite's job is not to chase a coverage figure. It is to make each of the twenty-six invariants, the constitution's ten quality gates, and the physical behaviour of the model itself fail loudly, automatically, and before a human opens the page.
 
 The work is bounded by what this repository already is: a static, browser-only, dependency-light sheet whose whole argument is that a serious simulation needs no stack under it. Verification must run against the real schema and the real engine — the same WebAssembly EnergyPlus the reader's browser runs, under Node, on a machine with no EnergyPlus installed — because schema validation alone does not catch what breaks a run, and a mocked engine would prove nothing about a building.
@@ -31,6 +33,7 @@ This feature contradicts that section directly, so it cannot ship without amendi
 - Q: Is automated static analysis — a linter, a formatter, type checking of the source — in scope for this feature alongside the test runner, or a separate later piece of work? → A: In scope. A linter and a formatter ride along with the runner; type checking of the source does not.
 - Q: How much of the existing code must be covered by the end of this feature? → A: The simulation-domain modules, plus every one of the 26 recorded invariants wherever it lives — including those whose subject sits in an interface module, which therefore need a browser-like environment for a handful of checks.
 - Q: Should a coverage figure be a blocking threshold on every change, or a reported measure that informs review? → A: Reported, never blocking. The suite's gate is that deliberately breaking a recorded rule turns it red.
+- Q: Once every invariant has an executing check, where should the single authored statement of each invariant live? → A: In the check. The "Invariants that fail quietly" section of `CLAUDE.md` is removed, and the narrative that justifies each invariant — the measurement, the error message, what it cost — is carried as a comment beside the check that enforces it.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -63,10 +66,10 @@ A maintainer reads the twenty-six entries under "Invariants that fail quietly" a
 
 **Acceptance Scenarios**:
 
-1. **Given** the list of invariants recorded in `CLAUDE.md`, **When** the suite is complete, **Then** every entry has at least one executing check associated with it by name.
+1. **Given** the twenty-six invariants this project has recorded, **When** the suite is complete, **Then** every one has at least one executing check associated with it by name, and the narrative justifying it sits beside that check.
 2. **Given** any one recorded invariant, **When** it is deliberately broken in the source, **Then** the suite fails, and it fails for that invariant rather than incidentally through an unrelated check.
 3. **Given** an invariant that the suite genuinely cannot execute (one that can only be seen by a human looking at a rendered page), **When** the suite is complete, **Then** that invariant is listed explicitly as unexecutable with the reason stated, rather than being quietly counted as covered.
-4. **Given** a new invariant discovered during later work, **When** it is recorded in the prose, **Then** there is a stated place and pattern for its check, so recording it and enforcing it are one act.
+4. **Given** a new invariant discovered during later work, **When** somebody goes to write it down, **Then** the only place to write it down is beside a check that enforces it, so recording it and enforcing it are not merely one practice but one act.
 
 ---
 
@@ -171,7 +174,8 @@ Someone adding a control, a landmark, a reading or a channel wants the suite to 
 - **The suite must not reach the network.** Station data and climate files come from an external origin at run time; a check that silently depends on that origin is both slow and flaky. Fixtures stand in, and a check that would reach the network fails rather than succeeding slowly.
 - **Some invariants cannot be executed.** "No reading exists only on hover" and "every reading is readable at 390 px" are claims about a rendered page a machine can only partly judge. These must be named as unexecutable with the reason, not silently counted.
 - **A fast tier that stops being fast.** The project's whole interaction budget is 50 ms a solve; a verification tier that takes minutes stops being run during work. Its runtime is a stated budget, and exceeding it is a defect.
-- **The prose and the checks disagree.** If a check contradicts the invariant it claims to enforce, the prose and the check are reconciled in the same change — two statements of one rule is the drift the project's third principle exists to forbid.
+- **A rule with no check can no longer be written down — and that cuts both ways.** Removing the prose section removes the drift it could suffer, but it also removes the list the suite could have diffed itself against: nobody can record an invariant without enforcing it, and equally nobody is told they have failed to record one. The guarantee becomes structural rather than checked, which is stronger where it applies and silent where it does not.
+- **A check's comment decays into a restatement of the assertion.** The comment carries the *why* — the measurement, the error message, what the bug cost. A comment that merely narrates what the assertion does has become the second statement again, in the one place nothing can catch it. This is the house comment rule applied where it now matters most.
 - **A lint rule that fights the house style.** This project writes long prose comments recording the measurement that forced a decision, throws from declarations at module load, and assembles documents byte by byte on purpose. A stock rule set will flag all three. The rules are chosen against what has actually gone wrong here, and a rule turned off carries its reason beside it — the same standard the code itself is held to.
 - **The reformatting sweep collides with work in flight.** Reformatting 1.9 MB of source touches every file, so any branch open across it conflicts everywhere. The sweep is its own change, sequenced deliberately, and proved to have moved no byte of any written document.
 - **An interface invariant that only a rendered page can show.** Some of the 26 sit in interface modules but are still machine-checkable against a browser-like environment; a few — readable at 390 px, nothing on hover — are only partly so. The first are executed, the second named as unexecutable. Neither is quietly counted as covered.
@@ -191,7 +195,7 @@ Someone adding a control, a landmark, a reading or a channel wants the suite to 
 
 **What the suite must cover**
 
-- **FR-006**: Every invariant recorded in the "Invariants that fail quietly" section of `CLAUDE.md` MUST have at least one executing check associated with it by name, or MUST be listed explicitly as unexecutable with the reason stated.
+- **FR-006**: Every one of the twenty-six invariants the project had recorded in prose at the start of this work MUST have at least one executing check associated with it by name, or MUST be listed explicitly as unexecutable with the reason stated.
 - **FR-007**: Each such check MUST be proved by deliberately breaking the invariant and confirming the check fails for that invariant, and the result of that exercise MUST be recorded so it can be repeated.
 - **FR-008**: Each of the constitution's numbered quality gates MUST be restated as one or more executing checks, or MUST be recorded as a gate that remains a human act with the reason stated.
 - **FR-009**: The suite MUST cover the model-writing rules the project already states as byte-identity claims: that applying the model three times produces identical output; that a shrunk configuration serialises identically to one built at the smaller size; and that a lean reporting selection followed by a full one is identical to a full one throughout.
@@ -223,8 +227,9 @@ Someone adding a control, a landmark, a reading or a channel wants the suite to 
 - **FR-026**: Where the project holds an enumerable declaration — controls, landmarks, readings, unit kinds, channels — the suite MUST enumerate it and notice a new member that has acquired no check, rather than relying on a contributor to remember.
 - **FR-027**: Written contributor instructions MUST state, for each kind of addition the project supports, which checks it must acquire and where they belong.
 - **FR-028**: The recorded practice MUST be that a bug fixed after this feature ships carries a check which fails before the fix and passes after it.
-- **FR-029**: The project's governing documents MUST be brought into agreement with the new practice in the same change: the constitution's workflow section amended under its own amendment procedure and version policy, and `CLAUDE.md` and `docs/design-notes.md` updated wherever they state that there is no test runner and no linter, or describe the throwaway harness as the way changes are verified.
-- **FR-030**: Where a check and the prose invariant it enforces disagree, the practice MUST be to reconcile both in one change, so the rule continues to have exactly one statement.
+- **FR-029**: The project's governing documents MUST be brought into agreement with the new practice in the same change: the constitution's workflow section amended under its own amendment procedure and version policy, and `CLAUDE.md` and `docs/design-notes.md` updated wherever they state that there is no test runner and no linter, or describe the throwaway harness as the way changes are verified. `CLAUDE.md`'s "Invariants that fail quietly" section MUST be removed in the same change, with every bullet's reasoning relocated to the comment beside the check that now enforces it — removed, not summarised, since a summary is the second statement in miniature.
+- **FR-030**: Each check MUST carry, as a comment beside it, the reasoning that justifies the rule it enforces — the measurement, the error message, or the cost that made the rule worth having — in the project's existing comment style. The comment MUST explain why the rule exists and MUST NOT restate what the assertion already says, since a comment that narrates the assertion is the second statement of the rule in the one place nothing can catch it.
+- **FR-030a**: No invariant may be stated anywhere except beside the check that enforces it. A document, a roster or a summary restating a rule in its own words MUST NOT be introduced, so that the rule keeps exactly one statement by construction rather than by a check that compares two.
 - **FR-031**: The suite MUST measure and report how much of the project's simulation-domain logic its checks exercise, so gaps are visible rather than assumed. That measure MUST be reported for review and MUST NOT block a change against a threshold. The gate is FR-007 — breaking a recorded rule turns the suite red — and a coverage figure that climbs while FR-007 goes unmet is describing nothing worth having.
 
 **Static analysis**
@@ -248,13 +253,13 @@ Someone adding a control, a landmark, a reading or a channel wants the suite to 
 
 ### Key Entities
 
-- **Check**: One executing assertion of one rule. Carries the name of the invariant, gate, or physical expectation it enforces and where that is recorded, so its failure message can point at the rule rather than the code.
+- **Check**: One executing assertion of one rule, and the single statement of that rule. Carries the name of the invariant, gate or physical expectation it enforces so its failure message points at the rule rather than the code, and carries beside it the reasoning that justifies the rule — which after this feature exists nowhere else.
 - **Tier**: A group of checks sharing prerequisites and a time budget — the fast tier needing nothing staged, the full tier needing the schema bundle and the engine.
 - **Desk position**: A named set of parameter values and patch state describing one building configuration the suite verifies. The representative set is chosen to cover every channel in both its engaged and bypassed state.
 - **Fixture**: Vendored input a check needs and must not fetch — a climate file, a station record, a generated data table.
 - **Expected document**: A retained serialisation of the document a desk position writes, compared byte-for-byte, whose change is reviewed as a diff.
 - **Physical expectation**: A stated direction of movement and tolerance band for a reading under a named change, together with the physical reasoning that justifies it.
-- **Coverage record**: The mapping from each recorded invariant and constitutional gate to the checks that enforce it, including the entries marked unexecutable and why.
+- **Coverage record**: The mapping from each invariant and constitutional gate to the checks that enforce it, including the entries marked unexecutable and why. It is a roster of identifiers, evidence classes and tiers — it holds no statement of any rule, so it is not a second source of one.
 - **Style rule**: One linter or formatter rule the project has adopted, or has deliberately turned off, carrying its reason in either case.
 - **Verdict**: The single pass or fail the suite reports, per tier and overall.
 
@@ -263,7 +268,7 @@ Someone adding a control, a landmark, a reading or a channel wants the suite to 
 ### Measurable Outcomes
 
 - **SC-001**: A contributor with a fresh clone reaches a green verdict by following the written instructions alone, in under 15 minutes including asset staging, without asking anyone.
-- **SC-002**: All 26 invariants recorded under "Invariants that fail quietly" are accounted for: each has at least one executing check, or is listed as unexecutable with a stated reason. No entry is unaccounted for.
+- **SC-002**: All 26 invariants the prose recorded at the start of this work are accounted for: each has at least one executing check, or is listed as unexecutable with a stated reason. No entry is unaccounted for, and none is left behind in a document when the section is removed.
 - **SC-003**: For every invariant with a check, deliberately breaking that invariant makes the suite fail, and fail for that invariant. This is demonstrated for 100% of them and the demonstration is recorded.
 - **SC-004**: All 10 of the constitution's numbered quality gates are either executed by the suite or recorded as remaining a human act with a stated reason.
 - **SC-005**: The fast tier returns a verdict in under 60 seconds on a contributor's machine, and the full tier in under 20 minutes, both measured and recorded.
@@ -279,12 +284,15 @@ Someone adding a control, a landmark, a reading or a channel wants the suite to 
 - **SC-015**: Static analysis reports zero findings and zero unformatted files on the default branch, and both are enforced automatically on every proposed change.
 - **SC-016**: The reformatting sweep is demonstrated to have changed no behaviour: the document written at every representative desk position is byte-identical before and after it. The suite proves this about itself.
 - **SC-017**: Every lint rule the project turns off carries a recorded reason; the count of rules disabled without one is zero.
+- **SC-019**: Every check enforcing one of the 26 invariants carries a comment giving the reasoning behind that rule; the count of such checks without one is zero.
+- **SC-020**: After this feature, the count of invariants stated in a document rather than beside a check is zero, and `CLAUDE.md` carries no "Invariants that fail quietly" section.
 - **SC-018**: Coverage is reported on every automatic run and blocks nothing; the number of changes blocked on a coverage threshold is zero.
 
 ## Assumptions
 
 - **The constitution is amended, not worked around.** Its Development Workflow section states there is no test runner and frames its ten gates as human acts. This feature amends that section under the constitution's own procedure, as a MINOR bump, and treats the ten gates as the specification of what the suite must execute. Shipping the suite while leaving the constitution stating the opposite is not an acceptable outcome.
-- **The recorded invariants are the backlog.** Rather than inventing coverage targets, this feature takes the twenty-six documented invariants and the ten gates as the definition of what must be enforced, on the grounds that each was paid for in real debugging and is therefore known to matter.
+- **The recorded invariants are the backlog, and the backlog is consumed.** Rather than inventing coverage targets, this feature takes the twenty-six documented invariants and the ten gates as the definition of what must be enforced, on the grounds that each was paid for in real debugging and is therefore known to matter. The prose list is the input to this work and not an output of it: it is read, converted check by check, and then deleted.
+- **The constitution's gates are not treated the same way.** They stay in `.specify/memory/constitution.md` and keep their own correspondence check, because the constitution is ratified governance text amended by procedure, not a working note that can be relocated into a test file. The asymmetry is deliberate: a gate is a rule about how the project works, an invariant is a rule about how the software behaves, and only the second can be stated as an assertion.
 - **Real schema, real engine.** Verification runs against the actual EnergyPlus 26.1.0 schema bundle and the actual WebAssembly engine the page ships, because schema validation alone has repeatedly failed to catch what breaks a run and a substitute engine would prove nothing physical. Engine and schema staging is already a scripted step and is reused.
 - **Physical expectations are directional and bounded.** Simulation output is not treated as a fixed figure to match exactly; each domain expectation states a direction and a tolerance with reasoning, so the suite survives a legitimate engine or platform difference without being weakened into meaninglessness.
 - **The interface is covered where a recorded invariant lives there, and not otherwise.** The modules already kept free of browser dependencies are where the domain lives and where the suite concentrates, but the boundary is the invariant rather than the file: several of the costliest entries — the frame callback starving in a hidden tab, the `aria-label` that letters a figure and is never re-lettered, the class whose `[hidden]` twin it needs — sit in interface modules and are covered there, against a browser-like environment. Interface behaviour beyond those entries waits for later work. Claims a machine can only partly judge, such as readable at 390 px and nothing on hover, stay a human act, named as such rather than faked.
@@ -302,4 +310,4 @@ Someone adding a control, a landmark, a reading or a channel wants the suite to 
 - **The staged engine, schema bundle and station index** — all three are gitignored and produced by the existing setup scripts. The suite depends on those scripts continuing to stage them.
 - **The existing automatic check workflow** — the suite runs alongside the consumer-register check that already runs on every push and pull request.
 - **A browser-like environment** — needed for the recorded invariants whose subject sits in an interface module. Development tooling only; it reaches no reader.
-- **The recorded invariants themselves** — the suite's scope is defined by what `CLAUDE.md` currently records. An invariant that is missing from that list will be missing from the suite.
+- **The "Invariants that fail quietly" section as it stands today** — the suite's scope is defined by what it currently records, so an invariant missing from that list at the start of this work will be missing from the suite. After this feature the section no longer exists, and the checks are the record.

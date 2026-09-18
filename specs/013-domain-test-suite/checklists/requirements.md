@@ -31,6 +31,24 @@
 
 ## Notes
 
+**Iteration 3 (2026-09-18)** — all items still pass after a fourth clarification.
+The single authored statement of each invariant moves into the check that enforces it,
+and `CLAUDE.md`'s "Invariants that fail quietly" section is removed rather than kept in
+sync (FR-006, FR-029, FR-030, FR-030a, SC-002, SC-019, SC-020).
+
+This strengthens the "no implementation details" item rather than threatening it: the spec
+now states *where a rule lives*, which is a content decision, and no longer implies a
+synchronisation mechanism between two documents.
+
+One consequence is recorded in Edge Cases rather than smoothed over: with the prose gone,
+nobody can record an invariant without enforcing it, and equally nobody is told they have
+failed to record one. The guarantee becomes structural where it applies and silent where
+it does not.
+
+Downstream artifacts now disagree with the spec and need revising: research D-09 ("The
+prose is the register; the suite indexes it") is overturned, plan.md's second summary
+decision with it, and tasks.md's T027, T041–T044 and T105.
+
 **Iteration 2 (2026-09-18)** — all items pass. The three open scope questions were
 answered and the answers are recorded under Clarifications, Session 2026-09-18:
 
