@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,27 +31,40 @@
 
 ## Notes
 
-**Iteration 1 (2026-09-17)** — three [NEEDS CLARIFICATION] markers remain, all of them
-scope questions whose answers change the size of the work rather than its direction:
+**Iteration 2 (2026-09-18)** — all items pass. The three open scope questions were
+answered and the answers are recorded under Clarifications, Session 2026-09-18:
 
-- FR-031: whether a coverage figure blocks a change or only informs review.
-- FR-034: whether static analysis (linter, formatter, type checking) is in scope
-  alongside the test runner, or a separate later piece of work.
-- FR-035: how much of the existing code must be covered by the end of this feature.
+- Static analysis is in scope — a linter and a formatter, not type checking
+  (FR-032 to FR-036, Story 1 scenarios 5 and 6, Story 4 scenario 6, SC-015
+  to SC-017).
+- Coverage is the simulation-domain modules plus all 26 recorded invariants
+  wherever they live, interface modules included for those entries only
+  (FR-037 to FR-039).
+- Coverage figures are reported and never blocking (FR-031, SC-018).
 
-Everything else passes. Two deliberate notes on the "no implementation details" item:
+Requirements renumbered to stay contiguous: FR-001 to FR-041, SC-001 to SC-018.
 
-- The spec names the EnergyPlus 26.1.0 schema and the WebAssembly engine, and names
-  specific source documents (`CLAUDE.md`, the constitution). These are the subject
-  matter of the feature — the thing being verified and the record being enforced —
-  not a choice of technology for building it. No test runner, assertion library,
-  coverage tool or CI product is named anywhere.
-- SC-002 and SC-004 cite counts (26 invariants, 10 gates) taken from the repository
-  as it stands. These are measurements of the existing record, and make the success
-  criteria countable rather than aspirational.
+**Iteration 1 (2026-09-17)** — 15 of 16 passed; three [NEEDS CLARIFICATION]
+markers remained, all of them scope questions whose answers changed the size of
+the work rather than its direction.
+
+Two deliberate notes on the "no implementation details" item, unchanged from
+iteration 1:
+
+- The spec names the EnergyPlus 26.1.0 schema and the WebAssembly engine, and
+  names specific source documents (`CLAUDE.md`, the constitution). These are the
+  subject matter of the feature — the thing being verified and the record being
+  enforced — not a choice of technology for building it. No test runner,
+  assertion library, linter, formatter, coverage tool or CI product is named
+  anywhere; FR-032 and FR-034 describe what static analysis must do and how its
+  rules must be chosen, not which tool does it.
+- SC-002 and SC-004 cite counts (26 invariants, 10 gates) taken from the
+  repository as it stands. These are measurements of the existing record, and
+  make the success criteria countable rather than aspirational.
 
 A conflict with the project constitution is recorded in the spec's Overview and
-Dependencies rather than hidden: the constitution's Development Workflow section
-currently states that there is no test runner, and amending it is in scope.
+Dependencies rather than hidden: its Development Workflow section currently
+states that there is no test runner and no linter, and amending it — retiring
+both halves of that sentence — is in scope under FR-029.
 
-Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`.
+Ready for `/speckit-plan`.

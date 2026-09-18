@@ -22,7 +22,15 @@ The work is bounded by what this repository already is: a static, browser-only, 
 
 The project constitution at `.specify/memory/constitution.md` (v1.0.1) does not merely happen to lack tests. Its **Development Workflow and Quality Gates** section opens: *"There is no test runner and no linter. Verification is done by throwaway Node harnesses under a scratch directory"*, and its ten numbered gates are written as instructions to a human running such a harness. `CLAUDE.md` and `docs/design-notes.md` say the same in their own words.
 
-This feature contradicts that section directly, so it cannot ship without amending it. The amendment is in scope and is part of the definition of done: the ten gates are not discarded — they are exactly the right gates — but they must be restated as checks the suite executes rather than steps a contributor remembers. Under the constitution's own versioning policy this is a MINOR bump (guidance materially expanded), proposed as part of this feature's pull request.
+This feature contradicts that section directly, so it cannot ship without amending it. Both halves of its opening sentence stop being true here: a runner arrives, and so does a linter. The amendment is in scope and is part of the definition of done: the ten gates are not discarded — they are exactly the right gates — but they must be restated as checks the suite executes rather than steps a contributor remembers. Under the constitution's own versioning policy this is a MINOR bump (guidance materially expanded), proposed as part of this feature's pull request.
+
+## Clarifications
+
+### Session 2026-09-18
+
+- Q: Is automated static analysis — a linter, a formatter, type checking of the source — in scope for this feature alongside the test runner, or a separate later piece of work? → A: In scope. A linter and a formatter ride along with the runner; type checking of the source does not.
+- Q: How much of the existing code must be covered by the end of this feature? → A: The simulation-domain modules, plus every one of the 26 recorded invariants wherever it lives — including those whose subject sits in an interface module, which therefore need a browser-like environment for a handful of checks.
+- Q: Should a coverage figure be a blocking threshold on every change, or a reported measure that informs review? → A: Reported, never blocking. The suite's gate is that deliberately breaking a recorded rule turns it red.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -40,6 +48,8 @@ A contributor has changed something that reaches the model — an applier in `mo
 2. **Given** a change that breaks a recorded invariant, **When** the contributor runs the verification command, **Then** at least one check fails and its message names the invariant that was broken and where it is recorded, not only an assertion line number.
 3. **Given** a contributor working on a control declaration with no interest in waiting for engine runs, **When** they run the fast tier alone, **Then** they get a verdict covering everything that does not need the engine, within the stated fast-tier budget.
 4. **Given** a checkout where the engine assets have not been staged, **When** the contributor runs the engine-backed checks, **Then** the suite refuses with a stated reason naming what is missing and how to stage it, rather than passing by skipping them.
+5. **Given** a change carrying a lint finding or a file that is not formatted, **When** the contributor runs the fast tier, **Then** it reports a failure in the same verdict as every other check, rather than static analysis being a separate thing to remember.
+6. **Given** a lint rule the project has turned off, **When** a contributor asks why, **Then** the reason is recorded beside the rule.
 
 ---
 
@@ -94,6 +104,7 @@ A contributor refactors an applier, or adds a control, and wants to see exactly 
 3. **Given** the reporting selection, **When** a lean selection is followed by a full one, **Then** the document is byte-identical to one that was set to the full selection throughout.
 4. **Given** an intended change to what the model writes, **When** the suite runs, **Then** the difference is presented as a readable diff of the document, and accepting it is a deliberate, reviewable act rather than an automatic one.
 5. **Given** the determinism rule, **When** the same parameters are applied under a different wall-clock time, time zone or locale, **Then** the serialised document is byte-identical.
+6. **Given** the one-off reformatting of the existing source, **When** it is proposed, **Then** the document written at every representative desk position is byte-identical before and after it, proving a diff that touches every file changed no behaviour.
 
 ---
 
@@ -161,6 +172,9 @@ Someone adding a control, a landmark, a reading or a channel wants the suite to 
 - **Some invariants cannot be executed.** "No reading exists only on hover" and "every reading is readable at 390 px" are claims about a rendered page a machine can only partly judge. These must be named as unexecutable with the reason, not silently counted.
 - **A fast tier that stops being fast.** The project's whole interaction budget is 50 ms a solve; a verification tier that takes minutes stops being run during work. Its runtime is a stated budget, and exceeding it is a defect.
 - **The prose and the checks disagree.** If a check contradicts the invariant it claims to enforce, the prose and the check are reconciled in the same change — two statements of one rule is the drift the project's third principle exists to forbid.
+- **A lint rule that fights the house style.** This project writes long prose comments recording the measurement that forced a decision, throws from declarations at module load, and assembles documents byte by byte on purpose. A stock rule set will flag all three. The rules are chosen against what has actually gone wrong here, and a rule turned off carries its reason beside it — the same standard the code itself is held to.
+- **The reformatting sweep collides with work in flight.** Reformatting 1.9 MB of source touches every file, so any branch open across it conflicts everywhere. The sweep is its own change, sequenced deliberately, and proved to have moved no byte of any written document.
+- **An interface invariant that only a rendered page can show.** Some of the 26 sit in interface modules but are still machine-checkable against a browser-like environment; a few — readable at 390 px, nothing on hover — are only partly so. The first are executed, the second named as unexecutable. Neither is quietly counted as covered.
 - **Flaky checks.** A check that sometimes fails is worse than no check, because it teaches contributors to ignore red. The recorded practice is to fix the root cause; skipping or quarantining is not an option the suite offers.
 
 ## Requirements *(mandatory)*
@@ -209,16 +223,28 @@ Someone adding a control, a landmark, a reading or a channel wants the suite to 
 - **FR-026**: Where the project holds an enumerable declaration — controls, landmarks, readings, unit kinds, channels — the suite MUST enumerate it and notice a new member that has acquired no check, rather than relying on a contributor to remember.
 - **FR-027**: Written contributor instructions MUST state, for each kind of addition the project supports, which checks it must acquire and where they belong.
 - **FR-028**: The recorded practice MUST be that a bug fixed after this feature ships carries a check which fails before the fix and passes after it.
-- **FR-029**: The project's governing documents MUST be brought into agreement with the new practice in the same change: the constitution's workflow section amended under its own amendment procedure and version policy, and `CLAUDE.md` and `docs/design-notes.md` updated where they state that there is no test runner.
+- **FR-029**: The project's governing documents MUST be brought into agreement with the new practice in the same change: the constitution's workflow section amended under its own amendment procedure and version policy, and `CLAUDE.md` and `docs/design-notes.md` updated wherever they state that there is no test runner and no linter, or describe the throwaway harness as the way changes are verified.
 - **FR-030**: Where a check and the prose invariant it enforces disagree, the practice MUST be to reconcile both in one change, so the rule continues to have exactly one statement.
-- **FR-031**: The suite MUST measure and report how much of the project's simulation-domain logic its checks exercise, so gaps are visible rather than assumed. [NEEDS CLARIFICATION: should a coverage figure be a blocking threshold on every change, or a reported measure that informs review without blocking?]
+- **FR-031**: The suite MUST measure and report how much of the project's simulation-domain logic its checks exercise, so gaps are visible rather than assumed. That measure MUST be reported for review and MUST NOT block a change against a threshold. The gate is FR-007 — breaking a recorded rule turns the suite red — and a coverage figure that climbs while FR-007 goes unmet is describing nothing worth having.
+
+**Static analysis**
+
+- **FR-032**: The project MUST carry automated static analysis alongside the runner: a linter that reports likely defects, and a formatter that settles presentation so it stops being reviewed by hand. Type checking of the source is out of scope for this feature.
+- **FR-033**: Linting and formatting MUST be enforced rather than offered — the fast tier and the automatic check MUST both fail on a lint finding or on a file that is not formatted — so that agreeing a rule and enforcing it are one act.
+- **FR-034**: Lint rules MUST be chosen against this project's own recorded failure classes rather than adopted wholesale, and any rule that would fight a house convention — prose comments carrying the measurement or the error message that forced a decision, declarations that throw at module load, deliberate byte-level assembly of a document — MUST be turned off with its reason recorded beside it.
+- **FR-035**: The one-off reformatting of the existing source MUST land as its own change, separate from the substantive work of this feature, so that neither review buries the other.
+- **FR-036**: The reformatting change MUST be shown to have changed no behaviour, by the document written at every representative desk position being byte-identical before and after it.
+
+**How much is covered**
+
+- **FR-037**: The checks MUST cover the project's simulation-domain modules — those it already keeps free of browser and network dependencies — together with every one of the 26 recorded invariants wherever it lives, including those whose subject sits in an interface module.
+- **FR-038**: Where a recorded invariant can only be observed against a rendered page, a browser-like environment MUST be used for that check, or the invariant MUST be listed as unexecutable under FR-006 with the reason stated.
+- **FR-039**: Interface modules, beyond the recorded invariants they host, are out of scope for this feature. The suite MUST NOT be judged incomplete for leaving them uncovered, and that gap MUST appear in the coverage record so it is visible rather than assumed closed.
 
 **Scope boundaries**
 
-- **FR-032**: The suite MUST NOT introduce any run-time dependency. Anything it requires MUST reach only contributors and the automatic check, never a reader of the published page.
-- **FR-033**: Fixtures MUST NOT carry content from purchased documents; where a check needs such content it MUST use the generated data the project already ships for that purpose.
-- **FR-034**: [NEEDS CLARIFICATION: is automated static analysis — a linter, a formatter, type checking of the source — in scope for this feature alongside the test runner, or a separate later piece of work? The repository currently has none of the three, and "industry best practices" arguably covers all of them, but each is a distinct body of work with its own churn.]
-- **FR-035**: [NEEDS CLARIFICATION: how much of the existing code must be covered by the end of this feature — the simulation-domain modules that hold no interface code, everything including the interface modules, or the domain modules plus the recorded invariants wherever they live? The interface modules are by far the largest and would need a browser-like environment to test at all.]
+- **FR-040**: The suite MUST NOT introduce any run-time dependency. Anything it requires MUST reach only contributors and the automatic check, never a reader of the published page.
+- **FR-041**: Fixtures MUST NOT carry content from purchased documents; where a check needs such content it MUST use the generated data the project already ships for that purpose.
 
 ### Key Entities
 
@@ -229,6 +255,7 @@ Someone adding a control, a landmark, a reading or a channel wants the suite to 
 - **Expected document**: A retained serialisation of the document a desk position writes, compared byte-for-byte, whose change is reviewed as a diff.
 - **Physical expectation**: A stated direction of movement and tolerance band for a reading under a named change, together with the physical reasoning that justifies it.
 - **Coverage record**: The mapping from each recorded invariant and constitutional gate to the checks that enforce it, including the entries marked unexecutable and why.
+- **Style rule**: One linter or formatter rule the project has adopted, or has deliberately turned off, carrying its reason in either case.
 - **Verdict**: The single pass or fail the suite reports, per tier and overall.
 
 ## Success Criteria *(mandatory)*
@@ -249,6 +276,10 @@ Someone adding a control, a landmark, a reading or a channel wants the suite to 
 - **SC-012**: Running the suite twice in succession on an unchanged checkout produces identical verdicts, demonstrated over at least ten consecutive runs, so that a red verdict is always a real failure.
 - **SC-013**: After this feature ships, every subsequent bug fix carries a check that fails before the fix — measured on the first ten fixes that follow.
 - **SC-014**: No run-time dependency is added: the published page's dependency list is unchanged by this feature.
+- **SC-015**: Static analysis reports zero findings and zero unformatted files on the default branch, and both are enforced automatically on every proposed change.
+- **SC-016**: The reformatting sweep is demonstrated to have changed no behaviour: the document written at every representative desk position is byte-identical before and after it. The suite proves this about itself.
+- **SC-017**: Every lint rule the project turns off carries a recorded reason; the count of rules disabled without one is zero.
+- **SC-018**: Coverage is reported on every automatic run and blocks nothing; the number of changes blocked on a coverage threshold is zero.
 
 ## Assumptions
 
@@ -256,7 +287,9 @@ Someone adding a control, a landmark, a reading or a channel wants the suite to 
 - **The recorded invariants are the backlog.** Rather than inventing coverage targets, this feature takes the twenty-six documented invariants and the ten gates as the definition of what must be enforced, on the grounds that each was paid for in real debugging and is therefore known to matter.
 - **Real schema, real engine.** Verification runs against the actual EnergyPlus 26.1.0 schema bundle and the actual WebAssembly engine the page ships, because schema validation alone has repeatedly failed to catch what breaks a run and a substitute engine would prove nothing physical. Engine and schema staging is already a scripted step and is reused.
 - **Physical expectations are directional and bounded.** Simulation output is not treated as a fixed figure to match exactly; each domain expectation states a direction and a tolerance with reasoning, so the suite survives a legitimate engine or platform difference without being weakened into meaninglessness.
-- **The interface is verified last and least.** The modules the project already keeps free of browser dependencies are where the domain lives and where the suite concentrates. Claims about a rendered page — readable at 390 px, nothing on hover — are expected to remain partly a human act, named as such rather than faked.
+- **The interface is covered where a recorded invariant lives there, and not otherwise.** The modules already kept free of browser dependencies are where the domain lives and where the suite concentrates, but the boundary is the invariant rather than the file: several of the costliest entries — the frame callback starving in a hidden tab, the `aria-label` that letters a figure and is never re-lettered, the class whose `[hidden]` twin it needs — sit in interface modules and are covered there, against a browser-like environment. Interface behaviour beyond those entries waits for later work. Claims a machine can only partly judge, such as readable at 390 px and nothing on hover, stay a human act, named as such rather than faked.
+- **Static analysis is settled once, then enforced.** The linter and formatter are agreed, the existing source is brought into line in a single sweep of its own, and from then on a finding or an unformatted file is a failure like any other. The sweep is sequenced so it does not land on top of work in flight, and the suite is used to prove it moved no byte of any document the engine receives — which is the one reassurance worth having about a diff that touches every file.
+- **A browser-like environment is development tooling.** The handful of recorded invariants that need one are checked against it by contributors and by the automatic check. It reaches no reader, so it sits under the same exemption as the existing build and deployment tooling.
 - **Existing verification practice is absorbed, not discarded.** The throwaway-harness recipe already documented is a correct description of what must be checked; this feature makes those steps permanent and automatic rather than replacing them with something different.
 - **The automatic check has somewhere to run.** The repository already runs a check workflow on every push and pull request, so adding the suite to automatic execution is an extension of existing machinery rather than new infrastructure.
 - **Tooling reaches contributors only.** Whatever the suite needs is development tooling, exempt from the run-time dependency rule the same way the existing build and deployment tooling is, and is required to leave the published page's dependencies untouched.
@@ -264,8 +297,9 @@ Someone adding a control, a landmark, a reading or a channel wants the suite to 
 
 ## Dependencies
 
-- **`.specify/memory/constitution.md`** — its Development Workflow and Quality Gates section must be amended for this feature to be coherent. The amendment is part of this feature's change, not a follow-up.
+- **`.specify/memory/constitution.md`** — its Development Workflow and Quality Gates section must be amended for this feature to be coherent, retiring both halves of "There is no test runner and no linter" and restating the ten gates as checks the suite executes. The amendment is part of this feature's change, not a follow-up.
 - **`CLAUDE.md` and `docs/design-notes.md`** — both state that there is no test runner and both describe the throwaway-harness practice; both are updated in the same change.
 - **The staged engine, schema bundle and station index** — all three are gitignored and produced by the existing setup scripts. The suite depends on those scripts continuing to stage them.
 - **The existing automatic check workflow** — the suite runs alongside the consumer-register check that already runs on every push and pull request.
+- **A browser-like environment** — needed for the recorded invariants whose subject sits in an interface module. Development tooling only; it reaches no reader.
 - **The recorded invariants themselves** — the suite's scope is defined by what `CLAUDE.md` currently records. An invariant that is missing from that list will be missing from the suite.
