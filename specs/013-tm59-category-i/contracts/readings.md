@@ -70,6 +70,21 @@ if (pairings !== 78 || refusedPairings !== 66) throw …
 Six sweepable priced faces × thirteen quantities. Twelve draw, as before; the twelve new
 pairings are all refused, because neither new quantity declares `movedBy`.
 
+### Load-time invariant added: a target's metric against its category (I2)
+
+Lives here rather than in `schemes.js`, which is where a reader would first look for it: this
+module reads `PRESETS` from `schemes.js`, so `schemes.js` cannot read `QUANTITY_BY_ID` back
+without closing a cycle. Both sides are in hand here instead, beside the assertion above that
+already holds a metric to a declared reading.
+
+Throws unless, for every `Target` whose `metric` names a declared quantity:
+
+- the quantity declares a category → `target.category` is that same instance;
+- the quantity declares none → `target.category` is `null`.
+
+The message names the target, the quantity, and both categories, so it says which
+declaration to edit.
+
 ---
 
 ## `src/survey.js`
@@ -145,15 +160,11 @@ Still filtered on `Preset.kind === 'standard'`, still called as
 each category's own targets for each category's own reading, which is the whole of the
 routing change.
 
-### Load-time invariant added: a target's metric against its category (I2)
+### I2, the invariant this re-pointing wants, is not here
 
-Throws unless, for every `Target` whose `metric` names a declared quantity:
-
-- the quantity declares a category → `target.category` is that same instance;
-- the quantity declares none → `target.category` is `null`.
-
-The message names the target, the quantity, and both categories, so it says which
-declaration to edit.
+It checks these two declarations against `QUANTITY_BY_ID`, so it lives in `src/study.js`
+instead — see that module's section above — because `schemes.js` reads `PRESETS` at its own
+foot and cannot read the roster back without closing a cycle.
 
 ---
 

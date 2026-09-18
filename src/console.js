@@ -98,6 +98,7 @@ const SUMMARY = Object.freeze(
       note: 'Note',
       channel: 'Background',
       reading: 'Method',
+      category: 'Who this category is for',
       unclosed: 'Why it does not close',
     }).map(([key, text]) => [key, withinBudget(BUDGETS.SUMMARY, `console fold summary ${key}`, text)]),
   ),
@@ -1935,6 +1936,20 @@ export function mountConsole({
       el('span', 'study-quantity-unit', selectedOffer.unitNow),
     );
     details.append(summary);
+    // Which dwelling the chosen reading answers, one press down beside it —
+    // the study card's half of what `categoriesSaid` already states in place
+    // on the survey's lede. Both categories publish the same limit, so this is
+    // the only place on the card that says which one a curve was swept for.
+    if (selected.category) {
+      details.append(
+        fold(
+          `study-quantity-category:${key}`,
+          SUMMARY.category,
+          { label: `What ${selected.category.label} presumes` },
+          el('p', 'study-quantity-presumes', selected.category.presumes),
+        ),
+      );
+    }
 
     const choices = el('fieldset', 'study-quantity-choices');
     choices.append(el('legend', 'sr-only', 'What every study plots'));

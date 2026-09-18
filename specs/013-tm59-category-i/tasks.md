@@ -307,5 +307,15 @@ copy work the previous session's own notes already named and left open; the othe
 design-document location that drifted from the code that implements it, for a documented
 and sound reason.
 
-- [ ] T043 State what the selected category presumes beside the chosen reading on the study card's quantity chooser (`studyQuantityChooser` in `src/console.js:1927-1968`), the way `categoriesSaid` already states it on the survey's `#survey-lede` (`src/main.js:9650-9658`, `11900-11912`) — through `fold()`, off `Category.presumes`, inside the `SUMMARY` word budget, never a second transcription and never on hover — completing what T029 built for the survey only per FR-005 (partial)
-- [ ] T044 Correct `data-model.md`'s and `contracts/readings.md`'s I2 sections, which state the target-against-category invariant is "added at load in `src/schemes.js`", to say it lives in `src/study.js:969-980` instead, with the import-cycle reason already given in that code's own comment (`schemes.js` reading `QUANTITY_BY_ID` back through `study.js`'s read of `PRESETS` would close a cycle) per plan.md Project Structure (contradicts)
+- [X] T043 State what the selected category presumes beside the chosen reading on the study card's quantity chooser (`studyQuantityChooser` in `src/console.js:1927-1968`), the way `categoriesSaid` already states it on the survey's `#survey-lede` (`src/main.js:9650-9658`, `11900-11912`) — through `fold()`, off `Category.presumes`, inside the `SUMMARY` word budget, never a second transcription and never on hover — completing what T029 built for the survey only per FR-005 (partial)
+- [X] T044 Correct `data-model.md`'s and `contracts/readings.md`'s I2 sections, which state the target-against-category invariant is "added at load in `src/schemes.js`", to say it lives in `src/study.js:969-980` instead, with the import-cycle reason already given in that code's own comment (`schemes.js` reading `QUANTITY_BY_ID` back through `study.js`'s read of `PRESETS` would close a cycle) per plan.md Project Structure (contradicts)
+
+**T043, driven live**: added `SUMMARY.category` ("Who this category is for", 5 words) and a
+`fold()` in `studyQuantityChooser` off `selected.category.presumes`, appended right after the
+chooser's own `<summary>`. Driven against the real page (weather attached over `/onebuilding`,
+Boston-Logan Intl AP; Gains patched to Home office; a 21-run annual sweep of Glazing S) rather
+than reasoned from the diff: selecting `tm59aI` opens a fold reading "Who this category is
+for" / aria-label "What Category I presumes" / body "Dwellings for thermally sensitive and
+fragile people…"; switching to `tm59a` re-letters it to Category II's own presumption; switching
+to the no-category `tm59c` removes the fold entirely (`foldCount: 0`). At 390 px, with the fold
+open, `scrollWidth − clientWidth` reads 0. No page error at any step.

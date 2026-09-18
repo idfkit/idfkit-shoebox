@@ -166,7 +166,12 @@ Over `quantity.criterion` and `quantity.category`, for every criterion `CRITERIA
 feature fixes); a criterion offered at a category the method does not state; a
 category-free criterion duplicated per category. Answers FR-001, FR-008 and FR-017.
 
-### I2 — a target's metric against its category (`src/schemes.js`, at load)
+### I2 — a target's metric against its category (`src/study.js`, at load)
+
+Lives in `study.js` rather than `schemes.js`: this module reads `PRESETS` from
+`schemes.js`, so `schemes.js` cannot read `QUANTITY_BY_ID` back without closing a cycle.
+Both sides are in hand here, beside the assertion that already holds a metric to a
+declared reading.
 
 For every `Target` whose `metric` names a declared quantity:
 
