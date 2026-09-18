@@ -120,7 +120,7 @@ import {
   weatherFor,
 } from './weather.js';
 import {
-  dailyMeans,
+  dailyMeansCarried,
   holidayList,
   parseEpwCalendar,
   parseEpwStartDay,
@@ -171,9 +171,11 @@ import {
   COUNT_CATEGORY,
   CRITERION_BY_ID,
   PARTIAL_PERIOD,
+  Reading,
   SEASON,
   WeatherFile,
   clearedCount,
+  coversSeason,
   qualificationsFor,
   readCriterionA,
   readCriterionB,
@@ -3788,6 +3790,33 @@ desk = mountConsole({
  */
 let sitePicked = null;
 
+/**
+ * Whether a source's own records run 1 January to 31 December.
+ *
+ * The question every reading that wants a year asks, and it is asked of the
+ * *records* rather than of the `DATA PERIODS` header, because `periodCovered`
+ * reads the ends off the data for exactly this: a file truncated mid-download
+ * declares a year and carries nine months of one.
+ */
+const wholeYear = (period) =>
+  period.from.month === 1 && period.from.day === 1 && period.to.month === 12 && period.to.day === 31;
+
+/**
+ * The stretch a weather file covers, in the sheet's own words.
+ *
+ * `1 Jun – 31 Aug`, and the interval beside it where the file is not hourly —
+ * four records an hour is a fact about the file the reader cannot see anywhere
+ * else, and it is the difference between 8,760 rows and 35,040. A whole hourly
+ * year says `whole year` rather than `1 Jan – 31 Dec`, because a reader reading
+ * a sub-line wants the answer and not the arithmetic behind it.
+ */
+const periodSaid = (period) => {
+  const said = wholeYear(period)
+    ? 'whole year'
+    : `${period.from.day} ${MONTHS[period.from.month - 1]} – ${period.to.day} ${MONTHS[period.to.month - 1]}`;
+  return period.perHour === 1 ? said : `${said}, ${period.perHour} records an hour`;
+};
+
 function renderSiteSub() {
   if (!sitePicked) return;
   const source = sitePicked;
@@ -3813,6 +3842,18 @@ function renderSiteSub() {
         // A station is one of five samples of a site and the flavour is which;
         // a file is itself, and its name is the only honest label for it.
         source.kind === 'station' ? `TMYx ${source.label}` : source.label,
+        // What the file actually carries, off its own first and last record
+        // (FR-010). Lettered for every attached file, including the ordinary
+        // whole year — a reader assessing against a purchased DSY needs to see
+        // that this page read its extent rather than assumed one. For a station
+        // it is lettered only where it is *not* a whole hourly year, which means
+        // an archive that arrived truncated: onebuilding's are years, the
+        // flavour above already says which, and a `1 Jan – 31 Dec` on every
+        // station line is a word the reader has to step over to reach the ones
+        // that matter.
+        source.kind === 'file' || !wholeYear(source.period) || source.period.perHour !== 1
+          ? periodSaid(source.period)
+          : null,
         // Measured off the file's own hours or published by the index, and the
         // reading says which -- a figure this page computed and a figure it is
         // repeating are not the same claim.
@@ -3842,6 +3883,14 @@ function renderSiteSub() {
 function sourceDegreeDays(source) {
   const days = source.degreeDays;
   if (!days) return '';
+  // No counts and a sentence saying why, which is what a file cut to a season
+  // carries: a degree-day total is a year's, and 153 days of one summed anyway
+  // would read as an extraordinarily mild climate beside a published figure
+  // taken over twelve months. Lettered in place of the figure rather than
+  // dropped, on the rule that missing renders as an em dash with its reason —
+  // the counts simply vanishing from this line is indistinguishable from a
+  // reading nobody asked for.
+  if (days.reason) return `— HDD18 · CDD10: ${days.reason}`;
   // Rounded, because a degree day is a count of degree-days and the index
   // publishes it as one. Summed over 365 daily means it comes out with a
   // fraction on it -- `2,812.204 HDD18` is four digits of precision this
@@ -4654,6 +4703,9 @@ function attachClimate(source, { sizing = 'No', studyContext = null, conditions 
   // holding the old one alive until the next solve keeps a megabyte of the
   // departed climate in the cache for no reading at all.
   meanCache = null;
+  // And the extent with it, on the same identity and for the same reason: 1 May
+  // to 30 September is a fact about the file that just left.
+  periodCache = null;
 
   // The whole climate arrives together: the year on the EPW, the design days
   // and the location on the DDY. Denver's come out, this station's go in.
@@ -4766,16 +4818,27 @@ function attachClimate(source, { sizing = 'No', studyContext = null, conditions 
   // not an annual run and must not be lettered as one.
   syncRunSub();
   statusEl.className = 'status';
+  // What the run covers — or, where the file cannot cover it, what the *file*
+  // does. `runHours()` is the desk's calendar and says nothing about the year
+  // behind it, so on a file cut to a season it was lettering 8,760 hours over a
+  // file holding 2,208: a number that is true of the Run strip and of nothing
+  // that can be solved. The file's own extent replaces it rather than joining
+  // it, because two periods in one sentence is the reader deciding which one the
+  // readings came from, and because the block has a 40-word budget to keep.
+  const covers =
+    source.kind === 'file' && !wholeYear(source.period)
+      ? `it covers ${periodSaid(source.period)}, and the run’s other months have no weather to solve`
+      : `the run covers ${hours} hours`;
   statusEl.textContent =
     sizing === 'Yes'
-      ? `${sourceName(source)} attached, design conditions and all — the run covers ${hours} hours, sizing days included.`
+      ? `${sourceName(source)} attached, design conditions and all — ${covers}, sizing days included.`
       : conditions
-        ? `${sourceName(source)} attached, design conditions and all — the run covers ${hours} hours, with the sizing days skipped.`
+        ? `${sourceName(source)} attached, design conditions and all — ${covers}, with the sizing days skipped.`
         // Said plainly rather than left for the reader to notice the datum lines
         // missing: a file with no DDY beside it is a complete climate for a
         // year and no climate at all for a design day, and those are two
         // different things to know about the desk you are now on.
-        : `${sourceName(source)} attached — the run covers ${hours} hours. No DDY came with it, so the desk has no design days.`;
+        : `${sourceName(source)} attached — ${covers}. No DDY came with it, so the desk has no design days.`;
   syncAuto();
   markStale();
   // Filed on the attach itself, wherever it came from: a reader arriving on a
@@ -5521,24 +5584,70 @@ const declaredWeather = (epw) => (epw ? readLocation(epw).declares : null);
  *
  * A file that cannot produce a running mean is **refused with its reason**
  * rather than seeded from a guess. A leap year, a file split into several data
- * periods, a record missing from the middle of April: `dailyMeans` and
+ * periods, a record missing from the middle of April: `dailyMeansCarried` and
  * `runningMean` each throw naming the day or the record they could not read,
  * and that sentence rides into criterion a's margin cell, which is the one
  * place on the page a reader can act on it. Criteria b and c need no running
  * mean at all — their thresholds are fixed — and go on reading.
+ *
+ * **`dailyMeansCarried`, not `dailyMeans`**, and the difference is the whole of
+ * how a part-year file is treated here. `dailyMeans` refuses anything short of
+ * 365 days, which is the contract an annual bill needs and is wrong for this
+ * one: `runningMean` needs 23 April to 30 September and nothing else, and it
+ * checks exactly that span before it computes anything, naming the first day it
+ * is missing. So a file carrying 23 April onwards produces the same comfort line
+ * a whole year would, character for character, and a file starting on 1 May is
+ * refused by the day it lacks rather than by a count of the days it has — which
+ * is the sentence a reader can act on, since 23 April is not a date anybody
+ * would guess was load-bearing.
  *
  * `source` is the LOCATION record's own fourth field, `TMYx.2009-2023` and the
  * like, carried into the `RunningMean` so the sheet can letter what the line
  * was built from in the file's own words rather than in ours.
  */
 let meanCache = null;
+
+/**
+ * The stretch the captured weather file covers, cached on its identity.
+ *
+ * Its own cache beside the comfort line's, and cached for the same measured
+ * reason: `periodCovered` splits the whole 1.6 MB file to reach its first and
+ * last record, which is the expensive half of `dailyMeans` for two dates, and
+ * the criteria ask this once per solve.
+ *
+ * It is read off the **captured** EPW rather than off `weatherSource.period`,
+ * which holds the same dates for the file now attached. That is the discipline
+ * every other reading in `readTm59` keeps: a file attached while an 8,760-hour
+ * run was in flight would otherwise have these readings describing one climate's
+ * extent over another climate's hours, which is the mismatch the capture exists
+ * to prevent.
+ *
+ * A file whose period cannot be read at all lands as `null`. Nothing on the
+ * attach path can produce one — the gate reads the period before it builds a
+ * source — so this is the state of a caller that has an EPW from somewhere else,
+ * and a null period asks nothing of the criteria rather than asserting they are
+ * covered.
+ */
+let periodCache = null;
+function periodFor(epw) {
+  if (!epw) return null;
+  if (periodCache?.epw !== epw) {
+    try {
+      periodCache = { epw, period: periodCovered(epw) };
+    } catch {
+      periodCache = { epw, period: null };
+    }
+  }
+  return periodCache.period;
+}
+
 function runningMeanFor(epw) {
   if (!epw) return { epw: null, mean: null, absence: ABSENCE.weather };
   if (meanCache?.epw !== epw) {
     try {
       meanCache = {
         epw,
-        mean: runningMean(dailyMeans(epw), declaredWeather(epw)?.source ?? null),
+        mean: runningMean(dailyMeansCarried(epw), declaredWeather(epw)?.source ?? null),
         absence: null,
       };
     } catch (error) {
@@ -5577,6 +5686,46 @@ function runningMeanFor(epw) {
  * question that cannot have changed is exactly what `lastOutcome` exists to
  * stop.
  */
+/**
+ * The same readings, with a file that cannot reach the assessment period
+ * answering for the season in its own terms.
+ *
+ * `ABSENCE.season` is the run's: months unticked on the Run strip, and the strip
+ * is where it is fixed. A file cut to 1 January – 30 April produces exactly the
+ * same blank — no hour of the period in the ESO, nothing to divide — and sending
+ * that reader to the Run strip sends them to a control whose months are already
+ * ticked, with nowhere left to look. So where the file itself stops short of
+ * 1 May – 30 September, the sentence becomes the one that names a file (FR-014),
+ * and the reading is a stated absence rather than a count taken over the weeks
+ * that happened to be in there.
+ *
+ * Done here rather than inside `tm59.js`'s readers because they are handed an
+ * ESO and the file's extent is not in one. The sentence is still the
+ * declaration's — `ABSENCE.fileSeason` sits beside `ABSENCE.season` in the module
+ * that owns both the period and the words for it — and only which of the two a
+ * reading carries is decided out here, where the file is.
+ *
+ * Only `ABSENCE.season` is replaced. A reading blank for want of an operative
+ * temperature or of an occupant is blank for a reason of its own, and the file's
+ * months have nothing to say about it.
+ */
+function overFileExtent(readings, epw) {
+  const period = periodFor(epw);
+  if (!period || coversSeason(period)) return Object.freeze(readings);
+  return Object.freeze(
+    readings.map((reading) =>
+      reading.absence === ABSENCE.season
+        ? new Reading({
+            criterion: reading.criterion,
+            category: reading.category,
+            absence: ABSENCE.fileSeason,
+            coverage: null,
+          })
+        : reading,
+    ),
+  );
+}
+
 function readTm59(eso, snapshot, patched, epw) {
   // The value the occupancy schedule takes when nobody is there, which is a
   // property of the schedule `applyGains` wrote rather than a constant: 0.1
@@ -5601,21 +5750,27 @@ function readTm59(eso, snapshot, patched, epw) {
   }
   readings.push(readCriterionC(eso, floor));
 
+  // Once, and everything below reads the result. The count and the coverage are
+  // taken off these readings, so taking them off the pre-override list would
+  // have the block counting cleared criteria the rows beside it letter as
+  // absent — the two halves of one board disagreeing about the same run.
+  const over = overFileExtent(readings, epw);
+
   return {
-    readings,
+    readings: over,
     // A count of two, never a verdict, and it throws rather than quietly
     // counting over one criterion if a reading in scope is missing.
-    count: clearedCount(readings),
+    count: clearedCount(over),
     // Taken off a reading rather than by walking the series a sixth time. Any
     // reading that has one has the same one — coverage is a property of the
     // run, not of the criterion — and a run that could not answer anything has
     // none to give, which is the null the rows letter around.
-    coverage: readings.find((r) => r.coverage)?.coverage ?? null,
+    coverage: over.find((r) => r.coverage)?.coverage ?? null,
     // The line the count's own category was judged against. Each criterion a
     // row letters its own — Category I's runs 1 K below Category II's, and one
     // block-level figure cannot be both — so this is here for what reads the
     // block as a whole rather than a row of it.
-    line: readings.find((r) => r.criterion === CRITERION_BY_ID.a && r.category === COUNT_CATEGORY)
+    line: over.find((r) => r.criterion === CRITERION_BY_ID.a && r.category === COUNT_CATEGORY)
       ?.line ?? null,
     // The daylight saving period beside what the file declares about itself,
     // because the two come off different records and the qualification needs
@@ -5790,6 +5945,11 @@ const TM59_BLOCK = new Map([
   // else would take these lines out of the count behind the picker offer that
   // is the one press that fixes them.
   [ABSENCE.weather, 'year'],
+  // A file that stops before the period begins is the same blockage as no file
+  // at all — what clears it is another year, reached from the same picker — and
+  // deliberately not `'season'`, whose press is the Run strip and which on this
+  // desk has nothing left to change.
+  [ABSENCE.fileSeason, 'year'],
 ]);
 
 function tm59Block(target) {
@@ -5930,6 +6090,11 @@ function saveScheme() {
     hash: schemeHash() || 'v1',
     savedAt: Date.now(),
     station: $('t-location').textContent,
+    // Beside the place, never instead of it. A DSY1 and a TMYx for the same
+    // airport letter the same title block, and which of the two a scheme was
+    // solved against is the difference between a design summer and a typical
+    // one — the difference the file was bought for.
+    file: weatherSource?.kind === 'file' ? weatherSource.label : null,
     label: shapeLabel(params),
     measure: measureNow(),
   });
@@ -5949,6 +6114,29 @@ function saveScheme() {
 
 const sameStation = (a, b) =>
   (a?.wmo ?? null) === (b?.wmo ?? null) && (a?.window ?? null) === (b?.window ?? null);
+
+/**
+ * Whether a decoded scheme names the climate this desk is on.
+ *
+ * Both tokens, never one. The station half was the whole test and it read as
+ * though it were: a scheme kept under an attached file carries `station: null`,
+ * a desk on an attached file answers `stationToken()` with `null` too, and the
+ * two nulls matched — so a scheme solved against a DSY1 restored *in place*
+ * against whatever climate happened to be attached, a different purchased file
+ * or none at all, and the sliders moved and the numbers came back somebody
+ * else's. Nothing on the sheet said so, because nothing was wrong with the
+ * desk: it was a real building solved against a real year, and only the stored
+ * hash knew it was the wrong one. Constitution II is the rule it broke — one
+ * hash, one set of numbers, on any machine — and a silent breach of it is worse
+ * than a refusal a reader can read.
+ *
+ * The fingerprint is the comparison rather than the declaration. Two years of
+ * one purchase describe themselves identically in `wfd`; the fingerprint is
+ * over the bytes and is the only thing that tells them apart.
+ */
+const sameClimate = (a, b) =>
+  sameStation(a.station, b.station) &&
+  (a.file?.fingerprint ?? null) === (b.file?.fingerprint ?? null);
 
 /**
  * Put a kept scheme back on the desk.
@@ -5975,9 +6163,16 @@ function restoreScheme(scheme) {
     return;
   }
 
-  if (!sameStation(state.station, stationToken())) {
+  if (!sameClimate(state, { station: stationToken(), file: fileToken() })) {
     statusEl.className = 'status';
-    statusEl.textContent = `Restoring ${scheme.name}, which names another station — reloading to fetch its weather…`;
+    // Through the link either way, and the sentence says which errand the
+    // reload is on. A station is fetched; a file cannot be — the link path
+    // re-attaches it from this browser where it is kept and asks for it in the
+    // file's own words where it is not, which is the one place that state is
+    // written and the reason this is not a second copy of it.
+    statusEl.textContent = state.file
+      ? `Restoring ${scheme.name}, which was solved against another weather file — reloading to ask for it…`
+      : `Restoring ${scheme.name}, which names another station — reloading to fetch its weather…`;
     history.replaceState(null, '', `#${scheme.hash}`);
     location.reload();
     return;
@@ -7229,6 +7424,10 @@ function renderShelf() {
     sub.textContent = [
       scheme.label,
       scheme.station,
+      // The file, where one was attached when this was kept. It is lettered
+      // after the place because the place is what the reader recognises the
+      // scheme by and the file is which year of it.
+      scheme.file,
       scheme.measure.solved
         ? `${scheme.measure.annual ? 'annual' : 'design day'} · ${scheme.measure.hours.toLocaleString('en-US')} h`
         : 'never solved',

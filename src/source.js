@@ -20,7 +20,7 @@
  * `import.meta.env.BASE_URL`, which is a `TypeError` the moment Node evaluates
  * it, so nothing under `weather.js` can be reached from a harness.
  */
-import { dailyMeans, readLocation } from './epw.js';
+import { assertCarriesItsPeriod, dailyMeansCarried, periodCovered, readLocation } from './epw.js';
 import { designConditionsFrom } from './model.js';
 
 /* ── where the building is ────────────────────────────────────────────── */
@@ -129,6 +129,28 @@ export class DegreeDays {
       );
     }
     this.measured = declared.measured;
+    // Why there is no count, in the words of whatever could not take one. A
+    // source with both counts absent and nothing to say about it is the em dash
+    // with no reason beside it that Principle IV exists to forbid, and this is
+    // the field that carries the sentence to the reading rather than leaving the
+    // figure to vanish out of the sub-line.
+    if (!('reason' in declared)) {
+      throw new Error(
+        'DegreeDays: no reason was passed. A pair that was counted passes null; a pair that could not be ' +
+          'counted passes the sentence saying why, because a figure that is simply absent from the line is ' +
+          'indistinguishable from one nobody asked for',
+      );
+    }
+    if (declared.reason !== null && typeof declared.reason !== 'string') {
+      throw new Error(`DegreeDays: reason arrived as ${typeof declared.reason}, and it is lettered as written`);
+    }
+    if (declared.reason !== null && (this.hdd18 !== null || this.cdd10 !== null)) {
+      throw new Error(
+        'DegreeDays: a reason was passed beside a count. The reading would then letter a figure and a ' +
+          'sentence saying there is none, and a reader cannot be told both',
+      );
+    }
+    this.reason = declared.reason;
     Object.freeze(this);
   }
 }
@@ -142,36 +164,57 @@ export class DegreeDays {
  * already paid 3.2 ms for, so the figure is free and every one of its inputs is
  * traceable to an hour in the reader's own file.
  *
- * Refuses anything that is not the series `dailyMeans` returns, naming what
- * arrived. A short series is the case worth catching: 364 means summed to an
- * HDD18 would read as a mild year rather than as a broken one, and no shape in
- * the figure shows the difference.
+ * **A year, or no counts and the sentence saying why.** Both are published
+ * annual totals — `HDD18` is the heating degree days *of a year* and the station
+ * index's figure it stands beside is one — so a file cut to the overheating
+ * season has no such total to offer and this returns the absence rather than a
+ * sum over 153 days. Summed anyway it would read as an extraordinarily mild
+ * climate: the 212 uncounted days contribute nothing, the figure comes out low
+ * and plausible, and it would sit in the sub-line beside a published one taken
+ * over a whole year as though the two were comparable.
+ *
+ * It is an absence and not a throw because a part-year file is a file this desk
+ * admits (the attach gate reads what it carries), and the one reading it cannot
+ * support must not take the file down with it. A `null` in the series is a day
+ * the file does not carry; anything else non-finite is a broken reading and is
+ * still refused by its day, because that is a fault rather than an extent.
  */
 export function degreeDaysOf(means) {
   if (!Array.isArray(means)) {
     throw new Error(
-      `degreeDaysOf was handed ${means === null ? 'null' : typeof means}, not the 365 daily means dailyMeans returns`,
+      `degreeDaysOf was handed ${means === null ? 'null' : typeof means}, not the 365 daily means dailyMeansCarried returns`,
     );
   }
   if (means.length !== 365) {
     throw new Error(
-      `degreeDaysOf was handed ${means.length} daily means, not the 365 of a year. ` +
-        'A degree-day total over a short series reads as a mild climate rather than as a missing one',
+      `degreeDaysOf was handed ${means.length} daily means, not the 365 slots of a year. ` +
+        'A day the file does not carry is a null in its own place, never a shorter array',
     );
   }
   let hdd18 = 0;
   let cdd10 = 0;
+  let carried = 0;
   for (let day = 0; day < 365; day += 1) {
     const mean = means[day];
+    if (mean === null) continue;
     if (!Number.isFinite(mean)) {
       throw new Error(
         `day ${day + 1} of the daily means reads ${JSON.stringify(mean)}, which is not a temperature`,
       );
     }
+    carried += 1;
     if (mean < 18) hdd18 += 18 - mean;
     if (mean > 10) cdd10 += mean - 10;
   }
-  return new DegreeDays({ hdd18, cdd10, measured: true });
+  if (carried !== 365) {
+    return new DegreeDays({
+      hdd18: null,
+      cdd10: null,
+      measured: true,
+      reason: `this file carries ${carried} of the 365 days, and a degree-day total is a year's`,
+    });
+  }
+  return new DegreeDays({ hdd18, cdd10, measured: true, reason: null });
 }
 
 /* ── the source ───────────────────────────────────────────────────────── */
@@ -196,6 +239,12 @@ const KINDS = ['station', 'file'];
  * and a second copy of that grammar here is precisely the drift that would have
  * the chip and the sub-line disagreeing about the same station.
  *
+ * `period` is `periodCovered`'s answer over this source's own EPW, carried here
+ * rather than re-read at the point of lettering. It is not a cache of a cheap
+ * thing: reading it splits the whole 1.6 MB file, and the site sub-line that
+ * letters it is redrawn on every unit switch. Carried on the source it is read
+ * once, at the attach, which is also the one moment it can have changed.
+ *
  * There is deliberately no `token`. What the link carries is built where the
  * link is built: `stationToken()` reads `flavorWindow()`, which lives under
  * `weather.js` and cannot be imported from Node, and this module's
@@ -213,6 +262,7 @@ export class WeatherSource {
       'fingerprint',
       'climateZone',
       'degreeDays',
+      'period',
       'stem',
     ];
     for (const field of fields) {
@@ -403,7 +453,16 @@ export function sourceFromStation(station, files, label) {
       hdd18: Number.isFinite(station.hdd18) ? station.hdd18 : null,
       cdd10: Number.isFinite(station.cdd10) ? station.cdd10 : null,
       measured: false,
+      // No sentence: an index row with no HDD18 is a row onebuilding did not
+      // publish one in, which the sub-line already letters by leaving the figure
+      // out. The reason field is for a count this page tried to take and could
+      // not, and a station's counts are not this page's to take.
+      reason: null,
     }),
+    // Off the archive's own EPW, the same reader the file path uses. An archive
+    // truncated in the proxy is the case it catches, and it is the same fact
+    // about a station's year as about a reader's file.
+    period: periodCovered(files.epw),
     // What `main.js` has always taken the bundle's weather member name from.
     stem: station.url.split('/').pop().replace(/\.zip$/i, ''),
   });
@@ -436,15 +495,25 @@ const TEXT_PROBE = 4096;
  * A file the reader attached, gated and typed, or a rejection in the sentence
  * whichever parser wrote it.
  *
- * The gate is the parser that already exists (research R12). `dailyMeans`
- * refuses, by name and with the day or record named, exactly the files this desk
- * cannot run — more than one data period, a leap year, a record too short to
- * reach its dry bulb, a date that is not a date, a dry bulb outside the EPW
- * dictionary's bounds, a day missing records — and writing a second validator
- * here would be a second opinion about what a valid file is, which would
- * disagree with the first the day either changed. So its throw is the refusal,
- * unwrapped: wrapping it would lose the record number or the day, which is the
- * only part of the sentence the reader can act on.
+ * The gate is the parser that already exists (research R12).
+ * `dailyMeansCarried` refuses, by name and with the day or record named, exactly
+ * the files this desk cannot run — more than one data period, a leap year, a
+ * record too short to reach its dry bulb, a date that is not a date, a dry bulb
+ * outside the EPW dictionary's bounds, a day missing *some* of its records — and
+ * writing a second validator here would be a second opinion about what a valid
+ * file is, which would disagree with the first the day either changed. So its
+ * throw is the refusal, unwrapped: wrapping it would lose the record number or
+ * the day, which is the only part of the sentence the reader can act on.
+ *
+ * **A file covering less than a year is admitted**, and that is the one thing the
+ * gate deliberately does not refuse. `dailyMeans`'s whole-year contract belongs
+ * to the comfort line, which recurses from 23 April and genuinely cannot work
+ * without one; the desk can letter a title block, run a summer and read a
+ * criterion over a seasonal DSY, and refusing the file would take all of that
+ * with it to protect the annual bill. So the extent comes off `periodCovered`,
+ * the days come off `dailyMeansCarried`, and `assertCarriesItsPeriod` refuses a
+ * day missing from inside the stretch the file itself claims — an extent is a
+ * fact about a file and a hole is a fault in one.
  *
  * `readLocation` runs first and is **not** part of the gate. A file with no
  * LOCATION record declares nothing about itself, and that is a statement the
@@ -498,7 +567,18 @@ export async function sourceFromFile({ name, bytes, ddyText = null, schema = nul
   // file is entitled to make rather than a reason to refuse it.
   const { declares, place } = readLocation(text);
   // Any throw from here is the refusal, in the parser's own words.
-  const means = dailyMeans(text);
+  //
+  // What the file carries, never "does it carry a year". A file cut to 1 May – 30
+  // September is the file CIBSE sells and the file TM59 is read over, and the
+  // first cut of this gate called `dailyMeans` and refused it whole — which threw
+  // away the one reading it *could* answer in order to protect the two it could
+  // not. So the extent is read, the days are read against it, and a day missing
+  // from inside the file's own stretch is still a refusal, because that is a
+  // fault rather than a shorter file. Every reading that wants a year then
+  // refuses itself, by name, in the sentence the thing that wanted it wrote.
+  const period = periodCovered(text);
+  const means = dailyMeansCarried(text);
+  assertCarriesItsPeriod(means, period);
 
   if (ddyText !== null) {
     if (!schema) {
@@ -524,6 +604,7 @@ export async function sourceFromFile({ name, bytes, ddyText = null, schema = nul
     // Null in the model; an em dash only where it is lettered.
     climateZone: null,
     degreeDays: degreeDaysOf(means),
+    period,
     stem: stemOf(name),
   });
 }

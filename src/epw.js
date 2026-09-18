@@ -270,7 +270,13 @@ const monthNumber = (word) =>
 const short = (word) => word.slice(0, 3);
 
 /**
- * The 365 daily mean dry-bulb temperatures the file carries.
+ * The daily mean dry-bulb temperature of every day the file carries, and `null`
+ * for each of the 365 it does not.
+ *
+ * Always 365 slots, so a day is always at its own index and no caller has to
+ * hold an offset: the array is the calendar, and a `null` in it is the file
+ * saying it has no records for that day. `dailyMeans` below is the same series
+ * refused unless every slot is filled, which is what the comfort line needs.
  *
  * The comfort line of TM52 equation 2.2 is a recursion over daily means, and
  * the seed of equation 2.3 reaches back to 23 April — a week before the
@@ -301,7 +307,7 @@ const short = (word) => word.slice(0, 3);
  * a day out for the whole season, and nothing in the shape of the curve shows
  * it.
  */
-export function dailyMeans(epw) {
+export function dailyMeansCarried(epw) {
   const lines = epw.split(/\r?\n/);
   const header = lines.findIndex((row) => /^DATA PERIODS\s*,/i.test(row));
   if (header === -1) {
@@ -394,8 +400,15 @@ export function dailyMeans(epw) {
   }
 
   const wanted = 24 * perHour;
-  const means = new Array(365);
+  const means = new Array(365).fill(null);
   for (let index = 0; index < 365; index += 1) {
+    // No records at all is a day this file does not carry, and that is a fact
+    // about its extent rather than a fault in it: a DSY cut to the overheating
+    // season carries 153 days and is the file the method asks for. **Some** of a
+    // day's records is a fault, and it is refused here as it always was — a mean
+    // over 23 of 24 hours is a temperature nobody measured, and nothing in the
+    // shape of the series shows which day it was taken over.
+    if (seen[index] === 0) continue;
     if (seen[index] !== wanted) {
       throw new Error(
         `this weather file carries ${seen[index]} of the ${wanted} records ${dayName(index)} needs,` +
@@ -403,6 +416,42 @@ export function dailyMeans(epw) {
       );
     }
     means[index] = sums[index] / wanted;
+  }
+  return means;
+}
+
+/**
+ * The same series, refused unless it is a whole year.
+ *
+ * The comfort line's caller, and the one contract every reading that recurses
+ * over the year is written against: 365 numbers or a sentence, never a short
+ * array. `runningMean` seeds from 23 April and recurses day by day to 30
+ * September with an eight-tenths memory, so a gap anywhere before the season
+ * carries into every day of it, and a series that is simply shorter would land
+ * the whole line a day out with nothing in the curve's shape showing it.
+ *
+ * Kept as its own function rather than as a flag on `dailyMeansCarried`, because
+ * the two answer different questions and both are asked. The gate in
+ * `source.js` asks what the file carries, so that a part-year file is admitted
+ * and only the readings its months cannot support are refused; the comfort line
+ * asks for a year, and gets this sentence when the file has not got one.
+ *
+ * The refusal names the extent rather than the first day it happened to miss.
+ * `carries 0 of the 24 records 1 January needs` is what a 1 May file used to be
+ * told, which reads as a broken file rather than a shorter one, and sends the
+ * reader looking for a corrupt record that is not there.
+ */
+export function dailyMeans(epw) {
+  const means = dailyMeansCarried(epw);
+  const carried = means.reduce((count, mean) => count + (mean === null ? 0 : 1), 0);
+  if (carried !== 365) {
+    const first = means.findIndex((mean) => mean !== null);
+    const last = means.findLastIndex((mean) => mean !== null);
+    throw new Error(
+      `this weather file carries ${carried} of the 365 days of a year` +
+        (first === -1 ? '' : ` — ${dayName(first)} to ${dayName(last)} —`) +
+        ' and a daily mean series recurses from 23 April, so it wants an unbroken one',
+    );
   }
   return means;
 }
@@ -510,6 +559,48 @@ function stamp(line, which) {
   }
   return Object.freeze({ month, day });
 }
+
+/**
+ * Refuses a file that is missing a day inside the stretch it says it covers.
+ *
+ * The half of the old whole-year gate that is still a fault rather than an
+ * extent. `dailyMeansCarried` returns `null` for a day it has no records for,
+ * which for a file cut to a season is most of the year and perfectly correct —
+ * but for a day sitting between that file's own first and last record it is a
+ * hole, and a hole is a broken file however short the file is. Left admitted,
+ * every reading taken over those months would be taken over a year with a day
+ * missing out of the middle of it, and nothing in any figure would show which.
+ *
+ * `period` is `periodCovered`'s own answer, so the two ends are the records'
+ * rather than the header's declared ones — which is the whole reason that
+ * function reads them off the data, and the difference between a file cut to a
+ * season and a file truncated mid-download.
+ *
+ * Throws naming the day and the stretch it sits inside. A leap day never reaches
+ * here: `dailyMeansCarried` refuses 29 February by its own sentence first.
+ */
+export function assertCarriesItsPeriod(means, period) {
+  const first = dayIndexOf(period.from);
+  const last = dayIndexOf(period.to);
+  // A file whose last stamp falls earlier in the year than its first is one that
+  // crosses the new year — December to February. Its covered set is two stretches
+  // rather than one, and reading it as `first..last` would call ten months of
+  // deliberate absence a hole.
+  const inside = (index) =>
+    first <= last ? index >= first && index <= last : index >= first || index <= last;
+
+  for (let index = 0; index < 365; index += 1) {
+    if (means[index] === null && inside(index)) {
+      throw new Error(
+        `this weather file runs from ${dayName(first)} to ${dayName(last)} and carries no record at all` +
+          ` for ${dayName(index)}, which is inside that`,
+      );
+    }
+  }
+}
+
+/** Which of the 365 days a `{ month, day }` stamp is, zero-based. */
+const dayIndexOf = ({ month, day }) => MONTH_STARTS[month - 1] + day - 1;
 
 /**
  * The day of the year each month begins at, zero-based, on a 365-day calendar.

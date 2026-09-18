@@ -1015,8 +1015,37 @@ export const ABSENCE = Object.freeze({
   // nine hours from 23:00, and a run ending at midnight on 30 September holds
   // all 153 days and not one complete night opening inside the period.
   night: 'run to the morning of 1 October for a complete night',
+  // Kept apart from `season` because the two send a reader to opposite ends of
+  // the sheet. `season` is a calendar with months unticked and the Run strip
+  // fixes it; this is a **file** that stops before the period begins, on a desk
+  // whose months are already ticked — told to "run some of May to September" the
+  // reader would go to the Run strip, find the months already there, and have
+  // nowhere left to look. Nothing on the Run strip can fix a file that has not
+  // got those months in it; another file can.
+  fileSeason: 'attach a file reaching 1 May to 30 September',
 });
 for (const [key, text] of Object.entries(ABSENCE)) withinBudget(BUDGETS.ABSENCE, `ABSENCE.${key}`, text);
+
+/**
+ * Whether the stretch a weather file carries reaches the whole assessment
+ * period, 1 May to 30 September.
+ *
+ * `period` is `periodCovered`'s `{ from, to }`, read off the file's first and
+ * last data record rather than off its `DATA PERIODS` header, which is what
+ * makes this a question about records and not about a declaration.
+ *
+ * Here rather than in `main.js` for the reason every date in this feature is
+ * here: the period is TM59:2026's, declared once as `SEASON` with the clause it
+ * comes from, and a second copy of 5 and 9 out in the sheet is the drift that
+ * declaration exists to prevent. What `main.js` holds is the file; what this
+ * module holds is what the method asks of one.
+ *
+ * A file whose last stamp falls earlier in the year than its first crosses the
+ * new year and covers no summer at all, which this answers correctly by
+ * arithmetic rather than by a case: 1 December is day 335 and is not ≤ day 121.
+ */
+export const coversSeason = (period) =>
+  dayNumber(period.from) <= dayNumber(SEASON.from) && dayNumber(period.to) >= dayNumber(SEASON.to);
 
 /**
  * Whether an hour counts as occupied, against the floor the applier wrote.

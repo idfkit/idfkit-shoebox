@@ -1545,12 +1545,23 @@ export class Measure {
  * honest.
  */
 export class Scheme {
-  constructor({ id, name, hash, savedAt, station = null, measure = null, label = null }) {
+  constructor({ id, name, hash, savedAt, station = null, file = null, measure = null, label = null }) {
     this.id = id;
     this.name = name;
     this.hash = hash;
     this.savedAt = savedAt;
     this.station = station; // the place name as it was lettered, for the row
+    // The weather file this was solved against, in the file's own words, or
+    // null for a scheme kept on a picked station or on the shipped climate.
+    //
+    // `station` alone cannot say it. It holds the *place* — `London, ENG, GBR`
+    // is what a DSY1 for Heathrow and a TMYx for Heathrow both letter — and two
+    // schemes reading the same city off different years are the pair a reader
+    // most needs told apart, since a DSY is a design summer and a TMYx is a
+    // typical one and the whole point of buying the first is that it is not the
+    // second. The fingerprint is in `hash` and is not lettered: sixteen
+    // characters of base64 name a file to the codec and nothing to a reader.
+    this.file = file;
     this.label = label; // the shape, in the sheet's own words
     this.measure = measure instanceof Measure ? measure : new Measure(measure ?? {});
     Object.freeze(this);
@@ -1563,6 +1574,7 @@ export class Scheme {
       hash: this.hash,
       savedAt: this.savedAt,
       station: this.station,
+      file: this.file,
       label: this.label,
       measure: { ...this.measure },
     };
