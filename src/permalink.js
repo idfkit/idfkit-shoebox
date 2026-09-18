@@ -90,12 +90,18 @@ const DEFAULTS_BY_VERSION = Object.freeze({ v1: DEFAULT_PARAMETERS });
 const MIGRATIONS = Object.freeze({});
 
 /**
- * Keys that are not parameters: the patch lists and the station. Declared
- * next to an assertion rather than a comment, so a future control key cannot
- * quietly collide with one — `controlFor` would route the collision to a
- * parameter and the link would mean two things at once.
+ * Keys that are not parameters: the patch lists, the station, and the weather
+ * file. Declared next to an assertion rather than a comment, so a future
+ * control key cannot quietly collide with one — `controlFor` would route the
+ * collision to a parameter and the link would mean two things at once.
+ *
+ * `wf` and `wfd` joined the list without a version bump, and the contract above
+ * is why: an added reserved key is the additive case. Every link already in the
+ * wild omits it, and an omitted `wf` means what it has always meant — that no
+ * weather file is wanted. Only a changed default, a renamed key or a narrowed
+ * range costs a version.
  */
-const RESERVED = Object.freeze(['in', 'out', 'stn', 'win', 'at', 'sty', 'sv']);
+const RESERVED = Object.freeze(['in', 'out', 'stn', 'win', 'at', 'sty', 'sv', 'wf', 'wfd']);
 for (const key of RESERVED) {
   if (ALL_KEYS.includes(key)) {
     throw new Error(`the reserved link key "${key}" collides with a control parameter`);
@@ -173,6 +179,20 @@ const PIN_KINDS = Object.freeze(['year', 'winter', 'summer']);
  */
 const encodePin = ({ kind, month, day, hour }) => `${kind}.${month}-${day}T${hour}`;
 
+/**
+ * An attached weather file's fingerprint, as `wf` carries it.
+ *
+ * Sixteen base64url characters — 96 bits of a SHA-256, taken over the file's
+ * records in `src/source.js`. The alphabet is the reason for the encoding:
+ * `A-Z a-z 0-9 - _` is exactly the set `URLSearchParams` leaves unescaped, so a
+ * fingerprint costs sixteen characters of address bar and not the forty-odd a
+ * percent-encoded digest would.
+ *
+ * Declared here beside the grammar it is checked against, so the length the
+ * encoder assumes and the length the decoder admits cannot drift apart.
+ */
+const FINGERPRINT_FORM = /^[A-Za-z0-9_-]{16}$/;
+
 // Built from `PIN_KINDS` rather than repeating the alternation, so the list of
 // kinds is stated once and a fourth environment kind cannot be admitted by the
 // grammar while the roster it is checked against still says three.
@@ -209,8 +229,22 @@ export { PIN_KINDS, encodePin, decodePin };
  * window matters: onebuilding publishes the same site under several 15-year
  * samples that disagree by up to 9 % on degree days, so a link that named only
  * the site would reproduce a different year than the one argued over.
+ *
+ * `file` is `{ fingerprint, declares }` for a weather file the reader attached
+ * from their own machine, or null. The file itself cannot ride here and must
+ * not: it is megabytes, and it is frequently licensed — not the sender's to
+ * redistribute. So the link carries a fingerprint of its contents, which is
+ * what decides whether the recipient is holding the same file, and the phrase
+ * the file uses about itself, which is what tells them which file to go and
+ * get. A recipient handed only a hash has been told that their file is wrong
+ * and not which file is right.
+ *
+ * A desk has one weather source, so `station` and `file` are never both
+ * written. Refused rather than silently preferring one, because a scheme
+ * claiming two climates is a caller bug and the address bar is the last place
+ * it should surface.
  */
-export function encodeState({ params, bypass, station = null, pin = null, quantity = null, studies = [], survey = null }) {
+export function encodeState({ params, bypass, station = null, file = null, pin = null, quantity = null, studies = [], survey = null }) {
   const pairs = new URLSearchParams();
   for (const key of ALL_KEYS) {
     // `String` rather than a display format: the display rounds, and a link
@@ -221,9 +255,23 @@ export function encodeState({ params, bypass, station = null, pin = null, quanti
     if (!channel.bypassable || bypass[channel.id] === DEFAULT_BYPASS[channel.id]) continue;
     pairs.append(bypass[channel.id] ? 'out' : 'in', channel.id);
   }
+  if (station && file) {
+    throw new Error('a desk cannot carry both a station and a weather file, and this one claims both');
+  }
   if (station) {
     pairs.append('stn', String(station.wmo));
     if (station.window) pairs.append('win', station.window);
+  }
+  if (file) {
+    if (!FINGERPRINT_FORM.test(file.fingerprint ?? '')) {
+      throw new Error(`"${file.fingerprint}" is not a weather-file fingerprint`);
+    }
+    pairs.append('wf', file.fingerprint);
+    // The file's own words, not a tidied version of them: `wfd` is lettering
+    // carried in a link and is never matched against, so nothing downstream
+    // depends on its shape and everything depends on it reading the way the
+    // file's own LOCATION record reads.
+    if (file.declares) pairs.append('wfd', file.declares);
   }
   // The pinned hour is a reading instruction, not a parameter: it reaches no
   // IDF object and starts no run. It rides on the link all the same, because a
@@ -492,13 +540,49 @@ export function decodeState(raw) {
     station = { wmo, window: win };
   }
 
+  // The weather file, read here with the other reserved keys and above
+  // `readValue`, for the reason the station is: the numeric regex in
+  // `readValue` runs before anything else, so a non-numeric key that reached it
+  // would be refused as "not a number" and the reader would be told the wrong
+  // thing about a perfectly good link.
+  //
+  // Three refusals, each whole, each in the shape `win` without `stn` already
+  // uses, because they are the same kind of error and a reader should not have
+  // to learn two vocabularies for it.
+  let file = null;
+  const fingerprint = pairs.get('wf');
+  const declares = pairs.get('wfd');
+  if (declares !== null && fingerprint === null) {
+    throw new Error('a weather file\u2019s declaration ("wfd") with no fingerprint ("wf") to match a file against');
+  }
+  if (fingerprint !== null) {
+    // A desk has one weather source. A link naming two cannot be honoured, and
+    // honouring half of it would load a station under a sentence asking for a
+    // file — the half-loaded city the picker's own refusal exists to prevent.
+    if (wmo !== null) {
+      throw new Error('a weather file ("wf") and a station ("stn") on one desk, and a desk has one weather source');
+    }
+    if (!FINGERPRINT_FORM.test(fingerprint)) {
+      throw new Error(`"${fingerprint}" is not a weather-file fingerprint`);
+    }
+    file = { fingerprint, declares };
+  }
+
   // A pin on the year needs a year to land in. Refused here rather than at
   // resolve time so the link fails as a link, whole and before anything is
   // loaded, which is the same treatment `win` without `stn` gets above.
+  //
+  // A weather file supplies a year exactly as a station does, so it satisfies
+  // this as a station does. The test is "is there a climate on this link",
+  // never "is there a station": written the other way, a link to a desk running
+  // an attached file and reading at one hour of it would be refused for the
+  // absence of a station it was never going to have.
   const at = pairs.get('at');
   const pin = at === null ? null : decodePin(at);
-  if (pin?.kind === 'year' && wmo === null) {
-    throw new Error('an hour pinned in the run period ("at") with no station ("stn") to supply one');
+  if (pin?.kind === 'year' && wmo === null && fingerprint === null) {
+    throw new Error(
+      'an hour pinned in the run period ("at") with no station ("stn") or weather file ("wf") to supply one',
+    );
   }
 
   let study = null;
@@ -578,7 +662,10 @@ export function decodeState(raw) {
     );
   }
 
-  const scheme = { params, bypass, station, pin };
+  // `file` is null wherever `station` is not, and the other way about: the
+  // refusal above is what lets every consumer take one of them without first
+  // deciding between them.
+  const scheme = { params, bypass, station, file, pin };
   if (study) {
     scheme.quantity = study.quantity;
     scheme.studies = study.controls;

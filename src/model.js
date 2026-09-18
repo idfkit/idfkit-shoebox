@@ -3211,12 +3211,49 @@ export function designConditionsFrom(text, schema) {
   return { location: carry(site), days: [winter.day, summer.day].map(carry) };
 }
 
+/**
+ * Put a place in the model, in place of the one standing there.
+ *
+ * Split out of the pair below because the two halves no longer arrive together.
+ * A station publishes its place and its design conditions in one DDY; a weather
+ * file attached from disk declares its place in its own LOCATION record and,
+ * unless a DDY was attached beside it, publishes no design conditions at all.
+ * The station path is unchanged: it still writes both, through
+ * `setDesignConditions`.
+ */
+export function setSiteLocation(doc, location) {
+  clear(doc, 'Site:Location');
+  doc.add('Site:Location', location.name, location.values);
+}
+
+/**
+ * Take the design days out, for a file that arrived without a DDY.
+ *
+ * This leaves a complete model, and the evidence is already in this file: the
+ * comment on the economizer's cooling flow limit in `applySystem` records that
+ * "Nothing here is autosized (the console does not run a sizing pass)" — which
+ * is why that limit is computed from the zone's volume rather than left for a
+ * sizing pass to find. No object on this desk asks for a sizing period, so a
+ * document with no `SizingPeriod:DesignDay` and
+ * `run_simulation_for_sizing_periods: 'No'` runs, and the whole cost of
+ * clearing them is the datum lines and the design-day readings themselves.
+ *
+ * What it exists for: a purchased EPW usually arrives on its own. The
+ * alternative to removing them is Denver's two design days standing under a
+ * British title block — one city's year solved beside another city's design
+ * conditions — which is the same failure the weather picker's DDY refusal
+ * already exists to prevent, and it would be no better for having come in
+ * through the file path instead.
+ */
+export function clearDesignDays(doc) {
+  clear(doc, 'SizingPeriod:DesignDay');
+}
+
 /** Put a station's design conditions in the model, in place of Denver's. */
 export function setDesignConditions(doc, conditions) {
-  clear(doc, 'SizingPeriod:DesignDay');
+  clearDesignDays(doc);
   for (const { name, values } of conditions.days) doc.add('SizingPeriod:DesignDay', name, values);
-  clear(doc, 'Site:Location');
-  doc.add('Site:Location', conditions.location.name, conditions.location.values);
+  setSiteLocation(doc, conditions.location);
 }
 
 /** Switch between the two design days and a full weather-file year. */
@@ -3250,7 +3287,18 @@ export function surfaceGeometry(doc) {
  *
  * A day matching no candidate cannot arrive here: `designConditionsFrom` writes
  * only candidates, and the built-in Denver pair is named to match. So it throws
- * rather than lettering a blank, by the same rule as `must`.
+ * rather than lettering a blank, by the same rule as `must`. That guarantee is
+ * about the days that are there, and it is unchanged.
+ *
+ * No day at all is a different statement, and a true one: a file attached
+ * without a DDY has its design days cleared by `clearDesignDays`, and the
+ * honest answer is an empty list. A desk with no design days letters their
+ * absence, with the reason, rather than drawing the previous climate's datum
+ * lines across this climate's year — which is the whole point of clearing them.
+ * No `holds` guard is needed to say so: `doc.all` hands back a detached empty
+ * collection for a type the document does not carry and no longer registers one
+ * on reading (see the note on `holds`), so the map covers the empty case by
+ * itself and asking first would only be a second way to get the same answer.
  */
 export function designDayDatums(doc) {
   return doc.all('SizingPeriod:DesignDay').map((day) => {

@@ -648,9 +648,9 @@ export class Qualification {
  *
  * The run-dependent ones — which weather file was attached and what it
  * declares about itself, whether the prescribed profiles were applied, whether
- * a cooling system was in the path, the unshifted local time — are not here
- * because they are not true of every desk. They are assembled per solve and
- * appended to these.
+ * a cooling system was in the path, and which clock the profiles landed on —
+ * are not here because they are not true of every desk. They are assembled per
+ * solve and appended to these.
  */
 export const QUALIFICATIONS = Object.freeze([
   new Qualification({
@@ -1015,8 +1015,37 @@ export const ABSENCE = Object.freeze({
   // nine hours from 23:00, and a run ending at midnight on 30 September holds
   // all 153 days and not one complete night opening inside the period.
   night: 'run to the morning of 1 October for a complete night',
+  // Kept apart from `season` because the two send a reader to opposite ends of
+  // the sheet. `season` is a calendar with months unticked and the Run strip
+  // fixes it; this is a **file** that stops before the period begins, on a desk
+  // whose months are already ticked — told to "run some of May to September" the
+  // reader would go to the Run strip, find the months already there, and have
+  // nowhere left to look. Nothing on the Run strip can fix a file that has not
+  // got those months in it; another file can.
+  fileSeason: 'attach a file reaching 1 May to 30 September',
 });
 for (const [key, text] of Object.entries(ABSENCE)) withinBudget(BUDGETS.ABSENCE, `ABSENCE.${key}`, text);
+
+/**
+ * Whether the stretch a weather file carries reaches the whole assessment
+ * period, 1 May to 30 September.
+ *
+ * `period` is `periodCovered`'s `{ from, to }`, read off the file's first and
+ * last data record rather than off its `DATA PERIODS` header, which is what
+ * makes this a question about records and not about a declaration.
+ *
+ * Here rather than in `main.js` for the reason every date in this feature is
+ * here: the period is TM59:2026's, declared once as `SEASON` with the clause it
+ * comes from, and a second copy of 5 and 9 out in the sheet is the drift that
+ * declaration exists to prevent. What `main.js` holds is the file; what this
+ * module holds is what the method asks of one.
+ *
+ * A file whose last stamp falls earlier in the year than its first crosses the
+ * new year and covers no summer at all, which this answers correctly by
+ * arithmetic rather than by a case: 1 December is day 335 and is not ≤ day 121.
+ */
+export const coversSeason = (period) =>
+  dayNumber(period.from) <= dayNumber(SEASON.from) && dayNumber(period.to) >= dayNumber(SEASON.to);
 
 /**
  * Whether an hour counts as occupied, against the floor the applier wrote.
@@ -1855,16 +1884,53 @@ const WHY = Object.freeze({
     'the thermostat than about the envelope — and TM59 sends a mechanically cooled dwelling to ' +
     'criterion c rather than to the adaptive line, which is the more authoritative-looking of the two ' +
     'and therefore the one that will be over-read.',
+  /**
+   * The half that is true whatever is attached: what the method asks for, and
+   * what shifting would need.
+   */
   localTime:
     'TM59:2026 §3.7.1 states that all profile times are local UK time, "i.e. British Summer Time from ' +
     'April to October approx.", and that "If necessary, modellers should shift the profiles to match ' +
     'the timing convention in other geographical locations." Shifting needs a daylight saving rule to ' +
-    'shift by, and every file the picker can reach declares none: measured, ' +
+    'shift by, and a rule this page invented rather than read would be exactly the substitution it ' +
+    'refuses everywhere else. So the rule comes off the attached file or there is no shift, and which ' +
+    'of those happened is said above rather than left to be assumed.',
+
+  /**
+   * And the half that depends on the file in hand.
+   *
+   * This paragraph used to be part of the one above, asserting that no file
+   * carrying a rule was reachable at all: *"every file the picker can reach
+   * declares none: measured, HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0 on Denver
+   * 725650 and Berlin-Tegel 103820 in the 2009–2023 window, and on all five
+   * EPWs shipped with EnergyPlus 26.1."* Every word of that is still true of
+   * the picker, and it stopped being true of the page the day a reader could
+   * attach a file of their own — a British file is precisely the kind that
+   * carries a rule. A sentence that is true of one route in and false of the
+   * other is the page stating something false about its own run, so the
+   * measurement stays where it belongs, as the reason the picker's files
+   * cannot shift, and what *this* run did is read off the record.
+   */
+  localTimeUnshifted:
+    'This file declares no daylight saving rule — the picker\u2019s do not either, measured: ' +
     'HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0 on Denver 725650 and Berlin-Tegel 103820 in the 2009–2023 ' +
-    'window, and on all five EPWs shipped with EnergyPlus 26.1. There is no rule in the file to shift ' +
-    'by, so a shift would be an invention. The profiles therefore run one hour early against a UK ' +
-    'summer, which is a real difference from a compliance run and is said here rather than corrected ' +
-    'in silence.',
+    'window, and on all five EPWs shipped with EnergyPlus 26.1 — so there is no rule in it to shift ' +
+    'by. The profiles therefore run one hour early against a UK summer, which is a real difference ' +
+    'from a compliance run and is said here rather than corrected in silence.',
+
+  localTimeObserved:
+    'This file declares a daylight saving period of its own, and the Run strip is set to observe it, ' +
+    'so EnergyPlus advances the clock across that period and the profiles land on the same summer ' +
+    'hours a UK compliance run would put them on. Read off the file\u2019s own ' +
+    'HOLIDAYS/DAYLIGHT SAVINGS record and the setting that was solved, not off where the file is ' +
+    'from: a rule is a rule because the record carries one.',
+
+  localTimeIgnored:
+    'This file declares a daylight saving period of its own and the Run strip is set to ignore it, so ' +
+    'the profiles run on the file\u2019s standard time and sit one hour early against a UK summer. ' +
+    'That is a choice the desk offers and this run took, not something missing from the file — set ' +
+    'Daylight saving to Observe on the Run strip to put the profiles back on the file\u2019s own ' +
+    'summer clock.',
 });
 
 /**
@@ -1880,9 +1946,12 @@ const WHY = Object.freeze({
  * @param {object} params  the snapshot the run was written from, not live params
  * @param {object} bypass  the patch state that snapshot was solved under
  * @param {WeatherFile|null} weather  what the attached file declares, or null
+ * @param {{from: string, to: string}|null} daylight  the attached file's own
+ *   HOLIDAYS/DAYLIGHT SAVINGS period, as `parseEpwCalendar` read it, or null
+ *   where the file declares none or no file is attached
  * @returns {Qualification[]}
  */
-export function qualificationsFor(eso, params, bypass, weather) {
+export function qualificationsFor(eso, params, bypass, weather, daylight = null) {
   if (!eso) throw new Error('qualificationsFor: expected the parsed ESO the run returned');
   if (!params) {
     throw new Error(
@@ -1895,6 +1964,21 @@ export function qualificationsFor(eso, params, bypass, weather) {
     throw new Error(
       'qualificationsFor: expected a WeatherFile carrying what the attached EPW declares about itself, ' +
         'or null where the desk still holds the design days it shipped with',
+    );
+  }
+  // A daylight saving rule with no file to have declared it is a caller that
+  // has crossed two runs, and the sentence it would produce -- a period read
+  // off one file printed under another file's name -- is exactly the kind this
+  // block exists to stop the page making.
+  if (daylight !== null && weather === null) {
+    throw new Error(
+      'qualificationsFor: a daylight saving period was passed with no weather file to have declared it',
+    );
+  }
+  if (daylight !== null && !(daylight.from && daylight.to)) {
+    throw new Error(
+      'qualificationsFor: a daylight saving period is the pair of dates the file\u2019s ' +
+        'HOLIDAYS/DAYLIGHT SAVINGS record carries, or null where it carries none',
     );
   }
 
@@ -1951,13 +2035,31 @@ export function qualificationsFor(eso, params, bypass, weather) {
     );
   }
 
+  // The profiles' clock, read off the attached file and off what was solved
+  // rather than off what files of this kind usually carry.
+  //
+  // `params.dst` is the Run strip's Daylight saving control, and it is already
+  // the whole mechanism: `applyRun` writes it into
+  // `RunPeriod.use_weather_file_daylight_saving_period`, so a file that
+  // declares a period already has it honoured by the engine. Nothing had to be
+  // built for this; what was missing was only that the sentence said otherwise.
+  const observing = Boolean(daylight) && params.dst === 'Yes';
   list.push(
     new Qualification({
       id: 'local-time',
-      says:
-        'TM59’s profiles are stated in UK local time, British Summer Time included. They are applied ' +
-        'here at the weather file’s own local standard time, unshifted.',
-      because: WHY.localTime,
+      says: daylight
+        ? observing
+          ? 'TM59’s profiles are stated in UK local time, British Summer Time included. This file ' +
+            `declares a daylight saving period from ${daylight.from} to ${daylight.to} and the run ` +
+            'observes it, so the profiles are applied on that clock.'
+          : 'TM59’s profiles are stated in UK local time, British Summer Time included. This file ' +
+            `declares a daylight saving period from ${daylight.from} to ${daylight.to}, and this run ` +
+            'ignores it, so they are applied at the file’s own standard time.'
+        : 'TM59’s profiles are stated in UK local time, British Summer Time included. They are applied ' +
+          'here at the weather file’s own local standard time, unshifted.',
+      because: `${WHY.localTime} ${
+        daylight ? (observing ? WHY.localTimeObserved : WHY.localTimeIgnored) : WHY.localTimeUnshifted
+      }`,
       standing: false,
     }),
   );

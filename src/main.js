@@ -1,10 +1,13 @@
 import { createEnergyPlus } from '@idfkit/engine';
 import { httpSource, SchemaBundle, writeIdf } from '@idfkit/core';
 import {
+  WALLS,
+  WINDOW_CONSTRUCTION,
   applyModel,
   boundaryKeyFor,
   buildModel,
   channelState,
+  clearDesignDays,
   designConditionsFrom,
   designDayDatums,
   geometryFacts,
@@ -14,10 +17,9 @@ import {
   sampleRefusal,
   setAnnual,
   setDesignConditions,
+  setSiteLocation,
   shadeGeometry,
   surfaceGeometry,
-  WALLS,
-  WINDOW_CONSTRUCTION,
   windowGeometry,
 } from './model.js';
 import {
@@ -100,18 +102,34 @@ import { errors, provide, trail } from './report.js';
 import { END_USES, GROUPS, computeBill, meterTotal } from './bill.js';
 import { assume, isRate, placeName, resolveRates } from './rates.js';
 import {
+  canRemember,
   climateDescription,
   climateZone,
   degreeDays,
   flavorWindow,
+  forgetFile,
   here,
   nearestSites,
+  rememberFile,
+  rememberedBytes,
+  rememberedFile,
   searchSites,
   siteName,
   siteRegion,
+  unzip,
   weatherFor,
 } from './weather.js';
-import { dailyMeans, holidayList, parseEpwCalendar, parseEpwStartDay } from './epw.js';
+import {
+  dailyMeansCarried,
+  holidayList,
+  monthsCovered,
+  parseEpwCalendar,
+  parseEpwStartDay,
+  periodCovered,
+  readLocation,
+  siteLocationValues,
+} from './epw.js';
+import { sourceFromFile, sourceFromStation } from './source.js';
 import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
 import { mountChangelog } from './changelog.js';
 import CHANGELOG_SOURCE from '../CHANGELOG.md?raw';
@@ -154,9 +172,11 @@ import {
   COUNT_CATEGORY,
   CRITERION_BY_ID,
   PARTIAL_PERIOD,
+  Reading,
   SEASON,
   WeatherFile,
   clearedCount,
+  coversSeason,
   qualificationsFor,
   readCriterionA,
   readCriterionB,
@@ -1465,8 +1485,56 @@ const BILL_COLUMNS = Object.freeze([
 // The sheet ships with Denver's two design days, so it ships with Colorado's
 // tariffs. This is not a default standing in for a missing answer -- it is the
 // site the stock model actually describes, and it is replaced whole the moment
-// a station is picked.
-let station = { country: 'USA', state: 'CO' };
+// a climate is attached.
+//
+// A place rather than a station, because a station is no longer the only thing
+// that can say where the building is: a weather file the reader attached says
+// it in the same two fields, off its own LOCATION record, and `resolveRates`
+// takes whichever of them is on the desk without being told which it is.
+const SHIPPED_PLACE = Object.freeze({ country: 'USA', region: 'CO' });
+
+/**
+ * The climate on the desk: a picked station, an attached file, or nothing yet.
+ *
+ * One at a time, always. This used to be `station`, and the rename is most of
+ * the feature in one variable -- nearly everything that asked "which station"
+ * was really asking "which climate", and only the link token and the picker's
+ * own list ever wanted the station itself.
+ */
+let weatherSource = null;
+
+/**
+ * The index row the picker took, held only for the link token.
+ *
+ * A station is named in a link by its WMO number and its 15-year window, and
+ * `flavorWindow` reads onebuilding's archive-name grammar — which `weather.js`
+ * keeps exactly one copy of and which `source.js` cannot import, since that
+ * module has to stay callable from a Node harness. So the row stays here,
+ * beside the token it is the only input to, rather than being re-derived from a
+ * URL in a second place.
+ *
+ * Null whenever the desk is on a file, which is what keeps the two tokens from
+ * both claiming a desk that has one climate.
+ */
+let pickedStation = null;
+
+/** Where the building is, for anything that prices or letters a place. */
+const deskPlace = () => weatherSource?.place ?? SHIPPED_PLACE;
+
+/** The name the sheet calls the attached climate by. */
+const sourceName = (source) => source.place.city ?? source.label;
+
+/**
+ * `Denver Centennial, CO` -- the title block's location line.
+ *
+ * Read off the source's place rather than off the picker's row, so a file and a
+ * station letter the same way, and a qualifier the file does not declare is
+ * absent rather than an empty comma.
+ */
+const placeLine = (source) =>
+  [sourceName(source), [source.place.region, source.place.country].filter(Boolean).join(', ')]
+    .filter(Boolean)
+    .join(', ');
 let bill = null;
 let pinned = null; // { bill, label } — a scheme held to be measured against
 let billGhost = null; // the bill as it stood when this gesture began
@@ -1524,7 +1592,7 @@ let lastBundle = null;
 let lastEngineErrors = [];
 
 /** The published card with the Tariff strip's assumptions written over it. */
-const rateCard = () => assume(resolveRates(station), params);
+const rateCard = () => assume(resolveRates(deskPlace()), params);
 
 /**
  * Price the meters of one solved run.
@@ -3723,20 +3791,145 @@ desk = mountConsole({
  */
 let sitePicked = null;
 
+/**
+ * Whether a source's own records run 1 January to 31 December.
+ *
+ * The question every reading that wants a year asks, and it is asked of the
+ * *records* rather than of the `DATA PERIODS` header, because `periodCovered`
+ * reads the ends off the data for exactly this: a file truncated mid-download
+ * declares a year and carries nine months of one.
+ */
+const wholeYear = (period) =>
+  period.from.month === 1 && period.from.day === 1 && period.to.month === 12 && period.to.day === 31;
+
+/**
+ * The stretch a weather file covers, in the sheet's own words.
+ *
+ * `1 Jun – 31 Aug`, and the interval beside it where the file is not hourly —
+ * four records an hour is a fact about the file the reader cannot see anywhere
+ * else, and it is the difference between 8,760 rows and 35,040. A whole hourly
+ * year says `whole year` rather than `1 Jan – 31 Dec`, because a reader reading
+ * a sub-line wants the answer and not the arithmetic behind it.
+ */
+const periodSaid = (period) => {
+  const said = wholeYear(period)
+    ? 'whole year'
+    : `${period.from.day} ${MONTHS[period.from.month - 1]} – ${period.to.day} ${MONTHS[period.to.month - 1]}`;
+  return period.perHour === 1 ? said : `${said}, ${period.perHour} records an hour`;
+};
+
+/**
+ * Whether the run's calendar asks for months the attached file has not got.
+ *
+ * One predicate, asked in two places, because the two would otherwise disagree
+ * about the same desk. `solve` asks it to refuse the run before the engine
+ * reaches a month with no records in it; `attachClimate` asks it so that the
+ * sentence it letters on the attach is the refusal rather than a description of a
+ * run that is not going to happen — the attach sentence is written after the
+ * commit that starts the solve, so it lands *after* the refusal and would be the
+ * last thing the reader is left holding.
+ *
+ * `monthsCovered` counts only **whole** months, because `applyRun` writes a
+ * `RunPeriod` from the first of a contiguous group to the last, and a month the
+ * file carries half of cannot be run at all.
+ *
+ * False for a station and for a desk with nothing attached: an archive is a year,
+ * and a desk with no file has no extent to fall outside.
+ */
+function monthsOutsideFile(p = params) {
+  if (weatherSource?.kind !== 'file' || !weatherSource.period) return false;
+  const carried = monthsCovered(weatherSource.period);
+  return [...p.months].some((on, month) => on === '1' && carried[month] !== '1');
+}
+
+/** That refusal, in the one wording, from whatever is attached. */
+const fileMonthsRefusal = () =>
+  FILE_SAYS.monthsOutside(sourceName(weatherSource), periodSaid(weatherSource.period));
+
 function renderSiteSub() {
   if (!sitePicked) return;
-  const { station, label } = sitePicked;
+  const source = sitePicked;
+  // `climateZone` and `climateDescription` split one published string, and the
+  // grammar for that split lives in `weather.js` and stays there: the source
+  // carries the label whole. An attached file carries null, because a file
+  // declares no ASHRAE zone and there is nothing to infer one from -- so the
+  // chip letters the em dash `climateZone` already returns for a station whose
+  // index row is blank, which is the same fact arriving by another road.
+  const zoned = { ashraeClimateZone: source.climateZone ?? '' };
   const zone = document.createElement('span');
   zone.className = 'cz';
-  zone.textContent = climateZone(station);
+  zone.textContent = climateZone(zoned);
   $('site-sub').replaceChildren(
     zone,
+    // A space, so the chip and the line beside it are two things read aloud as
+    // two things. The chip's padding separates them on screen; a screen reader
+    // gets the markup, where `5A` and `Cool, Humid` were running together.
+    document.createTextNode(' '),
     document.createTextNode(
-      [climateDescription(station), `TMYx ${label}`, siteElevation(station.elevation)]
+      [
+        climateDescription(zoned),
+        // A station is one of five samples of a site and the flavour is which;
+        // a file is itself, and its name is the only honest label for it.
+        source.kind === 'station' ? `TMYx ${source.label}` : source.label,
+        // What the file actually carries, off its own first and last record
+        // (FR-010). Lettered for every attached file, including the ordinary
+        // whole year — a reader assessing against a purchased DSY needs to see
+        // that this page read its extent rather than assumed one. For a station
+        // it is lettered only where it is *not* a whole hourly year, which means
+        // an archive that arrived truncated: onebuilding's are years, the
+        // flavour above already says which, and a `1 Jan – 31 Dec` on every
+        // station line is a word the reader has to step over to reach the ones
+        // that matter.
+        source.kind === 'file' || !wholeYear(source.period) || source.period.perHour !== 1
+          ? periodSaid(source.period)
+          : null,
+        // Measured off the file's own hours or published by the index, and the
+        // reading says which -- a figure this page computed and a figure it is
+        // repeating are not the same claim.
+        sourceDegreeDays(source),
+        siteElevation(source.place.elevation),
+      ]
         .filter(Boolean)
         .join(' · '),
     ),
   );
+}
+
+/**
+ * The degree days under the picker, and where they came from.
+ *
+ * The station index publishes HDD18 and CDD10 per station; an attached file
+ * publishes nothing, so they are summed here out of the 365 daily means the
+ * comfort line already pays for. Two different provenances lettered identically
+ * would be the page claiming, of a figure it computed, the authority of one
+ * somebody else published — so the measured ones say so, in the word.
+ *
+ * The bases stay Celsius in both unit systems for the reason `weather.js` gives
+ * where it letters a station's: HDD18 is a published statistic on an 18 °C base,
+ * and converting the count while the label still read 18 would be arithmetic
+ * nobody can check.
+ */
+function sourceDegreeDays(source) {
+  const days = source.degreeDays;
+  if (!days) return '';
+  // No counts and a sentence saying why, which is what a file cut to a season
+  // carries: a degree-day total is a year's, and 153 days of one summed anyway
+  // would read as an extraordinarily mild climate beside a published figure
+  // taken over twelve months. Lettered in place of the figure rather than
+  // dropped, on the rule that missing renders as an em dash with its reason —
+  // the counts simply vanishing from this line is indistinguishable from a
+  // reading nobody asked for.
+  if (days.reason) return `— HDD18 · CDD10: ${days.reason}`;
+  // Rounded, because a degree day is a count of degree-days and the index
+  // publishes it as one. Summed over 365 daily means it comes out with a
+  // fraction on it -- `2,812.204 HDD18` is four digits of precision this
+  // arithmetic does not have, beside a published figure written as `2,801`.
+  const said = [
+    Number.isFinite(days.hdd18) ? `${Math.round(days.hdd18).toLocaleString('en-US')} HDD18` : null,
+    Number.isFinite(days.cdd10) ? `${Math.round(days.cdd10).toLocaleString('en-US')} CDD10` : null,
+  ].filter(Boolean);
+  if (!said.length) return '';
+  return `${said.join(' · ')} · °C bases${days.measured ? ', measured from this file' : ''}`;
 }
 
 const shelfStore = (() => {
@@ -4471,7 +4664,46 @@ async function attach(row, pick, sizing) {
     return refuse('cannot be used', error.message);
   }
 
-  sitePicked = { station: picked, label: pick.label };
+  return attachClimate(sourceFromStation(picked, files, pick.label), {
+    sizing,
+    studyContext,
+    conditions,
+    station: picked,
+  });
+}
+
+/**
+ * Put a climate on the desk: the one path, whatever supplied it.
+ *
+ * A station and a file arrive completely differently — one is a few hundred
+ * kilobytes through a proxy with a spinner over it, the other is a dialog and a
+ * `FileReader` — and from the moment the bytes exist they are the same event,
+ * so they share one path from here. That is not tidiness. Eight things happen
+ * below and six of them are clears, each carrying the mismatch it exists to
+ * prevent: curves sampled under the departed weather, spot heights that are
+ * runs against it, 365 daily means of one city's year, a bill pricing one
+ * city's energy at another's tariffs, a target read in Denver answering for a
+ * building in Bavaria. A second attach path would have to repeat all six, and
+ * the failure mode of getting one of them wrong is not a crash — it is a
+ * reading that looks right under the wrong title block.
+ *
+ * `conditions` is the parsed design conditions where the source came with a
+ * DDY, and null where it did not. A file attached without one leaves the desk
+ * with **no design days at all** rather than Denver's: `model.js:2329` records
+ * that nothing here is autosized, so a document carrying none is complete, and
+ * the alternative is the exact lie in ink the picker's own DDY refusal exists
+ * to prevent.
+ */
+function attachClimate(source, { sizing = 'No', studyContext = null, conditions = null, station = null } = {}) {
+  sitePicked = source;
+  // The field, from here rather than from the picker, because a file never goes
+  // through the picker at all and a field still reading "Choose a weather
+  // location" over an attached year is the sheet not knowing what it is solving.
+  site.classList.add('picked');
+  $('site-main').textContent = placeLine(source);
+  // Set together, so a desk cannot be on a file while the link still names the
+  // station it was on a moment ago.
+  pickedStation = station;
   renderSiteSub();
 
   // Studies in flight were sampling the outgoing climate — their captured
@@ -4500,17 +4732,39 @@ async function attach(row, pick, sizing) {
   // holding the old one alive until the next solve keeps a megabyte of the
   // departed climate in the cache for no reading at all.
   meanCache = null;
+  // And the extent with it, on the same identity and for the same reason: 1 May
+  // to 30 September is a fact about the file that just left.
+  periodCache = null;
 
   // The whole climate arrives together: the year on the EPW, the design days
   // and the location on the DDY. Denver's come out, this station's go in.
-  epwText = files.epw;
-  setDesignConditions(model, conditions);
-  desk?.setWeatherHolidays(weatherHolidays(files.epw), parseEpwStartDay(files.epw));
+  epwText = source.epw;
+  if (conditions) {
+    setDesignConditions(model, conditions);
+  } else {
+    // No DDY came with this file, so there are no design conditions to write —
+    // and Denver's cannot be left standing under this file's title block, which
+    // is the lie in ink the picker's own DDY refusal exists to prevent. The
+    // place still comes off the file: `Site:Location` is the one thing an EPW's
+    // own LOCATION record can supply without a design day anywhere near it.
+    //
+    // The design days go rather than being zeroed, on `applyModel`'s own rule
+    // that bypass removes and does not zero, and the desk runs the file's year
+    // alone. `sizingPeriods` is committed to 'No' below, and the Run strip
+    // withdraws the choice with its reason rather than offering a run that
+    // would reach the engine with nothing to size on.
+    clearDesignDays(model);
+    setSiteLocation(model, {
+      name: source.place.city ?? source.label,
+      values: siteLocationValues(source.place),
+    });
+  }
+  desk?.setWeatherHolidays(weatherHolidays(source.epw), parseEpwStartDay(source.epw));
 
   // The drawing follows the weather, and reads it off the model exactly as it
   // did for Denver: the datum lines from the design days, the co-ordinates from
   // `Site:Location`. Only the place name comes from the picker.
-  $('t-location').textContent = `${siteName(picked)}, ${siteRegion(picked)}`;
+  $('t-location').textContent = placeLine(source);
   $('t-site').textContent = siteLine(modelFacts(model));
   DATUMS = designDayDatums(model);
 
@@ -4528,7 +4782,7 @@ async function attach(row, pick, sizing) {
   // prevent, in another column. A pinned scheme goes too: one priced in
   // Colorado cannot be differenced against one priced in Bavaria, in another
   // currency and against another grid.
-  station = picked;
+  weatherSource = source;
   pinned = null;
   bill = null;
   lastRun = null;
@@ -4592,11 +4846,32 @@ async function attach(row, pick, sizing) {
   // off the calendar: an attach onto a desk with months already taken out is
   // not an annual run and must not be lettered as one.
   syncRunSub();
-  statusEl.className = 'status';
-  statusEl.textContent =
-    sizing === 'Yes'
-      ? `${siteName(picked)} attached, design conditions and all — the run covers ${hours} hours, sizing days included.`
-      : `${siteName(picked)} attached, design conditions and all — the run covers ${hours} hours, with the sizing days skipped.`;
+  // Both periods, where the file has fewer months than the year and the calendar
+  // already fits inside them. `runHours()` alone is the desk's calendar and says
+  // nothing about the year behind it (FR-010); the two do not compete here,
+  // because the case where they would disagree is the refusal below.
+  const covers =
+    source.kind === 'file' && !wholeYear(source.period)
+      ? `it covers ${periodSaid(source.period)}, and the run covers ${hours} hours`
+      : `the run covers ${hours} hours`;
+  // A calendar the file cannot cover is a refusal, not an attach sentence. The
+  // pump the commit above started has already written that refusal into this same
+  // row, and this line is what the reader is left holding: a cheerful "attached"
+  // over a desk that has just declined to solve is the sheet disagreeing with
+  // itself in one row, and the reader believing the more recent half.
+  const outside = monthsOutsideFile();
+  statusEl.className = outside ? 'status bad' : 'status';
+  statusEl.textContent = outside
+    ? fileMonthsRefusal()
+    : sizing === 'Yes'
+      ? `${sourceName(source)} attached, design conditions and all — ${covers}, sizing days included.`
+      : conditions
+        ? `${sourceName(source)} attached, design conditions and all — ${covers}, with the sizing days skipped.`
+        // Said plainly rather than left for the reader to notice the datum lines
+        // missing: a file with no DDY beside it is a complete climate for a
+        // year and no climate at all for a design day, and those are two
+        // different things to know about the desk you are now on.
+        : `${sourceName(source)} attached — ${covers}. No DDY came with it, so the desk has no design days.`;
   syncAuto();
   markStale();
   // Filed on the attach itself, wherever it came from: a reader arriving on a
@@ -4606,6 +4881,458 @@ async function attach(row, pick, sizing) {
   return true;
 }
 
+/* ── a weather file the reader holds ──────────────────────────────────────
+ *
+ * The picker above reaches climate.onebuilding.org, and that is every file this
+ * page can fetch for itself. It is not every file a reader needs: CIBSE
+ * licenses its weather data, and WFR:2026 requires a TM59 assessment to use the
+ * DSY1 file for the site — bought, and sitting on the buyer's own machine. So
+ * the one part of that method this page could actually honour was the one part
+ * it withheld.
+ *
+ * Read here, in this page, and handed to the same WebAssembly engine as
+ * everything else. **No byte of it reaches the network**, which is not a
+ * constraint being worked around but the only arrangement under which a
+ * licensed file can be used at all: there is nowhere to upload it to, and there
+ * is not going to be.
+ */
+
+/**
+ * Every sentence the file path letters, declared once and asserted at load.
+ *
+ * The units lines above are asserted the same way and for the same reason: a
+ * budget nothing enforces is a budget, and this feature already proved it. Commit
+ * `35a62ac` counted the waiting-desk sentence by hand, got 43 words against the
+ * 40-word `CEILING`, and found out *after* it had shipped — which is exactly the
+ * class of silent breakage the workflow's copy gate asks to be thrown at load
+ * instead. Counting by hand is not the failure; counting once is.
+ *
+ * **The sentence that carries a file's own declaration is asserted carrying
+ * one.** `SAMPLE_DECLARES` stands in for a real `WeatherFile.declares` — a place,
+ * a source label and a WMO number — because a sentence measured without its
+ * declaration is measured in a state no reader ever sees it in, which is how 43
+ * words passed for 31. It is deliberately two words **longer** than the longest
+ * declaration the fixtures produce, so the headroom the assertion proves belongs
+ * to the file rather than to the copy: a purchased file is named by whoever sold
+ * it, and a page that only just fits the names it has seen will one day be handed
+ * a longer one with nothing thrown.
+ *
+ * What is **not** asserted is the part a parser wrote. A refusal quotes the
+ * sentence `dailyMeansCarried` or `designConditionsFrom` produced, naming the
+ * record or the day, and that is the only part of it the reader can act on: it
+ * may not be folded, may not be shortened, and is not the sheet's text to
+ * budget. So each refusal's own wording is asserted with a one-word stand-in for
+ * the quotation, which is the whole of what this module wrote.
+ */
+const SAMPLE_DECLARES = 'Kingston upon Thames, Greater London, GBR · CIBSE DSY1 2050s HIGH50 · WMO 037760';
+
+const FILE_SAYS = Object.freeze({
+  /** A file the reader chose that this page will not read. */
+  notAFile: (name) =>
+    `${name} is not a weather file: this reads an EPW, a DDY beside it, or the ZIP they came in`,
+  /** Whatever `filesFrom` refused about the set of files chosen. */
+  chosen: (why) => `That file cannot be used: ${why}.`,
+  /** Whatever the attach gate refused about the EPW itself. */
+  gate: (name, why) => `${name} cannot be used: ${why}.`,
+  /** A DDY that will not parse. The year stands or falls with it at the picker. */
+  ddy: (name, why) => `The DDY beside ${name} cannot be used: ${why}.`,
+  /** A DDY describing somewhere else — worse than no DDY at all. */
+  ddyElsewhere: (name, there, here) =>
+    `The DDY beside ${name} describes ${there} and the weather file describes ${here}, ` +
+    'so one of them is not this building’s.',
+  /** The file that arrived is not the file the link was run against (FR-020). */
+  notTheLink: (asks, name, says) =>
+    `That is not the weather file this link was run against. The link asks for ${asks}, ` +
+    `and ${name} says it is ${says}. Reload this page without the link to run your file on a fresh desk.`,
+  /**
+   * A desk the link cannot supply a climate for (FR-019).
+   *
+   * "in the weather picker above", not "below": the picker's panel is
+   * `position: absolute` and drops *under* its field, so the attach control is
+   * below this sentence only while the panel is open — and the panel is shut,
+   * because opening it is the thing the sentence is asking for. The field is
+   * above in both states. A refusal that points the wrong way is worse than one
+   * that points nowhere.
+   */
+  waiting: (declares) =>
+    `This desk ran against a weather file the link cannot carry: ${declares}. ` +
+    'Attach your copy in the picker above; the sheet checks it.',
+  /**
+   * A calendar asking for months the attached file has not got.
+   *
+   * The second reachable get-input fatal this path opens, beside the design days
+   * one in `solve`. `applyRun` writes a `RunPeriod` across every contiguous group
+   * of ticked months, so a desk calendared for the year over a 1 June – 31 August
+   * file sends the engine to 1 January, where there is no record: it terminates
+   * in `GetNextEnvironment` and the sheet letters *Program terminates due to
+   * preceding condition*, which is true and tells the reader nothing.
+   *
+   * The file's extent is named rather than the months missing from it. Both are
+   * actionable and only one is bounded — a seven-day file is missing all twelve,
+   * and a sentence that lists them is a sentence about a list.
+   */
+  monthsOutside: (name, covers) =>
+    `${name} carries ${covers}, and this run asks for months outside that. Narrow the calendar ` +
+    'on the Run strip to fit the file, or attach one that covers the year.',
+  /** A kept file that no longer reads. It is forgotten rather than half-used. */
+  keptUnreadable: (why) =>
+    `The weather file this browser was keeping cannot be read: ${why}. It has been forgotten.`,
+});
+
+// The control itself, out of the markup, so the two words in view are held to
+// the same budget as every other standing line on the sheet.
+withinBudget(BUDGETS.STANDING, 'the attach label', $('site-own-label').textContent);
+withinBudget(BUDGETS.BLOCK, 'the attach note', $('site-own-note').textContent);
+// The one sentence that carries a declaration, asserted carrying one.
+withinBudget(BUDGETS.CEILING, 'the waiting-desk sentence', FILE_SAYS.waiting(SAMPLE_DECLARES));
+// And each refusal's own wording, with a word standing in for the quotation.
+// Longer than `STANDING` allows, and it earns the room: it names the file, says
+// what it is not, and lists all three things the dialog does accept, which is the
+// difference between a refusal and a reader trying the same file twice.
+withinBudget(BUDGETS.BLOCK, 'the not-a-weather-file refusal', FILE_SAYS.notAFile('x.pdf'));
+withinBudget(BUDGETS.STANDING, 'the chosen-file refusal', FILE_SAYS.chosen('x'));
+withinBudget(BUDGETS.STANDING, 'the attach-gate refusal', FILE_SAYS.gate('x.epw', 'x'));
+withinBudget(BUDGETS.STANDING, 'the DDY refusal', FILE_SAYS.ddy('x.epw', 'x'));
+withinBudget(BUDGETS.BLOCK, 'the DDY-elsewhere refusal', FILE_SAYS.ddyElsewhere('x.epw', 'A', 'B'));
+withinBudget(BUDGETS.BLOCK, 'the kept-file refusal', FILE_SAYS.keptUnreadable('x'));
+// Asserted with the longest extent `periodSaid` writes — a seven-day sub-hourly
+// file — because that is the state a reader most often reads this sentence in.
+withinBudget(
+  BUDGETS.CEILING,
+  'the months-outside-the-file refusal',
+  FILE_SAYS.monthsOutside('x.epw', '1 Jan – 7 Jan, 4 records an hour'),
+);
+// The wrong-file refusal carries **two** declarations and cannot be held to
+// `CEILING` with them in it: 24 of its words are the two files' own, and what is
+// left is a sentence that has to name three things and offer a way out. Its own
+// wording is what this module wrote, and that is what is asserted.
+withinBudget(BUDGETS.CEILING, 'the wrong-file refusal', FILE_SAYS.notTheLink('A', 'x.epw', 'B'));
+
+/**
+ * The file a link asked for, while the desk waits on it. Null otherwise.
+ *
+ * Held so the attach can check what arrives against what was asked for. A
+ * recipient who attaches the wrong year has to be told before a single reading
+ * is drawn from it, because the whole worth of the link is that two people end
+ * up reading the same numbers.
+ *
+ * Declared here, beside the attach that reads it, rather than beside the boot
+ * dispatch that writes it: `attachOwnFile` is reachable from the moment the
+ * markup exists, minutes before a cold cache finishes the engine, and a `let`
+ * declared further down the module would be in its temporal dead zone for
+ * exactly that window.
+ */
+let wantedFile = null;
+
+/** What a file's extension says it is, lowercased and without its dot. */
+const extensionOf = (name) => (name.match(/\.([^.]+)$/)?.[1] ?? '').toLowerCase();
+
+const asText = (bytes) => new TextDecoder().decode(bytes);
+
+/**
+ * The EPW and the DDY out of whatever the reader picked.
+ *
+ * Three shapes reach here and all three are ordinary: a bare `.epw`; an `.epw`
+ * and a `.ddy` chosen together; or the `.zip` a purchase arrives in, which is
+ * what the picker's own archives are and so goes through `unzip` from
+ * `@idfkit/weather` — the same reader, not a second one.
+ *
+ * An archive holding several weather files is not guessed at. The reader is
+ * told which ones are in it and asked to pick, because choosing for them would
+ * be choosing which year their assessment runs against.
+ *
+ * Throws naming what was wrong, and the caller refuses the whole attach with
+ * that sentence.
+ */
+async function filesFrom(chosen) {
+  const named = new Map();
+  for (const file of chosen) {
+    const kind = extensionOf(file.name);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (kind === 'zip') {
+      let members;
+      try {
+        members = await unzip(bytes);
+      } catch (error) {
+        throw new Error(`${file.name} could not be unpacked: ${error.message}`);
+      }
+      for (const [member, body] of members) {
+        // A ZIP carries directory entries and macOS resource forks beside the
+        // files somebody meant to send; neither is a weather file and neither
+        // is worth reporting as one.
+        if (member.endsWith('/') || member.includes('__MACOSX/')) continue;
+        const inner = extensionOf(member);
+        if (inner === 'epw' || inner === 'ddy') named.set(member.split('/').pop(), { bytes: body, kind: inner });
+      }
+      continue;
+    }
+    if (kind === 'epw' || kind === 'ddy') {
+      named.set(file.name, { bytes, kind });
+      continue;
+    }
+    throw new Error(FILE_SAYS.notAFile(file.name));
+  }
+
+  const epws = [...named].filter(([, m]) => m.kind === 'epw');
+  const ddys = [...named].filter(([, m]) => m.kind === 'ddy');
+  if (!epws.length) {
+    throw new Error('there is no EPW in what you chose, and the EPW is the year the engine is run on');
+  }
+  if (epws.length > 1) {
+    throw new Error(
+      `that holds ${epws.length} weather files — ${epws.map(([n]) => n).join(', ')} — and which year this ` +
+        'building is assessed against is not a choice this page is going to make for you. Attach one of them',
+    );
+  }
+  if (ddys.length > 1) {
+    throw new Error(
+      `that holds ${ddys.length} DDY files — ${ddys.map(([n]) => n).join(', ')} — and only one set of design ` +
+        'conditions can describe this site. Attach the one you mean',
+    );
+  }
+  const [name, epw] = epws[0];
+  return { name, bytes: epw.bytes, ddyText: ddys.length ? asText(ddys[0][1].bytes) : null };
+}
+
+/**
+ * Attach a file the reader chose. The mirror of `choose` above, and it ends in
+ * the same place: `attachClimate`, which owns every one of the eight things
+ * that happen when a climate lands.
+ *
+ * Nothing is narrated as a download, because nothing is downloaded. What the
+ * reader waits on is a pass over their own file — `dailyMeans` at about 3 ms
+ * and a fingerprint at about 20 ms on a 1.66 MiB year — which is under a frame
+ * and over before a spinner would have appeared.
+ */
+async function attachOwnFile(chosen) {
+  if (!chosen.length) return;
+  // Captured before the first await, for the reason `describeDesk` is: the
+  // reader can drag a slider while a file is being read, and the studies that
+  // are about to be restored have to be the ones that were open when they
+  // picked it.
+  const studyContext = desk?.captureStudyContext();
+  // The picker's own fetch is abandoned. A reader who typed a city, waited, and
+  // then reached for their own file has answered the question the list was
+  // asking, and a station landing on top of their file a second later would be
+  // the desk overruling them.
+  inflight?.abort();
+
+  const refuse = (reason) => {
+    trail.push('refusal', `Weather file refused: ${reason}`);
+    lastStationRefusal = reason;
+    statusEl.className = 'status bad';
+    statusEl.textContent = reason;
+    say(reason, true);
+    // The field is handed back empty so the same file can be chosen again once
+    // whatever was wrong with it is fixed: a file input holding a rejected file
+    // fires no `change` when that same file is picked a second time.
+    $('site-file').value = '';
+  };
+
+  let picked;
+  try {
+    picked = await filesFrom(chosen);
+  } catch (error) {
+    return refuse(FILE_SAYS.chosen(error.message));
+  }
+
+  let source;
+  try {
+    source = await sourceFromFile({ ...picked, schema });
+  } catch (error) {
+    // The parser's own sentence, unwrapped. `dailyMeans` names the record or
+    // the day it could not read, and that is the only part of this a reader can
+    // act on.
+    return refuse(FILE_SAYS.gate(picked.name, error.message));
+  }
+
+  // A desk waiting on a link's file checks that this is that file, before a
+  // single reading is drawn from it. The whole worth of the link is that two
+  // people end up reading the same numbers, and a colleague who reaches for the
+  // wrong year of the same purchase would otherwise get a desk that looks
+  // exactly like the sender's and is not.
+  //
+  // Both descriptions are printed, because which of the two is the wrong one is
+  // the reader's to know and this page cannot tell them — it has a fingerprint
+  // and a phrase, and no way to see inside somebody else's purchase.
+  if (wantedFile && wantedFile.fingerprint !== source.fingerprint) {
+    return refuse(
+      FILE_SAYS.notTheLink(
+        wantedFile.declares ?? 'a file it does not describe',
+        picked.name,
+        source.declares.declares,
+      ),
+    );
+  }
+  // Satisfied, or never asked for: either way the desk is no longer waiting.
+  wantedFile = null;
+
+  // The design conditions, where a DDY came with it. Parsed here rather than in
+  // `source.js` because the source carries the file's own text and this is the
+  // one place that turns text into the objects the model holds — the same call
+  // the picker makes of an archive's DDY, so an unusable DDY is refused in one
+  // sentence rather than two.
+  let conditions = null;
+  if (source.ddy) {
+    try {
+      conditions = designConditionsFrom(source.ddy, schema);
+    } catch (error) {
+      return refuse(FILE_SAYS.ddy(picked.name, error.message));
+    }
+    // A DDY for another city is worse than no DDY at all: its design days would
+    // stand under this file's title block, which is the lie in ink the picker's
+    // own refusal exists to prevent. Both places are printed, because which of
+    // them is the wrong one is the reader's to know.
+    const ddyPlace = conditions.location.name;
+    const epwPlace = source.place.city;
+    if (ddyPlace && epwPlace && !sameSite(ddyPlace, epwPlace)) {
+      return refuse(FILE_SAYS.ddyElsewhere(picked.name, ddyPlace, epwPlace));
+    }
+  }
+
+  closePanel();
+  say('');
+  site.classList.add('picked');
+  $('site-file').value = '';
+  attachClimate(source, { studyContext, conditions });
+
+  // Kept only now, after the attach has landed: what the browser remembers is
+  // always a file that already solved. The await is deliberately not waited on
+  // — compressing 1.5 MB takes about 45 ms and the desk is already running the
+  // file — but its answer is, because a file that will not be kept is something
+  // the reader has to be told rather than discover on their next reload.
+  void rememberFile({
+    fingerprint: source.fingerprint,
+    name: source.label,
+    declares: source.declares.declares,
+    epw: source.epw,
+    ddy: source.ddy,
+  }).then((kept) => {
+    renderKeptFile(kept.kept ? null : kept.reason);
+  });
+}
+
+/**
+ * What the browser is holding, and how to make it stop.
+ *
+ * Never folded and never on hover: a reader has to be able to see that a file
+ * of theirs is being kept, and to stop it, without going looking. `reason` is
+ * the sentence from a keep that did not happen — a quota, or a browser that
+ * stores nothing — and it is lettered in place of the offer rather than beside
+ * it, because in that state there is nothing to forget.
+ */
+function renderKeptFile(reason = null) {
+  const line = $('site-own-kept');
+  if (reason) {
+    line.hidden = false;
+    line.textContent = reason;
+    return;
+  }
+  const kept = rememberedFile();
+  if (!kept) {
+    line.hidden = true;
+    line.replaceChildren();
+    return;
+  }
+  line.hidden = false;
+  line.replaceChildren(
+    document.createTextNode(
+      weatherSource?.kind === 'file' && weatherSource.fingerprint === kept.fingerprint
+        ? `${kept.name} is kept in this browser, so a link to this desk reopens on it. `
+        : `${kept.name} is kept in this browser. `,
+    ),
+  );
+  // Offered rather than attached, and that is the whole of Principle II in one
+  // control: a remembered file is put on the desk automatically only where the
+  // link names it, because otherwise the bare address would mean one thing on
+  // this machine and another everywhere else.
+  if (!(weatherSource?.kind === 'file' && weatherSource.fingerprint === kept.fingerprint)) {
+    const attach = document.createElement('button');
+    attach.type = 'button';
+    attach.className = 'link';
+    attach.textContent = 'Attach it';
+    attach.addEventListener('click', () => void attachRemembered());
+    line.append(attach, document.createTextNode(' · '));
+  }
+  const forget = document.createElement('button');
+  forget.type = 'button';
+  forget.className = 'link';
+  forget.textContent = 'Forget it';
+  forget.addEventListener('click', () => {
+    forgetFile();
+    renderKeptFile();
+  });
+  line.append(forget);
+}
+
+/**
+ * Put the remembered file back on the desk.
+ *
+ * The bytes come out of the browser rather than off the filesystem, so there is
+ * no dialog — but everything after that is the ordinary attach, gate included.
+ * Re-gated rather than trusted: what was written was a file that solved, and
+ * what comes back is a string this page has to read again, so it goes through
+ * `sourceFromFile` like any other.
+ */
+async function attachRemembered() {
+  const held = await rememberedBytes();
+  if (!held) {
+    renderKeptFile();
+    return false;
+  }
+  const studyContext = desk?.captureStudyContext();
+  let source;
+  try {
+    source = await sourceFromFile({
+      name: held.name ?? 'weather.epw',
+      bytes: new TextEncoder().encode(held.epw),
+      ddyText: held.ddy,
+      schema,
+    });
+  } catch (error) {
+    // A kept file that no longer reads is not repaired and not half-used: it is
+    // forgotten, said, and the desk is left where it was.
+    forgetFile();
+    statusEl.className = 'status bad';
+    statusEl.textContent = FILE_SAYS.keptUnreadable(error.message);
+    renderKeptFile();
+    return false;
+  }
+  let conditions = null;
+  if (source.ddy) {
+    try {
+      conditions = designConditionsFrom(source.ddy, schema);
+    } catch {
+      // The year stands without it. The DDY was kept beside the file and a DDY
+      // that has stopped parsing costs the design days, not the climate.
+      conditions = null;
+    }
+  }
+  closePanel();
+  attachClimate(source, { studyContext, conditions });
+  renderKeptFile();
+  return true;
+}
+
+/**
+ * Whether two place names are the same site, for the DDY check above.
+ *
+ * Deliberately loose, and deliberately only used to *refuse*: a DDY and an EPW
+ * from one purchase write the same city with different punctuation and
+ * different trailing qualifiers, and refusing a matched pair over a full stop
+ * would be the false refusal that teaches a reader to stop reading refusals.
+ * What it catches is the case worth catching — London against Manchester — and
+ * anything it lets through is a pair the reader chose together.
+ */
+const sameSite = (a, b) => {
+  const plain = (name) => name.toLowerCase().replace(/[^a-z]+/g, ' ').trim().split(' ')[0];
+  return plain(a) === plain(b);
+};
+
+$('site-file').addEventListener('change', (event) => {
+  void attachOwnFile([...event.target.files]);
+});
+
 /* ══ the permalink ═══════════════════════════════════════════════════════ */
 
 /**
@@ -4614,7 +5341,24 @@ async function attach(row, pick, sizing) {
  * only a tariff region and no archive, which is what `url` distinguishes.
  */
 const stationToken = () =>
-  station?.url ? { wmo: String(station.wmo), window: flavorWindow(station) } : null;
+  weatherSource?.kind === 'station' && pickedStation
+    ? { wmo: String(pickedStation.wmo), window: flavorWindow(pickedStation) }
+    : null;
+
+/**
+ * The attached file as the link carries it: a fingerprint of its contents and
+ * the phrase the file uses about itself. Null for a station, or for a desk that
+ * has attached nothing.
+ *
+ * The file cannot ride here and must not — megabytes, and a bought one is not
+ * the sender's to redistribute. What rides is enough to tell a recipient which
+ * file to fetch from their own purchase and whether the one they attached is
+ * it.
+ */
+const fileToken = () =>
+  weatherSource?.kind === 'file'
+    ? { fingerprint: weatherSource.fingerprint, declares: weatherSource.declares.declares }
+    : null;
 
 // True from the moment a link's station lookup starts until it attaches, is
 // refused, or is superseded. It holds the address bar still (see
@@ -4634,6 +5378,7 @@ const schemeHash = (p = params) =>
     params: p,
     bypass: patching(),
     station: stationToken(),
+    file: fileToken(),
     pin: pinnedHour,
     quantity: studyQuantity,
     studies: openStudies,
@@ -4948,50 +5693,6 @@ function nextSchemeName() {
 /* ── the overheating criteria ─────────────────────────────────────────── */
 
 /**
- * What the attached EPW's own LOCATION record says about itself.
- *
- * **This belongs in `src/epw.js`**, beside `parseEpwCalendar`,
- * `parseEpwStartDay` and `dailyMeans`, and it is here only because that module
- * does not carry it yet. It is EPW parsing and its only honest test is a real
- * file, which is the whole argument for keeping every header reader in one
- * place; moving it costs one import and nothing else, because nothing outside
- * this pair of functions knows the record's shape.
- *
- * The record is the first line of every EPW and the fields are positional:
- * `LOCATION,City,State,Country,Source,WMO,Lat,Lon,TimeZone,Elevation`.
- * `WeatherFile` wants six of the ten and refuses a partial object outright, so
- * every one of them is passed and an absent field is passed as `null` — "the
- * file says nothing here" and "nobody read it" must not be the same state, and
- * an empty field between two commas is the first of those. A file carrying no
- * LOCATION record at all is the same statement made six times over, which is
- * exactly what `WeatherFile.declares` letters as "a file whose LOCATION record
- * declares nothing about itself"; there is nothing to throw about and nothing
- * to substitute.
- *
- * Nothing here judges the file. WFR:2026 names a specific one and this page
- * cannot read a file's provenance, so the two descriptions are printed side by
- * side and the reader draws the conclusion (FR-015).
- */
-function readLocation(epw) {
-  // Only the head of the file is searched. The record is the first line of a
-  // conforming EPW, and scanning 8,760 data rows for a header that is not
-  // there would be the one expensive way to answer "no".
-  const line = epw.split(/\r?\n/, 16).find((row) => /^LOCATION\s*,/i.test(row));
-  const fields = line ? line.split(',').map((field) => field.trim()) : [];
-  // onebuilding writes a bare hyphen where a station has no record to publish,
-  // the same convention the DDY uses for a design condition it cannot fill.
-  const at = (i) => (fields[i] && fields[i] !== '-' ? fields[i] : null);
-  return new WeatherFile({
-    city: at(1),
-    region: at(2),
-    country: at(3),
-    source: at(4),
-    wmo: at(5),
-    timeZone: at(8),
-  });
-}
-
-/**
  * The same thing, or null on a desk that has attached no file at all.
  *
  * Deliberately **not** cached, unlike the running mean below, and the
@@ -5000,8 +5701,13 @@ function readLocation(epw) {
  * sixteen lines and never reaches the 8,760 data records. A cache that saves
  * three microseconds twice a solve is a second piece of state to clear on a
  * station change and nothing else.
+ *
+ * `readLocation` itself now lives in `src/epw.js`, where its own comment always
+ * said it belonged, and returns the pair `{ declares, place }`. This is the
+ * half that answers what the file says about itself; `place` is what the model
+ * and the title block are written from.
  */
-const declaredWeather = (epw) => (epw ? readLocation(epw) : null);
+const declaredWeather = (epw) => (epw ? readLocation(epw).declares : null);
 
 /**
  * The comfort line's climate half, cached on the attached file's identity.
@@ -5019,24 +5725,70 @@ const declaredWeather = (epw) => (epw ? readLocation(epw) : null);
  *
  * A file that cannot produce a running mean is **refused with its reason**
  * rather than seeded from a guess. A leap year, a file split into several data
- * periods, a record missing from the middle of April: `dailyMeans` and
+ * periods, a record missing from the middle of April: `dailyMeansCarried` and
  * `runningMean` each throw naming the day or the record they could not read,
  * and that sentence rides into criterion a's margin cell, which is the one
  * place on the page a reader can act on it. Criteria b and c need no running
  * mean at all — their thresholds are fixed — and go on reading.
+ *
+ * **`dailyMeansCarried`, not `dailyMeans`**, and the difference is the whole of
+ * how a part-year file is treated here. `dailyMeans` refuses anything short of
+ * 365 days, which is the contract an annual bill needs and is wrong for this
+ * one: `runningMean` needs 23 April to 30 September and nothing else, and it
+ * checks exactly that span before it computes anything, naming the first day it
+ * is missing. So a file carrying 23 April onwards produces the same comfort line
+ * a whole year would, character for character, and a file starting on 1 May is
+ * refused by the day it lacks rather than by a count of the days it has — which
+ * is the sentence a reader can act on, since 23 April is not a date anybody
+ * would guess was load-bearing.
  *
  * `source` is the LOCATION record's own fourth field, `TMYx.2009-2023` and the
  * like, carried into the `RunningMean` so the sheet can letter what the line
  * was built from in the file's own words rather than in ours.
  */
 let meanCache = null;
+
+/**
+ * The stretch the captured weather file covers, cached on its identity.
+ *
+ * Its own cache beside the comfort line's, and cached for the same measured
+ * reason: `periodCovered` splits the whole 1.6 MB file to reach its first and
+ * last record, which is the expensive half of `dailyMeans` for two dates, and
+ * the criteria ask this once per solve.
+ *
+ * It is read off the **captured** EPW rather than off `weatherSource.period`,
+ * which holds the same dates for the file now attached. That is the discipline
+ * every other reading in `readTm59` keeps: a file attached while an 8,760-hour
+ * run was in flight would otherwise have these readings describing one climate's
+ * extent over another climate's hours, which is the mismatch the capture exists
+ * to prevent.
+ *
+ * A file whose period cannot be read at all lands as `null`. Nothing on the
+ * attach path can produce one — the gate reads the period before it builds a
+ * source — so this is the state of a caller that has an EPW from somewhere else,
+ * and a null period asks nothing of the criteria rather than asserting they are
+ * covered.
+ */
+let periodCache = null;
+function periodFor(epw) {
+  if (!epw) return null;
+  if (periodCache?.epw !== epw) {
+    try {
+      periodCache = { epw, period: periodCovered(epw) };
+    } catch {
+      periodCache = { epw, period: null };
+    }
+  }
+  return periodCache.period;
+}
+
 function runningMeanFor(epw) {
   if (!epw) return { epw: null, mean: null, absence: ABSENCE.weather };
   if (meanCache?.epw !== epw) {
     try {
       meanCache = {
         epw,
-        mean: runningMean(dailyMeans(epw), declaredWeather(epw)?.source ?? null),
+        mean: runningMean(dailyMeansCarried(epw), declaredWeather(epw)?.source ?? null),
         absence: null,
       };
     } catch (error) {
@@ -5075,6 +5827,46 @@ function runningMeanFor(epw) {
  * question that cannot have changed is exactly what `lastOutcome` exists to
  * stop.
  */
+/**
+ * The same readings, with a file that cannot reach the assessment period
+ * answering for the season in its own terms.
+ *
+ * `ABSENCE.season` is the run's: months unticked on the Run strip, and the strip
+ * is where it is fixed. A file cut to 1 January – 30 April produces exactly the
+ * same blank — no hour of the period in the ESO, nothing to divide — and sending
+ * that reader to the Run strip sends them to a control whose months are already
+ * ticked, with nowhere left to look. So where the file itself stops short of
+ * 1 May – 30 September, the sentence becomes the one that names a file (FR-014),
+ * and the reading is a stated absence rather than a count taken over the weeks
+ * that happened to be in there.
+ *
+ * Done here rather than inside `tm59.js`'s readers because they are handed an
+ * ESO and the file's extent is not in one. The sentence is still the
+ * declaration's — `ABSENCE.fileSeason` sits beside `ABSENCE.season` in the module
+ * that owns both the period and the words for it — and only which of the two a
+ * reading carries is decided out here, where the file is.
+ *
+ * Only `ABSENCE.season` is replaced. A reading blank for want of an operative
+ * temperature or of an occupant is blank for a reason of its own, and the file's
+ * months have nothing to say about it.
+ */
+function overFileExtent(readings, epw) {
+  const period = periodFor(epw);
+  if (!period || coversSeason(period)) return Object.freeze(readings);
+  return Object.freeze(
+    readings.map((reading) =>
+      reading.absence === ABSENCE.season
+        ? new Reading({
+            criterion: reading.criterion,
+            category: reading.category,
+            absence: ABSENCE.fileSeason,
+            coverage: null,
+          })
+        : reading,
+    ),
+  );
+}
+
 function readTm59(eso, snapshot, patched, epw) {
   // The value the occupancy schedule takes when nobody is there, which is a
   // property of the schedule `applyGains` wrote rather than a constant: 0.1
@@ -5099,23 +5891,41 @@ function readTm59(eso, snapshot, patched, epw) {
   }
   readings.push(readCriterionC(eso, floor));
 
+  // Once, and everything below reads the result. The count and the coverage are
+  // taken off these readings, so taking them off the pre-override list would
+  // have the block counting cleared criteria the rows beside it letter as
+  // absent — the two halves of one board disagreeing about the same run.
+  const over = overFileExtent(readings, epw);
+
   return {
-    readings,
+    readings: over,
     // A count of two, never a verdict, and it throws rather than quietly
     // counting over one criterion if a reading in scope is missing.
-    count: clearedCount(readings),
+    count: clearedCount(over),
     // Taken off a reading rather than by walking the series a sixth time. Any
     // reading that has one has the same one — coverage is a property of the
     // run, not of the criterion — and a run that could not answer anything has
     // none to give, which is the null the rows letter around.
-    coverage: readings.find((r) => r.coverage)?.coverage ?? null,
+    coverage: over.find((r) => r.coverage)?.coverage ?? null,
     // The line the count's own category was judged against. Each criterion a
     // row letters its own — Category I's runs 1 K below Category II's, and one
     // block-level figure cannot be both — so this is here for what reads the
     // block as a whole rather than a row of it.
-    line: readings.find((r) => r.criterion === CRITERION_BY_ID.a && r.category === COUNT_CATEGORY)
+    line: over.find((r) => r.criterion === CRITERION_BY_ID.a && r.category === COUNT_CATEGORY)
       ?.line ?? null,
-    qualifications: qualificationsFor(eso, snapshot, patched, declaredWeather(epw)),
+    // The daylight saving period beside what the file declares about itself,
+    // because the two come off different records and the qualification needs
+    // both: `parseEpwCalendar` reads HOLIDAYS/DAYLIGHT SAVINGS, `readLocation`
+    // reads LOCATION. Read rather than cached, for the reason `declaredWeather`
+    // is: the split is bounded at the file's first dozen lines and never
+    // reaches its 8,760 data records.
+    qualifications: qualificationsFor(
+      eso,
+      snapshot,
+      patched,
+      declaredWeather(epw),
+      epw ? parseEpwCalendar(epw).daylight : null,
+    ),
   };
 }
 
@@ -5276,6 +6086,11 @@ const TM59_BLOCK = new Map([
   // else would take these lines out of the count behind the picker offer that
   // is the one press that fixes them.
   [ABSENCE.weather, 'year'],
+  // A file that stops before the period begins is the same blockage as no file
+  // at all — what clears it is another year, reached from the same picker — and
+  // deliberately not `'season'`, whose press is the Run strip and which on this
+  // desk has nothing left to change.
+  [ABSENCE.fileSeason, 'year'],
 ]);
 
 function tm59Block(target) {
@@ -5416,6 +6231,11 @@ function saveScheme() {
     hash: schemeHash() || 'v1',
     savedAt: Date.now(),
     station: $('t-location').textContent,
+    // Beside the place, never instead of it. A DSY1 and a TMYx for the same
+    // airport letter the same title block, and which of the two a scheme was
+    // solved against is the difference between a design summer and a typical
+    // one — the difference the file was bought for.
+    file: weatherSource?.kind === 'file' ? weatherSource.label : null,
     label: shapeLabel(params),
     measure: measureNow(),
   });
@@ -5435,6 +6255,29 @@ function saveScheme() {
 
 const sameStation = (a, b) =>
   (a?.wmo ?? null) === (b?.wmo ?? null) && (a?.window ?? null) === (b?.window ?? null);
+
+/**
+ * Whether a decoded scheme names the climate this desk is on.
+ *
+ * Both tokens, never one. The station half was the whole test and it read as
+ * though it were: a scheme kept under an attached file carries `station: null`,
+ * a desk on an attached file answers `stationToken()` with `null` too, and the
+ * two nulls matched — so a scheme solved against a DSY1 restored *in place*
+ * against whatever climate happened to be attached, a different purchased file
+ * or none at all, and the sliders moved and the numbers came back somebody
+ * else's. Nothing on the sheet said so, because nothing was wrong with the
+ * desk: it was a real building solved against a real year, and only the stored
+ * hash knew it was the wrong one. Constitution II is the rule it broke — one
+ * hash, one set of numbers, on any machine — and a silent breach of it is worse
+ * than a refusal a reader can read.
+ *
+ * The fingerprint is the comparison rather than the declaration. Two years of
+ * one purchase describe themselves identically in `wfd`; the fingerprint is
+ * over the bytes and is the only thing that tells them apart.
+ */
+const sameClimate = (a, b) =>
+  sameStation(a.station, b.station) &&
+  (a.file?.fingerprint ?? null) === (b.file?.fingerprint ?? null);
 
 /**
  * Put a kept scheme back on the desk.
@@ -5461,9 +6304,16 @@ function restoreScheme(scheme) {
     return;
   }
 
-  if (!sameStation(state.station, stationToken())) {
+  if (!sameClimate(state, { station: stationToken(), file: fileToken() })) {
     statusEl.className = 'status';
-    statusEl.textContent = `Restoring ${scheme.name}, which names another station — reloading to fetch its weather…`;
+    // Through the link either way, and the sentence says which errand the
+    // reload is on. A station is fetched; a file cannot be — the link path
+    // re-attaches it from this browser where it is kept and asks for it in the
+    // file's own words where it is not, which is the one place that state is
+    // written and the reason this is not a second copy of it.
+    statusEl.textContent = state.file
+      ? `Restoring ${scheme.name}, which was solved against another weather file — reloading to ask for it…`
+      : `Restoring ${scheme.name}, which names another station — reloading to fetch its weather…`;
     history.replaceState(null, '', `#${scheme.hash}`);
     location.reload();
     return;
@@ -6715,6 +7565,10 @@ function renderShelf() {
     sub.textContent = [
       scheme.label,
       scheme.station,
+      // The file, where one was attached when this was kept. It is lettered
+      // after the place because the place is what the reader recognises the
+      // scheme by and the file is which year of it.
+      scheme.file,
       scheme.measure.solved
         ? `${scheme.measure.annual ? 'annual' : 'design day'} · ${scheme.measure.hours.toLocaleString('en-US')} h`
         : 'never solved',
@@ -6962,6 +7816,50 @@ statusEl.textContent =
  * there is exactly one caller and it waits.
  */
 async function solve() {
+  // A desk asked to run design days it does not have.
+  //
+  // Reachable, and reachable by an ordinary gesture: a weather file attached
+  // without a DDY beside it leaves the model with no `SizingPeriod:DesignDay`
+  // at all (`attachClimate`), and Design days on the Run strip is still a
+  // control the reader can turn back to Run. What the engine does with that is
+  // a get-input fatal about zero environments, blamed on nothing the reader
+  // did — so it is refused here instead, before a run starts, naming the two
+  // things that would fix it.
+  //
+  // Refused rather than withdrawn, and the difference is worth stating: a
+  // withdrawn control would have to be hidden from `controls.js`, whose
+  // declarations see only `params`, and whether the desk holds design days is a
+  // property of what was attached rather than of any parameter. A refusal in
+  // view says the same thing in the place the reader is looking.
+  if (params.sizingPeriods === 'Yes' && !designDayDatums(model).length) {
+    stopAuto();
+    clearResults();
+    statusEl.className = 'status bad';
+    statusEl.textContent =
+      'This desk has no design days: the attached weather file came without a DDY beside it. ' +
+      'Set Design days to Skip on the Run strip to run the file’s year, or attach the DDY that came with it.';
+    return;
+  }
+
+  // A desk asked to run months the attached file has not got.
+  //
+  // The other half of admitting a file shorter than a year, and the same shape of
+  // problem as the design days above: reachable by an ordinary gesture, fatal in
+  // the engine, and blamed on nothing the reader did.
+  //
+  // Refused rather than corrected. Narrowing the calendar here would be the desk
+  // overruling a control the reader set, and it would put the sheet outside its
+  // own link: `months` is on `params`, a permalink carries it, and a mask quietly
+  // rewritten at attach time would have the same address produce a different run
+  // on the machine that happened to attach first.
+  if (monthsOutsideFile()) {
+    stopAuto();
+    clearResults();
+    statusEl.className = 'status bad';
+    statusEl.textContent = fileMonthsRefusal();
+    return;
+  }
+
   // Read the shape and write the IDF in the same breath. `params` and `model`
   // both keep moving under a drag, and a result filed against the wrong shape
   // would leave the pump chasing a target it had already hit.
@@ -6988,8 +7886,16 @@ async function solve() {
     // beside it is a count — the bill divides by it and the manifest spells it
     // out, and one name over two shapes is a trap for whoever edits next.
     monthMask: epwText ? snapshot.months : null,
-    weatherStem:
-      epwText && station?.url ? station.url.split('/').pop().replace(/\.zip$/i, '') : null,
+    // The archive's name for a station, the reader's own file name for a file,
+    // narrowed in `source.js` to what a ZIP member may carry.
+    weatherStem: epwText && weatherSource ? weatherSource.stem : null,
+    // Whether the weather in this bundle is the reader's own. A station's
+    // archive is public and the manifest can simply name it; a file they
+    // attached may be licensed, and the ZIP is about to carry a copy of it to
+    // their disk, from where it is one drag onto an issue away from being
+    // public. Said in the manifest rather than policed, because the licence is
+    // theirs and this page has no way to read it.
+    ownWeather: epwText ? weatherSource?.kind === 'file' : false,
     location: $('t-location').textContent,
     permalink: schemeUrl(snapshot),
   };
@@ -7527,12 +8433,19 @@ class LandedRun {
   }
 }
 
-// The station's published card, resolved once per station rather than once per
-// bill: a priced drag prices every study position and every spot height on
-// every frame, and the card depends on nothing but the station.
-let publishedCard = { station: undefined, card: null };
+// The published card, resolved once per place rather than once per bill: a
+// priced drag prices every study position and every spot height on every frame,
+// and the card depends on nothing but where the building is.
+//
+// Keyed on the place object's identity rather than on a station's. `deskPlace()`
+// returns the frozen `SHIPPED_PLACE` or the frozen `Place` an attach built, and
+// both are replaced whole rather than mutated -- so identity is the right test,
+// and an attach that happened not to change the country still invalidates a
+// card resolved for somewhere else.
+let publishedCard = { place: undefined, card: null };
 const publishedRates = () => {
-  if (publishedCard.station !== station) publishedCard = { station, card: resolveRates(station) };
+  const place = deskPlace();
+  if (publishedCard.place !== place) publishedCard = { place, card: resolveRates(place) };
   return publishedCard.card;
 };
 
@@ -7602,7 +8515,7 @@ function engagedChannels(snapshot, patch) {
 function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? null, key = null) {
   const channels = engagedChannels(snapshot, patch);
   const engaged = new Set(channels);
-  const card = assume(resolveRates(station), snapshot);
+  const card = assume(resolveRates(deskPlace()), snapshot);
   const uses = END_USES.filter((use) => !use.needs || engaged.has(use.needs));
   const pricingStatus = (field) => {
     const missing = [];
@@ -11984,6 +12897,76 @@ renderSurvey();
 // idle milliseconds for the first study starting on a warm engine.
 whenIdle(() => studyPool.prewarm(), { fallback: 1500 });
 
+/**
+ * A link minted on a desk that was running a file the reader holds.
+ *
+ * The file cannot ride in the link and must not, so what arrives is a
+ * fingerprint of it and the phrase the file uses about itself. Two outcomes:
+ *
+ *   - **this browser is keeping that exact file**, which is what an ordinary
+ *     reload is — the address bar is rewritten on every gesture, so a desk with
+ *     a file attached already carries `wf`, and coming back to it is a link
+ *     being honoured. It is re-attached with no trip to the filesystem and the
+ *     desk solves;
+ *   - **it is not**, which is a colleague opening the link. The desk loads
+ *     whole — every parameter, patch and pin the link carries — and then stops.
+ *     Nothing is solved and no reading that needs a year is lettered, because
+ *     there is no year; what is lettered is which file this desk needs, in that
+ *     file's own words.
+ *
+ * The shipped design days are taken out in that second case, and that is the
+ * point of it. Leaving them would put a run on the sheet — Denver's two days,
+ * solved and lettered — under a title block naming somewhere else, which is
+ * exactly the lie in ink the picker's DDY refusal exists to prevent, arriving
+ * by another road.
+ */
+async function openFileLink(link) {
+  const kept = rememberedFile();
+  if (kept?.fingerprint === link.file.fingerprint) {
+    linkAttachPending = true;
+    syncSweepGate();
+    statusEl.className = 'status';
+    statusEl.textContent = 'Re-attaching the weather file this link names, from this browser…';
+    try {
+      if (await attachRemembered()) return;
+    } finally {
+      linkAttachPending = false;
+      syncSweepGate();
+    }
+  }
+
+  // Nothing to solve, and the reason is a file rather than a setting.
+  stopAuto();
+  clearResults();
+  clearDesignDays(model);
+  DATUMS = designDayDatums(model);
+  // And the title block stops naming Denver. The shipped `Site:Location` is
+  // still in the document — nothing is going to be solved against it, and
+  // removing it would leave the model incomplete for no gain — but the sheet
+  // must not letter a city over a desk that is waiting for a file from
+  // somewhere else. Which place this is cannot be known until the file arrives,
+  // and an em dash is how this sheet says that: zero is a measurement, missing
+  // is not.
+  $('t-location').textContent = '—';
+  $('t-site').textContent = '—';
+  renderTrace();
+  wantedFile = link.file;
+  statusEl.className = 'status bad';
+  // Declared with the rest of the file path's sentences and asserted there
+  // against the 40-word CEILING *carrying a declaration*, which is the only
+  // honest way to count a sentence that quotes one: this was over at 43 words
+  // and shipped, because it had been counted without the dozen the file's own
+  // description adds.
+  statusEl.textContent = FILE_SAYS.waiting(link.file.declares ?? 'a file it does not describe');
+  renderKeptFile();
+}
+
+// What this browser is already holding, before any link is honoured: a reader
+// arriving on a bare address with a file kept from an earlier session has to be
+// told it is there, and offered it, rather than having to attach it again from
+// a filesystem they have already been to once.
+renderKeptFile();
+
 // The verdict on a link the page was opened with, now that boot has finished
 // writing the status line. A refusal stops auto-solve, so no pump starts and
 // the reason stays readable. A station link defers the first solve to the
@@ -11995,6 +12978,8 @@ if (linkError) {
   refuseLink(`This link could not be read — ${linkError.message} — so the sheet is at its defaults.`);
 } else if (linked?.station) {
   attachFromLink(linked);
+} else if (linked?.file) {
+  void openFileLink(linked);
 } else if (params.sizingPeriods === 'No' && !epwText) {
   // A shared station link with its `stn` pair trimmed off still carries the
   // station's `sizingPeriods=No`. That desk holds no environments at all, and
@@ -12110,5 +13095,8 @@ provide('refusedLink', () => (refusalNote && arrivedHash ? { raw: arrivedHash, r
 provide('runFiles', () => ({
   available: Boolean(lastBundle),
   signed: Boolean(signature),
+  // So the card can say, before the download rather than after it, that the ZIP
+  // carries a weather file of the reader's own.
+  ownWeather: Boolean(lastBundle?.ownWeather),
   build: (withSignature) => runBundle({ ...lastBundle, author: withSignature ? signature : null }),
 }));

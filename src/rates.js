@@ -17,7 +17,8 @@ import { kindFor, letter } from './units.js';
  *
  * Five datasets, all open, all dated, none of them global. That last fact is
  * the one this module is arranged around: the station picker reaches every
- * corner of the TMYx archive and the published tariffs do not follow it there.
+ * corner of the TMYx archive and the published tariffs do not follow it there,
+ * and a file the reader attaches can name a country no picker ever offered.
  * So a rate is either resolved and carries its citation, or it is absent and
  * carries the reason -- never a world average standing in for a country, and
  * never last year's number quietly reused. The bill letters an absent rate as
@@ -277,14 +278,14 @@ const TAKES_THE = /^(United |Netherlands|Philippines|Bahamas|Gambia|Maldives|Com
 
 export const placeName = (place) => (TAKES_THE.test(place) ? `the ${place}` : place);
 
-const uncovered = (what, place) =>
+const uncovered = (what, country) =>
   new Absent({
     what,
-    reason: `These tables cover the United States and Canada by state and province and Europe by country, and nothing in them is published for ${placeName(place)}.`,
+    reason: `These tables cover the United States and Canada by state and province and Europe by country, and nothing in them is published for ${placeName(country)}.`,
   });
 
 /**
- * Everything the bill needs to price one site, resolved once per station.
+ * Everything the bill needs to price one site, resolved once per place.
  *
  * Held as a frozen object rather than looked up per line, because a bill whose
  * lines could each resolve differently would be a bill nobody could audit.
@@ -316,17 +317,25 @@ export class RateCard {
 }
 
 /**
- * Price and carbon for one station.
+ * Price and carbon for one place.
+ *
+ * A `Place` is all this needs, which is the point: a picked station and an
+ * attached weather file both say where they are in the same two fields -- an
+ * ISO 3166-1 alpha-3 country and a state or region -- so a file prices exactly
+ * as a station does, and neither has to be told apart here.
  *
  * The US tables are keyed by state and the European ones by country, so the
  * two are tried in that order: a state price is the more local of the two and
  * there is no country row for the United States in Eurostat to fall back to
  * anyway. Everything outside those two geographies gets an `Absent` naming the
  * country it could not price, which is a far more useful thing to read than a
- * number that came from somewhere else.
+ * number that came from somewhere else. That includes a file whose LOCATION
+ * record spells its country in some way the tables do not know: what it said is
+ * what the refusal names, because the nearest match is the one answer a bill
+ * must never quietly give.
  */
-export function resolveRates(station) {
-  if (!station) {
+export function resolveRates(place) {
+  if (!place) {
     const reason = 'No weather location chosen, so there is no country to price against.';
     return new RateCard({
       site: null,
@@ -338,8 +347,32 @@ export function resolveRates(station) {
     });
   }
 
-  const iso3 = station.country;
-  const place = countryName(iso3);
+  // A place that declares no country at all, which an attached weather file is
+  // entitled to be: the EPW's LOCATION record is optional in every field, and a
+  // file carrying no country is making a statement rather than failing. Given a
+  // branch of its own because the alternative was measured and is worse -- the
+  // country falls through `countryName` as the literal it was handed, and the
+  // bill letters "nothing in them is published for null" at a reader. A refusal
+  // has to name what was missing, and what is missing here is the country, not
+  // a table.
+  //
+  // Separate from the no-place branch above, which says nothing was chosen:
+  // something was chosen here, and it is the file that is silent.
+  if (!place.country) {
+    const reason =
+      'This weather file\u2019s own record declares no country, so there is nothing to price it against.';
+    return new RateCard({
+      site: null,
+      currency: USD,
+      electricity: new Absent({ what: 'Electricity tariff', reason }),
+      gas: new Absent({ what: 'Gas tariff', reason }),
+      grid: new Absent({ what: 'Grid carbon intensity', reason }),
+      gasFactor: gasFactorRate(),
+    });
+  }
+
+  const iso3 = place.country;
+  const country = countryName(iso3);
   const us = iso3 === 'USA';
   const ca = iso3 === 'CAN';
   const currency = us ? USD : ca ? CAD : EUR;
@@ -352,70 +385,83 @@ export function resolveRates(station) {
     const table = us ? US_ELECTRICITY : CA_ELECTRICITY;
     const gasTable = us ? US_GAS : CA_GAS;
     const agency = us ? 'The EIA table' : 'The StatCan table';
-    const region = `${station.state}, ${place}`;
+    // A region the file does not declare gets a sentence of its own rather than
+    // being substituted into the one about a table's coverage. Read the two
+    // aloud and the reason is obvious: "the EIA table carries no price for null"
+    // blames a dataset for a gap that is in the file. The grid factor is a
+    // country figure and survives either way -- only the two state-keyed
+    // tariffs go.
+    const said = place.region;
+    const region = said ? `${said}, ${country}` : country;
+    const unstated =
+      `This weather file\u2019s own record declares no state or province, and the ${
+        us ? 'EIA' : 'StatCan'
+      } table is keyed by one.`;
     return new RateCard({
-      site: place,
+      site: country,
       currency,
-      electricity: rateFrom(table[station.state], {
+      electricity: rateFrom(said ? table[said] : undefined, {
         unit: 'per kWh', currency, source: us ? SOURCES.usElectricity : SOURCES.caElectricity, region,
         what: 'Electricity tariff',
-        reason: `${agency} carries no commercial electricity price for ${station.state}.`,
+        reason: said ? `${agency} carries no commercial electricity price for ${said}.` : unstated,
       }),
-      gas: rateFrom(gasTable[station.state], {
+      gas: rateFrom(said ? gasTable[said] : undefined, {
         unit: 'per kWh', currency, source: us ? SOURCES.usGas : SOURCES.caGas, region,
         what: 'Gas tariff',
-        reason: `${agency} carries no commercial gas price for ${station.state}, where little or no gas is distributed.`,
+        reason: said
+          ? `${agency} carries no commercial gas price for ${said}, where little or no gas is distributed.`
+          : unstated,
       }),
-      grid: gridRate(iso3, place),
+      grid: gridRate(iso3, country),
       gasFactor: gasFactorRate(),
     });
   }
 
   if (!inEurope(iso3)) {
     return new RateCard({
-      site: place,
+      site: country,
       currency,
-      electricity: uncovered('Electricity tariff', place),
-      gas: uncovered('Gas tariff', place),
-      grid: gridRate(iso3, place),
+      electricity: uncovered('Electricity tariff', country),
+      gas: uncovered('Gas tariff', country),
+      grid: gridRate(iso3, country),
       gasFactor: gasFactorRate(),
     });
   }
 
   const electricity = rateFrom(EU_ELECTRICITY[iso3], {
-    unit: 'per kWh', currency: EUR, source: SOURCES.euElectricity, region: place,
+    unit: 'per kWh', currency: EUR, source: SOURCES.euElectricity, region: country,
     what: 'Electricity tariff',
-    reason: `Eurostat publishes no non-household electricity price for ${placeName(place)}.`,
+    reason: `Eurostat publishes no non-household electricity price for ${placeName(country)}.`,
   });
 
   const gas = rateFrom(EU_GAS[iso3], {
-    unit: 'per kWh', currency: EUR, source: SOURCES.euGas, region: place,
+    unit: 'per kWh', currency: EUR, source: SOURCES.euGas, region: country,
     what: 'Gas tariff',
-    reason: `Eurostat publishes no non-household gas price for ${placeName(place)}.`,
+    reason: `Eurostat publishes no non-household gas price for ${placeName(country)}.`,
   });
 
   return new RateCard({
-    site: place,
+    site: country,
     currency,
     electricity,
     gas,
-    grid: gridRate(iso3, place),
+    grid: gridRate(iso3, country),
     gasFactor: gasFactorRate(),
   });
 }
 
-const gridRate = (iso3, place) =>
+const gridRate = (iso3, country) =>
   Number.isFinite(GRID_INTENSITY[iso3])
     ? new Rate({
         value: GRID_INTENSITY[iso3],
         unit: 'gCO₂e/kWh',
         quantityKind: 'carbonIntensity',
         source: SOURCES.grid,
-        region: `${place}, ${GRID_INTENSITY_YEAR[iso3]} national mean`,
+        region: `${country}, ${GRID_INTENSITY_YEAR[iso3]} national mean`,
       })
     : new Absent({
         what: 'Grid carbon intensity',
-        reason: `Our World in Data carries no electricity intensity for ${placeName(place)}.`,
+        reason: `Our World in Data carries no electricity intensity for ${placeName(country)}.`,
       });
 
 /**

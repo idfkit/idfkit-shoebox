@@ -3262,3 +3262,217 @@ Nothing else about the three runs differs.
 Cloudflare Pages cannot host this at all: its hard per-asset limit is 25 MiB and
 the engine binary is 28.40 MiB. GitHub Pages, which serves `idfkit.com`, cannot
 do the `/onebuilding` rewrite.
+
+### Attaching a weather file (src/source.js, src/epw.js, the file path in main.js)
+
+The station picker fetches from climate.onebuilding.org and that is every file
+this page can get for itself. It has never included the one a CIBSE TM59
+assessment is actually required to use: WFR:2026 §3 names the DSY1 file for the
+site at the 2050s, RCP8.5, 50th percentile, and CIBSE licenses it. It is bought,
+and it lands on the buyer's machine. So the one part of the method this page
+could honour was the part it withheld — and `tm59.js` had been written, from the
+start, to stay true "the day a reader attaches a licensed DSY of their own".
+
+Everything below is the day.
+
+**The clearing list is the feature.** `choose()` did eight things when a station
+landed and six of them were clears — the study scheduler and its stops, the
+survey ground and its traverse, the running-mean cache, the bill and the last
+run, the register's outcome — each with a comment naming the mismatch it exists
+to prevent. A second attach path would have had to repeat all six, and the
+failure mode of missing one is not a crash: it is Denver's curve under a British
+title block, which looks exactly like a reading. So the eight steps were lifted
+into `attachClimate(source)` before anything else was written, and the picker
+became its first caller, verified by writing the same IDF for the same station
+before and after.
+
+**A file is not a station wearing a hat.** The sheet read `station.url`,
+`station.hdd18`, `station.ashraeClimateZone`. Handing it a file object with
+those undefined would letter an absence as a value, which is the one thing
+Principle IV forbids — so both kinds became a frozen `WeatherSource` whose every
+field is passed and whose every absence is `null` on purpose. A file's
+`climateZone` is null because a file declares no ASHRAE zone and there is
+nothing to infer one from; the em dash appears where it is lettered, never in
+the model.
+
+**The fingerprint is over the file's records, not over how its lines end.** A
+link cannot carry a multi-megabyte licensed file and must not, so it carries
+sixteen base64url characters of a SHA-256 instead, plus the phrase the file uses
+about itself. The one normalisation — CRLF and lone CR to LF, trailing newlines
+dropped, done on the bytes before any decoding — is there because a bought file
+copied between Windows and macOS, or opened and saved once by an editor, changes
+its line terminators and not one value EnergyPlus reads. Refusing a colleague's
+identical data over that would be a false refusal, which is worse than no check
+at all: it teaches the reader to stop trusting the check. Nothing else is
+normalised. Doing it on the bytes also means a Latin-1 city name cannot move the
+fingerprint, because the decoder never runs.
+
+**The address bar remembers which file; `localStorage` remembers its bytes.**
+This division is the Principle II finding, and the obvious design quietly breaks
+it. `updatePermalink` rewrites the fragment on every gesture, so a desk with a
+file attached already carries `wf` — which means an ordinary reload *is* a link
+being honoured, and re-attaching from the browser on that path costs nothing and
+breaks nothing. Re-attaching on a **bare** address would be different: it would
+make `shoebox.idfkit.com` mean one thing on the machine that once attached a
+file and another on every other machine, which is exactly what "the same URL
+reproduces the same drawing, in any browser, on any machine" forbids. So a bare
+desk *offers* the remembered file and attaches nothing. Driven in a browser: the
+reload comes back on the file and solves 8,760 hours; the bare address comes
+back to Denver with the file offered beside the picker.
+
+**A desk waiting on a file letters an em dash, not a city.** A link naming a
+file the recipient does not hold loads the whole desk and then stops: no run, no
+reading, and the shipped design days taken out. Leaving them would put Denver's
+two days, solved and lettered, under a title block naming somewhere else — the
+lie in ink the picker's DDY refusal already exists to prevent, arriving by
+another road. The title block reads `—` until the file lands.
+
+**No DDY means no design days.** A purchased year usually arrives without one.
+`model.js`'s own comment on the economizer's cooling flow limit already records
+why removing them is safe — *"Nothing here is autosized (the console does not
+run a sizing pass)"* — so a document with no `SizingPeriod:DesignDay` and
+`run_simulation_for_sizing_periods: 'No'` is complete. `Site:Location` still
+comes off the EPW's LOCATION record, which is the first place in this repository
+to spell `latitude`, `longitude`, `time_zone` and `elevation` out loud: the
+station path never had to, because `designConditionsFrom` copies the DDY's
+parsed object through `toJSON()`. All four are confirmed against the 26.1.0
+schema by `specs/012-attach-weather-file/verify/schema-fields.mjs` rather than
+recalled, per this repository's standing rule about field names drifting.
+
+A run asked for design days the desk has not got is refused in view before it
+starts, rather than reaching the engine as a get-input fatal blamed on nothing.
+Refused rather than withdrawn, and the difference is worth recording: a
+withdrawn control would have to be hidden from `controls.js`, whose declarations
+see only `params`, and whether the desk holds design days is a property of what
+was attached.
+
+**The measurements are synthetic, and that is a gap, not a result.** Every
+figure below was taken over a generated EPW — 8,760 records of the right shape
+around a plausible dry-bulb series — because the environment this was built in
+denies climate.onebuilding.org (CONNECT answers 403) and CIBSE data is
+purchased. Two synthetic files already disagree with each other by a lot: one
+compresses to 22.3 % of its size and the other to 13.9 %, which is itself the
+argument that a synthetic compression ratio settles nothing about a bought file.
+The remembering budget rests on that ratio, so **it is measured on a real file
+before it is relied on** (quickstart gate 1).
+
+| over a synthetic 1.66 MiB EPW | cost | when |
+| --- | --- | --- |
+| `dailyMeans` | 3.2 ms | once per attach; the comfort line pays it anyway |
+| SHA-256 alone | 4.75 ms | inside the fingerprint |
+| `fingerprint()` end to end | ~20 ms | once per attach, never on the solve path |
+| gzip | 44.5 ms | once, after the attach has already landed |
+| gunzip | 15.4 ms | once, on a boot that re-attaches |
+| stored | 388 KB gzipped → 518 K base64 chars → ~1.0 MiB of quota | `localStorage` is UTF-16 |
+
+**Three lettering defects the harnesses could not have found**, all caught by
+driving the real page and worth knowing about for the next feature: the site
+field went on reading "Choose a weather location" over an attached year, because
+only the picker had ever set it; the measured degree days came out as
+`2,812.204 HDD18`, four digits of precision this arithmetic does not have,
+beside an index figure published as `2,801`; and the climate-zone chip ran
+straight into the line beside it in the markup, so a screen reader read `5A` and
+`Cool, Humid` as one word while CSS padding hid it on screen.
+
+#### The convergence pass: what reading the code against the spec turned up
+
+Six findings, appended to `tasks.md` as Phase 8 and worth keeping because five of
+them are the same shape: a thing the spec asked for that the implementation had
+answered with its nearest neighbour.
+
+**A kept scheme restored against somebody else's climate, silently.**
+`restoreScheme` decided between "apply in place" and "go through the link" on
+`sameStation(state.station, stationToken())` alone. A scheme kept under an
+attached file carries `station: null`; a desk on an attached file answers
+`stationToken()` with `null` too. The two nulls matched. So a scheme solved
+against a purchased DSY1 was applied in place against whatever was attached — a
+different file, or nothing — the sliders moved, the numbers came back, and
+nothing anywhere said they were another year's. There was nothing wrong with the
+desk: it was a real building solved against a real climate, and only the stored
+hash knew it was the wrong one. That is Constitution II broken in the quietest
+way available, and the fix is one line of comparison plus the knowledge of why a
+fingerprint and not a declaration: two years of one purchase describe themselves
+identically in `wfd`, and the fingerprint is over the bytes.
+
+`Scheme` now carries the file beside the place, too. `station` holds
+`$('t-location').textContent`, and a DSY1 and a TMYx for the same airport letter
+the same title block — which is the entire difference the file was bought for.
+
+**An extent is a fact about a file; a hole is a fault in one.** The attach gate
+was `dailyMeans`, chosen (plan finding 4) so there would be one opinion about
+what a usable file is. What that missed is that a 1 May – 30 September DSY is a
+perfectly good file and `dailyMeans` refuses it — its 365-day contract belongs to
+the comfort line, which recurses from 23 April with an eight-tenths memory and
+genuinely cannot work without a year. Refusing the file to protect the annual
+bill threw away the title block, the summer run and the criteria along with it.
+
+So the reader split in two rather than growing a flag. `dailyMeansCarried`
+returns `null` for each day the file has not got and is what the gate reads;
+`dailyMeans` is the same series refused unless all 365 are filled, and is what
+the comfort line reads. `assertCarriesItsPeriod` keeps the half of the old gate
+that was still a fault: a day missing from between the file's own first and last
+record is a hole, and every reading over those months would be taken over a year
+with a day out of the middle of it.
+
+The refusals then had to name the right thing. `carries 0 of the 24 records
+1 January needs` is what a 1 May file used to be told, which reads as a broken
+file and sends the reader looking for a corrupt record that is not there; it now
+names the extent. `degreeDaysOf` returns a `DegreeDays` carrying `reason` instead
+of a sum, because 92 summer days summed on an 18 °C base come out low and
+plausible and would sit in the sub-line beside a published annual figure as
+though the two were comparable. And `ABSENCE.fileSeason` was added beside
+`ABSENCE.season` because the two send a reader to opposite ends of the sheet:
+`season` is a calendar with months unticked and the Run strip fixes it, while a
+file that stops before May is a desk whose months are *already* ticked, and told
+to "run some of May to September" the reader would go to the Run strip, find them
+there, and have nowhere left to look.
+
+**Admitting the file opened a second engine fatal, and only the page showed it.**
+Nothing in a Node harness could see this: with a part-year file admitted, a desk
+still calendared for the year sends EnergyPlus to a month with no records, and it
+terminates in `GetNextEnvironment`. The sheet letters *Program terminates due to
+preceding condition*, which is true and tells the reader nothing at all. So
+`monthsCovered` counts the whole months a file carries — whole, because
+`applyRun` writes a `RunPeriod` from the first of a contiguous group to the last,
+and a month the file has half of cannot be run — and `solve` refuses before the
+run, naming the file's extent, exactly as it already refuses a desk asked to run
+design days it does not have.
+
+**Refused, never narrowed**, and that is the interesting half. Quietly rewriting
+the month mask to fit the file is the obvious fix and would put the sheet outside
+its own link: `months` is on `params`, a permalink carries it, and the same
+address would then produce one run on the machine that attached the file and
+another everywhere else. The desk does adjust `sizingPeriods` on an attach, which
+looks like a precedent and is not: that commit goes through `commit`, the link
+hands in its own `sizing`, and the Run strip letters the result. There is no such
+route for a mask.
+
+The same ordering trap caught the sentence: `attachClimate` writes its attach
+sentence *after* the commit that starts the solve, so the refusal the pump had
+already written was overwritten by a cheerful "attached" — the sheet disagreeing
+with itself in one row, with the reader believing the more recent half. Both now
+come from one predicate.
+
+**Two things about the status row worth knowing before driving the page again.**
+The attach sentence is overwritten on the first attach of any session, every
+time: `markStale` follows it inside the same task and replaces it with *Model
+changed — solving when you let go* whenever the attach changed the desk's shape,
+which the first one always does by moving Design days to Skip. It cannot be
+polled for either — 500 ms of polling never saw it — so `page-gate7.mjs` records
+the row from a `MutationObserver` and attaches twice.
+
+**A budget nothing enforces is not a budget.** Commit `35a62ac` counted the
+waiting-desk sentence by hand, got 43 words against the 40-word `CEILING`,
+trimmed it, and shipped — with no assertion, and with the count taken *without* a
+file declaration in it, which is the state no reader ever sees it in. Every
+sentence the file path letters is now declared once in `FILE_SAYS` and asserted
+at load, and the one that quotes a declaration is asserted quoting one, two words
+longer than the longest the fixtures produce: a purchased file is named by
+whoever sold it, and a page that only just fits the names it has seen will one
+day be handed a longer one with nothing thrown.
+
+What is deliberately **not** asserted is the part a parser wrote. A refusal quotes
+`dailyMeansCarried`'s or `designConditionsFrom`'s own sentence, naming the record
+or the day, and that is the only part of it a reader can act on: it may not be
+folded, may not be shortened, and is not this page's text to budget. The wrapper
+is what the module wrote and the wrapper is what is counted.

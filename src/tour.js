@@ -46,7 +46,15 @@ import { fold } from './console.js';
 // pass them. A returning reader's tick against the survey note was taken
 // against a note about contours and spot heights alone, and the rule is that a
 // changed sheet is met as a new one.
-const STORE = 'shoebox-general-notes-v5';
+//
+// v6 because the station step stopped being only about stations, and because
+// v5 had already shipped by the time it did. Two features in flight bumped this
+// line for two different reasons, which is the one way this key can go wrong:
+// the second of them cannot reuse the first's number, or a reader who met v5 on
+// the published sheet would never be shown the step that now tells them a
+// weather file of their own can go on this desk. A key is only worth keeping if
+// every meaning it has ever had is its own.
+const STORE = 'shoebox-general-notes-v6';
 const VIEWS = ['open', 'folded', 'retired'];
 
 // A sheet counts its own notes in words, and the count is read off the
@@ -109,11 +117,12 @@ export const NOTES = Object.freeze([
   new Note({
     id: 'station',
     title: 'Attach a year of weather',
-    step: 'Pick a weather station to run a full 8,760-hour year there.',
+    step: 'Pick a station, or attach a weather file of your own.',
     body:
-      'Pick any of 17,292 stations. The run becomes a full 8,760-hour year ' +
-      'at that place, design conditions and all. Patch in System or Gains ' +
-      'and the bill of quantities follows, priced from published tariffs.',
+      'Pick any of 17,292 stations, or attach a weather file you hold — a ' +
+      'licensed CIBSE DSY among them, read on this machine and never ' +
+      'uploaded. The run becomes a full 8,760-hour year at that place. Patch ' +
+      'in System or Gains and the bill follows, priced from published tariffs.',
     target: '#site',
     focus: '#site-field',
   }),
