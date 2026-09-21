@@ -6205,6 +6205,31 @@ function targetBlock(target) {
 }
 
 /**
+ * The one reason every line of a standard is empty for, or null.
+ *
+ * Lines under the same blockage can still differ in their last clause: a
+ * Passivhaus board with System out has three lines with no demand to meter and
+ * two with no load to size, which is one press and two consequences of it.
+ * `BLOCK_TOGETHER` says those together, so the board can state the pair once
+ * rather than falling back to five rows of near-identical prose.
+ */
+const BLOCK_TOGETHER = Object.freeze(
+  Object.fromEntries(
+    Object.entries({
+      system: 'patch System in — a free-running zone has nothing to meter or size',
+    }).map(([key, text]) => [key, withinBudget(BUDGETS.STANDING, `the shared absence ${key}`, text)]),
+  ),
+);
+
+function sharedAbsence(targets) {
+  if (targets.length < 2 || targets.some((t) => targetReading(t) != null)) return null;
+  const blocks = targets.map(targetBlock);
+  if (blocks.every((b) => b.says === blocks[0].says)) return blocks[0].says;
+  if (blocks.every((b) => b.key === blocks[0].key)) return BLOCK_TOGETHER[blocks[0].key] ?? null;
+  return null;
+}
+
+/**
  * The same finding as a sentence for the margin column.
  *
  * The board's note above the table offers the *press* that clears a blockage
@@ -7119,6 +7144,14 @@ function renderScore() {
     const bar = elem('div', 'score-bar');
     bar.append(elem('span', 'score-name', preset.name));
     th.append(bar);
+    // Where every line of a standard is empty for one reason, the reason is
+    // said once, under the standard's name, and each row keeps its em dash and
+    // points up to it. Said per row, "patch System in — a free-running zone has
+    // no demand to meter" stood eleven times down the board on the starting
+    // desk, and the one line that did read was lost among them. Still in view
+    // and never folded: it is a reason beside an em dash, one row up.
+    const shared = sharedAbsence(preset.targets);
+    if (shared) th.append(elem('p', 'score-why', `No line of it reads yet: ${shared}.`));
     // The same armed square the run ledger, the auto-solve toggle and the
     // console's patch buttons use, meaning the same thing a fourth time: this
     // step is armed. Chasing is exactly the bill's pin in another column —
@@ -7228,7 +7261,7 @@ function renderScore() {
       margin.className = 'delta';
       margin.dataset.label = 'Margin';
       if (value == null) {
-        margin.textContent = targetAbsence(target);
+        margin.textContent = shared ? 'as above' : targetAbsence(target);
         margin.classList.add('absent');
       } else if (target.limit != null) {
         const over = value - target.limit;

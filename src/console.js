@@ -230,19 +230,29 @@ export function mountConsole({
 
   let indexing = null; // null until the first read, so the first apply always runs
   let opened = null; // the one strip unfolded, while indexing
+  // Out strips the reader has opened, while the desk is a column. A strip out
+  // of the model folds to its head row there, because nine of eighteen out on
+  // the starting desk were 5,700px of dimmed controls in an 11,900px console;
+  // opened, it is settable as before. Forgotten when the strip comes back in,
+  // so taking it out again folds it again.
+  const openedOut = new Set();
 
   function refold() {
     for (const channel of CHANNELS) {
       const here = strips.get(channel.id);
-      const shown = !indexing || opened === channel.id;
+      const out = here.strip.classList.contains('out');
+      // On the index every strip folds; in a column only an out one does.
+      const folds = Boolean(indexing) || out;
+      const shown = indexing ? opened === channel.id : !out || openedOut.has(channel.id);
       // `hidden` rather than a class, so a folded strip's controls leave the
       // tab order and the accessibility tree with it. A reader tabbing through
       // the index should meet eighteen rows, not eighteen rows and a hundred
       // controls they cannot see.
       here.fold.hidden = !shown;
-      here.strip.classList.toggle('open', Boolean(indexing) && shown);
-      here.toggle.disabled = !indexing;
-      if (indexing) {
+      here.strip.classList.toggle('open', folds && shown);
+      here.strip.classList.toggle('folds', folds);
+      here.toggle.disabled = !folds;
+      if (folds) {
         here.toggle.setAttribute('aria-expanded', String(shown));
         here.toggle.setAttribute('aria-controls', here.fold.id);
       } else {
@@ -311,12 +321,13 @@ export function mountConsole({
     head.append(title);
 
     toggle.addEventListener('click', () => {
-      if (!indexing) return;
+      if (!indexing && !strip.classList.contains('out')) return;
       // The row you tapped must not move out from under your thumb while a
       // strip somewhere above it closes. Measure where this head sits, let the
       // folds change, and put it back where it was.
       const before = head.getBoundingClientRect().top;
-      opened = opened === channel.id ? null : channel.id;
+      if (indexing) opened = opened === channel.id ? null : channel.id;
+      else if (!openedOut.delete(channel.id)) openedOut.add(channel.id);
       refold();
       const after = head.getBoundingClientRect().top;
       if (after !== before) window.scrollBy(0, after - before);
@@ -2423,6 +2434,7 @@ export function mountConsole({
         const here = strips.get(channel.id);
         const s = state.get(channel.id);
         here.strip.classList.toggle('out', !s.engaged);
+        if (s.engaged) openedOut.delete(channel.id);
         here.strip.classList.toggle('blocked', Boolean(s.blocked));
         here.strip.classList.toggle('soloed', solo === channel.id);
         here.note.hidden = !s.blocked;
@@ -2441,6 +2453,7 @@ export function mountConsole({
           here.solo.setAttribute('aria-pressed', String(solo === channel.id));
         }
       }
+      refold();
       api.sync();
     },
 

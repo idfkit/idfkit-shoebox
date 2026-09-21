@@ -1079,6 +1079,19 @@ total. Zero is a measurement; missing is not one. Never substitute a previous
 value or a default, and say in the interface which term is missing and why.
 This is the visual half of the project's no-silent-fallbacks rule.
 
+**Where every line of a group is missing for one reason, say the reason once,
+at the group's head.** On the targets board with System out, "patch System in —
+a free-running zone has no demand to meter" stood eleven times down the margin
+column, and the one line that did read was lost among them. Now, when every line
+of a standard is empty under one blockage, the reason stands under the
+standard's name ("No line of it reads yet: …"). Each row keeps its em dash and
+says `as above`. The reason is still in view and never folded. It moves one row
+up and stops repeating. Two reasons that share a remedy and differ only in their
+consequence (no demand to meter, no load to size) are said together from
+`BLOCK_TOGETHER`, asserted against the `STANDING` budget. A group with any line
+that reads, or with lines missing for different reasons, keeps the reason on
+each row.
+
 ### A refusal that carries its next step
 
 The visual other half of `Absence is not zero`. That pattern governs a reading
@@ -1228,7 +1241,15 @@ of the desk on every draw.
   model, given the rest of the configuration. Never for a control belonging to
   a model that is out — see above.
 - `.out` at `opacity: 0.38` on the body and meter only, never the header: the
-  whole path is out of the model. Values stay legible and settable.
+  whole path is out of the model. **In a column, an out strip also folds to its
+  head row** (number, name, term, patch button reading `Out`, and a chevron).
+  The whole row opens it, and opened, its values are legible and settable as
+  before. On the starting desk, nine of eighteen strips are out, and drawn open
+  they were 5,700px of an 11,900px console. The patch button that brings a
+  strip back is on the folded row, so nothing that answers "is it in the model"
+  is behind the fold, which is the index sheet's rule. Patching a strip in
+  unfolds it, and an opened out strip is forgotten when it comes back in, so
+  taking it out again folds it again.
 - `.stale` at `opacity: 0.42`: results that describe a state the model no longer
   has.
 

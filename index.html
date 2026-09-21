@@ -1945,6 +1945,19 @@
          so without this the name and its marker are laid out inside 44 % of
          the board and the name wraps to two lines beside a squeezed button. */
       .register #score tr.score-head td { width: auto; }
+      /* The reason every line of this standard shares, said once under its
+         name: prose, so the control note's sans, ranged left under the band's
+         own inset, and one step firmer than a row's reason because it now
+         stands for all of them. */
+      .register #score .score-why {
+        margin: 6px 0 0;
+        padding: 0 13px;
+        max-width: 64ch;
+        font: 400 10.5px/1.45 var(--sans);
+        text-align: left;
+        white-space: normal;
+        color: var(--ink-3);
+      }
       /* The band itself is on the inner div, not on the cell: the cell keeps
          the air above the section, and a `td` has no margin to make it with. */
       .score-bar {
@@ -2920,6 +2933,18 @@
          model. This is what a non-photo-blue pencil would have said. */
       .strip.out .strip-body,
       .strip.out .meter { opacity: 0.38; }
+      /* And in a column, folded to its head row until it is opened: the patch
+         button already says Out in words, the chevron says there is more, and
+         the whole row is the tap target, as on the index sheet. */
+      .strips:not(.index) .strip.folds { padding-block: 11px 12px; }
+      .strips:not(.index) .strip.folds .strip-toggle { cursor: pointer; }
+      .strips:not(.index) .strip.folds .strip-chev { display: block; }
+      .strips:not(.index) .strip.folds .strip-toggle:hover .strip-chev { border-color: var(--redline); }
+      .strips:not(.index) .strip.folds .strip-toggle:hover .strip-name { color: var(--redline); }
+      .strips:not(.index) .strip.folds:not(.open) .strip-head { margin-bottom: 0; }
+      .strips:not(.index) .strip.folds.open { padding-bottom: 16px; }
+      .strips:not(.index) .strip.folds.open .strip-head { margin-bottom: 7px; }
+      .strips:not(.index) .strip.folds .strip-blocked { margin-top: 8px; }
       .strip.soloed { background: var(--redline-wash); }
 
       .strip-head {
