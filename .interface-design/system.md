@@ -1055,6 +1055,47 @@ between what they measure and what the method means by them.
   the register's: two tracks of prose survive some way below the width at which
   five columns of figures stop being a table.
 
+### A reading no published line judges
+
+Every reading on the roster but one can be held against somebody's limit. The
+daylight reading cannot, and a figure that looks like every other figure on the
+sheet while being a ranking instrument rather than a measurement is worse than
+no figure at all. What separates the two is entirely typographic, so it is a
+pattern rather than a one-off.
+
+- **The figure, its unit, where it was taken, that nothing published judges it,
+  and where the method stops being valid all stand in view.** Not in a fold and
+  not on hover. `CLAUDE.md` sends method and citations to a fold and keeps
+  readings, verdicts, absence reasons and refusals out of one; these five are on
+  the second list. The position is there because it is the one thing a reader
+  cannot recover from the figure, and the validity breach because the shipped
+  desk is past the limit on first load.
+- **The method's own prose and its citations fold**, under the console's
+  existing `Method` summary word. That is the same division the pattern above
+  keeps, and the reason it can be kept here: the reader never has to open
+  anything to learn that the figure is qualified, only to learn how.
+- **A readout that must not fold is not a detail of its strip's body.** It is
+  moved out of `strip-fold` and onto the strip itself, beside the blocking note,
+  which was already there for exactly this reason: a refusal is the strip's
+  current state rather than a detail of it. `Readout` declares this with
+  `inView`, and it defaults false, because the index sheet is meant to stay an
+  index.
+- **It stands whether or not its channel is engaged, and at full ink.** The
+  reading is taken by a probe written outside every gate, so the strip being
+  patched out neither removes the readout nor dims it: `.strip.out` dims the
+  strip's fold, and an `inView` readout is not in the fold. A reading that
+  vanished with its channel, or that greyed to the ink this sheet reserves for
+  "not in the model", would be misread on exactly the desk the feature exists
+  for.
+- **The in-view half is held to `CEILING`**, 40 words, asserted once at load
+  against the worst case rather than thrown at render: it is composed from the
+  position, the no-line sentence and the validity statement, and a throw
+  mid-render would turn a copy defect into a broken sheet. The worst case is the
+  shipped desk, which carries all three.
+- **No pen.** `--warm` and `--cold` are reserved for signed physical quantities.
+  An illuminance is an unsigned magnitude, and spending the pair on it would
+  spend the one encoding this page has for direction on a reading that has none.
+
 ### Absence is not zero
 
 A reading with no data behind it renders as an em dash and is excluded from any

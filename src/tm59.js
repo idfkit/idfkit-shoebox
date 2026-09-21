@@ -1269,13 +1269,19 @@ export function occupancySeries(eso) {
  * two hourly series of different lengths off one run is a fact about the run
  * this module does not understand, and reading it anyway would be guessing
  * which hours the shorter one is missing.
+ *
+ * Both series are named by the caller rather than one of them being spelled
+ * into the message, because the rule is about two hourly series of one run and
+ * not about temperature: `daylight.js` reads an illuminance against the same
+ * occupancy fraction and had its own copy of this throw, wording and all, until
+ * the second label made this one serve both.
  */
-function alignedWith(points, other, what) {
+export function alignedWith(points, other, theseAre, thoseAre) {
   if (points.length !== other.length) {
     throw new Error(
-      `the run carries ${points.length} hourly operative temperatures and ${other.length} hourly ` +
-        `${what} values; two hourly series of one run are written at the same timestamps, so which ` +
-        'hours the shorter series is missing cannot be established',
+      `the run carries ${points.length} hourly ${theseAre} and ${other.length} hourly ` +
+        `${thoseAre} values; two hourly series of one run are written at the same timestamps, so ` +
+        'which hours the shorter series is missing cannot be established',
     );
   }
   return other;
@@ -1375,7 +1381,7 @@ export function readCriterionA(eso, trm, category, floor) {
   if (!series.runs.length) return absent(ABSENCE.weather);
 
   const { points } = series;
-  const occ = alignedWith(points, occupancy.points, 'occupancy schedule');
+  const occ = alignedWith(points, occupancy.points, 'operative temperatures', 'occupancy schedule');
   const coverage = coverageOf(points, series.runs);
   // The one absence a partial period earns. Everything between one day and 153
   // is a reading with its coverage lettered beside it (rule 5); only a run that
@@ -1647,7 +1653,7 @@ export function readCriterionC(eso, floor) {
   if (!series.runs.length) return absent(ABSENCE.weather);
 
   const { points } = series;
-  const occ = alignedWith(points, occupancy.points, 'occupancy schedule');
+  const occ = alignedWith(points, occupancy.points, 'operative temperatures', 'occupancy schedule');
   const coverage = coverageOf(points, series.runs);
   if (!coverage.days) return absent(ABSENCE.season);
 

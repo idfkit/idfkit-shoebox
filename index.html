@@ -3955,6 +3955,20 @@
       .readout-sub[hidden] { display: none; }
       .strip.out .readout { opacity: 0.38; }
 
+      /* The daylight row's qualification, under the results schedule. Left
+         aligned under the table's own head column rather than right aligned
+         like a readout's sub, because it is a sentence about the row and not a
+         second figure. `[hidden]` gets its own twin, since this sets `display`
+         and the attribute alone would not defeat it. */
+      .schedule-note {
+        margin: 8px 0 0;
+        font: 400 10.5px/1.45 var(--mono);
+        color: var(--ink-3);
+        max-width: 62ch;
+      }
+      .schedule-note[hidden] { display: none; }
+      #schedule-method[hidden] { display: none; }
+
       /* ── the index sheet ──────────────────────────────────────────────
          Below the breakpoint the desk is no longer a column beside the
          drawing but a page of its own, and eighteen strips laid end to end is
@@ -5599,6 +5613,15 @@
           <section class="schedule">
             <p class="eyebrow">Results schedule<span class="base" id="baseline-note"></span></p>
             <table id="schedule"></table>
+            <!-- The daylight row's qualification, under the table it belongs to
+                 rather than beside the figure, because the schedule letters one
+                 figure per environment and the qualification is the same
+                 statement about all of them. In view and never folded: where
+                 the point stood, that no published line judges it, and whether
+                 the room is past split flux's own validity limit. Written by
+                 `renderSchedule`, hidden when the row drew nothing. -->
+            <p class="schedule-note" id="schedule-note" hidden></p>
+            <div id="schedule-method" hidden></div>
           </section>
 
           <!-- The bill. A priced schedule, not a dashboard: quantity, rate and

@@ -4048,6 +4048,39 @@ export const CHANNELS = Object.freeze([
         landmarks: EMITTANCE,
         note: 'How well the outer face radiates to the sky at night.',
       }),
+      // One control that means what it says, and the defect it closes.
+      //
+      // Interior visible reflectance used to be written from `wallAbs` and
+      // `roofAbs` -- the *exterior* solar absorptances -- as `1 - abs`. Three
+      // things were wrong with that at once. A wall painted dark on the outside
+      // is not a dark wall on the inside. The shipped desk therefore ran its
+      // interior at 0.25, which is close to black paint. And a desk with any
+      // wall mass on it never used `wallAbs` for the inside face at all, because
+      // the inboard masonry leaf carried its own hard-coded 0.65: the surface
+      // the reader was moving and the surface the light actually bounced off
+      // were different objects.
+      //
+      // It reaches the ceiling as well as the walls, which is the part that
+      // matters most. A point seven tenths of the way into a room is lit chiefly
+      // by what comes off the ceiling, so a correction that left the ceiling at
+      // its construction value would leave the dominant surface wrong and the
+      // number still wrong (FR-012).
+      //
+      // **No landmark, and that is deliberate.** `CLAUDE.md` permits one only
+      // where somebody published it. The 0.60 below is the value the assessment
+      // used as a realistic comparator, which is a comparator and not a
+      // citation, and no published interior reflectance schedule has been read
+      // and verified for this repository yet. A band drawn from memory is worse
+      // than no band, so the face ships bare until somebody reads the source.
+      new Scale({
+        key: 'interiorRef', quantityKind: 'ratio',
+        label: 'Interior reflectance', value: 0.6, min: 0.05, max: 0.95, step: 0.01, digits: 2,
+        note:
+          'How much visible light the inside faces throw back: walls, ceiling and floor together, '
+          + 'since split flux reads only the innermost layer of each. It is an interior property and '
+          + 'has nothing to do with the two absorptances above, which are what the outside of the '
+          + 'building does to the sun.',
+      }),
       new Boundary({
         key: 'boundaries',
         label: 'Surface boundaries',
@@ -4592,6 +4625,18 @@ export const CHANNELS = Object.freeze([
       test: (p, on) => (glazed(p) && on('glazing')) || (skylit(p) && on('skylights')),
       reason: 'Needs at least one opening, a window or a rooflight, to see daylight through.',
     },
+    // The reading the window was put there to deliver, on the strip it is about,
+    // and lettered whether or not this channel is engaged. That is the whole
+    // point of it: the probe that measures it is written on every solve, outside
+    // every gate, so a reader who never patches this channel in still sees what
+    // their window is doing. Everything else on the sheet improves as the window
+    // shrinks; this is the one figure that does not.
+    //
+    // The note is the fold `CLAUDE.md` sends method and citations to, under the
+    // console's `SUMMARY.reading` word. What stands in view beside the figure --
+    // the probe's position, that no published line judges it, and the validity
+    // breach where there is one -- is composed in `readouts()` and is never
+    // folded, which is FR-005 as the maintainer settled it on 2026-09-20.
     meter: new Meter({
       label: 'Lighting power',
       terms: [new Term({ variable: 'Zone Lights Electricity Rate' })],

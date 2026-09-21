@@ -35,6 +35,7 @@ import {
   phraseFor,
 } from './controls.js';
 import { fold, mountConsole } from './console.js';
+import { VALIDITY_DEPTH_RATIO, daylightByRun, depthRatio, readDaylight } from './daylight.js';
 import { KINDS, convert, deltaKindOf, figureIn, inIP, kindFor, letter, onSystemChange, setSystem, suffixIn, system, unitIn } from './units.js';
 import { BUDGETS, withinBudget, words } from './copy.js';
 import { describeDesk } from './describe.js';
@@ -1225,7 +1226,7 @@ function axisSegments(points, runs) {
   );
 }
 
-function metricsFor(zone, out, run, hasOutdoor, demand = null) {
+function metricsFor(zone, out, run, hasOutdoor, demand = null, daylight = null) {
   const slice = (a) => a.slice(run.start, run.end + 1);
   const z = stats(slice(zone));
   const o = stats(slice(out));
@@ -1233,7 +1234,12 @@ function metricsFor(zone, out, run, hasOutdoor, demand = null) {
   const lag = hasOutdoor ? slice(zone).indexOf(z.max) - slice(out).indexOf(o.max) : NaN;
   // `demand` is this environment's own meters, or null where there are none to
   // read — a design day, or a desk with the System strip bypassed.
-  return { z, o, damping, lag, hours: run.end - run.start + 1, hasOutdoor, demand };
+  //
+  // `daylight` is this environment's own median illuminance, on the same terms:
+  // null on a design day, and null on a run whose occupied hours the probe
+  // could not be read over. Both render as an em dash, which is what this sheet
+  // letters for a reading that was asked for and did not arrive.
+  return { z, o, damping, lag, hours: run.end - run.start + 1, hasOutdoor, demand, daylight };
 }
 
 const or = (v, fmt) => (Number.isFinite(v) ? fmt(v) : '—');
@@ -1280,7 +1286,38 @@ const SCHEDULE_ROWS = [
   // partial year reads as itself rather than as nothing.
   { label: 'Thermal energy demand intensity — TEDI', unit: 'kWh/m²', kind: 'energyIntensityPeriod', digits: 1, demand: true, at: (m) => m.demand?.tedi ?? NaN },
   { label: 'Cooling energy demand intensity — CEDI', unit: 'kWh/m²', kind: 'energyIntensityPeriod', digits: 1, demand: true, at: (m) => m.demand?.cedi ?? NaN },
+  // The one reading on this schedule that no published line judges, which is
+  // why it is the one carrying a note under the table. It sits last and in its
+  // own group because it is not a thermal quantity: every row above it is a
+  // temperature, a rate or an intensity, and this is an illuminance at a single
+  // stated point.
+  //
+  // Not a `demand` row, so it is never filtered out. A desk that cannot answer
+  // it letters em dashes and the note says what would fix them: the probe is
+  // written on every solve, so an absent figure is a reading that was asked for
+  // and did not arrive rather than a channel that is not in the model.
+  { label: 'Daylight at 70 % depth', unit: 'lx', kind: 'illuminance', digits: 0, group: true, daylight: true, at: (m) => m.daylight ?? NaN },
 ];
+
+/**
+ * How the daylight row was computed, and the four things it is not.
+ *
+ * In a fold, which is `CLAUDE.md`'s own division: readings, verdicts, absence
+ * reasons and refusals never fold; method and citations always do. What stands
+ * in view is the qualification beneath the table, which is a different
+ * statement and is not this.
+ */
+const DAYLIGHT_METHOD =
+  'EnergyPlus split flux at one reference point that dims nothing: the median of the hourly ' +
+  'illuminance over the occupied hours of the weather file, with the design days excluded ' +
+  'because a design day is more extreme than any day in the year it precedes. Dark occupied ' +
+  'hours stay in the sample deliberately, so the figure answers to latitude, season and the ' +
+  'occupancy profile: a window that lights the room for two hours of a winter working day ' +
+  'and not the other six is exactly the case this exists to tell apart. It is offered to ' +
+  'rank positions of this desk against each other and nothing further. The ordering was ' +
+  'measured against a Radiance annual daylight coefficient chain at Spearman 0.9957 with an ' +
+  'identical thirteen-point Pareto frontier; the absolute value carries no such claim. It is ' +
+  'not sDA, not UDI and not a daylight factor, whatever arithmetic may resemble.';
 
 /** One cell of the schedule, in the system showing. */
 const rowText = (row, v) =>
@@ -1395,6 +1432,33 @@ function renderSchedule(columns, baseColumns) {
   }
   table.append(tbody);
   keepTableSemantics(table);
+
+  // The daylight row's qualification, written whenever that row carried a
+  // figure in any column. Hidden rather than emptied when it did not: a
+  // qualification with nothing to qualify is a sentence about a reading the
+  // reader cannot see, and the row's own em dashes already say it was asked
+  // for and did not arrive.
+  const note = $('schedule-note');
+  if (note) {
+    const row = SCHEDULE_ROWS.find((r) => r.daylight);
+    const measured = cols.some((c) => c.metrics && Number.isFinite(row.at(c.metrics)));
+    note.textContent = measured ? daylightQualifier(lastOutcome?.daylightDepth) : '';
+    note.hidden = !measured;
+
+    // Built once and kept, rather than rebuilt with the table: a fold carries
+    // open-or-shut state, and a reader who opened the method would have it
+    // close under them on the next solve.
+    const host = $('schedule-method');
+    if (host) {
+      if (!host.firstChild) {
+        host.append(
+          fold('schedule:daylight', FOLD.method, { label: 'Method for the daylight reading' },
+            elem('p', 'why', DAYLIGHT_METHOD)),
+        );
+      }
+      host.hidden = !measured;
+    }
+  }
 }
 
 /* ══ the bill ════════════════════════════════════════════════════════════ */
@@ -3202,6 +3266,45 @@ const openSub = (n) =>
     : n.hoursOpen === 0
       ? 'The openings never opened'
       : `Open ${n.hoursOpen.toLocaleString('en-US')} of ${n.hoursTotal.toLocaleString('en-US')} h`;
+
+/**
+ * What stands beside the daylight figure, in view and never in a fold.
+ *
+ * Three statements, and each is there because leaving it out would let the
+ * figure be read as something it is not:
+ *
+ *   - **where the point stood.** A single-point illuminance quoted without its
+ *     position is a number a reader cannot interpret, and it is the one thing
+ *     they cannot recover from the figure itself (FR-015). Asked of the
+ *     qualification as a thunk, so the height in it letters in the system
+ *     showing rather than the one the page booted in.
+ *   - **that nothing published judges it** (FR-007). Every other reading on this
+ *     sheet can be held against somebody's line. This one cannot, and a figure
+ *     that looks like every other figure while being a ranking instrument is
+ *     worse than no figure at all.
+ *   - **that the method's own limit has been passed**, where it has (FR-006).
+ *     The shipped desk is 15.24 m deep under a 4.572 m ceiling, which is 3.33
+ *     times, so this is visible on first load and is not an edge case.
+ *
+ * `CLAUDE.md` sends method and citations to a fold, and they are in one: the
+ * readout's note. What is here is the reading's position and its two
+ * qualifications, which are the three things the fold ban names.
+ *
+ * The sentence itself is **not** composed here. It is `qualified.say(ratio)` on
+ * the roster quantity, so any surface that letters this reading letters the same
+ * words without being taught them. Composed here, the roster's `qualified` field
+ * was a promise nothing kept: the study card and the E-02 relief would have
+ * lettered the figure bare and the load assertion guarding the field would still
+ * have passed. Asked at render, so `CEILING` is asserted once at load against
+ * the worst case rather than thrown mid-render — the shape `FILE_SAYS.waiting`
+ * keeps, and the reason `copy.js` marks the budget `asserted: false`.
+ */
+const daylightQualifier = (ratio) => QUANTITY_BY_ID.daylight.qualified.say(ratio);
+
+// The worst case is the shipped desk, which takes the validity clause on first
+// load, so the budget is asserted against a ratio past the limit rather than
+// against the two-clause form nobody will ever see alone.
+withinBudget(BUDGETS.CEILING, 'the daylight qualifier', daylightQualifier(VALIDITY_DEPTH_RATIO + 0.34));
 
 /**
  * Everything the instant is chosen from, kept so the pin can be turned without
@@ -5962,12 +6065,25 @@ function readOutcome(eso, snapshot, patched, epw) {
   // whatever it really is. The bill, the schedule's columns and every sweep
   // sample divide by the same figure, so the scoreboard cannot disagree with
   // the rows above it about how big the building is.
-  const floorArea = geometryFacts(model).grossFloor;
+  const facts = geometryFacts(model);
+  const floorArea = facts.grossFloor;
   return {
     eui: bill?.wholeYear ? bill.intensity('metered') : null,
     ...(readDemand(eso, floorArea) ?? {}),
     ...(readPeaks(eso, floorArea) ?? {}),
     ...(readExtremes(eso) ?? {}),
+    // Read here with everything else the register and the strips letter, and
+    // for the same reason: the console re-letters on every gesture, and walking
+    // 8,760 hourly illuminances to answer a question that cannot have changed
+    // would put a stutter in every drag. The floor is the occupancy schedule's
+    // own unoccupied value and is a precondition rather than a default, since
+    // `> 0` against this desk's 0.1 band counts every hour of the year.
+    daylight: readDaylight(eso, { floor: occupiedFloor(snapshot) }),
+    // How deep the room the figure was measured in was, captured here for the
+    // same reason and with the same consequence: taken at render off the live
+    // `model` it walked the whole geometry again on every drag frame, and it
+    // described the desk as it stands rather than the run the figure came off.
+    daylightDepth: depthRatio(facts),
     overheat,
     tm59: readTm59(eso, snapshot, patched, epw),
   };
@@ -8133,6 +8249,10 @@ async function solve() {
   // period anything is billed or benchmarked over, which is the same line the
   // bill draws when it picks the environments it prices.
   const floorArea = geometryFacts(model).grossFloor;
+  // Read once for the whole schedule rather than per column: the illuminance
+  // and occupancy series are each a year long, and slicing one pair of reads is
+  // what stops a twelve-column desk walking them twelve times over.
+  const daylight = daylightByRun(eso, runs, { floor: occupiedFloor(snapshot) });
   const columns = runs.map((r) => ({
     label: r.label,
     noun: r.noun,
@@ -8142,6 +8262,7 @@ async function solve() {
       r,
       hasOutdoor,
       r.kind === null ? demandOver(eso, new Set([r.key]), floorArea) : null,
+      daylight.get(r.key) ?? null,
     ),
   }));
   renderSchedule(columns, baseline?.columns);
@@ -8291,6 +8412,15 @@ async function solve() {
   // em dashes it drew — the notes read the model, and an em dash is the model
   // saying it could not answer.
   if (lastOutcome?.tm59?.count.unread.length === 0) tour?.note('tm59');
+
+  // And the daylight square, on a measured figure rather than on the reading
+  // object existing. `readDaylight` always returns one, so a test on the object
+  // would fill the square off a design-day run that lettered an em dash — and
+  // the step's own sentence asks for a year with Gains in, which is exactly the
+  // pair of conditions `value` being a number stands for. `!= null` rather than
+  // `!== null`, because the reading is absent altogether before the first solve
+  // and a missing outcome must not read as a measurement.
+  if (lastOutcome?.daylight?.value != null) tour?.note('daylight');
 }
 
 /* ══ the scheduler ═══════════════════════════════════════════════════════ */
