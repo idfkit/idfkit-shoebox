@@ -470,7 +470,9 @@ read back, never asserted. The next step takes the redline (statically — the
 ledger's breathing means a run in flight, and "your next move" is not one),
 and its subject on the sheet is circled with the dashed markup hairline
 (`.guided`), one region at a time. Folded, the notes are one row that still
-reads — the index sheet's rule; retired, they are gone. If a feature changes
+reads — the index sheet's rule; retired, they are gone. A first visit under the
+780px query starts folded (`--notes-start`, read back by `tour.js`): open, the
+block stood 1,400px deep between the title and the drawing on a phone. If a feature changes
 what a step points at or teaches, the note changes with it — see CLAUDE.md.
 
 ### What the model was given, under the setting itself (`.ctl-derived`)
@@ -955,6 +957,16 @@ reads back. Do not derive a new threshold from an existing one because the
 numbers happen to be close: they are different questions and they will move
 apart.
 
+The plate's is the first asked of an element rather than of the window, and
+that is the question it is: "can the plate hold a model column and a chart side
+by side" has one answer on a phone and the same answer on a laptop with the
+desk open, and a media query can see only the first. `.plate` is a size
+container; below 640px of its own width it stacks and sets `--plate-stretch: 0`,
+which `renderTrace` reads to stop drawing the chart to the row's height. Beside
+the model column the chart fills that row: the svg is out of the flow there so
+that it cannot set the height it then measures, with its old 268px as the
+floor.
+
 ### Folding a table to stacked rows
 
 The table equivalent of the index sheet. Where a schedule has more columns than
@@ -1277,6 +1289,13 @@ middle is the only thing that can give. Budget it deliberately, in this order:
    "Widen the window" is addressed to a window manager; under `pointer: coarse`
    there isn't one, and the note is then two lines of red type taken out of the
    very column it says is short.
+4. **Answer the sheet's half of the squeeze with its own layout.** The desk
+   never shrinks below one column, so between 781 and about 1500px the sheet
+   takes the whole shortfall. It used to meet it with a sentence in redline
+   asking for a wider window while the plate kept its 268px model column and
+   drew the chart as a 70px thumbnail beside it. The plate now asks its own
+   width (a container query at 640px) and stacks, so the chart keeps the
+   sheet's full measure; the sentence is gone, on every pointer.
 
 ### The index sheet
 

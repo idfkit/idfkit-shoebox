@@ -193,7 +193,8 @@
          never by a Next button. The first unfilled note is the reader's
          next move: it takes the redline, and its subject on the sheet is
          circled by `.guided` below. */
-      .notesheet { border-bottom: 1px solid var(--rule); }
+      /* Read back by `startView` in tour.js on a first visit only. */
+      .notesheet { --notes-start: open; border-bottom: 1px solid var(--rule); }
       .notes-head {
         display: flex;
         align-items: baseline;
@@ -944,9 +945,22 @@
       @media (prefers-reduced-motion: reduce) {
         .plate.solving::after { animation: none; width: 100%; opacity: 0.3; }
       }
+      /* Whether the plate holds two columns is the plate's own question, asked
+         of its own width. Asked of the window, it was answered wrong exactly
+         when the console was open: the sheet fell to 430px beside the desk,
+         the plate kept its 268px model column, and the chart was drawn as a
+         70px thumbnail beside a sentence telling the reader to widen the
+         window. `--plate-stretch` is read back by `renderTrace`, the way
+         `--index` is read by the console. */
+      .plate { container: plate / inline-size; }
       .plate-body {
+        --plate-stretch: 1;
         display: grid;
         grid-template-columns: 268px minmax(0, 1fr);
+      }
+      @container plate (max-width: 640px) {
+        .plate-body { --plate-stretch: 0; grid-template-columns: 1fr; }
+        .model { border-right: 0; border-bottom: 1px solid var(--rule-soft); }
       }
       .model {
         border-right: 1px solid var(--rule-soft);
@@ -1148,8 +1162,17 @@
       /* Results that describe a shape the model no longer has. */
       .stale { opacity: 0.42; transition: opacity 0.2s ease; }
       .stale-note { color: var(--redline); }
-      .trace { padding: 14px 16px 8px; min-width: 0; }
-      .trace svg { display: block; width: 100%; }
+      /* Two columns, the chart takes the height the model column sets for the
+         row: it was a fixed 268px at the head of an 800px cell. Taken out of
+         the flow so it cannot set that height itself, or every redraw the
+         ResizeObserver asks for would grow the row it then measures. The
+         floor is the height it had. */
+      .trace { position: relative; padding: 14px 16px 8px; min-width: 0; min-height: 290px; }
+      .trace svg { display: block; width: 100%; position: absolute; top: 14px; left: 16px; width: calc(100% - 32px); }
+      @container plate (max-width: 640px) {
+        .trace { min-height: 0; }
+        .trace svg { position: static; width: 100%; }
+      }
 
       /* ── the hour bar ───────────────────────────────────────────── */
 
@@ -2855,22 +2878,6 @@
         font: 400 11.5px/1.5 var(--sans);
         color: var(--ink-3);
       }
-      /* Only says anything when the window is too narrow to hold both. */
-      .desk-widen { display: none; margin: 8px 0 0; font: 400 11.5px/1.45 var(--sans); color: var(--redline); }
-      @media (max-width: 1180px) {
-        body.desk-open .desk-widen { display: block; }
-      }
-      /* Except where there is no window to widen. Between 781 and 1180px this
-         note is addressed to a laptop that can be dragged wider; a tablet in
-         landscape is already as wide as it goes, and the sentence is then two
-         lines of red type telling the reader to do something they cannot do —
-         taken out of the head of the very column it is complaining is short.
-         A coarse pointer is the honest test available to a stylesheet: it does
-         not name a device, it says the reader has no window manager under their
-         thumb. */
-      @media (pointer: coarse) {
-        body.desk-open .desk-widen { display: none; }
-      }
 
       /* `--index` is the switch between the desk's two presentations. It is
          declared here and flipped in the one media query at the foot of this
@@ -4216,8 +4223,6 @@
         .ledger li::before { display: none; }
         .ledger-foot { margin-top: 14px; flex-direction: row; align-items: baseline; gap: 10px; }
         .field { padding: 22px 24px 26px; }
-        .plate-body { grid-template-columns: 1fr; }
-        .model { border-right: 0; border-bottom: 1px solid var(--rule-soft); }
         .titleblock { grid-template-columns: repeat(2, 1fr); }
         .titleblock div:nth-child(4n) { border-right: 1px solid var(--rule-soft); }
         .titleblock div:nth-child(2n) { border-right: 0; }
@@ -4316,6 +4321,7 @@
         .notes-head, .notes-lede { padding-left: 24px; padding-right: 24px; }
         .notes-grid { padding: 8px 24px 16px; }
         .notes-row { padding: 11px 24px 12px; }
+        .notesheet { --notes-start: folded; }
         .disclosure-body { padding-left: 24px; padding-right: 24px; }
         .disclaimers { grid-template-columns: 1fr; gap: 12px; }
         .changelog-body { padding-left: 24px; padding-right: 24px; }
@@ -4336,9 +4342,6 @@
         /* The index is one list read top to bottom; columns would cut it in
            half and put channels 09–17 beside 00–08 instead of after them. */
         .strip-grid { column-width: auto; column-count: auto; }
-        /* "Widen the window" is advice a phone cannot take, and down here the
-           narrow layout is a presentation rather than a squeeze. */
-        body.desk-open .desk-widen { display: none; }
         .rail-key { grid-template-columns: 1fr; }
       }
 
@@ -6157,10 +6160,6 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
             </p>
           </details>
         </div>
-        <p class="desk-widen">
-          The sheet is being squeezed. Widen the window to work the desk and read the drawing at
-          the same time.
-        </p>
       </header>
     </aside>
 

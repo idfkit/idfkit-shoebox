@@ -767,7 +767,10 @@ function renderAxon(meanC) {
 /* ══ the plate: zone against outdoors, on a ruled field ══════════════════ */
 
 const PAD = { t: 18, r: 68, b: 30, l: 46 }; // right gutter holds the curve labels
-const H = 268;
+// The height the plate is drawn at when it has a row of its own to fill is
+// that row's; `H_FLOOR` is the height it had before, and still has stacked.
+const H_FLOOR = 268;
+let H = H_FLOOR;
 let SURFACES = [];
 let WINDOWS = [];
 let SHADES = [];
@@ -800,8 +803,16 @@ function bucket(values, n) {
 
 function renderTrace() {
   const host = $('trace');
-  const w = Math.max(host.clientWidth, 320);
+  // The content box, less the 16px padding each side, so a user unit is a
+  // client pixel: drawn at the padded width the svg was scaled by about 0.95
+  // and its hairlines landed between pixels.
+  const w = Math.max(host.clientWidth - 32, 320);
   host.textContent = '';
+  // Beside the model column the plate fills the row the column sets; the svg
+  // is out of the flow there, so this reads the row and never the chart.
+  // Stacked, there is no row to fill and it keeps its own height.
+  const stretch = getComputedStyle(host).getPropertyValue('--plate-stretch').trim() === '1';
+  H = stretch ? Math.max(H_FLOOR, host.clientHeight - 22) : H_FLOOR;
 
   const inner = { w: w - PAD.l - PAD.r, h: H - PAD.t - PAD.b };
   // The ghost is inside the field it is drawn on, so it has to be inside the
@@ -827,7 +838,10 @@ function renderTrace() {
   // ── ruling
   const grid = svg('g', { 'shape-rendering': 'crispEdges' });
   const right = w - PAD.r;
-  const step = niceStep(dMax - dMin, 6);
+  // About one rule per 48px of field, never fewer than six: drawn to the row's
+  // height the plate is two and a half times as tall as it was, and six rules
+  // across it left 20° between them.
+  const step = niceStep(dMax - dMin, Math.max(6, Math.round(inner.h / 48)));
   for (let v = Math.ceil(dMin / step) * step; v <= dMax; v += step) {
     const gy = Math.round(y(v)) + 0.5;
     grid.append(
