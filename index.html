@@ -2933,18 +2933,6 @@
          model. This is what a non-photo-blue pencil would have said. */
       .strip.out .strip-body,
       .strip.out .meter { opacity: 0.38; }
-      /* And in a column, folded to its head row until it is opened: the patch
-         button already says Out in words, the chevron says there is more, and
-         the whole row is the tap target, as on the index sheet. */
-      .strips:not(.index) .strip.folds { padding-block: 11px 12px; }
-      .strips:not(.index) .strip.folds .strip-toggle { cursor: pointer; }
-      .strips:not(.index) .strip.folds .strip-chev { display: block; }
-      .strips:not(.index) .strip.folds .strip-toggle:hover .strip-chev { border-color: var(--redline); }
-      .strips:not(.index) .strip.folds .strip-toggle:hover .strip-name { color: var(--redline); }
-      .strips:not(.index) .strip.folds:not(.open) .strip-head { margin-bottom: 0; }
-      .strips:not(.index) .strip.folds.open { padding-bottom: 16px; }
-      .strips:not(.index) .strip.folds.open .strip-head { margin-bottom: 7px; }
-      .strips:not(.index) .strip.folds .strip-blocked { margin-top: 8px; }
       .strip.soloed { background: var(--redline-wash); }
 
       .strip-head {

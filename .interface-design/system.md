@@ -1241,15 +1241,11 @@ of the desk on every draw.
   model, given the rest of the configuration. Never for a control belonging to
   a model that is out — see above.
 - `.out` at `opacity: 0.38` on the body and meter only, never the header: the
-  whole path is out of the model. **In a column, an out strip also folds to its
-  head row** (number, name, term, patch button reading `Out`, and a chevron).
-  The whole row opens it, and opened, its values are legible and settable as
-  before. On the starting desk, nine of eighteen strips are out, and drawn open
-  they were 5,700px of an 11,900px console. The patch button that brings a
-  strip back is on the folded row, so nothing that answers "is it in the model"
-  is behind the fold, which is the index sheet's rule. Patching a strip in
-  unfolds it, and an opened out strip is forgotten when it comes back in, so
-  taking it out again folds it again.
+  whole path is out of the model. Values stay legible and settable. **It is
+  not folded.** Folding an out strip to its head row was tried (it halved the
+  starting console, 11,900px to 6,244px) and rejected in review: the dimming
+  already says the path is out, and a folded strip no longer answers "what is
+  it set to" without being opened.
 - `.stale` at `opacity: 0.42`: results that describe a state the model no longer
   has.
 
