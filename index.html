@@ -2851,12 +2851,21 @@
          side — a desk that scrolled horizontally. The wrapper keeps its
          natural height, so the columns balance to the content and overflow
          stays vertical. */
-      .strip-grid {
-        column-width: var(--card);
-        column-count: 5;
-        column-gap: 1px;
-        column-rule: 1px solid var(--rule);
-      }
+      /* Columns dealt by `layColumns` in console.js rather than a balanced
+         multicol: a multicol re-balances whenever a strip changes height, so
+         opening a study card's chooser could move its strip, card and all,
+         to the next column under the reader's hand. The dealt columns keep
+         the multicol's reading (signal order down each column, a hairline
+         between them) and only ever grow downward. Stretched, so the rule
+         runs the height of the longest. */
+      /* `contain: inline-size` because a row of flex columns reports the sum
+         of its strips' widths as its own minimum, and the desk, a flex item
+         with that as its floor, took 2,737px of a 2,400px window and left the
+         sheet 2px. A multicol never reported more than one column. The desk's
+         width is the window's to decide; the columns are dealt into it. */
+      .strip-grid { display: flex; contain: inline-size; }
+      .strip-col { flex: 1 1 0; min-width: 0; }
+      .strip-col + .strip-col { border-left: 1px solid var(--rule); }
 
       /* A strip is one instrument, so it never splits over a column break. */
       .strip { border-bottom: 1px solid var(--rule); padding: 14px 18px 16px; break-inside: avoid; }
@@ -4262,9 +4271,6 @@
            This is the one place the breakpoint is declared; the console reads
            the flag back rather than knowing the number. */
         .strips { --index: 1; overflow-y: visible; }
-        /* The index is one list read top to bottom; columns would cut it in
-           half and put channels 09–17 beside 00–08 instead of after them. */
-        .strip-grid { column-width: auto; column-count: auto; }
         /* "Widen the window" is advice a phone cannot take, and down here the
            narrow layout is a presentation rather than a squeeze. */
         body.desk-open .desk-widen { display: none; }

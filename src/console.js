@@ -192,15 +192,20 @@ export function mountConsole({
   let sweepGate = { ok: false, reason: 'The engine is still arriving.' };
 
   const stripHost = el('div', 'strips');
-  // The ruled column set the strips lie on, one element inside the scroller
-  // rather than the scroller itself: the desk fixes `stripHost`'s height so it
-  // can scroll, and a multicol box with a fixed height lays its overflow out
-  // as extra columns to the side. The wrapper keeps its natural height, so the
-  // columns balance to the content and the overflow stays vertical.
+  // The ruled columns the strips lie in, one element inside the scroller
+  // rather than the scroller itself, so the overflow stays vertical. The
+  // columns are elements placed by `layColumns` below, not a CSS multicol.
   const stripGrid = el('div', 'strip-grid');
   const railHost = el('div', 'rail');
 
-  for (const channel of CHANNELS) stripGrid.append(buildStrip(channel));
+  // Built into one column, which is what `layColumns` deals from: left loose in
+  // the flex row, eighteen strips would stand side by side and stretch the desk
+  // to thousands of pixels before the first deal could measure it.
+  {
+    const column = el('div', 'strip-col');
+    for (const channel of CHANNELS) column.append(buildStrip(channel));
+    stripGrid.append(column);
+  }
   stripHost.append(stripGrid);
   host.append(stripHost, railHost);
 
@@ -257,11 +262,79 @@ export function mountConsole({
     if (on === indexing) return;
     indexing = on;
     stripHost.classList.toggle('index', on);
+    // The index is one list read top to bottom, so it is dealt into one column.
+    laid = 0;
+    layColumns();
     // Arriving at the index closes everything, because the list is the point of
     // it; leaving it opens everything, which is the desk as it was.
     opened = null;
     refold();
   }
+
+  /* ── the columns ─────────────────────────────────────────────────────────
+   *
+   * The strips are dealt into columns once for a width, in signal order, and
+   * stay where they were dealt while their contents change height. They used
+   * to lie on a balanced CSS multicol, which re-balanced on every change of
+   * height: opening a study card's reading chooser under an attached year made
+   * its strip a few hundred pixels taller, the columns re-balanced, and the
+   * strip, with the card the reader was working, jumped to the next column.
+   * The vertical anchor `setStudy` keeps could not follow a move sideways.
+   *
+   * So a column only grows downward now. The deal is redone when the number of
+   * columns the width can hold changes, and when the desk is opened again
+   * (there is no context to lose on the way in). Between those, a column that
+   * grows long is the price of the reader's place staying put.
+   */
+  let laid = 0; // columns dealt at the last lay, 0 while the desk is not drawn
+
+  function columnCount() {
+    if (indexMode()) return 1;
+    const card = parseFloat(getComputedStyle(stripHost).getPropertyValue('--card')) || 320;
+    // The rule between columns is 1px, as the multicol's `column-gap` was.
+    return Math.min(5, Math.max(1, Math.floor((stripHost.clientWidth + 1) / (card + 1))));
+  }
+
+  /** Which column each strip goes in, in signal order, balanced by height. */
+  function deal(heights, n) {
+    const total = heights.reduce((a, b) => a + b, 0);
+    let column = 0;
+    let before = 0;
+    return heights.map((h) => {
+      // Move on once this strip's middle would land past the column's share,
+      // never leaving a column empty and never skipping one.
+      if (column < n - 1 && before > 0 && before + h / 2 > (total * (column + 1)) / n) column += 1;
+      before += h;
+      return column;
+    });
+  }
+
+  function layColumns() {
+    if (!stripHost.clientWidth) {
+      laid = 0;
+      return;
+    }
+    const n = columnCount();
+    if (n === laid) return;
+    const list = CHANNELS.map((channel) => strips.get(channel.id).strip);
+    // A focused control is carried across the move rather than dropped.
+    const focused = stripGrid.contains(document.activeElement) ? document.activeElement : null;
+    const place = (assignment) => {
+      const columns = Array.from({ length: n }, () => el('div', 'strip-col'));
+      list.forEach((strip, i) => columns[assignment[i]].append(strip));
+      stripGrid.replaceChildren(...columns);
+    };
+    // Twice: the heights are only true at the new columns' width, so the first
+    // deal is measured again and redone if that moved anything.
+    let assignment = deal(list.map((strip) => strip.offsetHeight), n);
+    place(assignment);
+    const again = deal(list.map((strip) => strip.offsetHeight), n);
+    if (again.some((column, i) => column !== assignment[i])) place((assignment = again));
+    focused?.focus({ preventScroll: true });
+    laid = n;
+  }
+
+  new ResizeObserver(() => layColumns()).observe(stripHost);
 
   relayout();
   window.addEventListener('resize', relayout);
