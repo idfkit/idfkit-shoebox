@@ -1271,16 +1271,25 @@ Flex rather than a grid track pair on purpose: a grid hands free space to every
 unfinished track evenly, so the desk's growth would come half out of the
 drawing's width on exactly the mid-sized windows that have none to spare.
 
-Inside it the strips lie on a balanced multicolumn set — `column-width:
-var(--card)` with `column-count: 5` as the ceiling — so a laptop reads the
-single column it always did and a wide monitor reads two to five ruled columns
-of cards. Columns rather than a grid of rows: the channels keep reading in
-signal order down each column the way a drawing index reads, and strips of
-unequal height pack instead of leaving the ragged whitespace row alignment
-would. `break-inside: avoid` keeps each strip whole, the `column-rule` is the
-same hairline the strips rule between themselves, and the multicol styling
-lives on a natural-height wrapper inside the scroller — a multicol box whose
-height is fixed lays its overflow out as new columns to the side.
+Inside it the strips are dealt into ruled columns: as many as the desk's width
+holds at `--card` each, never more than five, so a laptop reads the single
+column it always did and a wide monitor reads two to five columns of cards.
+Columns rather than a grid of rows: the channels keep reading in signal order
+down each column the way a drawing index reads, and strips of unequal height
+pack instead of leaving the ragged whitespace row alignment would. The rule
+between columns is the same hairline the strips rule between themselves.
+
+**The columns are dealt, not balanced.** They used to be a CSS multicol, which
+re-balances on every change of height: under an attached year, opening a study
+card's reading chooser made its strip about 450px taller, the columns
+re-balanced, and the strip, with the card the reader was working in, moved to
+the next column. `layColumns` in `console.js` deals the strips once for a width,
+balanced by their heights at that moment, and deals again only when the number
+of columns changes or the desk is opened again. Between those a column grows
+downward, and a long column is the accepted cost of the reader's place staying
+put. The grid carries `contain: inline-size`, because a row of flex columns
+otherwise reports every strip's width as its minimum and the desk, sized from
+it, pushed the sheet down to 2px.
 
 The desk is `position: sticky` with its own scroll, and its master readout is
 pinned at the foot with `flex: none` so it stays visible while the strips
