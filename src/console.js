@@ -365,14 +365,8 @@ export function mountConsole({
     for (const control of channel.controls) body.append(buildControl(control, channel));
     stripFold.append(body);
 
-    // A readout declaring `inView` goes onto the strip rather than into its
-    // fold, beside the blocking note and for the same reason that note is
-    // there: it is the strip's current state rather than a detail of its body,
-    // and it has to survive the strip being shut. Appended before `stripFold`
-    // is added to the strip, so it reads above the controls rather than under
-    // them.
     const readout = buildReadout(channel);
-    if (readout) (channel.readout.inView ? strip : stripFold).append(readout.node);
+    if (readout) stripFold.append(readout.node);
 
     const meter = buildMeter(channel);
     if (meter) stripFold.append(meter.node);

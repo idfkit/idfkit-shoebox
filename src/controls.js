@@ -1838,28 +1838,9 @@ export class Meter {
  * produce.
  */
 export class Readout {
-  /**
-   * `inView` lifts the readout out of the strip's fold and onto the strip
-   * itself, beside the blocking note, so it is legible with the strip closed.
-   *
-   * The same reasoning that put a refusal there: a refusal is not a detail of
-   * the strip's body, it is the strip's current state. A reading the sheet has
-   * undertaken not to fold is in the same position -- FR-005 of the daylight
-   * feature requires the figure, its unit, where in the room it was taken and
-   * the two things it is not to stand in view and not in a fold or on hover,
-   * and a readout inside `strip-fold` is one tap in on the index sheet.
-   *
-   * The `note` stays a fold either way. That is `CLAUDE.md`'s own division and
-   * it is unchanged: readings, verdicts, absence reasons, blocking reasons and
-   * refusals never fold; method and citations always do.
-   *
-   * Default false, because every other readout on the desk is a detail of the
-   * channel it belongs to and the index sheet is meant to stay an index.
-   */
-  constructor({ label, note = null, inView = false }) {
+  constructor({ label, note = null }) {
     this.label = label;
     this.note = note;
-    this.inView = Boolean(inView);
     Object.freeze(this);
   }
 }
@@ -4656,25 +4637,6 @@ export const CHANNELS = Object.freeze([
     // the probe's position, that no published line judges it, and the validity
     // breach where there is one -- is composed in `readouts()` and is never
     // folded, which is FR-005 as the maintainer settled it on 2026-09-20.
-    readout: new Readout({
-      label: 'Daylight, 70 % depth',
-      // Outside the strip's fold, which is FR-005: this figure and its
-      // qualification are legible on the index sheet with the strip shut and
-      // with this channel patched out, because the probe behind it is written
-      // on every solve whatever this channel is doing.
-      inView: true,
-      note:
-        'EnergyPlus split flux at one reference point that dims nothing: the median of the hourly ' +
-        'illuminance over the occupied hours of the weather file, with the design days excluded ' +
-        'because a design day is more extreme than any day in the year it precedes. Dark occupied ' +
-        'hours stay in the sample deliberately, so the figure answers to latitude, season and the ' +
-        'occupancy profile: a window that lights the room for two hours of a winter working day ' +
-        'and not the other six is exactly the case this exists to tell apart. It is offered to ' +
-        'rank positions of this desk against each other and nothing further. The ordering was ' +
-        'measured against a Radiance annual daylight coefficient chain at Spearman 0.9957 with an ' +
-        'identical thirteen-point Pareto frontier; the absolute value carries no such claim. It is ' +
-        'not sDA, not UDI and not a daylight factor, whatever arithmetic may resemble.',
-    }),
     meter: new Meter({
       label: 'Lighting power',
       terms: [new Term({ variable: 'Zone Lights Electricity Rate' })],

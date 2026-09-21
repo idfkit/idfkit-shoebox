@@ -3567,6 +3567,46 @@ holds the probe first and that no reference point exists the controls do not
 name. That is the harness that would have caught a `Daylighting:ReferencePoint`
 named `Sensor` left behind by two clicks.
 
+### The reading belongs to the run, not to the Daylight channel
+
+The reading was first drawn as a `Readout` on the Daylight channel, lifted out of
+the strip's fold by an `inView` flag so it stayed legible with the strip shut.
+That placement was wrong, and the way it was wrong is worth recording.
+
+The reading is not a property of any channel. It is a reading of the run, taken
+by a reference point that `applyProbe` writes on every solve outside every gate.
+Rendering it as a channel readout therefore required three separate exemptions:
+the entry in `readouts()` had to be written ungated, unlike every other entry in
+that map; the readout had to be lifted out of the fold so it survived the strip
+being shut; and the stylesheet rule dimming a bypassed channel's readout had to
+be narrowed so a live figure was not lettered in the ink reserved for "not in
+the model". Three exemptions to accommodate one object is the signal that the
+object was in the wrong place.
+
+The visible consequence appeared on the index sheet. Below the layout
+breakpoint every channel collapses to a single row, and the index is a table of
+contents. The daylight readout, carrying a figure plus a thirty-seven word
+qualification plus a method fold, rendered as six rows between `11 DAYLIGHT` and
+`12 SYSTEM` while every other channel rendered as one. The qualification was
+inside its forty-word `CEILING` budget, which is the lesson: passing a budget is
+not the same as being correctly sized for a position, and the budget had been
+calibrated against an open channel rather than against a row in a compact index.
+
+The reading now stands in the results schedule, which is where readings of a run
+already live. The schedule's columns are environments and its rows are
+quantities, so the daylight row answers per environment: a figure under each
+weather-file run period, an em dash under each design day. `daylightByRun` reads
+the illuminance and occupancy series once and slices them per column, and
+`.harness/tmp-daylight-schedule.mjs` asserts that on a single-environment desk
+its figure equals `readDaylight`'s to full precision, so the schedule row and the
+roster quantity cannot report different numbers for one run.
+
+The qualification moved with it, to a note under the table rather than beside
+each figure, because it is one statement about the row rather than a second
+figure per column. FR-005 is still met: position, the absence of any published
+line, and the validity breach all stand in view and out of a fold. The method
+text is in a fold beneath, which is the division `CLAUDE.md` already draws.
+
 ### Why the probe's ordinal is pinned at 1
 
 The output variable carries the point's **ordinal**, not its name:

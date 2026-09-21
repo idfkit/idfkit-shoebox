@@ -295,6 +295,37 @@ function medianOver(points, occupancy, runs, floor) {
 }
 
 /**
+ * The reading environment by environment, for the results schedule.
+ *
+ * The schedule's columns are environments, so its daylight row has to answer
+ * per environment rather than once for the run as a whole. The series are read
+ * once and sliced per column, which is the same discipline `readDaylight` keeps
+ * for the same reason: two reads of one ESO are two answers free to disagree.
+ *
+ * A design day is given `null` rather than a median. It exists to be more
+ * extreme than any day in the year it precedes, so a daylight figure taken over
+ * one would be a reading of a condition rather than of a building, and the
+ * column letters an em dash instead. `kind === null` is how `environmentRuns`
+ * marks a weather-file run period, and is the same test the demand intensities
+ * use to decide which columns they belong in.
+ */
+export function daylightByRun(eso, runs, { floor } = {}) {
+  const found = new Map();
+  const points = illuminanceSeries(eso);
+  if (!points) return found;
+  const { points: occupancy } = occupancySeries(eso);
+  if (!occupancy) return found;
+  alignedWith(points, occupancy, 'illuminances', 'occupancy');
+
+  for (const run of runs) {
+    if (run.kind !== null) continue;
+    const reading = medianOver(points, occupancy, [run], floor);
+    found.set(run.key, reading ? reading.value : null);
+  }
+  return found;
+}
+
+/**
  * The reading or its absence, with the reason chosen by asking the run what it
  * is missing rather than by returning one reason for every kind of silence.
  *

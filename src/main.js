@@ -35,7 +35,7 @@ import {
   phraseFor,
 } from './controls.js';
 import { fold, mountConsole } from './console.js';
-import { VALIDITY_DEPTH_RATIO, depthRatio, readDaylight } from './daylight.js';
+import { VALIDITY_DEPTH_RATIO, daylightByRun, depthRatio, readDaylight } from './daylight.js';
 import { KINDS, convert, deltaKindOf, figureIn, inIP, kindFor, letter, onSystemChange, setSystem, suffixIn, system, unitIn } from './units.js';
 import { BUDGETS, withinBudget, words } from './copy.js';
 import { describeDesk } from './describe.js';
@@ -1226,7 +1226,7 @@ function axisSegments(points, runs) {
   );
 }
 
-function metricsFor(zone, out, run, hasOutdoor, demand = null) {
+function metricsFor(zone, out, run, hasOutdoor, demand = null, daylight = null) {
   const slice = (a) => a.slice(run.start, run.end + 1);
   const z = stats(slice(zone));
   const o = stats(slice(out));
@@ -1234,7 +1234,12 @@ function metricsFor(zone, out, run, hasOutdoor, demand = null) {
   const lag = hasOutdoor ? slice(zone).indexOf(z.max) - slice(out).indexOf(o.max) : NaN;
   // `demand` is this environment's own meters, or null where there are none to
   // read — a design day, or a desk with the System strip bypassed.
-  return { z, o, damping, lag, hours: run.end - run.start + 1, hasOutdoor, demand };
+  //
+  // `daylight` is this environment's own median illuminance, on the same terms:
+  // null on a design day, and null on a run whose occupied hours the probe
+  // could not be read over. Both render as an em dash, which is what this sheet
+  // letters for a reading that was asked for and did not arrive.
+  return { z, o, damping, lag, hours: run.end - run.start + 1, hasOutdoor, demand, daylight };
 }
 
 const or = (v, fmt) => (Number.isFinite(v) ? fmt(v) : '—');
@@ -1281,7 +1286,38 @@ const SCHEDULE_ROWS = [
   // partial year reads as itself rather than as nothing.
   { label: 'Thermal energy demand intensity — TEDI', unit: 'kWh/m²', kind: 'energyIntensityPeriod', digits: 1, demand: true, at: (m) => m.demand?.tedi ?? NaN },
   { label: 'Cooling energy demand intensity — CEDI', unit: 'kWh/m²', kind: 'energyIntensityPeriod', digits: 1, demand: true, at: (m) => m.demand?.cedi ?? NaN },
+  // The one reading on this schedule that no published line judges, which is
+  // why it is the one carrying a note under the table. It sits last and in its
+  // own group because it is not a thermal quantity: every row above it is a
+  // temperature, a rate or an intensity, and this is an illuminance at a single
+  // stated point.
+  //
+  // Not a `demand` row, so it is never filtered out. A desk that cannot answer
+  // it letters em dashes and the note says what would fix them: the probe is
+  // written on every solve, so an absent figure is a reading that was asked for
+  // and did not arrive rather than a channel that is not in the model.
+  { label: 'Daylight at 70 % depth', unit: 'lx', kind: 'illuminance', digits: 0, group: true, daylight: true, at: (m) => m.daylight ?? NaN },
 ];
+
+/**
+ * How the daylight row was computed, and the four things it is not.
+ *
+ * In a fold, which is `CLAUDE.md`'s own division: readings, verdicts, absence
+ * reasons and refusals never fold; method and citations always do. What stands
+ * in view is the qualification beneath the table, which is a different
+ * statement and is not this.
+ */
+const DAYLIGHT_METHOD =
+  'EnergyPlus split flux at one reference point that dims nothing: the median of the hourly ' +
+  'illuminance over the occupied hours of the weather file, with the design days excluded ' +
+  'because a design day is more extreme than any day in the year it precedes. Dark occupied ' +
+  'hours stay in the sample deliberately, so the figure answers to latitude, season and the ' +
+  'occupancy profile: a window that lights the room for two hours of a winter working day ' +
+  'and not the other six is exactly the case this exists to tell apart. It is offered to ' +
+  'rank positions of this desk against each other and nothing further. The ordering was ' +
+  'measured against a Radiance annual daylight coefficient chain at Spearman 0.9957 with an ' +
+  'identical thirteen-point Pareto frontier; the absolute value carries no such claim. It is ' +
+  'not sDA, not UDI and not a daylight factor, whatever arithmetic may resemble.';
 
 /** One cell of the schedule, in the system showing. */
 const rowText = (row, v) =>
@@ -1396,6 +1432,33 @@ function renderSchedule(columns, baseColumns) {
   }
   table.append(tbody);
   keepTableSemantics(table);
+
+  // The daylight row's qualification, written whenever that row carried a
+  // figure in any column. Hidden rather than emptied when it did not: a
+  // qualification with nothing to qualify is a sentence about a reading the
+  // reader cannot see, and the row's own em dashes already say it was asked
+  // for and did not arrive.
+  const note = $('schedule-note');
+  if (note) {
+    const row = SCHEDULE_ROWS.find((r) => r.daylight);
+    const measured = cols.some((c) => c.metrics && Number.isFinite(row.at(c.metrics)));
+    note.textContent = measured ? daylightQualifier(lastOutcome?.daylightDepth) : '';
+    note.hidden = !measured;
+
+    // Built once and kept, rather than rebuilt with the table: a fold carries
+    // open-or-shut state, and a reader who opened the method would have it
+    // close under them on the next solve.
+    const host = $('schedule-method');
+    if (host) {
+      if (!host.firstChild) {
+        host.append(
+          fold('schedule:daylight', FOLD.method, { label: 'Method for the daylight reading' },
+            elem('p', 'why', DAYLIGHT_METHOD)),
+        );
+      }
+      host.hidden = !measured;
+    }
+  }
 }
 
 /* ══ the bill ════════════════════════════════════════════════════════════ */
@@ -3159,29 +3222,6 @@ function readouts() {
     out.set('glazing', {
       text: trio(glass),
       sub: framed ? `Whole window · ${trio(glass.assembly)}` : null,
-    });
-  }
-  // Ungated, and that is the feature. Every other entry in this map is written
-  // only while its channel is in the path; this one is written whether the
-  // Daylight channel is engaged, bypassed or refused, because the probe that
-  // measures it is written on every solve outside every gate (FR-014). A
-  // reading gated behind the channel would be absent on exactly the desk the
-  // problem lives on: the one that boots with Daylight out and recommends the
-  // smallest window it can sweep.
-  const daylight = lastOutcome?.daylight ?? null;
-  if (daylight) {
-    out.set('daylight', {
-      // A measured zero is a figure. A desk with no opening reads 0 lx, clean,
-      // and renders as a nought rather than an em dash: zero is a measurement,
-      // missing is not, and the absence carries its own fix instead.
-      text: daylight.value === null ? null : QUANTITY_BY_ID.daylight.say(daylight.value),
-      // The depth ratio comes off the outcome rather than off the live `model`,
-      // and that is the same rule as the figure beside it. `model` carries the
-      // desk as it stands *now*; the reading was measured on the document the
-      // last run was handed. Read here they drifted apart on any gesture that
-      // re-letters without re-solving — drag Depth from 15.24 m to 9 m and the
-      // validity breach vanished from under a figure measured in a 3.3× room.
-      sub: daylight.value === null ? daylight.absence : daylightQualifier(lastOutcome.daylightDepth),
     });
   }
   // The Air strip's entry is written whenever the channel is in the path, even
@@ -8209,6 +8249,10 @@ async function solve() {
   // period anything is billed or benchmarked over, which is the same line the
   // bill draws when it picks the environments it prices.
   const floorArea = geometryFacts(model).grossFloor;
+  // Read once for the whole schedule rather than per column: the illuminance
+  // and occupancy series are each a year long, and slicing one pair of reads is
+  // what stops a twelve-column desk walking them twelve times over.
+  const daylight = daylightByRun(eso, runs, { floor: occupiedFloor(snapshot) });
   const columns = runs.map((r) => ({
     label: r.label,
     noun: r.noun,
@@ -8218,6 +8262,7 @@ async function solve() {
       r,
       hasOutdoor,
       r.kind === null ? demandOver(eso, new Set([r.key]), floorArea) : null,
+      daylight.get(r.key) ?? null,
     ),
   }));
   renderSchedule(columns, baseline?.columns);

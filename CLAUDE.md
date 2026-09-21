@@ -197,10 +197,16 @@ geometry earlier ones wrote).
   `Daylighting Window ...` variable. The probe stands at fixed `PROBE_DEPTH` 0.7 and
   `PROBE_HEIGHT` 0.8, never `dlDepth`/`dlHeight`, which are faces of a channel that
   ships bypassed. Measured neutral to full precision. `src/daylight.js` is the reader
-  (DOM-free); the reading is a roster `Quantity` with no target, a `Qualification`
-  that throws at load if absent, and `better: 'higher'` in SENSE. `applyOptics`
-  writes one interior reflectance to every opaque material; `wallAbs`/`roofAbs` no
-  longer write `visible_absorptance` at all. Notes: "A daylight reading on the roster".
+  (DOM-free); the reading is a roster `Quantity` with no target, a
+  `ReadingQualification` that throws at load if absent, and `better: 'higher'` in
+  SENSE. **The reading is drawn in the results schedule, not on the channel.** It
+  is a reading of the run rather than a property of any channel, so it is a
+  `SCHEDULE_ROWS` row answering per environment (`daylightByRun`), with an em dash
+  under every design day; its qualification is the note under that table and its
+  method is the fold beneath. Drawn as a channel readout it needed three separate
+  exemptions and rendered as six rows on the index sheet. `applyOptics` writes one
+  interior reflectance to every opaque material; `wallAbs`/`roofAbs` no longer
+  write `visible_absorptance` at all. Notes: "A daylight reading on the roster".
 - **Gains (10) / TM59:** at `roomType: 'As drawn'` output is byte-identical to before;
   a named room type writes `Occupancy`, `EquipmentUse`, `LightingUse` with absolute
   `People` and `EquipmentLevel`. `TM59_SPACES` must equal `PROFILE_IDS`

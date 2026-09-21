@@ -203,17 +203,14 @@ export const NOTES = Object.freeze([
       'so the sheet on its own points at a room nobody would want to sit in. ' +
       'The daylight reading is the other half of that trade: a typical ' +
       'illuminance over occupied hours, at one point seven tenths of the way ' +
-      'into the room. It is measured on every run whether or not the Daylight ' +
-      'channel is in, because the point that takes it dims nothing and changes ' +
-      'no energy figure. No published line judges it, and it says so where it ' +
-      'stands; what it is for is ranking this desk against itself.',
-    // The strip carries its channel on a data attribute rather than an id, the
-    // way the patch note reaches the console: the console is not mounted until
-    // the desk is open, so the pen circles the button that opens it and the
-    // click lands on the strip itself.
-    target: '#desk-open',
-    focus: '#desk [data-channel=\"daylight\"] .readout',
-    desk: true,
+      'into the room. It stands in the results schedule beside the demand ' +
+      'intensities, one figure per environment, because it is a reading of the ' +
+      'run rather than a setting of any channel: the point that takes it is ' +
+      'written on every solve, dims nothing and changes no energy figure. No ' +
+      'published line judges it, and the note under the table says so.',
+    // The results schedule, which is on the sheet rather than in the console,
+    // so this note needs no desk and circles the row itself.
+    focus: '#schedule',
   }),
   // E-02's own step, and it goes after the board rather than before it for a
   // reason the flow decides: a survey is read *against* something, and the
