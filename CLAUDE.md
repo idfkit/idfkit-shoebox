@@ -185,7 +185,7 @@ geometry earlier ones wrote).
   `reprice()`, meters are `derived`. Their faces are sweepable: one run per shape,
   priced at each point by the scheduler's `priceAt` through `pricedReadings`, the
   only application of the bill to a retained basis. `Quantity.movedBy` declares
-  reach; `refusesPairing` refuses the 54 pairings that cannot move (card, chooser,
+  reach; `refusesPairing` refuses the 72 pairings that cannot move (card, chooser,
   `makeSurvey`, `decodeSurvey`); `Scale.withdrawn` is the in-view sentence for an
   idle priced face. The pull still leaves them out.
 - **Gains (10) / TM59:** at `roomType: 'As drawn'` output is byte-identical to before;

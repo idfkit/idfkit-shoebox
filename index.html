@@ -4906,6 +4906,11 @@
         color: var(--ink-ghost);
         font-size: 10px;
         line-height: 1.4;
+        /* A unit or a refusal, neither of which is a label: through the
+           option's upper case an hour read `H`, which is the henry, and a
+           kilowatt-hour `KWH`. */
+        text-transform: none;
+        letter-spacing: 0;
         /* The reason is prose and wraps; the list is what scrolls. */
         white-space: normal;
         overflow-wrap: anywhere;

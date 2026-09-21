@@ -301,8 +301,8 @@ export const READING_BY_ID = Object.freeze(
 {
   // The uniqueness the link format depends on, asserted rather than observed:
   // `sv` carries a series id and nothing else, so two quantities declaring one
-  // series id would make a survey link mean two grounds at once. Fifteen
-  // series across thirteen quantities today.
+  // series id would make a survey link mean two grounds at once. Sixteen
+  // series across fourteen quantities today.
   const ids = READINGS.map((reading) => reading.id);
   if (new Set(ids).size !== ids.length) {
     throw new Error('two study quantities declare the same series id, so a survey link cannot name one');
