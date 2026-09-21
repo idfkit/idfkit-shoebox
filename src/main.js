@@ -1229,8 +1229,16 @@ function metricsFor(zone, out, run, hasOutdoor, demand = null) {
   const slice = (a) => a.slice(run.start, run.end + 1);
   const z = stats(slice(zone));
   const o = stats(slice(out));
-  const damping = hasOutdoor && o.swing > 0.05 ? z.swing / o.swing : NaN;
-  const lag = hasOutdoor ? slice(zone).indexOf(z.max) - slice(out).indexOf(o.max) : NaN;
+  // Damping and lag are measures of one daily cycle: a sizing day is built as
+  // exactly one, so its swing is the cycle's and its two peaks are the same
+  // afternoon's. A run period has no single swing. Measured over a year the
+  // ratio is summer's high against winter's low, and the "lag" is the hours
+  // between the year's hottest outdoor hour and the zone's, which read 504 h
+  // at Boston-Logan: two plausible-looking numbers describing nothing. So only
+  // a design day (`kind` set by `environmentRuns`) is measured for either.
+  const cycle = run.kind !== null;
+  const damping = cycle && hasOutdoor && o.swing > 0.05 ? z.swing / o.swing : NaN;
+  const lag = cycle && hasOutdoor ? slice(zone).indexOf(z.max) - slice(out).indexOf(o.max) : NaN;
   // `demand` is this environment's own meters, or null where there are none to
   // read — a design day, or a desk with the System strip bypassed.
   return { z, o, damping, lag, hours: run.end - run.start + 1, hasOutdoor, demand };
@@ -1261,8 +1269,8 @@ const SCHEDULE_ROWS = [
   { label: 'Outdoor drybulb, minimum', unit: '°C', kind: 'temperature', deltaKind: 'temperatureDifference', digits: 1, marker: 'out', group: true, at: (m) => (m.hasOutdoor ? m.o.min : NaN) },
   { label: 'Outdoor drybulb, maximum', unit: '°C', kind: 'temperature', deltaKind: 'temperatureDifference', digits: 1, at: (m) => (m.hasOutdoor ? m.o.max : NaN) },
   { label: 'Outdoor swing', unit: '°C', kind: 'temperatureSwing', digits: 1, at: (m) => (m.hasOutdoor ? m.o.swing : NaN) },
-  { label: 'Damping — zone swing ÷ outdoor swing', unit: '', kind: 'ratio', digits: 2, group: true, at: (m) => m.damping },
-  { label: 'Thermal lag — outdoor peak to zone peak', unit: 'h', kind: 'count', digits: 0, at: (m) => m.lag },
+  { label: 'Damping — zone swing ÷ outdoor swing', unit: '', kind: 'ratio', digits: 2, group: true, cycle: true, at: (m) => m.damping },
+  { label: 'Thermal lag — outdoor peak to zone peak', unit: 'h', kind: 'count', digits: 0, cycle: true, at: (m) => m.lag },
   { label: 'Hours simulated', unit: 'h', kind: 'count', digits: 0, at: (m) => m.hours, locale: true, nodelta: true },
   // The pair the sweep draws, for the desk as it stands. A study answers
   // "what would this control do to the demand"; without these rows the sheet
@@ -1358,16 +1366,28 @@ function renderSchedule(columns, baseColumns) {
   // measurement but a building with no system in it, and three permanent
   // blanks under every free-running run would be the schedule reporting the
   // absence of a channel rather than the results of a run.
+  //
+  // The daily-cycle rows follow the same reasoning from the other side: they
+  // are measured only over a design day, so a run with no design day in it
+  // has not failed to measure them, it has nothing they could be measured on.
+  // Where a design day is present beside a run period, the run period's cell
+  // is an em dash under a head that already says it is not a day.
+  const hasCycle = cols.some((c) => c.kind !== null);
   const rows = SCHEDULE_ROWS.filter(
-    (row) => !row.demand || cols.some((c) => c.metrics && Number.isFinite(row.at(c.metrics))),
+    (row) =>
+      (!row.cycle || hasCycle) &&
+      (!row.demand || cols.some((c) => c.metrics && Number.isFinite(row.at(c.metrics)))),
   );
   // The block's rule sits above whichever of the three survived, since TEDI
   // can be the one that is missing.
   const opensDemand = rows.find((row) => row.demand);
+  // Damping opens its own group; when it is left out the rule moves to the
+  // row after it, so the hours still stand apart from the temperatures.
+  const opensTail = hasCycle ? null : rows.find((row) => row.label === 'Hours simulated');
 
   for (const row of rows) {
     const tr = tbody.insertRow();
-    if (row.group || row === opensDemand) tr.className = 'group';
+    if (row.group || row === opensDemand || row === opensTail) tr.className = 'group';
     const head = tr.insertCell();
     if (row.marker) {
       const key = document.createElement('i');
@@ -2666,7 +2686,7 @@ function paintFinding(f) {
       q(figureIn(KINDS.temperature, m.z.min, { digits: 1 })),
       ` ${unitIn(KINDS.temperature)} and `,
       q(figureIn(KINDS.temperature, m.z.max, { digits: 1 }), true),
-      ` ${unitIn(KINDS.temperature)} — held there by nothing but the envelope.`,
+      ` ${unitIn(KINDS.temperature)} over the ${f.leadNoun} — held there by nothing but the envelope.`,
     );
   }
   // The reading stays in the paragraph and the reason for it folds, inside the
@@ -6944,12 +6964,17 @@ function tm59CountRow(body, count) {
     // possessive has to agree with a number that may be nought, and anything
     // of the shape "n of m" is the proportion FR-017a forbids wearing a
     // count's clothes. Each row already letters the limit it was read against.
+    //
+    // The scope leads and the two numbers follow as a pair of bare verbs, so
+    // neither number has a noun to agree with. "Of the 1 criterion read over
+    // criteria a and b" set a singular count against the plural scope it was
+    // taken over, and read as a slip at the one count this method most often
+    // returns.
     p.append(
-      'Of the ',
+      count.scope[0].toUpperCase() + count.scope.slice(1),
+      ': ',
       n(count.read),
-      count.read === 1 ? ' criterion read over ' : ' criteria read over ',
-      count.scope,
-      ', ',
+      ' read, ',
       n(count.cleared),
       ' cleared.',
     );
@@ -8136,6 +8161,7 @@ async function solve() {
   const columns = runs.map((r) => ({
     label: r.label,
     noun: r.noun,
+    kind: r.kind,
     metrics: metricsFor(
       zone,
       out,

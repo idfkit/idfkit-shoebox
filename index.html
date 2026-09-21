@@ -991,6 +991,16 @@
         align-items: start;
         gap: 9px;
       }
+      /* The note under Download, in the header's units note face. It had no
+         rule of its own and fell through to the body's 17px, which made it the
+         largest line in the run log and the loudest thing in its column. */
+      .take-note {
+        margin: 0;
+        max-width: 32ch;
+        font-size: 10.5px;
+        line-height: 1.4;
+        color: var(--ink-3);
+      }
 
       .dim {
         display: grid;

@@ -768,7 +768,12 @@ export function describeDesk({ doc, params, state, place = null }) {
     tokens.push('In ', place.name, place.zone ? [', ASHRAE zone ', q(place.zone), '. '] : '. ');
   }
 
-  tokens.push(massing(facts), ', ', envelope(params, facts), '. ');
+  // The building's sentence stays open until the moves have been said, so that
+  // they hang off it as its closing "with" phrase. Closed first, the moves
+  // stood as a sentence of their own with no verb in it: "With no air exchange
+  // in the model."
+  const shell = envelope(params, facts);
+  tokens.push(massing(facts), shell.length ? [', ', shell] : []);
 
   // The three the reader moved furthest, said in one sentence. Ranked rather
   // than listed: everything here is true of the building, and a paragraph that
@@ -783,11 +788,12 @@ export function describeDesk({ doc, params, state, place = null }) {
   }
   chosen.sort((a, b) => READING_ORDER.indexOf(a.id) - READING_ORDER.indexOf(b.id));
   // Every clause above is written as a noun phrase so that one lead-in governs
-  // all of them however they land — "with 0.50 ACH of leakage, gains of 16.0
+  // all of them however they land — ", with 0.50 ACH of leakage, gains of 16.0
   // W/m² … and an ideal unit holding 20.0–26.0 °C". Written as predicates they
   // read as a sentence only while there are two of them, and the desk that
   // changed exactly one thing is not a rare desk.
-  if (chosen.length) tokens.push('with ', series(chosen.map((move) => move.tokens)), '. ');
+  if (chosen.length) tokens.push(', with ', series(chosen.map((move) => move.tokens)));
+  tokens.push('. ');
 
   const flat = tokens.flat(Infinity).filter((t) => t !== '');
 

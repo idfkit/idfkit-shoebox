@@ -2910,6 +2910,24 @@ happens to be, and still entirely plausible. `relief.js`, `schemes.js` and
 `study.js` came back clean — their `.unit` reads are declarations, or the
 sanctioned identity-kind wording override that `letter` takes.
 
+### Damping and lag are measures of one day
+
+`metricsFor` took the damping ratio and the thermal lag over whatever slice it
+was given. On a design day that is correct, because a sizing day is built as
+exactly one diurnal cycle. On an annual run period it is not. The ratio became
+summer's high against winter's low, and the lag became the hours between the
+year's hottest outdoor hour and the zone's. At Boston-Logan TMYx 2011–2025 the
+sheet read "delays the peak by 504 hours" and "a damping ratio of 0.78": two
+plausible figures describing nothing.
+
+Both are now measured only where `environmentRuns` set a `kind`. The schedule
+drops the two rows when no column is a design day, for the same reason it drops
+the demand rows under a free-running desk: nothing could have been measured.
+Beside design days, a run period's cell is an em dash under a head that already
+says it is not a day. With damping `NaN`, `paintFinding` falls through to the
+"Left free-running, the zone floats between" sentence, which reads only the
+extremes and now names the period it read them over.
+
 ## Invariants that fail quietly
 
 - **`Building.north_axis` is ignored** because `GlobalGeometryRules` declares
