@@ -163,13 +163,19 @@ export async function nearestSites(latitude, longitude, limit = 8) {
  * engineer handed `2,732 HDD18` beside an IP sheet has no way to know which
  * base it is on.
  */
-export const degreeDays = (station) => {
+export const degreeDays = (station, { bases = true } = {}) => {
   const said = [
     Number.isFinite(station.hdd18) ? `${station.hdd18.toLocaleString('en-US')} HDD18` : null,
     Number.isFinite(station.cdd10) ? `${station.cdd10.toLocaleString('en-US')} CDD10` : null,
   ].filter(Boolean);
-  return said.length ? `${said.join(' · ')} · °C bases` : '';
+  if (!said.length) return '';
+  // `bases: false` is for a list whose head says it once: five rows each
+  // ending "· °C bases" read as five fragments of one sentence.
+  return bases ? `${said.join(' · ')} · °C bases` : said.join(' · ');
 };
+
+/** What a list of `degreeDays(…, { bases: false })` rows says once, in its head. */
+export const DEGREE_DAY_BASES = 'degree days on °C bases';
 
 /**
  * The three ways this fails, which are three different things to do about it.

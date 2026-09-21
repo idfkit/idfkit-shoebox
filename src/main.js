@@ -106,6 +106,7 @@ import {
   climateDescription,
   climateZone,
   degreeDays,
+  DEGREE_DAY_BASES,
   flavorWindow,
   forgetFile,
   here,
@@ -766,7 +767,10 @@ function renderAxon(meanC) {
 /* ══ the plate: zone against outdoors, on a ruled field ══════════════════ */
 
 const PAD = { t: 18, r: 68, b: 30, l: 46 }; // right gutter holds the curve labels
-const H = 268;
+// The height the plate is drawn at when it has a row of its own to fill is
+// that row's; `H_FLOOR` is the height it had before, and still has stacked.
+const H_FLOOR = 268;
+let H = H_FLOOR;
 let SURFACES = [];
 let WINDOWS = [];
 let SHADES = [];
@@ -799,8 +803,16 @@ function bucket(values, n) {
 
 function renderTrace() {
   const host = $('trace');
-  const w = Math.max(host.clientWidth, 320);
+  // The content box, less the 16px padding each side, so a user unit is a
+  // client pixel: drawn at the padded width the svg was scaled by about 0.95
+  // and its hairlines landed between pixels.
+  const w = Math.max(host.clientWidth - 32, 320);
   host.textContent = '';
+  // Beside the model column the plate fills the row the column sets; the svg
+  // is out of the flow there, so this reads the row and never the chart.
+  // Stacked, there is no row to fill and it keeps its own height.
+  const stretch = getComputedStyle(host).getPropertyValue('--plate-stretch').trim() === '1';
+  H = stretch ? Math.max(H_FLOOR, host.clientHeight - 22) : H_FLOOR;
 
   const inner = { w: w - PAD.l - PAD.r, h: H - PAD.t - PAD.b };
   // The ghost is inside the field it is drawn on, so it has to be inside the
@@ -826,7 +838,10 @@ function renderTrace() {
   // ── ruling
   const grid = svg('g', { 'shape-rendering': 'crispEdges' });
   const right = w - PAD.r;
-  const step = niceStep(dMax - dMin, 6);
+  // About one rule per 48px of field, never fewer than six: drawn to the row's
+  // height the plate is two and a half times as tall as it was, and six rules
+  // across it left 20° between them.
+  const step = niceStep(dMax - dMin, Math.max(6, Math.round(inner.h / 48)));
   for (let v = Math.ceil(dMin / step) * step; v <= dMax; v += step) {
     const gy = Math.round(y(v)) + 0.5;
     grid.append(
@@ -1020,6 +1035,7 @@ function renderTrace() {
 
   // ── x axis: one label per environment, or per month for an annual run
   const axis = svg('g');
+  const lettered = []; // each label with the band it has to fit, checked once drawn
   for (const seg of plot.segments) {
     const x0 = x(seg.start, n);
     const x1 = x(Math.min(seg.end, n - 1), n);
@@ -1037,6 +1053,12 @@ function renderTrace() {
     });
     t.textContent = seg.label.toUpperCase();
     axis.append(t);
+    // A design day also has a short form, its season and date: the band a
+    // day gets on a phone is about 100px, and the full "WINTER DESIGN DAY ·
+    // 21 DEC" in tracked capitals needs about 160, so the two centred labels
+    // ran into each other.
+    const short = seg.kind ? seg.label.replace(/ design day/i, '').toUpperCase() : null;
+    lettered.push({ t, band: Math.abs(x1 - x0), short });
   }
   root.append(axis);
 
@@ -1081,6 +1103,16 @@ function renderTrace() {
   host.classList.toggle('pickable', Boolean(reading));
 
   host.append(root);
+
+  // Only a drawn label has a length. One that overruns its band takes its
+  // short form, and one that overruns in that too is left out, as a month
+  // too narrow to letter already is: a label over its neighbour's band reads
+  // as the neighbour's.
+  for (const { t, band, short } of lettered) {
+    if (t.getComputedTextLength() <= band) continue;
+    if (short) t.textContent = short;
+    if (!short || t.getComputedTextLength() > band) t.textContent = '';
+  }
 }
 
 /*
@@ -1229,8 +1261,16 @@ function metricsFor(zone, out, run, hasOutdoor, demand = null) {
   const slice = (a) => a.slice(run.start, run.end + 1);
   const z = stats(slice(zone));
   const o = stats(slice(out));
-  const damping = hasOutdoor && o.swing > 0.05 ? z.swing / o.swing : NaN;
-  const lag = hasOutdoor ? slice(zone).indexOf(z.max) - slice(out).indexOf(o.max) : NaN;
+  // Damping and lag are measures of one daily cycle: a sizing day is built as
+  // exactly one, so its swing is the cycle's and its two peaks are the same
+  // afternoon's. A run period has no single swing. Measured over a year the
+  // ratio is summer's high against winter's low, and the "lag" is the hours
+  // between the year's hottest outdoor hour and the zone's, which read 504 h
+  // at Boston-Logan: two plausible-looking numbers describing nothing. So only
+  // a design day (`kind` set by `environmentRuns`) is measured for either.
+  const cycle = run.kind !== null;
+  const damping = cycle && hasOutdoor && o.swing > 0.05 ? z.swing / o.swing : NaN;
+  const lag = cycle && hasOutdoor ? slice(zone).indexOf(z.max) - slice(out).indexOf(o.max) : NaN;
   // `demand` is this environment's own meters, or null where there are none to
   // read — a design day, or a desk with the System strip bypassed.
   return { z, o, damping, lag, hours: run.end - run.start + 1, hasOutdoor, demand };
@@ -1261,8 +1301,8 @@ const SCHEDULE_ROWS = [
   { label: 'Outdoor drybulb, minimum', unit: '°C', kind: 'temperature', deltaKind: 'temperatureDifference', digits: 1, marker: 'out', group: true, at: (m) => (m.hasOutdoor ? m.o.min : NaN) },
   { label: 'Outdoor drybulb, maximum', unit: '°C', kind: 'temperature', deltaKind: 'temperatureDifference', digits: 1, at: (m) => (m.hasOutdoor ? m.o.max : NaN) },
   { label: 'Outdoor swing', unit: '°C', kind: 'temperatureSwing', digits: 1, at: (m) => (m.hasOutdoor ? m.o.swing : NaN) },
-  { label: 'Damping — zone swing ÷ outdoor swing', unit: '', kind: 'ratio', digits: 2, group: true, at: (m) => m.damping },
-  { label: 'Thermal lag — outdoor peak to zone peak', unit: 'h', kind: 'count', digits: 0, at: (m) => m.lag },
+  { label: 'Damping — zone swing ÷ outdoor swing', unit: '', kind: 'ratio', digits: 2, group: true, cycle: true, at: (m) => m.damping },
+  { label: 'Thermal lag — outdoor peak to zone peak', unit: 'h', kind: 'count', digits: 0, cycle: true, at: (m) => m.lag },
   { label: 'Hours simulated', unit: 'h', kind: 'count', digits: 0, at: (m) => m.hours, locale: true, nodelta: true },
   // The pair the sweep draws, for the desk as it stands. A study answers
   // "what would this control do to the demand"; without these rows the sheet
@@ -1358,16 +1398,28 @@ function renderSchedule(columns, baseColumns) {
   // measurement but a building with no system in it, and three permanent
   // blanks under every free-running run would be the schedule reporting the
   // absence of a channel rather than the results of a run.
+  //
+  // The daily-cycle rows follow the same reasoning from the other side: they
+  // are measured only over a design day, so a run with no design day in it
+  // has not failed to measure them, it has nothing they could be measured on.
+  // Where a design day is present beside a run period, the run period's cell
+  // is an em dash under a head that already says it is not a day.
+  const hasCycle = cols.some((c) => c.kind !== null);
   const rows = SCHEDULE_ROWS.filter(
-    (row) => !row.demand || cols.some((c) => c.metrics && Number.isFinite(row.at(c.metrics))),
+    (row) =>
+      (!row.cycle || hasCycle) &&
+      (!row.demand || cols.some((c) => c.metrics && Number.isFinite(row.at(c.metrics)))),
   );
   // The block's rule sits above whichever of the three survived, since TEDI
   // can be the one that is missing.
   const opensDemand = rows.find((row) => row.demand);
+  // Damping opens its own group; when it is left out the rule moves to the
+  // row after it, so the hours still stand apart from the temperatures.
+  const opensTail = hasCycle ? null : rows.find((row) => row.label === 'Hours simulated');
 
   for (const row of rows) {
     const tr = tbody.insertRow();
-    if (row.group || row === opensDemand) tr.className = 'group';
+    if (row.group || row === opensDemand || row === opensTail) tr.className = 'group';
     const head = tr.insertCell();
     if (row.marker) {
       const key = document.createElement('i');
@@ -2666,7 +2718,7 @@ function paintFinding(f) {
       q(figureIn(KINDS.temperature, m.z.min, { digits: 1 })),
       ` ${unitIn(KINDS.temperature)} and `,
       q(figureIn(KINDS.temperature, m.z.max, { digits: 1 }), true),
-      ` ${unitIn(KINDS.temperature)} — held there by nothing but the envelope.`,
+      ` ${unitIn(KINDS.temperature)} over the ${f.leadNoun} — held there by nothing but the envelope.`,
     );
   }
   // The reading stays in the paragraph and the reason for it folds, inside the
@@ -4428,7 +4480,7 @@ function render(found, { distances = false, onPick } = {}) {
       } else {
         // A flavour: the years it samples, and the degree days that result.
         name.textContent = row.label;
-        far.textContent = degreeDays(row.station);
+        far.textContent = degreeDays(row.station, { bases: false });
         button.append(name, far);
       }
 
@@ -4445,7 +4497,7 @@ function render(found, { distances = false, onPick } = {}) {
 function showFlavors(row) {
   render(row.flavors, { onPick: (pick) => choose(row, pick) });
   say(null);
-  const label = `${siteName(row.station)}, ${siteRegion(row.station)}`;
+  const label = `${siteName(row.station)}, ${siteRegion(row.station)} · ${DEGREE_DAY_BASES}`;
   foot.replaceChildren(back, document.createTextNode(label));
 }
 
@@ -5235,11 +5287,17 @@ function renderKeptFile(reason = null) {
     return;
   }
   line.hidden = false;
+  // The file's name is the reader's own string, so it is lettered as data
+  // apart from the sentence around it.
+  const name = document.createElement('span');
+  name.className = 'site-own-name';
+  name.textContent = kept.name;
   line.replaceChildren(
+    name,
     document.createTextNode(
       weatherSource?.kind === 'file' && weatherSource.fingerprint === kept.fingerprint
-        ? `${kept.name} is kept in this browser, so a link to this desk reopens on it. `
-        : `${kept.name} is kept in this browser. `,
+        ? ' is kept in this browser, so a link to this desk reopens on it. '
+        : ' is kept in this browser. ',
     ),
   );
   // Offered rather than attached, and that is the whole of Principle II in one
@@ -6147,6 +6205,31 @@ function targetBlock(target) {
 }
 
 /**
+ * The one reason every line of a standard is empty for, or null.
+ *
+ * Lines under the same blockage can still differ in their last clause: a
+ * Passivhaus board with System out has three lines with no demand to meter and
+ * two with no load to size, which is one press and two consequences of it.
+ * `BLOCK_TOGETHER` says those together, so the board can state the pair once
+ * rather than falling back to five rows of near-identical prose.
+ */
+const BLOCK_TOGETHER = Object.freeze(
+  Object.fromEntries(
+    Object.entries({
+      system: 'patch System in — a free-running zone has nothing to meter or size',
+    }).map(([key, text]) => [key, withinBudget(BUDGETS.STANDING, `the shared absence ${key}`, text)]),
+  ),
+);
+
+function sharedAbsence(targets) {
+  if (targets.length < 2 || targets.some((t) => targetReading(t) != null)) return null;
+  const blocks = targets.map(targetBlock);
+  if (blocks.every((b) => b.says === blocks[0].says)) return blocks[0].says;
+  if (blocks.every((b) => b.key === blocks[0].key)) return BLOCK_TOGETHER[blocks[0].key] ?? null;
+  return null;
+}
+
+/**
  * The same finding as a sentence for the margin column.
  *
  * The board's note above the table offers the *press* that clears a blockage
@@ -6944,12 +7027,17 @@ function tm59CountRow(body, count) {
     // possessive has to agree with a number that may be nought, and anything
     // of the shape "n of m" is the proportion FR-017a forbids wearing a
     // count's clothes. Each row already letters the limit it was read against.
+    //
+    // The scope leads and the two numbers follow as a pair of bare verbs, so
+    // neither number has a noun to agree with. "Of the 1 criterion read over
+    // criteria a and b" set a singular count against the plural scope it was
+    // taken over, and read as a slip at the one count this method most often
+    // returns.
     p.append(
-      'Of the ',
+      count.scope[0].toUpperCase() + count.scope.slice(1),
+      ': ',
       n(count.read),
-      count.read === 1 ? ' criterion read over ' : ' criteria read over ',
-      count.scope,
-      ', ',
+      ' read, ',
       n(count.cleared),
       ' cleared.',
     );
@@ -7056,6 +7144,14 @@ function renderScore() {
     const bar = elem('div', 'score-bar');
     bar.append(elem('span', 'score-name', preset.name));
     th.append(bar);
+    // Where every line of a standard is empty for one reason, the reason is
+    // said once, under the standard's name, and each row keeps its em dash and
+    // points up to it. Said per row, "patch System in — a free-running zone has
+    // no demand to meter" stood eleven times down the board on the starting
+    // desk, and the one line that did read was lost among them. Still in view
+    // and never folded: it is a reason beside an em dash, one row up.
+    const shared = sharedAbsence(preset.targets);
+    if (shared) th.append(elem('p', 'score-why', `No line of it reads yet: ${shared}.`));
     // The same armed square the run ledger, the auto-solve toggle and the
     // console's patch buttons use, meaning the same thing a fourth time: this
     // step is armed. Chasing is exactly the bill's pin in another column —
@@ -7156,18 +7252,16 @@ function renderScore() {
       const value = targetReading(target);
       // The unit rides on the folded label, because the unit column itself is
       // dropped at that width: `46.6` on a line of its own says nothing.
-      const read = cell(
-        tr,
-        value == null ? '—' : scoreFigure(target, value),
-        null,
-        `Reads, ${target.unitNow}`,
-      );
+      const read = cell(tr, value == null ? '—' : scoreFigure(target, value), null, 'Reads');
+      // Apart from the label, so the stylesheet can letter it outside the
+      // label's upper case: `KWH/M²·YR` is not a unit.
+      if (target.unitNow) read.dataset.unit = target.unitNow;
       if (value == null) read.className = 'void';
       const margin = tr.insertCell();
       margin.className = 'delta';
       margin.dataset.label = 'Margin';
       if (value == null) {
-        margin.textContent = targetAbsence(target);
+        margin.textContent = shared ? 'as above' : targetAbsence(target);
         margin.classList.add('absent');
       } else if (target.limit != null) {
         const over = value - target.limit;
@@ -7600,7 +7694,8 @@ function renderShelf() {
       const td = tr.insertCell();
       td.textContent = Number.isFinite(value) ? shelfText(column, value, scheme.measure) : '—';
       const said = unitIn(KINDS[column.kind], column.unit);
-      td.dataset.label = said ? `${column.label}, ${said}` : column.label;
+      td.dataset.label = column.label;
+      if (said) td.dataset.unit = said;
       if (!Number.isFinite(value)) td.className = 'void';
       const d = tr.insertCell();
       d.className = 'delta';
@@ -8136,6 +8231,7 @@ async function solve() {
   const columns = runs.map((r) => ({
     label: r.label,
     noun: r.noun,
+    kind: r.kind,
     metrics: metricsFor(
       zone,
       out,

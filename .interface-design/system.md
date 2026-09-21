@@ -470,7 +470,9 @@ read back, never asserted. The next step takes the redline (statically — the
 ledger's breathing means a run in flight, and "your next move" is not one),
 and its subject on the sheet is circled with the dashed markup hairline
 (`.guided`), one region at a time. Folded, the notes are one row that still
-reads — the index sheet's rule; retired, they are gone. If a feature changes
+reads — the index sheet's rule; retired, they are gone. A first visit under the
+780px query starts folded (`--notes-start`, read back by `tour.js`): open, the
+block stood 1,400px deep between the title and the drawing on a phone. If a feature changes
 what a step points at or teaches, the note changes with it — see CLAUDE.md.
 
 ### What the model was given, under the setting itself (`.ctl-derived`)
@@ -955,6 +957,16 @@ reads back. Do not derive a new threshold from an existing one because the
 numbers happen to be close: they are different questions and they will move
 apart.
 
+The plate's is the first asked of an element rather than of the window, and
+that is the question it is: "can the plate hold a model column and a chart side
+by side" has one answer on a phone and the same answer on a laptop with the
+desk open, and a media query can see only the first. `.plate` is a size
+container; below 640px of its own width it stacks and sets `--plate-stretch: 0`,
+which `renderTrace` reads to stop drawing the chart to the row's height. Beside
+the model column the chart fills that row: the svg is out of the flow there so
+that it cannot set the height it then measures, with its old 268px as the
+floor.
+
 ### Folding a table to stacked rows
 
 The table equivalent of the index sheet. Where a schedule has more columns than
@@ -968,10 +980,15 @@ Two mechanics that cost real debugging:
 
 - **Column widths set as `.table td.class` out-specify anything shorter.** A
   media query does not win a specificity argument by coming later, so every
-  width the wide layout set has to be named and given back explicitly.
-- **Move a unit onto the label it belongs to.** A unit column on its own line
-  reads as another value; folded, `46.6` under `READS, KWH/M²·YR` is the
-  reading, and the unit column is dropped.
+  width the wide layout set has to be named and given back explicitly. Padding
+  too: the margin cell kept the wide layout's 12px indent under the labels it
+  follows until it was given back by name.
+- **Move a unit onto the label it belongs to, in its own case.** A unit column
+  on its own line reads as another value; folded, `46.6` under
+  `READS, kWh/m²·yr` is the reading, and the unit column is dropped. The unit
+  rides on `data-unit`, apart from `data-label`, and is lettered by `::after`
+  outside the label's `text-transform`: through it a kilowatt-hour read `KWH`,
+  which is not the symbol.
 
 **There are exactly two folding thresholds on this page and there must not be a
 third.** They answer two different questions and a new block joins whichever one
@@ -1061,6 +1078,19 @@ A reading with no data behind it renders as an em dash and is excluded from any
 total. Zero is a measurement; missing is not one. Never substitute a previous
 value or a default, and say in the interface which term is missing and why.
 This is the visual half of the project's no-silent-fallbacks rule.
+
+**Where every line of a group is missing for one reason, say the reason once,
+at the group's head.** On the targets board with System out, "patch System in —
+a free-running zone has no demand to meter" stood eleven times down the margin
+column, and the one line that did read was lost among them. Now, when every line
+of a standard is empty under one blockage, the reason stands under the
+standard's name ("No line of it reads yet: …"). Each row keeps its em dash and
+says `as above`. The reason is still in view and never folded. It moves one row
+up and stops repeating. Two reasons that share a remedy and differ only in their
+consequence (no demand to meter, no load to size) are said together from
+`BLOCK_TOGETHER`, asserted against the `STANDING` budget. A group with any line
+that reads, or with lines missing for different reasons, keeps the reason on
+each row.
 
 ### A refusal that carries its next step
 
@@ -1211,7 +1241,11 @@ of the desk on every draw.
   model, given the rest of the configuration. Never for a control belonging to
   a model that is out — see above.
 - `.out` at `opacity: 0.38` on the body and meter only, never the header: the
-  whole path is out of the model. Values stay legible and settable.
+  whole path is out of the model. Values stay legible and settable. **It is
+  not folded.** Folding an out strip to its head row was tried (it halved the
+  starting console, 11,900px to 6,244px) and rejected in review: the dimming
+  already says the path is out, and a folded strip no longer answers "what is
+  it set to" without being opened.
 - `.stale` at `opacity: 0.42`: results that describe a state the model no longer
   has.
 
@@ -1281,6 +1315,13 @@ middle is the only thing that can give. Budget it deliberately, in this order:
    "Widen the window" is addressed to a window manager; under `pointer: coarse`
    there isn't one, and the note is then two lines of red type taken out of the
    very column it says is short.
+4. **Answer the sheet's half of the squeeze with its own layout.** The desk
+   never shrinks below one column, so between 781 and about 1500px the sheet
+   takes the whole shortfall. It used to meet it with a sentence in redline
+   asking for a wider window while the plate kept its 268px model column and
+   drew the chart as a 70px thumbnail beside it. The plate now asks its own
+   width (a container query at 640px) and stacks, so the chart keeps the
+   sheet's full measure; the sentence is gone, on every pointer.
 
 ### The index sheet
 

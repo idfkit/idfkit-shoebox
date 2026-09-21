@@ -258,15 +258,31 @@ withinBudget(BUDGETS.SUMMARY, 'general note fold summary', MORE);
 function read() {
   try {
     const raw = localStorage.getItem(STORE);
-    if (!raw) return { done: [], view: 'open' };
+    // No view on record is not the same as an open one: a first visit's view
+    // is the layout's to choose (`startView`), a stored one the reader's.
+    if (!raw) return { done: [], view: null };
     const parsed = JSON.parse(raw);
     return {
       done: Array.isArray(parsed.done) ? parsed.done : [],
-      view: VIEWS.includes(parsed.view) ? parsed.view : 'open',
+      view: VIEWS.includes(parsed.view) ? parsed.view : null,
     };
   } catch {
-    return { done: [], view: 'open' };
+    return { done: [], view: null };
   }
+}
+
+/**
+ * How a first visit finds the notes, declared by the stylesheet as
+ * `--notes-start` and read back here, the way the console reads `--index`.
+ *
+ * On a phone the eight notes stood 1,400px deep between the title and the
+ * drawing, which then began two and a half screens down; folded, they are
+ * one row that still reads, and Reopen is on it. The choice is made once, on
+ * a visit with nothing stored: a reader who has opened or folded them keeps
+ * what they chose, on every width.
+ */
+function startView(host) {
+  return getComputedStyle(host).getPropertyValue('--notes-start').trim() === 'folded' ? 'folded' : 'open';
 }
 
 export function mountTour({ openDesk } = {}) {
@@ -275,7 +291,11 @@ export function mountTour({ openDesk } = {}) {
 
   const stored = read();
   const done = new Set(stored.done.filter((id) => NOTES.some((n) => n.id === id)));
-  let view = stored.view;
+  let view = stored.view ?? startView(host);
+  // Only a view the reader chose is written back. The layout's starting view
+  // is asked again on every visit that has none on record, or a first visit
+  // on a phone would leave the notes folded on the reader's laptop too.
+  let chosen = stored.view !== null;
   // "Retires on the next visit": a sheet finished last session never renders
   // again. Finishing it *this* session keeps it up, saying so, because a
   // marker that fills and takes its whole sheet with it was never seen to fill.
@@ -283,7 +303,7 @@ export function mountTour({ openDesk } = {}) {
 
   function save() {
     try {
-      localStorage.setItem(STORE, JSON.stringify({ done: [...done], view }));
+      localStorage.setItem(STORE, JSON.stringify({ done: [...done], view: chosen ? view : null }));
     } catch {
       // Nothing to substitute: the notes simply return next visit.
     }
@@ -317,6 +337,7 @@ export function mountTour({ openDesk } = {}) {
 
   function act(kind) {
     view = kind === 'open' ? 'open' : kind === 'fold' ? 'folded' : 'retired';
+    chosen = true;
     save();
     render();
   }
