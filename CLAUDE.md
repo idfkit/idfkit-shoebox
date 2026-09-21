@@ -188,6 +188,19 @@ geometry earlier ones wrote).
   reach; `refusesPairing` refuses the 54 pairings that cannot move (card, chooser,
   `makeSurvey`, `decodeSurvey`); `Scale.withdrawn` is the in-view sentence for an
   idle priced face. The pull still leaves them out.
+- **Daylight (11):** the channel no longer owns its own objects. `applyProbe` writes
+  `Daylighting:ReferencePoint` + `Daylighting:Controls` on **every** solve, outside
+  every gate, with the probe as `control_data` entry 1 at fraction 0; the channel
+  appends its dimming sensor as entry 2. **The output variable carries the point's
+  ordinal** (`Daylighting Reference Point 1 Illuminance`), so writing the probe first
+  is what stops the reading's own name moving; it is not the neighbouring
+  `Daylighting Window ...` variable. The probe stands at fixed `PROBE_DEPTH` 0.7 and
+  `PROBE_HEIGHT` 0.8, never `dlDepth`/`dlHeight`, which are faces of a channel that
+  ships bypassed. Measured neutral to full precision. `src/daylight.js` is the reader
+  (DOM-free); the reading is a roster `Quantity` with no target, a `Qualification`
+  that throws at load if absent, and `better: 'higher'` in SENSE. `applyOptics`
+  writes one interior reflectance to every opaque material; `wallAbs`/`roofAbs` no
+  longer write `visible_absorptance` at all. Notes: "A daylight reading on the roster".
 - **Gains (10) / TM59:** at `roomType: 'As drawn'` output is byte-identical to before;
   a named room type writes `Occupancy`, `EquipmentUse`, `LightingUse` with absolute
   `People` and `EquipmentLevel`. `TM59_SPACES` must equal `PROFILE_IDS`

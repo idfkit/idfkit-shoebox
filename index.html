@@ -3953,7 +3953,14 @@
         text-align: right;
       }
       .readout-sub[hidden] { display: none; }
-      .strip.out .readout { opacity: 0.38; }
+      /* Scoped to the fold, and the scope is the whole point. A readout inside
+         `strip-fold` is a detail of a channel's body and dims with the rest of
+         it when the channel leaves the path. A readout declaring `inView` sits
+         outside the fold, beside `.strip-blocked`, because it is measured on
+         every solve whether the channel is in or out — dimmed there it would
+         letter a live figure in the ink this sheet reserves for "not in the
+         model", on exactly the desk the page boots on. */
+      .strip.out .strip-fold .readout { opacity: 0.38; }
 
       /* ── the index sheet ──────────────────────────────────────────────
          Below the breakpoint the desk is no longer a column beside the

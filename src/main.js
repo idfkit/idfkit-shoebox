@@ -35,6 +35,7 @@ import {
   phraseFor,
 } from './controls.js';
 import { fold, mountConsole } from './console.js';
+import { VALIDITY_DEPTH_RATIO, depthRatio, readDaylight } from './daylight.js';
 import { KINDS, convert, deltaKindOf, figureIn, inIP, kindFor, letter, onSystemChange, setSystem, suffixIn, system, unitIn } from './units.js';
 import { BUDGETS, withinBudget, words } from './copy.js';
 import { describeDesk } from './describe.js';
@@ -3160,6 +3161,29 @@ function readouts() {
       sub: framed ? `Whole window · ${trio(glass.assembly)}` : null,
     });
   }
+  // Ungated, and that is the feature. Every other entry in this map is written
+  // only while its channel is in the path; this one is written whether the
+  // Daylight channel is engaged, bypassed or refused, because the probe that
+  // measures it is written on every solve outside every gate (FR-014). A
+  // reading gated behind the channel would be absent on exactly the desk the
+  // problem lives on: the one that boots with Daylight out and recommends the
+  // smallest window it can sweep.
+  const daylight = lastOutcome?.daylight ?? null;
+  if (daylight) {
+    out.set('daylight', {
+      // A measured zero is a figure. A desk with no opening reads 0 lx, clean,
+      // and renders as a nought rather than an em dash: zero is a measurement,
+      // missing is not, and the absence carries its own fix instead.
+      text: daylight.value === null ? null : QUANTITY_BY_ID.daylight.say(daylight.value),
+      // The depth ratio comes off the outcome rather than off the live `model`,
+      // and that is the same rule as the figure beside it. `model` carries the
+      // desk as it stands *now*; the reading was measured on the document the
+      // last run was handed. Read here they drifted apart on any gesture that
+      // re-letters without re-solving — drag Depth from 15.24 m to 9 m and the
+      // validity breach vanished from under a figure measured in a 3.3× room.
+      sub: daylight.value === null ? daylight.absence : daylightQualifier(lastOutcome.daylightDepth),
+    });
+  }
   // The Air strip's entry is written whenever the channel is in the path, even
   // with nothing to letter yet, because it carries two different things. The
   // rate is a reading and is absent until a run produces one — an em dash, by
@@ -3202,6 +3226,45 @@ const openSub = (n) =>
     : n.hoursOpen === 0
       ? 'The openings never opened'
       : `Open ${n.hoursOpen.toLocaleString('en-US')} of ${n.hoursTotal.toLocaleString('en-US')} h`;
+
+/**
+ * What stands beside the daylight figure, in view and never in a fold.
+ *
+ * Three statements, and each is there because leaving it out would let the
+ * figure be read as something it is not:
+ *
+ *   - **where the point stood.** A single-point illuminance quoted without its
+ *     position is a number a reader cannot interpret, and it is the one thing
+ *     they cannot recover from the figure itself (FR-015). Asked of the
+ *     qualification as a thunk, so the height in it letters in the system
+ *     showing rather than the one the page booted in.
+ *   - **that nothing published judges it** (FR-007). Every other reading on this
+ *     sheet can be held against somebody's line. This one cannot, and a figure
+ *     that looks like every other figure while being a ranking instrument is
+ *     worse than no figure at all.
+ *   - **that the method's own limit has been passed**, where it has (FR-006).
+ *     The shipped desk is 15.24 m deep under a 4.572 m ceiling, which is 3.33
+ *     times, so this is visible on first load and is not an edge case.
+ *
+ * `CLAUDE.md` sends method and citations to a fold, and they are in one: the
+ * readout's note. What is here is the reading's position and its two
+ * qualifications, which are the three things the fold ban names.
+ *
+ * The sentence itself is **not** composed here. It is `qualified.say(ratio)` on
+ * the roster quantity, so any surface that letters this reading letters the same
+ * words without being taught them. Composed here, the roster's `qualified` field
+ * was a promise nothing kept: the study card and the E-02 relief would have
+ * lettered the figure bare and the load assertion guarding the field would still
+ * have passed. Asked at render, so `CEILING` is asserted once at load against
+ * the worst case rather than thrown mid-render — the shape `FILE_SAYS.waiting`
+ * keeps, and the reason `copy.js` marks the budget `asserted: false`.
+ */
+const daylightQualifier = (ratio) => QUANTITY_BY_ID.daylight.qualified.say(ratio);
+
+// The worst case is the shipped desk, which takes the validity clause on first
+// load, so the budget is asserted against a ratio past the limit rather than
+// against the two-clause form nobody will ever see alone.
+withinBudget(BUDGETS.CEILING, 'the daylight qualifier', daylightQualifier(VALIDITY_DEPTH_RATIO + 0.34));
 
 /**
  * Everything the instant is chosen from, kept so the pin can be turned without
@@ -5962,12 +6025,25 @@ function readOutcome(eso, snapshot, patched, epw) {
   // whatever it really is. The bill, the schedule's columns and every sweep
   // sample divide by the same figure, so the scoreboard cannot disagree with
   // the rows above it about how big the building is.
-  const floorArea = geometryFacts(model).grossFloor;
+  const facts = geometryFacts(model);
+  const floorArea = facts.grossFloor;
   return {
     eui: bill?.wholeYear ? bill.intensity('metered') : null,
     ...(readDemand(eso, floorArea) ?? {}),
     ...(readPeaks(eso, floorArea) ?? {}),
     ...(readExtremes(eso) ?? {}),
+    // Read here with everything else the register and the strips letter, and
+    // for the same reason: the console re-letters on every gesture, and walking
+    // 8,760 hourly illuminances to answer a question that cannot have changed
+    // would put a stutter in every drag. The floor is the occupancy schedule's
+    // own unoccupied value and is a precondition rather than a default, since
+    // `> 0` against this desk's 0.1 band counts every hour of the year.
+    daylight: readDaylight(eso, { floor: occupiedFloor(snapshot) }),
+    // How deep the room the figure was measured in was, captured here for the
+    // same reason and with the same consequence: taken at render off the live
+    // `model` it walked the whole geometry again on every drag frame, and it
+    // described the desk as it stands rather than the run the figure came off.
+    daylightDepth: depthRatio(facts),
     overheat,
     tm59: readTm59(eso, snapshot, patched, epw),
   };
@@ -8291,6 +8367,15 @@ async function solve() {
   // em dashes it drew — the notes read the model, and an em dash is the model
   // saying it could not answer.
   if (lastOutcome?.tm59?.count.unread.length === 0) tour?.note('tm59');
+
+  // And the daylight square, on a measured figure rather than on the reading
+  // object existing. `readDaylight` always returns one, so a test on the object
+  // would fill the square off a design-day run that lettered an em dash — and
+  // the step's own sentence asks for a year with Gains in, which is exactly the
+  // pair of conditions `value` being a number stands for. `!= null` rather than
+  // `!== null`, because the reading is absent altogether before the first solve
+  // and a missing outcome must not read as a measurement.
+  if (lastOutcome?.daylight?.value != null) tour?.note('daylight');
 }
 
 /* ══ the scheduler ═══════════════════════════════════════════════════════ */

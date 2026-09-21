@@ -3520,3 +3520,179 @@ What is deliberately **not** asserted is the part a parser wrote. A refusal quot
 or the day, and that is the only part of it a reader can act on: it may not be
 folded, may not be shortened, and is not this page's text to budget. The wrapper
 is what the module wrote and the wrapper is what is counted.
+
+## A daylight reading on the roster
+
+The sheet reported what a window costs and nothing about what it delivers. Every
+reported consequence of a bigger window is worse, so the sheet's own readings
+pointed at the smallest window it could sweep. Measured on Chicago O'Hare, the
+south ratio from 0.05 to 0.90:
+
+```text
+  south ratio   daylight       lighting    heating    cooling
+        0.05      80 lx    5975.5   4192.5   9536.3
+        0.20     371 lx    5975.5   4091.9  10632.6
+        0.90    1643 lx    5975.5   4200.1  17680.3
+```
+
+Only the right-hand columns existed before. This section records what it took to
+put the left-hand one there.
+
+### The probe owns `Daylighting:Controls` on every desk
+
+The Daylight channel used to create both `Daylighting:ReferencePoint` and
+`Daylighting:Controls`, inside its own gate. It no longer creates either.
+`applyProbe` does, on every solve, outside every gate, and the channel appends
+its dimming sensor to a `control_data` list it does not own.
+
+The reason is the desk the page boots on. `DEFAULT_BYPASS` ships with Daylight
+out, so a reading gated behind the channel would be absent exactly where the
+problem lives. The probe controls **zero** lights,
+`fraction_of_lights_controlled_by_reference_point: 0`, which is inside the
+schema rather than exploiting it: the field's own minimum is 0.0. Measured
+neutral to full precision against the shipped code, not to a tolerance:
+
+```text
+  Daylight out, probe (as shipped)     lights 5975.523532800727 kWh
+  Daylight out, probe lifted out       lights 5975.523532800727 kWh
+  Daylight in,  probe + sensor         lights 3698.4165654702533 kWh
+  Daylight in,  probe entry lifted out lights 3698.4165654702533 kWh
+```
+
+Moving ownership is how orphans appear, and `applyModel` runs on every parameter
+change, so the idempotence gate carries the weight here. `.harness/gains.mjs`
+section 7 applies the model three times at six desk positions and drives
+Daylight, Gains and Glazing out and back, asserting each time that the list
+holds the probe first and that no reference point exists the controls do not
+name. That is the harness that would have caught a `Daylighting:ReferencePoint`
+named `Sensor` left behind by two clicks.
+
+### Why the probe's ordinal is pinned at 1
+
+The output variable carries the point's **ordinal**, not its name:
+`Daylighting Reference Point 1 Illuminance`. Written second, the probe would be
+point 1 with the channel out and point 2 with it in, and the reading would have
+to ask the document which variable it is today. So the probe is written first
+into `control_data`, and the measurement that settles it is that point 1 reads
+the same with the channel out and in:
+
+```text
+  Daylight out, probe                 21 Jun noon: point 1 = 194 lx
+  Daylight in,  probe + sensor        21 Jun noon: point 1 = 194 lx
+  Daylight in,  probe entry removed   21 Jun noon: point 1 = 322 lx
+```
+
+The third line is the check with teeth: 322 lx is the *sensor*, at its own
+shallower depth. If the reading ever starts returning 322, the probe is being
+written second.
+
+Note the neighbour in the `.rdd`, `Daylighting Window Reference Point 1
+Illuminance`, which is the per-window contribution and differs by one word.
+`.harness/variables.mjs` asserts the exact name, because a drifted variable name
+does not stop a run: it writes one line into `eplusout.err` and leaves the
+reader an absence explained by the run rather than by the typo.
+
+### The probe does not move, and that was a reversal
+
+The first draft placed the probe at `dlDepth` and `dlHeight`. Both are Daylight
+*channel* faces, and the channel is bypassed on the desk the page boots on, so
+following them would let a bypassed channel's slider reach the IDF and silently
+move a reading that is on the sheet whether or not the channel is in. It also
+put the probe on the same point as the dimming sensor at the shipped `dlDepth`
+of 0.5, which is why the 194-against-322 evidence above would not have
+reproduced at all.
+
+It stands at `PROBE_DEPTH = 0.7` and `PROBE_HEIGHT = 0.8`, constants in
+`model.js` beside the applier that writes them. Deep in the room is the honest
+place: depth is what makes the absolute value least trustworthy and the ordering
+most trustworthy, and the ordering is the only claim the reading makes. The
+ranking was measured at that point against a Radiance annual daylight
+coefficient chain, Spearman 0.9957, identical thirteen-point Pareto frontier.
+
+The position is read off the document rather than recomputed from `width` and
+`depth`: the centre comes from the floor's own vertices and the depth axis from
+the south wall's own inward normal, because orientation lives in the vertices
+and measuring along a fixed axis would put the point outside a turned room.
+
+### The reflectance defect had three surfaces, not one
+
+`applyFabric` wrote `visible_absorptance` from `wallAbs` and `roofAbs`, the
+*exterior* solar absorptances. Three things were wrong at once. A wall painted
+dark outside is not a dark wall inside. The shipped desk therefore ran its
+interior at 0.25, about black paint. And any desk with wall mass on it never
+used `wallAbs` for the inside face at all, because the inboard masonry leaf
+carried its own hard-coded 0.65: the surface the reader was moving and the
+surface the light bounced off were different objects.
+
+`applyOptics` now writes `1 - interiorRef` into every opaque material, as one
+rule rather than a list of five. The list is the reason: `R13LAYER`, `R31LAYER`,
+`WALLMASS`, the slab and `FLOORLIGHT` appear depending on where the faces stand,
+and a sixth material added later would escape a list while the reader went on
+moving a control that claimed to speak for the room. `Material` and
+`Material:NoMass` are exactly the opaque ones; glazing is `WindowMaterial:*` and
+is left to the Glazing channel.
+
+What it moves, with the Daylight channel engaged:
+
+```text
+  interior 0.25 (as shipped):  daylight 148 lx   lighting 3791.1 kWh
+  interior 0.60 (corrected):   daylight 371 lx   lighting 3155.4 kWh
+```
+
+**The correction had to ship with the reading, in one change.** The two known
+errors ran in opposite directions and were of similar size, so correcting either
+alone publishes a number further from the truth than correcting neither.
+
+The control ships with **no landmark**. `CLAUDE.md` permits one only where
+somebody published it; 0.60 is the value the assessment used as a realistic
+comparator, which is a comparator and not a citation, and no published interior
+reflectance schedule has been read and verified for this repository. A band
+drawn from memory would be worse than no band.
+
+### A measured zero is a figure
+
+A desk with no opening reads **0 lx, clean, nought severe, 8,760 hourly
+values**. The engine computed the daylight and found none, which is a
+measurement. It renders as a nought and enters every comparison. Zero is a
+measurement, missing is not, and the four absence reasons each name their fix
+first instead.
+
+### What the reading needs, and the desk that cannot give it
+
+The reading is the median over **occupied** hours, so it needs the hourly
+`Occupancy` series as its denominator as well as the illuminance. That pulls
+`channels: ['gains']` into its `RunContents`, and `annual: true` with it, because
+design days are excluded by construction: a design day is more extreme than any
+day in the year it precedes, so counting one in would let `sizingPeriods: 'Yes'`
+move the reading without changing the building.
+
+None of that is a condition on the probe, which is unconditional. It is a
+condition on what a given run can be *asked*, which is what `RunContents` is for.
+On the desk the page boots on, with Gains bypassed, the reading lands as
+`patch Gains in; this run carries no hourly Occupancy series`, naming the fix.
+
+The floor that decides what "occupied" means is a precondition, never a default.
+The desk writes a band schedule sitting at 0.1 out of hours, so `> 0` is not
+occupancy. The first run of the sweep harness reported **5 lx where the answer
+is 165**, because it passed `occupiedFloor` a parameter overlay with no
+`roomType` in it, got a floor of 0 back, and took the median over every dark
+night of the year. That is the trap `tm59.js` carries a long comment about,
+sprung from the caller's end. The reader throws on a missing floor rather than
+defaulting one, and the harness now asserts the floor is above zero before it
+reads anything.
+
+### The cost, on the cadence that matters
+
+The annual cost was already bounded. The design-day solve is the one nobody had
+measured, and it re-solves continuously during a drag:
+
+```text
+  no probe             solve 223 ms min   eso 16 kB, 20 series
+  probe, as shipped    solve 230 ms min   eso 17 kB, 21 series
+```
+
+One series, 0.7 kB, and 3.3 % on minima against a run-to-run spread of 1,476 ms
+on this machine. The probe's cost is below what a design-day solve can resolve
+here, and the harness says so rather than quoting 7 ms as though it were a
+measurement. What can be asserted is the shape of the change, one series and
+under a kilobyte, and that is asserted exactly.

@@ -117,12 +117,13 @@ const CONVENTION = 'Convention of practice rather than a published figure.';
  * such thing and should not: a study draws a curve and lets the reader read
  * it, which needs no direction at all.
  *
- * Thirteen of the fifteen are compliance metrics or costs, where less is the
- * whole point and the definition says so. The zone's own two extremes are the pair
- * that needed thinking about, because "better" for a free-running temperature
- * is a comfort judgement and nobody publishes it as a target. They are
- * declared as conventions and say so, which is the same treatment the
- * overhang's landmark bands get.
+ * Thirteen of the sixteen are compliance metrics or costs, where less is the
+ * whole point and the definition says so. The three that needed thinking about
+ * are the zone's own two extremes and the daylight reading, because "better"
+ * for a free-running temperature is a comfort judgement, and for a single-point
+ * illuminance nobody publishes a target at all. They are declared as
+ * conventions and say so, which is the same treatment the overhang's landmark
+ * bands get.
  *
  * A reading with no entry here is one the survey will not let fall and will
  * not name an improving region for: it draws the ground, letters every spot
@@ -156,6 +157,18 @@ const SENSE = Object.freeze({
   tm59b: { better: 'lower', why: 'CIBSE TM59 criterion b passes at four nights or fewer.' },
   tm59bI: { better: 'lower', why: 'CIBSE TM59 criterion b passes at four nights or fewer, against Category I’s 26 °C.' },
   tm59c: { better: 'lower', why: 'CIBSE TM59 criterion c passes at or below 3 % of occupied hours.' },
+  // The second reading on this sheet where uphill is the improvement, after the
+  // zone's winter low, and the second declared as a convention rather than off a
+  // published limit. Nobody's line judges this figure -- that is the whole
+  // premise of the reading -- so the direction is this sheet's own judgement and
+  // the `CONVENTION` prefix is what says so out loud, exactly as it does for the
+  // two zone extremes. More light at the back of a room is what the window is
+  // for, and it is the one thing every other reading on the roster improves by
+  // taking away.
+  daylight: {
+    better: 'higher',
+    why: `${CONVENTION} More daylight deep in the room is what the window is for; no published line judges this figure, so this direction is the sheet's own.`,
+  },
 });
 
 /* ══ entities ════════════════════════════════════════════════════════════ */
@@ -301,8 +314,8 @@ export const READING_BY_ID = Object.freeze(
 {
   // The uniqueness the link format depends on, asserted rather than observed:
   // `sv` carries a series id and nothing else, so two quantities declaring one
-  // series id would make a survey link mean two grounds at once. Fifteen
-  // series across thirteen quantities today.
+  // series id would make a survey link mean two grounds at once. Sixteen
+  // series across fourteen quantities today.
   const ids = READINGS.map((reading) => reading.id);
   if (new Set(ids).size !== ids.length) {
     throw new Error('two study quantities declare the same series id, so a survey link cannot name one');

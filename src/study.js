@@ -17,6 +17,12 @@ import { END_USES } from './bill.js';
 import { RunContents, VariableRequest } from './contents.js';
 import { CHANNELS, CHANNEL_BY_ID, controlFor, labelFor } from './controls.js';
 import { BUDGETS, withinBudget } from './copy.js';
+import {
+  DAYLIGHT_QUALIFICATION,
+  ILLUMINANCE_VARIABLE,
+  ReadingQualification,
+  readDaylight,
+} from './daylight.js';
 import { readDemand, readExtremes, readOverheat, readPeaks } from './readings.js';
 import { PRESETS } from './schemes.js';
 import {
@@ -265,6 +271,7 @@ export class Quantity {
     movedBy = [],
     criterion = null,
     category = null,
+    qualified = null,
   }) {
     if (!id || !label || !unit) throw new Error(`the study quantity "${id || '(unnamed)'}" lacks its identity or lettering`);
     if (!Number.isInteger(digits) || digits < 0) {
@@ -361,6 +368,18 @@ export class Quantity {
     // reach harness, so a study of efficiency against demand is refused by a
     // declaration instead of drawn as a flat line that reads as a finding.
     this.movedBy = Object.freeze(new Set(movedBy));
+    // What this reading is, how it was computed, and where it was taken, for a
+    // reading no published line judges. Null for every reading that *is*
+    // judged: a figure read against a standard's own limit is qualified by the
+    // standard, and the roster assertion below is what says which readings owe
+    // one rather than this constructor guessing.
+    if (qualified !== null && !(qualified instanceof ReadingQualification)) {
+      throw new Error(
+        `the study quantity "${id}" carries a qualification that is not one, but ` +
+          `${String(qualified)}; a stated position and its own "nobody publishes a line for this" are what it has to be`,
+      );
+    }
+    this.qualified = qualified;
     this.criterion = criterion;
     this.category = category;
     Object.freeze(this);
@@ -478,6 +497,34 @@ const TM59_AB = new RunContents({
   season: true,
 });
 const TM59_B = new RunContents({ variables: [ZONE_AIR, OPERATIVE], annual: true, season: true });
+
+/**
+ * What a run must carry for the daylight reading to be read off it.
+ *
+ * Three things, and the second two are the ones a first draft leaves out.
+ *
+ * The illuminance series is the reading. The **occupancy** series is its
+ * denominator: the median is taken over occupied hours, and a sample carrying
+ * the illuminance alone could only answer a question about every hour of the
+ * year, which is a different reading. That pulls `channels: ['gains']` in with
+ * it, because `applyGains` is what writes the schedule, and it is honest rather
+ * than restrictive: with Gains bypassed there is nobody in the room, so the
+ * reading lands as the stated absence naming that as the fix.
+ *
+ * `annual: true` because the reading is defined over the weather file's own
+ * environments and design days are excluded by construction -- a design day is
+ * more extreme than any day in the year it precedes, so counting one in would
+ * let `sizingPeriods: 'Yes'` move the figure without changing the building.
+ *
+ * None of this is a condition on the *probe*, which is written on every solve
+ * outside every gate (FR-014). It is a condition on what a given run can be
+ * asked, which is a different question and the one `RunContents` exists to ask.
+ */
+const DAYLIGHT = new RunContents({
+  variables: [request(ILLUMINANCE_VARIABLE), OCCUPANCY],
+  annual: true,
+  channels: ['gains'],
+});
 
 const finite = (value) => (Number.isFinite(value) ? value : null);
 const fieldFrom = (reader, field) => (landed, options) =>
@@ -647,6 +694,45 @@ export const QUANTITIES = Object.freeze([
     criterion: CRITERION_BY_ID.c,
     context: (desk) => ({ floor: desk.occupiedFloor }),
     read: (landed, { context }) => criterionValue(readCriterionC(landed.eso, context.floor)),
+  }),
+  new Quantity({
+    // The reading the window was put there to deliver, and the only one on this
+    // roster that nothing published judges. The id is permanent from the moment
+    // it ships: it is a *value* inside `sty` and `sv` on every link ever sent,
+    // and `sty` splits on `.` (`permalink.js:590`), so it matches
+    // `[A-Za-z][A-Za-z0-9]*` and carries no dot, dash or underscore.
+    id: 'daylight',
+    // The position is in the label as well as in the qualification, per FR-015:
+    // a single-point illuminance quoted without saying where the point stood is
+    // a number a reader cannot interpret, and the chooser letters the label
+    // alone. Four words rather than six, because the label is spliced into the
+    // refused-pairing sentence and the fifteen-word STANDING budget throws at
+    // load over the difference -- which is the budget doing its job.
+    label: 'Daylight, 70 % depth',
+    unit: 'lx',
+    quantityKind: 'illuminance',
+    // Nought decimals, matching the kind's own precision. Lux at one decimal
+    // would claim a precision split flux has not got.
+    digits: 0,
+    needs: DAYLIGHT,
+    qualified: DAYLIGHT_QUALIFICATION,
+    // How the schedule's own unoccupied floor reaches a sampled reading, the
+    // same way the three TM59 quantities carry theirs. The desk writes a band
+    // schedule sitting at 0.1 out of hours, so `> 0` is not "occupied" and a
+    // reader handed no floor throws rather than counting every hour of the year.
+    context: (desk) => ({ floor: desk.occupiedFloor }),
+    read: (landed, { context }) => finite(readDaylight(landed.eso, { floor: context.floor })?.value),
+    // Everything else takes the constructor's default, as it does on every
+    // quantity above, and the defaults are the decisions rather than an
+    // omission. No `pen`: the desk's one pen pair, `--warm` against `--cold`, is
+    // reserved for signed physical quantities, and spending it on an unsigned
+    // magnitude would spend the only encoding this page has for direction on a
+    // reading that has none. No `meterScope`, no `priced`, no `movedBy`: it
+    // reads no meter and no bill, so no priced face can move it and the
+    // priced-pairing count comes back exactly as it was. Not `wholeYear`,
+    // because a part-year run answers for its own occupied hours rather than
+    // refusing. No `criterion` and no `category`, because it is not a TM59
+    // criterion.
   }),
 ]);
 
@@ -906,14 +992,19 @@ export function assertQuantityReachability(quantities, reachableOffers) {
   }
 
   // Every priced pairing, once: refused with a sentence that stands in view, or
-  // drawn. Six sweepable priced faces against thirteen readings is 78, of which
+  // drawn. Six sweepable priced faces against fourteen readings is 84, of which
   // twelve draw — the three plant faces against the three bill readings, and
   // each tariff face against the one reading it prices — and the count is
   // asserted so a reach declaration widened by accident fails here rather than
   // as a curve that should have been refused. The figures moved from 66 and 54
   // when TM59's two by-category criteria went onto the roster at both
   // categories: neither new reading declares `movedBy`, so all twelve of the new
-  // pairings are refused, and both numbers rose by the same twelve.
+  // pairings are refused, and both numbers rose by the same twelve. They moved
+  // again, from 78 and 66, when the daylight reading joined: it reads no meter
+  // and no bill, so all six of its pairings are refused and both numbers rose by
+  // the same six. **Both rising together is the invariant**, not either figure
+  // standing still: a reading that reached the bill without declaring `movedBy`
+  // would raise the total and not the refusals, and that is what this catches.
   let refusedPairings = 0;
   let pairings = 0;
   for (const channel of CHANNELS.filter((candidate) => candidate.prices)) {
@@ -929,9 +1020,9 @@ export function assertQuantityReachability(quantities, reachableOffers) {
       withinBudget(BUDGETS.STANDING, `pairing fix ${control.key}`, pairingFix(control.key));
     }
   }
-  if (pairings !== 78 || refusedPairings !== 66) {
+  if (pairings !== 84 || refusedPairings !== 72) {
     throw new Error(
-      `${refusedPairings} of ${pairings} priced pairings are refused, where the reach table refuses 66 of 78`,
+      `${refusedPairings} of ${pairings} priced pairings are refused, where the reach table refuses 72 of 84`,
     );
   }
 
@@ -939,13 +1030,64 @@ export function assertQuantityReachability(quantities, reachableOffers) {
   const declaredIds = new Set(
     QUANTITIES.flatMap((quantity) => [quantity.id, ...quantity.series.map((series) => series.id)]),
   );
-  const nonTargets = new Set(['extremes', 'demand', 'high', 'low', 'cost', 'carbon']);
+  // The readings no published line judges, and for each one whether it owes a
+  // qualification saying so where it stands.
+  //
+  // One register rather than two. The first draft kept the membership here and
+  // the qualification requirement in a second set eighteen lines down, which is
+  // two hand-kept lists of one fact: adding the next unjudged reading to this
+  // one and forgetting the other would letter a bare ranking instrument as a
+  // measurement with nothing thrown, which is the defect the requirement exists
+  // to prevent. A Map makes the second answer unskippable.
+  //
+  // Most of these are unjudged and need no sentence: nobody reads a cost or a
+  // zone extreme as compliance evidence. `daylight` is the one that would be,
+  // because it letters in lux beside criteria that do carry limits.
+  const nonTargets = new Map([
+    ['extremes', false],
+    ['demand', false],
+    ['high', false],
+    ['low', false],
+    ['cost', false],
+    ['carbon', false],
+    ['daylight', true],
+  ]);
   for (const id of targetIds) {
     if (!declaredIds.has(id)) throw new Error(`the target metric "${id}" has no study quantity declaration`);
   }
   for (const quantity of QUANTITIES) {
     if (!targetIds.has(quantity.id) && !nonTargets.has(quantity.id)) {
       throw new Error(`the study quantity "${quantity.id}" is neither a target metric nor a declared non-target outcome`);
+    }
+  }
+
+  // A reading offered as a ranking instrument has to say so, out loud, at load.
+  //
+  // FR-020, and the three throws are one rule read in both directions. A figure
+  // that looks like every other figure on the sheet, but ranks rather than
+  // measures, is worse than no figure at all -- so a declaration that carries a
+  // qualification must not also be judged by somebody's published line, and a
+  // declaration this sheet has decided is a ranking instrument must carry one.
+  //
+  // At module load, naming the declaration, rather than at draw time: the
+  // alternative is a bare number on a sheet, which is the exact defect.
+  for (const quantity of QUANTITIES) {
+    if (nonTargets.get(quantity.id) === true && quantity.qualified === null) {
+      throw new Error(
+        `the study quantity "${quantity.id}" is offered with no published line to judge it and ` +
+          'carries no stated position, so it would letter as a measurement while being a ' +
+          'ranking instrument',
+      );
+    }
+    // The other direction, and the one a future declaration would trip. A
+    // target attached to a qualified reading turns a ranking instrument into a
+    // certificate, and the specification forbids one outright.
+    if (quantity.qualified !== null && targetIds.has(quantity.id)) {
+      throw new Error(
+        `the study quantity "${quantity.id}" states its own method because no published line judges ` +
+          'it, and a target has been attached to it; a ranking instrument with a target on it is a ' +
+          'certificate, which this reading is not and must not become',
+      );
     }
   }
 
