@@ -147,6 +147,7 @@ import {
   instantOffers,
   pinAt,
   readDemand,
+  peakLag,
   readExtremes,
   readOverheat,
   readPeaks,
@@ -1270,7 +1271,7 @@ function metricsFor(zone, out, run, hasOutdoor, demand = null) {
   // a design day (`kind` set by `environmentRuns`) is measured for either.
   const cycle = run.kind !== null;
   const damping = cycle && hasOutdoor && o.swing > 0.05 ? z.swing / o.swing : NaN;
-  const lag = cycle && hasOutdoor ? slice(zone).indexOf(z.max) - slice(out).indexOf(o.max) : NaN;
+  const lag = cycle && hasOutdoor ? peakLag(slice(zone), slice(out)) : NaN;
   // `demand` is this environment's own meters, or null where there are none to
   // read — a design day, or a desk with the System strip bypassed.
   return { z, o, damping, lag, hours: run.end - run.start + 1, hasOutdoor, demand };
@@ -8652,6 +8653,7 @@ function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? nul
     annual: Boolean(epw),
     wholeYear: Boolean(epw) && isWholeYear(snapshot.months),
     season: Boolean(epw) && touchesSeason(snapshot.months),
+    designDays: snapshot.sizingPeriods === 'Yes',
     channels,
     pricing,
     key,
