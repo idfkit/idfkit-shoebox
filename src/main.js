@@ -106,6 +106,7 @@ import {
   climateDescription,
   climateZone,
   degreeDays,
+  DEGREE_DAY_BASES,
   flavorWindow,
   forgetFile,
   here,
@@ -1020,6 +1021,7 @@ function renderTrace() {
 
   // ── x axis: one label per environment, or per month for an annual run
   const axis = svg('g');
+  const lettered = []; // each label with the band it has to fit, checked once drawn
   for (const seg of plot.segments) {
     const x0 = x(seg.start, n);
     const x1 = x(Math.min(seg.end, n - 1), n);
@@ -1037,6 +1039,12 @@ function renderTrace() {
     });
     t.textContent = seg.label.toUpperCase();
     axis.append(t);
+    // A design day also has a short form, its season and date: the band a
+    // day gets on a phone is about 100px, and the full "WINTER DESIGN DAY ·
+    // 21 DEC" in tracked capitals needs about 160, so the two centred labels
+    // ran into each other.
+    const short = seg.kind ? seg.label.replace(/ design day/i, '').toUpperCase() : null;
+    lettered.push({ t, band: Math.abs(x1 - x0), short });
   }
   root.append(axis);
 
@@ -1081,6 +1089,16 @@ function renderTrace() {
   host.classList.toggle('pickable', Boolean(reading));
 
   host.append(root);
+
+  // Only a drawn label has a length. One that overruns its band takes its
+  // short form, and one that overruns in that too is left out, as a month
+  // too narrow to letter already is: a label over its neighbour's band reads
+  // as the neighbour's.
+  for (const { t, band, short } of lettered) {
+    if (t.getComputedTextLength() <= band) continue;
+    if (short) t.textContent = short;
+    if (!short || t.getComputedTextLength() > band) t.textContent = '';
+  }
 }
 
 /*
@@ -4448,7 +4466,7 @@ function render(found, { distances = false, onPick } = {}) {
       } else {
         // A flavour: the years it samples, and the degree days that result.
         name.textContent = row.label;
-        far.textContent = degreeDays(row.station);
+        far.textContent = degreeDays(row.station, { bases: false });
         button.append(name, far);
       }
 
@@ -4465,7 +4483,7 @@ function render(found, { distances = false, onPick } = {}) {
 function showFlavors(row) {
   render(row.flavors, { onPick: (pick) => choose(row, pick) });
   say(null);
-  const label = `${siteName(row.station)}, ${siteRegion(row.station)}`;
+  const label = `${siteName(row.station)}, ${siteRegion(row.station)} · ${DEGREE_DAY_BASES}`;
   foot.replaceChildren(back, document.createTextNode(label));
 }
 
@@ -5255,11 +5273,17 @@ function renderKeptFile(reason = null) {
     return;
   }
   line.hidden = false;
+  // The file's name is the reader's own string, so it is lettered as data
+  // apart from the sentence around it.
+  const name = document.createElement('span');
+  name.className = 'site-own-name';
+  name.textContent = kept.name;
   line.replaceChildren(
+    name,
     document.createTextNode(
       weatherSource?.kind === 'file' && weatherSource.fingerprint === kept.fingerprint
-        ? `${kept.name} is kept in this browser, so a link to this desk reopens on it. `
-        : `${kept.name} is kept in this browser. `,
+        ? ' is kept in this browser, so a link to this desk reopens on it. '
+        : ' is kept in this browser. ',
     ),
   );
   // Offered rather than attached, and that is the whole of Principle II in one
@@ -7181,12 +7205,10 @@ function renderScore() {
       const value = targetReading(target);
       // The unit rides on the folded label, because the unit column itself is
       // dropped at that width: `46.6` on a line of its own says nothing.
-      const read = cell(
-        tr,
-        value == null ? '—' : scoreFigure(target, value),
-        null,
-        `Reads, ${target.unitNow}`,
-      );
+      const read = cell(tr, value == null ? '—' : scoreFigure(target, value), null, 'Reads');
+      // Apart from the label, so the stylesheet can letter it outside the
+      // label's upper case: `KWH/M²·YR` is not a unit.
+      if (target.unitNow) read.dataset.unit = target.unitNow;
       if (value == null) read.className = 'void';
       const margin = tr.insertCell();
       margin.className = 'delta';
@@ -7625,7 +7647,8 @@ function renderShelf() {
       const td = tr.insertCell();
       td.textContent = Number.isFinite(value) ? shelfText(column, value, scheme.measure) : '—';
       const said = unitIn(KINDS[column.kind], column.unit);
-      td.dataset.label = said ? `${column.label}, ${said}` : column.label;
+      td.dataset.label = column.label;
+      if (said) td.dataset.unit = said;
       if (!Number.isFinite(value)) td.className = 'void';
       const d = tr.insertCell();
       d.className = 'delta';

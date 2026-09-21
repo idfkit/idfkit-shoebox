@@ -736,50 +736,70 @@
          to separate it — not a box, not a shadow, nothing that reads as a
          dialog over the list above it. */
       .site-own {
-        padding: 10px 13px 12px;
+        padding: 12px 13px 13px;
         border-top: 1px solid var(--rule);
         display: grid;
-        gap: 7px;
+        gap: 6px;
       }
       .site-own[hidden] { display: none; }
+      /* A control label, lettered as every other control label is: condensed,
+         upper case, tracked. A sentence in mono read as a figure and outweighed
+         the list it is the alternative to. */
       .site-own-label {
-        font: 500 11px/1.3 var(--mono);
-        color: var(--ink-2);
+        font: 500 9.5px/1.3 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--ink-3);
       }
       /* An input receives content, so it is darker than what surrounds it — the
          inset rule, which is what says "put something here" without a heavy
-         border. The button half is the platform's; only its frame is ours. */
+         border. The button half is the platform's; only its frame is ours. The
+         file name the platform letters beside it is data, so it stays mono. */
       .site-file {
         width: 100%;
-        font: 400 10.5px/1.3 var(--mono);
-        color: var(--ink-2);
+        font: 400 11px/1.3 var(--mono);
+        color: var(--ink-3);
         background: var(--inset);
         border: 1px solid var(--rule);
-        border-radius: 0;
-        padding: 6px;
+        border-radius: var(--r);
+        padding: 4px;
+        cursor: pointer;
+        transition: border-color 0.15s ease;
       }
+      .site-file:hover { border-color: var(--rule-firm); }
       .site-file:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
+      /* Lettered like Near me above it, the panel's other verb, rather than in
+         the platform's own face. */
       .site-file::file-selector-button {
-        font: 500 10.5px/1.3 var(--mono);
+        font: 500 9.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
         color: var(--ink-2);
         background: var(--vellum);
         border: 1px solid var(--rule);
-        border-radius: 0;
-        padding: 4px 9px;
-        margin-right: 9px;
+        border-radius: 1px;
+        padding: 7px 10px;
+        margin-right: 10px;
+        cursor: pointer;
+        transition: border-color 0.15s ease, color 0.15s ease;
       }
-      .site-file::file-selector-button:hover { border-color: var(--rule-firm); color: var(--redline); }
+      .site-file:hover::file-selector-button { border-color: var(--rule-firm); color: var(--redline); }
+      .site-file:active::file-selector-button { background: var(--inset); }
+      /* Prose, so the control note's sans: mono is kept for what can be read as
+         a number or a name. */
       .site-own-note,
       .site-own-kept {
         margin: 0;
-        font: 400 10.5px/1.35 var(--mono);
+        font: 400 10.5px/1.45 var(--sans);
         color: var(--ink-ghost);
       }
       /* What the browser is holding, and how to make it stop. Never folded: a
          reader has to be able to see that a file of theirs is being kept without
-         going looking for it. */
-      .site-own-kept { color: var(--ink-3); }
+         going looking for it. One step up from the note, because it is a state
+         of this machine rather than a description of the control. */
+      .site-own-kept { margin-top: 4px; color: var(--ink-3); }
       .site-own-kept[hidden] { display: none; }
+      .site-own-name { font: 400 10.5px/1.45 var(--mono); color: var(--ink-2); }
 
       .site-foot {
         display: flex;
@@ -1147,12 +1167,16 @@
         border-top: 1px solid var(--rule-soft);
       }
       .when[hidden] { display: none; }
+      /* Wraps as a whole rather than squeezing the link: on a phone
+         "Choose the hour" was folded to one word a line beside the reading. */
       .when-row {
         display: flex;
+        flex-wrap: wrap;
         align-items: baseline;
         justify-content: space-between;
-        gap: 14px;
+        gap: 6px 14px;
       }
+      #when-open { flex: none; white-space: nowrap; }
       .when-note {
         margin: 0;
         max-width: 62ch;
@@ -1861,7 +1885,15 @@
          than against the row above, which the shared note margins were set
          for. */
       .fold > summary + * { margin-top: 2px; }
-      .register #score td.delta.absent { font-size: 10.5px; color: var(--ink-ghost); }
+      /* A reason is prose, so it is set as the control note is and ranged
+         left, against the em dash it explains, rather than in the figures'
+         mono ranged right, where three wrapped lines read ragged from the
+         wrong side. */
+      .register #score td.delta.absent {
+        font: 400 10.5px/1.45 var(--sans);
+        text-align: left;
+        color: var(--ink-ghost);
+      }
       /* The one mark on the whole board. A criterion that has been missed is
          a divergence, and this is the markup pen doing what it is for. */
       .register #score td.delta.over { color: var(--redline); }
@@ -2446,6 +2478,12 @@
         color: var(--ink);
         overflow-wrap: anywhere;
       }
+      /* The revision moves to a line of its own before it breaks: under
+         `anywhere` alone "0.4.0+db7614f.dirty" split mid-hash and ran to the
+         cell's edge. It still breaks inside itself where even a whole line
+         cannot hold it, which on a phone's two-column block it can not. */
+      #t-rev > a,
+      #t-rev > span { display: inline-block; }
       .titleblock i {
         display: block;
         margin-top: 3px;
@@ -4227,6 +4265,10 @@
         .register #shelf-table td:first-child,
         .register td.scheme-actions { width: auto; }
         .register td + td { padding-left: 0; }
+        /* And the padding, for the same reason: the wide layout's
+           `.register td.delta { padding-left: 12px }` out-specifies the line
+           above, and left the margin indented under the two labels it follows. */
+        .register td.delta { padding-left: 0; }
         .register td:empty { display: none; }
         /* The unit has moved onto the reading's own label. */
         .register #score td.unit { display: none; }
@@ -4243,6 +4285,25 @@
           font: 500 9px/1.6 var(--cond);
           text-transform: uppercase;
           letter-spacing: 0.11em;
+          color: var(--ink-3);
+        }
+        /* A label that carries a unit letters the unit in its own case.
+           Through the label's `text-transform` a kilowatt-hour read `KWH`,
+           which is not the symbol. The unit is a second pseudo-element, and
+           the cell a wrapping flex row so the two sit before the figure. */
+        .register td[data-unit] { display: flex; flex-wrap: wrap; align-items: baseline; }
+        .register td[data-unit]::before {
+          content: attr(data-label) ",";
+          order: -2;
+          min-width: 0;
+          margin-right: 0.5ch;
+        }
+        .register td[data-unit]::after {
+          content: attr(data-unit);
+          order: -1;
+          margin-right: 8px;
+          font: 500 9px/1.6 var(--cond);
+          letter-spacing: 0.04em;
           color: var(--ink-3);
         }
         .register td:first-child { margin-bottom: 6px; }

@@ -968,10 +968,15 @@ Two mechanics that cost real debugging:
 
 - **Column widths set as `.table td.class` out-specify anything shorter.** A
   media query does not win a specificity argument by coming later, so every
-  width the wide layout set has to be named and given back explicitly.
-- **Move a unit onto the label it belongs to.** A unit column on its own line
-  reads as another value; folded, `46.6` under `READS, KWH/M²·YR` is the
-  reading, and the unit column is dropped.
+  width the wide layout set has to be named and given back explicitly. Padding
+  too: the margin cell kept the wide layout's 12px indent under the labels it
+  follows until it was given back by name.
+- **Move a unit onto the label it belongs to, in its own case.** A unit column
+  on its own line reads as another value; folded, `46.6` under
+  `READS, kWh/m²·yr` is the reading, and the unit column is dropped. The unit
+  rides on `data-unit`, apart from `data-label`, and is lettered by `::after`
+  outside the label's `text-transform`: through it a kilowatt-hour read `KWH`,
+  which is not the symbol.
 
 **There are exactly two folding thresholds on this page and there must not be a
 third.** They answer two different questions and a new block joins whichever one
