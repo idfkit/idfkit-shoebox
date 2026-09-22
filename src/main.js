@@ -10034,8 +10034,6 @@ function axisOffers(snapshot = params, patch = patching()) {
               : `Patch ${channel.name} in; with it out of the path this control reaches no object.`
             : withdrawn
               ? withdrawn
-              : control.inert?.(snapshot)
-              ? control.note
               : side && !side.reaches(snapshot)
                 ? side.reasonFor(snapshot)
                 : null;
@@ -10058,6 +10056,8 @@ function axisOffers(snapshot = params, patch = patching()) {
           // than as a sentence: the sentence is the same for all thirty-nine
           // of them and is printed once over the group.
           faceless: Boolean(faceless),
+          // The control's note, shown in the chooser as a Note fold.
+          explanation: faceless ? null : (control.note ?? null),
         });
       }
     }
@@ -10093,6 +10093,13 @@ function pairingRefusal(keys, readings) {
   const refused = refusesSurveyPairing(keys.filter(Boolean), readings);
   return refused && `${refused.sentence} ${pairingFix(refused.key)}`;
 }
+
+/**
+ * The axis-chooser notes the reader has opened this session, by chooser and
+ * control. Held in memory only, like the console's `openFolds`: how the sheet is
+ * being read reaches neither the link nor `localStorage`.
+ */
+const openPickNotes = new Set();
 
 /**
  * One chooser of offers, closed reading what is selected.
@@ -10140,7 +10147,9 @@ function pickList({ label, noun, summary, placeholder, options, selected, onPick
   // under, so the filter can hide a heading once nothing beneath it matches.
   // The channel's name is among a row's words: "fabric" is how a reader who
   // knows where a control lives but not what it is called would look for it.
-  const fold = (text) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  // Named `searchable`, not `fold`, so that it does not shadow the `fold`
+  // imported from `console.js`.
+  const searchable = (text) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
   const rows = [];
   const heads = [];
   let under = null;
@@ -10173,12 +10182,48 @@ function pickList({ label, noun, summary, placeholder, options, selected, onPick
         }
       });
     }
-    list.append(button);
+    // One row is the pick button, a marker on the same line that opens the
+    // control's note, and the note beneath both. The marker sits on the row's
+    // own line so that a closed note adds no height: as a fold under every
+    // row, the notes doubled the length of the list. The marker is a separate
+    // button because a disclosure is not permitted inside a `<button>`, and it
+    // is drawn on refused rows too, since the note describes the field whatever
+    // keeps the row out of reach. The open state is keyed by chooser and
+    // control, so Axis X and Axis Y open their notes independently, and it
+    // survives the chooser's redraws.
+    const row = el('div', 'survey-row');
+    row.append(button);
+    let note = null;
+    if (option.explanation) {
+      const key = `${label}:${option.id}`;
+      const marker = el('button', 'survey-note-mark');
+      marker.type = 'button';
+      marker.setAttribute('aria-label', `Note on ${option.label}`);
+      note = el('p', 'ctl-note survey-row-note', option.explanation);
+      note.id = `survey-note-${label}-${option.id}`.toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+      marker.setAttribute('aria-controls', note.id);
+      const show = (open) => {
+        note.hidden = !open;
+        marker.textContent = open ? '\u2212' : '+';
+        marker.setAttribute('aria-expanded', String(open));
+      };
+      show(openPickNotes.has(key));
+      marker.addEventListener('click', () => {
+        const open = note.hidden;
+        if (open) openPickNotes.add(key);
+        else openPickNotes.delete(key);
+        show(open);
+      });
+      row.append(marker, note);
+    }
+    list.append(row);
     // Each word whole and in its parts, so "fact" finds U-factor as well as
     // "u-fact" does.
-    const text = fold(`${under?.dataset.group ?? ''} ${option.label} ${option.note ?? ''}`);
+    const text = searchable(
+      `${under?.dataset.group ?? ''} ${option.label} ${option.note ?? ''} ${option.explanation ?? ''}`,
+    );
     const words = text.split(/\s+/).flatMap((word) => [word, ...word.split(/[^\p{L}\p{N}]+/u)]);
-    rows.push({ button, head: under, words: words.filter(Boolean) });
+    rows.push({ row, button, head: under, words: words.filter(Boolean) });
   };
 
   /**
@@ -10252,12 +10297,12 @@ function pickList({ label, noun, summary, placeholder, options, selected, onPick
   list.append(none);
 
   const apply = () => {
-    const terms = fold(field.value).split(/\s+/).filter(Boolean);
+    const terms = searchable(field.value).split(/\s+/).filter(Boolean);
     const shown = new Set();
     let matches = 0;
     for (const row of rows) {
       const match = terms.every((term) => row.words.some((word) => word.startsWith(term)));
-      row.button.hidden = !match;
+      row.row.hidden = !match;
       if (match) {
         matches += 1;
         shown.add(row.head);
@@ -10270,7 +10315,7 @@ function pickList({ label, noun, summary, placeholder, options, selected, onPick
     none.textContent = matches ? '' : `No ${noun} match “${field.value.trim()}”.`;
     list.scrollTop = 0;
   };
-  const pickable = () => rows.filter((row) => !row.button.hidden && !row.button.disabled).map((row) => row.button);
+  const pickable = () => rows.filter((row) => !row.row.hidden && !row.button.disabled).map((row) => row.button);
 
   // Open is one state carried by four elements, so it is set in one place.
   // Closing empties the box, so a cell reopened shows the whole list again: a
@@ -10386,7 +10431,19 @@ function pickList({ label, noun, summary, placeholder, options, selected, onPick
       return;
     }
     const left = pickable();
-    const next = left.indexOf(document.activeElement) + step;
+    const here = document.activeElement;
+    const at = left.indexOf(here);
+    if (at < 0) {
+      // The focus is on a row's note marker, which is not a pickable row and
+      // is absent from `left`. Stepping from index -1 would send ArrowDown to
+      // the first row of the list and ArrowUp to the filter box, so the step
+      // is taken from the marker's own position in the list instead.
+      const follows = (row) => Boolean(here.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING);
+      const target = step > 0 ? left.find(follows) : [...left].reverse().find((row) => !follows(row));
+      (target ?? (step > 0 ? null : field))?.focus();
+      return;
+    }
+    const next = at + step;
     if (next < 0) field.focus();
     else left[Math.min(next, left.length - 1)]?.focus();
   });
@@ -10562,7 +10619,7 @@ function renderSurveyChoose() {
       group: offer.channel.name,
       // Stated once by the group where it is true of the whole channel; the
       // per-entry `reason` below is for what differs *within* one — a wall
-      // that can carry no opening, a control inert at this desk.
+      // that can carry no opening, a priced face its selector has withdrawn.
       groupReason: offer.channelOut ? offer.reason : null,
       // The one refusal that is about the pair rather than about the control:
       // a ground cut along one control twice is a line drawn twice.
@@ -10574,6 +10631,9 @@ function renderSurveyChoose() {
             ? null
             : offer.reason,
       faceless: offer.faceless,
+      // Passed as `explanation`, not `note`: `note` is the row's always-visible
+      // line, and a note of up to 77 words there would be in view on every row.
+      explanation: offer.explanation,
     }));
 
   host.append(

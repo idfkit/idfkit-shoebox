@@ -902,6 +902,15 @@ than across it.
   a sentence, not left as an empty box. Enter picks only when one choice is
   left; Escape clears the filter, then closes the cell. Reopening shows the
   whole list.
+- **A control row carries its note behind a marker on its own line.** In the
+  axis chooser, a control with a numeric face and a note has a `+` marker at the
+  right end of its row (the rows under "controls with no face" carry none).
+  Pressed, the marker turns to `−` and opens the note beneath the row;
+  pressing the label still picks the axis. A closed note adds no height, which
+  is why this is not a `Note` fold under every row: that doubled the length of
+  the list. It is drawn on available and refused rows alike, and hidden with its
+  row by the filter. `option.note` remains the in-view short line (a unit, for
+  example) and never carries the long form.
 
 ### Two boxes for a range
 

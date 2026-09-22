@@ -93,7 +93,7 @@ const SUMMARY = Object.freeze(
   Object.fromEntries(
     Object.entries({
       // One word each where the aria-label names the subject: eighteen strips,
-      // sixty-odd notes and eight meters letter these at once on a wide desk,
+      // over a hundred notes and eight meters letter these at once on a wide desk,
       // and three words a summary is three words a fold, every time.
       note: 'Note',
       channel: 'Background',
@@ -105,11 +105,13 @@ const SUMMARY = Object.freeze(
 );
 
 /**
- * A control's note, one press down on the control it explains. About ninety
- * controls carry one, of up to seventy-seven words, and a wide desk printed
- * every one of them; the label and the face are the control, and the note is
- * how it reaches the engine, which is for the reader who asks. The key is the
- * control's own, so an open note survives every redraw of its strip.
+ * A control's note, one press down on the control it explains. About a
+ * hundred and ten controls carry one, of up to seventy-seven words
+ * (`CONTROL_NOTE` in `copy.js`, asserted by `assertCopy` in `controls.js`), and
+ * a wide desk printed every one of them; the label and the face are the
+ * control, and the note is how it reaches the engine, which is for the reader
+ * who asks. The key is the control's own, so an open note survives every
+ * redraw of its strip.
  */
 function noteFold(control) {
   const key = control.key ?? control.from ?? control.label;

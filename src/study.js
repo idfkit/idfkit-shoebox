@@ -119,6 +119,21 @@ export function refusesSweep(control) {
   return null;
 }
 
+// Every control that can be a study subject or a survey axis must carry a
+// note, as every `Landmark` must. The console and the survey's axis chooser
+// both draw it, so a sweepable control without one would leave a parameter
+// unexplained on both surfaces. Checked here rather than in `controls.js`
+// because `refusesSweep` lives in this module and `controls.js` cannot import
+// it without a cycle.
+for (const channel of CHANNELS) {
+  for (const control of channel.controls) {
+    if (refusesSweep(control) !== null) continue;
+    if (typeof control.note !== 'string' || !control.note.trim()) {
+      throw new Error(`${channel.id}:${control.key ?? control.label} has a face to sweep and no note`);
+    }
+  }
+}
+
 /**
  * Where to sample a control between its own min and max.
  *

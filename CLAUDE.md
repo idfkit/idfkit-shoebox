@@ -88,6 +88,9 @@ surfaces), `Calendar` (twelve months), `Days` (list of dates), each on a `Channe
 
 - **Add a control:** declare it in `controls.js`, write its field in that channel's
   applier in `model.js`. No markup, defaults or label strings anywhere else.
+  A control with a numeric face needs a `note` (checked at load in `study.js`, at
+  most 77 words by `CONTROL_NOTE`), citing its EnergyPlus schema field where it
+  has one; it never invents a citation, and need not disclaim a missing one.
 - **Add a landmark:** declare it in `LANDMARKS`, attach with `landmarks:`. A landmark
   is a band (omit `to` only for a limit), `note` with its source is required, a
   convention opens with the `CONVENTION` prefix, and derived arithmetic in a note

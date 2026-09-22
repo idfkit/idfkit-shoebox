@@ -39,6 +39,7 @@ export class Budget {
 // the defect.
 const roster = [
   new Budget({ id: 'STRIP_LINE', words: 12, scope: "a channel's line in the console", asserted: true }),
+  new Budget({ id: 'CONTROL_NOTE', words: 77, scope: "a control's note, in its fold", asserted: true }),
   new Budget({ id: 'STEP', words: 15, scope: "a general note's instruction, and the notes lede", asserted: true }),
   new Budget({ id: 'STANDING', words: 15, scope: 'a blocking reason, a refusal', asserted: true }),
   new Budget({ id: 'ABSENCE', words: 12, scope: 'a reason beside an em dash', asserted: false }),

@@ -2932,6 +2932,63 @@ says it is not a day. With damping `NaN`, `paintFinding` falls through to the
 "Left free-running, the zone floats between" sentence, which reads only the
 extremes and now names the period it read them over.
 
+### A control's note, on two surfaces
+
+A control's `note` is declared once, on the control in `controls.js`, and read
+by two surfaces: the console's `Note` fold (`noteFold` in `console.js`) and the
+survey's axis chooser (`pickList` in `main.js`). Two checks hold it at load.
+`assertCopy` in `controls.js` refuses any note over the `CONTROL_NOTE` budget of
+77 words, which is the length of the longest note that existed when the budget
+was set (`air:airModel`). `study.js` refuses any control that `refusesSweep`
+admits as a face and that carries no note, naming it as
+`<channel>:<key> has a face to sweep and no note`. Before this, 45 of the 87
+sweepable controls had no note, so a reader choosing a survey axis could not
+learn what most of the axes were.
+
+What a note must say depends on whether the control has a field of its own.
+
+1. **A control that maps to an EnergyPlus object and field** names both and
+   cites that field's definition in the bundled schema. Of the 34 such controls
+   noted in this pass, 14 have an IDD memo, which is quoted or summarised. The
+   other 19 carry only a type, units, bounds and sometimes a default, and the
+   note states those, as the schema declares them (bounds prefixed `x` are exclusive). The
+   remaining one, `dlSetpoint`, sits in the extensible `control_data` group of
+   `Daylighting:Controls`, which `schema.field()` does not resolve; it is read
+   through `schema.get('Daylighting:Controls').x.p`.
+2. **A control with no field of its own** (the massing and context dimensions,
+   the window ratio, the overhang and fins, the tariff rates) names what it
+   writes instead, and cites a real source for its default where there is one.
+   Several defaults come from the stock example, `1ZoneUncontrolled.idf`, and the
+   note names it.
+
+A note does not disclaim what is absent: it does not state that a control has no
+field of its own, that no published source backs its default, or that a schema
+field carries no memo. Such sentences were written in the first pass and removed
+on review; they lengthened every note without telling the reader what the control
+does. The rule that remains is that no citation is invented or implied.
+
+The chooser does not put the note in `option.note`. That slot is an
+always-visible `<small>` line under an available row, used by the reading
+chooser for a unit, and a 77-word note there would stand open on every row of a
+list of 138, which is the copy-budget fault the folds were introduced to fix; it
+is also not drawn on refused rows. The offer carries the note as `explanation`,
+`axisOptions` passes it through (it copies only named fields, so an offer field
+it omits never reaches the list), and `draw` wraps each row in a `.survey-row`
+grid: the pick button, a `+` marker button on the same line, and the note beneath
+both, hidden until the marker is pressed. The first version drew the console's
+`Note` fold under every row, and that doubled the height of the list, since each
+closed fold still took a line of its own. The marker is its own button because a
+disclosure cannot sit inside a `<button>`. Open notes are held in `openPickNotes`,
+in memory only, keyed by chooser and control. The filter hides the whole row. In
+the list's flex column the row needs `flex: none`, for the same reason
+`.survey-option` does, and it sets `display`, so it has a `[hidden]` twin.
+
+`axisOffers` used to set a row's `reason` to the control's note when
+`control.inert` held. No control declares `inert`, and a note of up to 77 words
+used as a refusal would exceed the 15-word `STANDING` budget, so the branch was
+deleted, along with the guard that stopped the chooser printing the note twice.
+`src/pull.js` still has the same `inert` check; this feature did not add it.
+
 ## Invariants that fail quietly
 
 - **`Building.north_axis` is ignored** because `GlobalGeometryRules` declares

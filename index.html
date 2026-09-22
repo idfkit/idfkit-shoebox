@@ -4921,6 +4921,52 @@
       .survey-option[hidden],
       .survey-options-group[hidden] { display: none; }
 
+      /* One chooser row: the pick button, the note marker on the same line,
+         and the note beneath both when it is open. The marker shares the
+         row's line so that a closed note adds no height to the list.
+         `flex: none` for the reason `.survey-option` carries it: in this
+         scrolling column a shrinkable item is squeezed to its padding. The
+         row sets `display`, so it has a `[hidden]` twin for the filter. */
+      .survey-row {
+        flex: none;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        min-width: 0;
+      }
+      .survey-row[hidden] { display: none; }
+      /* The register's disclosure marker, `+` closed and `-` open, as on
+         every fold; a press, never a hover. */
+      .survey-note-mark {
+        border: 0;
+        background: none;
+        min-width: 0;
+        min-height: 0;
+        padding: 3px 5px;
+        font: 400 11px/1.35 var(--mono);
+        letter-spacing: 0;
+        color: var(--ink-ghost);
+        cursor: pointer;
+        border-radius: var(--r);
+      }
+      /* Held above `button:hover:not(:disabled)`, which would otherwise fill
+         the marker with the redline. */
+      .survey-options .survey-note-mark:hover:not(:disabled) { background: none; }
+      .survey-note-mark:hover,
+      .survey-note-mark[aria-expanded='true'] { color: var(--ink-2); }
+      .survey-note-mark:focus-visible {
+        outline: 2px solid var(--rule-focus);
+        outline-offset: 2px;
+      }
+      /* An object name such as ZoneHVAC:IdealLoadsAirSystem is one
+         unbreakable word, so the note may break inside words rather than
+         widen the list. */
+      .survey-row-note {
+        grid-column: 1 / -1;
+        margin: 0 5px 4px;
+        overflow-wrap: anywhere;
+      }
+
       .survey-filter-none {
         flex: none;
         margin: 3px 5px;
