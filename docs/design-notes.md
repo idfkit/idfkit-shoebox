@@ -2935,8 +2935,8 @@ extremes and now names the period it read them over.
 ### A control's note, on two surfaces
 
 A control's `note` is declared once, on the control in `controls.js`, and read
-by two surfaces: the console's `Note` fold (`noteFold` in `console.js`) and the
-survey's axis chooser (`pickList` in `main.js`). Two checks hold it at load.
+by two surfaces: a marker in the console control's head (`attachNote` in
+`console.js`) and the survey's axis chooser (`pickList` in `main.js`). Two checks hold it at load.
 `assertCopy` in `controls.js` refuses any note over the `CONTROL_NOTE` budget of
 77 words, which is the length of the longest note that existed when the budget
 was set (`air:airModel`). `study.js` refuses any control that `refusesSweep`
@@ -2988,6 +2988,20 @@ the list's flex column the row needs `flex: none`, for the same reason
 used as a refusal would exceed the 15-word `STANDING` budget, so the branch was
 deleted, along with the guard that stopped the chooser printing the note twice.
 `src/pull.js` still has the same `inert` check; this feature did not add it.
+
+The console later took the same form. Its note had been a `Note` fold appended
+at the foot of the row, under the face, the landmark rule and the derivation
+line, so a shut note still cost each of the 108 noted controls a line of its
+own. `attachNote` now puts a `+` button in the head, directly after the label,
+and sets the note between the head and the face at the row's full width, so
+opening it pushes the face down. The marker takes the label's
+`margin-right: auto`, so the Study offer and the value keep their places, and
+its negative vertical margins keep it from growing the head: on all 94 visible
+heads that carry one, the head is the same height with the marker as without.
+The pattern's `24 hours` toggle, which `space-between` had centred, takes an
+auto margin as well and stays centred. Open state is still held in `openFolds`
+under the fold's former `ctl:<key>` key, so an open note survives a redraw of
+its strip. The `note` entry of `SUMMARY` had no other reader and was removed.
 
 ## Invariants that fail quietly
 

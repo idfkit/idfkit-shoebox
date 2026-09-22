@@ -92,10 +92,9 @@ export function fold(key, summary, { label } = {}, ...children) {
 const SUMMARY = Object.freeze(
   Object.fromEntries(
     Object.entries({
-      // One word each where the aria-label names the subject: eighteen strips,
-      // over a hundred notes and eight meters letter these at once on a wide desk,
-      // and three words a summary is three words a fold, every time.
-      note: 'Note',
+      // One word each where the aria-label names the subject: eighteen strips
+      // and eight meters letter these at once on a wide desk, and three words
+      // a summary is three words a fold, every time.
       channel: 'Background',
       reading: 'Method',
       category: 'Who this category is for',
@@ -110,12 +109,39 @@ const SUMMARY = Object.freeze(
  * (`CONTROL_NOTE` in `copy.js`, asserted by `assertCopy` in `controls.js`), and
  * a wide desk printed every one of them; the label and the face are the
  * control, and the note is how it reaches the engine, which is for the reader
- * who asks. The key is the control's own, so an open note survives every
- * redraw of its strip.
+ * who asks.
+ *
+ * The marker stands in the head, beside the label, so a shut note costs the
+ * row no line of its own; the open note is set between the head and the face,
+ * at the row's full width, and pushes the face down. The Study offer and the
+ * value keep their places. `head` must already be the row's first child and
+ * the label its own. The open state is kept in `openFolds` under the key the
+ * fold used, so an open note survives every redraw of its strip.
  */
-function noteFold(control) {
-  const key = control.key ?? control.from ?? control.label;
-  return fold(`ctl:${key}`, SUMMARY.note, { label: `Note on ${control.label}` }, el('p', 'ctl-note', control.note));
+function attachNote(control, head) {
+  const key = `ctl:${control.key ?? control.from ?? control.label}`;
+  const id = `note-${key.replace(/[^\w-]/g, '_')}`;
+  const body = el('p', 'ctl-note ctl-note-open');
+  body.id = id;
+  body.textContent = control.note;
+  const mark = el('button', 'ctl-note-mark');
+  mark.type = 'button';
+  mark.setAttribute('aria-label', `Note on ${control.label}`);
+  mark.setAttribute('aria-controls', id);
+  const show = (open) => {
+    body.hidden = !open;
+    mark.textContent = open ? '−' : '+';
+    mark.setAttribute('aria-expanded', String(open));
+  };
+  show(openFolds.has(key));
+  mark.addEventListener('click', () => {
+    const open = !openFolds.has(key);
+    if (open) openFolds.add(key);
+    else openFolds.delete(key);
+    show(open);
+  });
+  head.firstElementChild.after(mark);
+  head.after(body);
 }
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -720,7 +746,7 @@ export function mountConsole({
     derived.hidden = true;
     row.append(derived);
     derivedLines.set(control.key, derived);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     // Why a withdrawn priced face cannot be studied, in view. A sibling of the
     // row rather than a child, because `.ctl.idle` dims the row with opacity
@@ -814,7 +840,7 @@ export function mountConsole({
       return { button, option };
     });
     row.append(group);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     // What the row was last drawn showing, so the scroll below can tell a
     // value that moved from a redraw that did not. Every station attach, study
@@ -930,7 +956,7 @@ export function mountConsole({
     });
 
     row.append(root);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     faces.set(control.key, () => {
       const v = params[control.key];
@@ -1081,7 +1107,7 @@ export function mountConsole({
       return { side, item, out, stand, studyBtn, surveyBtn };
     });
     row.append(legend);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     // Four curves can stand under one plan key, so each wall gets an anchor of
     // its own and its card is hung after that. A card is inserted after the
@@ -1293,7 +1319,7 @@ export function mountConsole({
       return { face, item, out };
     });
     row.append(legend);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     const redraw = () => {
       turning.setAttribute('transform', `rotate(${params.northAxis})`);
@@ -1355,7 +1381,7 @@ export function mountConsole({
     const grab = svg('rect', { x: 0, y: 0, width: 240, height: 20, fill: 'transparent', class: 'band-grab' });
     root.append(grab);
     row.append(root);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     let anchor = null;
     const hourAt = (event) => {
@@ -1547,7 +1573,7 @@ export function mountConsole({
     });
     row.append(fold);
 
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     const redraw = () => {
       const text = params[control.key];
@@ -1695,7 +1721,7 @@ export function mountConsole({
     row.append(grid);
     const periods = el('p', 'ctl-note months-periods');
     row.append(periods);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     faces.set(control.key, () => {
       const now = mask();
@@ -1796,7 +1822,7 @@ export function mountConsole({
     const outsideNote = el('p', 'ctl-note out');
     outsideNote.hidden = true;
     row.append(outsideNote);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     // The weekday the run's year begins on, from the attached file, or null
     // while there is no file and therefore no calendar to letter against.

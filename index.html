@@ -3106,6 +3106,29 @@
         font: 400 10.5px/1.45 var(--sans);
         color: var(--ink-ghost);
       }
+      /* A control's note behind a marker in its head (`attachNote` in
+         console.js): the marker follows the label on the head's own line, so
+         a shut note adds no height, and the open note is set under the head
+         at the row's full width, pushing the face down. The marker takes the
+         label's `margin-right: auto`, so the Study offer and the value keep
+         their places; the negative margins keep its hit area from growing
+         the head and set it close to the label it belongs to. The pattern's
+         toggle takes an auto margin too, which keeps it centred between the
+         marker and the value as `space-between` centred it before. */
+      .ctl-head > :first-child:has(+ .ctl-note-mark) { margin-right: 0; }
+      .ctl-head > .ctl-note-mark {
+        margin: -2px auto -2px -7px;
+        padding: 2px 4px;
+        font: 400 11px/1 var(--mono);
+      }
+      .ctl-head > .ctl-note-mark ~ .pattern-toggle { margin-right: auto; }
+      /* An object name such as ZoneHVAC:IdealLoadsAirSystem is one
+         unbreakable word, so the note may break inside words rather than
+         widen the strip. */
+      .ctl-note-open {
+        margin: 0 0 6px;
+        overflow-wrap: anywhere;
+      }
       /* What the model was given for a setting, under the setting itself: the
          derived quantity on the first line and the arithmetic that made it on
          the second. Mono, because these are figures and not prose, and because
@@ -4937,7 +4960,8 @@
       .survey-row[hidden] { display: none; }
       /* The register's disclosure marker, `+` closed and `-` open, as on
          every fold; a press, never a hover. */
-      .survey-note-mark {
+      .survey-note-mark,
+      .ctl-note-mark {
         border: 0;
         background: none;
         min-width: 0;
@@ -4951,10 +4975,14 @@
       }
       /* Held above `button:hover:not(:disabled)`, which would otherwise fill
          the marker with the redline. */
-      .survey-options .survey-note-mark:hover:not(:disabled) { background: none; }
+      .survey-options .survey-note-mark:hover:not(:disabled),
+      .ctl-head > .ctl-note-mark:hover:not(:disabled) { background: none; }
       .survey-note-mark:hover,
-      .survey-note-mark[aria-expanded='true'] { color: var(--ink-2); }
-      .survey-note-mark:focus-visible {
+      .survey-note-mark[aria-expanded='true'],
+      .ctl-note-mark:hover,
+      .ctl-note-mark[aria-expanded='true'] { color: var(--ink-2); }
+      .survey-note-mark:focus-visible,
+      .ctl-note-mark:focus-visible {
         outline: 2px solid var(--rule-focus);
         outline-offset: 2px;
       }
