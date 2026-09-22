@@ -3303,12 +3303,20 @@ const assertHideable = () => {
  * paragraphs because nothing said stop. This is the thing that says stop, at
  * load, naming the declaration: a line written next month at fourteen words
  * fails the page the moment it is saved rather than the day somebody counts.
- * The blurbs and the control notes are not here, because they fold and a
- * fold's long form has no budget.
+ * The blurbs are not here, because they fold and a fold's long form has no
+ * budget. The control notes fold too, but are held to `CONTROL_NOTE`: a note
+ * is drawn on two surfaces, the console strip and the survey's axis chooser,
+ * and the chooser lists every face at once, so a longer note lengthens both.
+ * The ceiling was previously stated only in a `console.js` comment; it is
+ * asserted here because 45 notes were added in one change.
  */
 const assertCopy = () => {
   for (const channel of CHANNELS) {
     withinBudget(BUDGETS.STRIP_LINE, `channel ${channel.id} line`, channel.line);
+    for (const control of channel.controls) {
+      if (typeof control.note !== 'string') continue;
+      withinBudget(BUDGETS.CONTROL_NOTE, `${channel.id}:${control.key ?? control.label} note`, control.note);
+    }
     const reason = channel.requires?.reason;
     if (typeof reason === 'string') withinBudget(BUDGETS.STANDING, `channel ${channel.id} reason`, reason);
     for (const [key, text] of Object.entries(channel.requires?.reasons ?? {})) {
@@ -3453,11 +3461,16 @@ export const CHANNELS = Object.freeze([
     bypassable: false,
     meter: new Meter({ label: 'Envelope ÷ volume', terms: [], derived: true }),
     controls: [
-      new Scale({ key: 'width', quantityKind: 'length', label: 'Width', value: 15.24, min: 4, max: 40, step: 0.01, unit: 'm' }),
-      new Scale({ key: 'depth', quantityKind: 'length', label: 'Depth', value: 15.24, min: 4, max: 40, step: 0.01, unit: 'm' }),
+      new Scale({ key: 'width', quantityKind: 'length', label: 'Width', value: 15.24, min: 4, max: 40, step: 0.01, unit: 'm',
+        note: 'Length of the walls that face south and north at a north axis of 0. It sets the vertices of every BuildingSurface:Detailed the geometry writes, and so the floor area each per-area load and intensity is divided by. The 15.24 m default is the zone of the stock example, 1ZoneUncontrolled.idf.',
+      }),
+      new Scale({ key: 'depth', quantityKind: 'length', label: 'Depth', value: 15.24, min: 4, max: 40, step: 0.01, unit: 'm',
+        note: 'Length of the walls that face east and west at a north axis of 0. It sets the vertices of every BuildingSurface:Detailed the geometry writes, and with the width the floor area. The 15.24 m default is the zone of the stock example, 1ZoneUncontrolled.idf.',
+      }),
       new Scale({
         key: 'height', quantityKind: 'length', label: 'Height', value: 4.572, min: 2.4, max: 12, step: 0.01, unit: 'm',
         landmarks: STOREY_HEIGHT,
+        note: 'Floor to ceiling of the one zone. It sets the z coordinates of the wall and roof vertices in BuildingSurface:Detailed, and so the wall area each glazing ratio is taken of and the zone volume. The 4.572 m default is the stock example\'s, 1ZoneUncontrolled.idf; the marked bands carry their own sources.',
       }),
       new Scale({
         key: 'multiplier', quantityKind: 'factorOf',
@@ -3513,6 +3526,7 @@ export const CHANNELS = Object.freeze([
         step: 0.01,
         digits: 2,
         landmarks: GROUND_REFLECT,
+        note: 'Written to all twelve monthly fields of Site:GroundReflectance, which sets the ground-reflected solar reaching every surface. The schema declares each field dimensionless, 0 to 1, default 0.2; this face stops at 0.9. No snow modifier is written, so the value holds all year.',
       }),
       new Scale({
         key: 'groundTemp', quantityKind: 'temperature',
@@ -3558,16 +3572,22 @@ export const CHANNELS = Object.freeze([
       // whole feet could not be reached at all and no choice of lettering can
       // invent a position the grid does not have. 0.1 divides 0.5 exactly, so
       // every stop the old grid had is still a stop on this one.
-      new Scale({ key: 'ctxDistance', quantityKind: 'length', label: 'Distance', value: 20, min: 3, max: 120, step: 0.1, digits: 1, unit: 'm' }),
+      new Scale({ key: 'ctxDistance', quantityKind: 'length', label: 'Distance', value: 20, min: 3, max: 120, step: 0.1, digits: 1, unit: 'm',
+        note: 'How far the neighbouring slab stands from the centre of the box, along its bearing from the site. It places the four vertices of the one Shading:Site:Detailed the Context strip writes.',
+      }),
       // 0.1 m for the same measurement as the distance above it: 0.5 m is
       // 1.64 ft a step.
-      new Scale({ key: 'ctxHeight', quantityKind: 'length', label: 'Height', value: 18, min: 2, max: 120, step: 0.1, digits: 1, unit: 'm' }),
+      new Scale({ key: 'ctxHeight', quantityKind: 'length', label: 'Height', value: 18, min: 2, max: 120, step: 0.1, digits: 1, unit: 'm',
+        note: 'Height of the neighbouring slab, which stands on the ground. It sets the z coordinate of the top two vertices of the Shading:Site:Detailed the Context strip writes.',
+      }),
       // 0.25 m, from 1 m: one old step is 3.28 ft. The two decimals come with
       // the step rather than by choice — `onFace` snaps to the step and then
       // rounds to the step's own decimals, so a face still ruled to whole
       // metres would hold 40.25 and letter `40 m`, and the margin box could not
       // hand back what it had been given.
-      new Scale({ key: 'ctxWidth', quantityKind: 'length', label: 'Width', value: 40, min: 4, max: 200, step: 0.25, digits: 2, unit: 'm' }),
+      new Scale({ key: 'ctxWidth', quantityKind: 'length', label: 'Width', value: 40, min: 4, max: 200, step: 0.25, digits: 2, unit: 'm',
+        note: 'Width of the neighbouring slab, centred on the bearing and set square to it. It spaces the vertices of the Shading:Site:Detailed the Context strip writes, half to each side.',
+      }),
     ],
   }),
 
@@ -3615,6 +3635,7 @@ export const CHANNELS = Object.freeze([
         digits: 2,
         zero: 'Solid',
         landmarks: WWR,
+        note: 'Glazed share of each wall\'s area, set wall by wall. It sizes the vertices of each wall\'s FenestrationSurface:Detailed. The ratio is the rough opening, with any frame counted inside it, the way ASHRAE 90.1 counts window area. A wall at 0, or one whose frame would close the opening, gets no window.',
       }),
       new Selector({
         key: 'aperture',
@@ -3658,6 +3679,7 @@ export const CHANNELS = Object.freeze([
         unit: 'W/m²K',
         landmarks: GLASS_U,
         when: (p) => !layered(p),
+        note: 'WindowMaterial:SimpleGlazingSystem, U-Factor, written under the Simple glazing model only; the layered unit has no such field. The schema\'s memo reads "Enter U-Factor including film coefficients", in W/m2-K, above 0. It is therefore an air-to-air figure with the surface films already in it, not a surface-to-surface conductance.',
       }),
       new Scale({
         key: 'shgc', quantityKind: 'ratio',
@@ -3665,6 +3687,7 @@ export const CHANNELS = Object.freeze([
         value: 0.4, min: 0.05, max: 0.9, step: 0.01, digits: 2,
         landmarks: GLASS_SHGC,
         when: (p) => !layered(p),
+        note: 'WindowMaterial:SimpleGlazingSystem, Solar Heat Gain Coefficient, written under the Simple glazing model only. The schema\'s memo reads "SHGC at Normal Incidence", above 0 and below 1; the engine derives the behaviour at other angles itself. The layered unit computes its own coefficient from its panes, and the As built readout reports it.',
       }),
       new Scale({
         key: 'visT', quantityKind: 'ratio',
@@ -3672,6 +3695,7 @@ export const CHANNELS = Object.freeze([
         value: 0.6, min: 0.05, max: 0.9, step: 0.01, digits: 2,
         landmarks: GLASS_VT,
         when: (p) => !layered(p),
+        note: 'WindowMaterial:SimpleGlazingSystem, Visible Transmittance, written under the Simple glazing model only. The schema\'s memo reads "VT at Normal Incidence optional", above 0 and below 1. It governs the light the Daylighting strip measures; the solar heat through the glass is carried by the SHGC.',
       }),
       new Scale({
         key: 'panes', quantityKind: 'count',
@@ -3708,6 +3732,7 @@ export const CHANNELS = Object.freeze([
         unit: 'm',
         landmarks: GAP_WIDTH,
         when: layered,
+        note: 'WindowMaterial:Gas, Thickness, for air, written once for each cavity of the layered unit: one in a double, two in a triple. The schema declares it in m, above 0. It is written only under the Layered glazing model; the simple unit has no cavity.',
       }),
       new Scale({
         key: 'frameWidth', quantityKind: 'lengthSmall',
@@ -3734,6 +3759,7 @@ export const CHANNELS = Object.freeze([
         unit: 'W/m²K',
         landmarks: FRAME_COND,
         needs: (p) => p.frameWidth > 0,
+        note: 'WindowProperty:FrameAndDivider, Frame Conductance, written under either glazing model, and only while the frame width is above 0. The schema\'s memo reads "Effective conductance of frame Excludes air films Obtained from WINDOW 5 or other 2-D calculation", in W/m2-K, at least 0.',
       }),
     ],
   }),
@@ -3868,6 +3894,7 @@ export const CHANNELS = Object.freeze([
         landmarks: GLASS_SHGC,
         when: (p) => !skyAsWalls(p),
         needs: skylit,
+        note: 'WindowMaterial:SimpleGlazingSystem, Solar Heat Gain Coefficient, on the rooflights\' own unit, an object separate from the wall glazing, written only when the rooflight glass is set to its own. The schema\'s memo reads "SHGC at Normal Incidence", above 0 and below 1.',
       }),
       new Scale({
         key: 'skyVisT', quantityKind: 'ratio',
@@ -3880,6 +3907,7 @@ export const CHANNELS = Object.freeze([
         landmarks: GLASS_VT,
         when: (p) => !skyAsWalls(p),
         needs: skylit,
+        note: 'WindowMaterial:SimpleGlazingSystem, Visible Transmittance, on the rooflights\' own unit, an object separate from the wall glazing, written only when the rooflight glass is set to its own. The schema\'s memo reads "VT at Normal Incidence optional", above 0 and below 1.',
       }),
     ],
   }),
@@ -3903,6 +3931,7 @@ export const CHANNELS = Object.freeze([
         sides: SHADE_SIDES,
         min: 0, max: 3, step: 0.01, digits: 2, unit: 'm', zero: 'None',
         landmarks: OVERHANG,
+        note: 'How far the overhang projects from each wall, set wall by wall, along the wall\'s own outward normal. It places the vertices of a Shading:Zone:Detailed at the head of the opening, as wide as the opening. One too short for EnergyPlus to keep as a surface writes nothing.',
       }),
       new Scale({
         key: 'ohRise', quantityKind: 'length',
@@ -3924,6 +3953,7 @@ export const CHANNELS = Object.freeze([
         label: 'Fin offset from jamb',
         value: 0, min: 0, max: 1.5, step: 0.01, unit: 'm', zero: 'At jamb',
         needs: (p) => builds(p.fin),
+        note: 'How far each fin stands from the jamb of its opening, along the wall, and never past the wall\'s end. It moves the vertices of the two Shading:Zone:Detailed fins the Shading strip writes at each glazed opening. It reaches the model only while the fins project.',
       }),
     ],
   }),
@@ -3997,6 +4027,7 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'slatWidth', quantityKind: 'lengthSmall', label: 'Slat width', value: 0.025, min: 0.01, max: 0.12, step: 0.001, digits: 3, unit: 'm',
         landmarks: SLAT_WIDTH,
+        note: 'WindowMaterial:Blind, Slat Width, in m, above 0 and at most 1 in the schema. It does not act alone: the desk writes Slat Separation, "Distance between adjacent slat faces" in the schema\'s memo, as 0.8 times this width, so the blind keeps its proportions as the slats are scaled.',
       }),
     ],
   }),
@@ -4028,6 +4059,7 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'roofR', quantityKind: 'resistance', label: 'Roof resistance', value: 5.456, min: 0.2, max: 14, step: 0.005, unit: 'm²K/W',
         landmarks: ROOF_R,
+        note: 'Material:NoMass, Thermal Resistance, on the roof\'s insulating layer, the stock example\'s R31LAYER; its 5.456 m²K/W default is imperial R-31. The schema declares it in m2-K/W, at least 0.001. It is one layer, not the whole build-up: EnergyPlus adds the surface films either side.',
       }),
       new Scale({
         key: 'wallMass', quantityKind: 'lengthSmall', label: 'Wall mass layer', value: 0,
@@ -4038,10 +4070,12 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'wallAbs', quantityKind: 'ratio', label: 'Wall absorptance', value: 0.75, min: 0.05, max: 0.95, step: 0.01, digits: 2,
         landmarks: SOLAR_ABS,
+        note: 'Material:NoMass, Solar Absorptance, on the wall layer R13LAYER, and the same value is written to its Visible Absorptance. The schema declares both 0 to 1, default 0.7. It is the share of incident sun the outer face absorbs rather than reflects.',
       }),
       new Scale({
         key: 'roofAbs', quantityKind: 'ratio', label: 'Roof absorptance', value: 0.75, min: 0.05, max: 0.95, step: 0.01, digits: 2,
         landmarks: ROOF_ABS,
+        note: 'Material:NoMass, Solar Absorptance, on the roof layer R31LAYER, and the same value is written to its Visible Absorptance. The schema declares both 0 to 1, default 0.7. It is the share of incident sun the roof\'s outer face absorbs rather than reflects.',
       }),
       new Scale({
         key: 'emittance', quantityKind: 'ratio', label: 'Thermal emittance', value: 0.9, min: 0.05, max: 0.95, step: 0.01, digits: 2,
@@ -4125,6 +4159,7 @@ export const CHANNELS = Object.freeze([
         key: 'internalMassThickness', quantityKind: 'lengthSmall', label: 'Its thickness', value: 0.1,
         min: 0.01, max: 0.4, step: 0.005, digits: 3, unit: 'm',
         needs: (p) => p.internalMass > 0,
+        note: 'Material, Thickness, on INTERNALMASS-LAYER, the one layer of the construction the InternalMass object uses; its material follows the slab\'s. The schema declares it in m, above 0. It sets how deep the partitions and furniture store heat, and reaches the model only while the internal mass is above none.',
       }),
       new Selector({
         key: 'hbAlgorithm', label: 'Heat balance', value: 'ConductionTransferFunction',
@@ -4284,6 +4319,7 @@ export const CHANNELS = Object.freeze([
         // splitting the two would make reachable.
         when: (p) => network(p) && NEEDS_SETPOINT.has(p.openRule),
         needs: anyOpenable,
+        note: 'The value of a flat Schedule:Compact named by AirflowNetwork:MultiZone:Zone, Ventilation Control Zone Temperature Setpoint Schedule Name. The schema\'s memo reads "Used only if Ventilation Control Mode = Temperature or Enthalpy.", and the schedule is written only for an opening rule that needs one.',
       }),
       new Scale({
         key: 'openDeltaLo', quantityKind: 'temperatureDifference', label: 'Full open at ΔT', value: 0,
@@ -4343,6 +4379,7 @@ export const CHANNELS = Object.freeze([
         landmarks: INF_WIND,
         when: scheduled,
         needs: (p) => p.infiltration > 0,
+        note: 'ZoneInfiltration:DesignFlowRate, Velocity Term Coefficient. The schema\'s memo reads "C" in Equation, default 0. The equation multiplies the design rate by A + B·|ΔT| + C·v + D·v², with ΔT indoor minus outdoor and v the wind speed; this is C, and the desk writes D as 0.',
       }),
       new Scale({
         key: 'infStack', quantityKind: 'ratio', label: 'Stack coefficient', value: 0,
@@ -4350,6 +4387,7 @@ export const CHANNELS = Object.freeze([
         landmarks: INF_STACK,
         when: scheduled,
         needs: (p) => p.infiltration > 0,
+        note: 'ZoneInfiltration:DesignFlowRate, Temperature Term Coefficient. The schema\'s memo reads "B" in Equation, default 0. The equation multiplies the design rate by A + B·|ΔT| + C·v + D·v², with ΔT indoor minus outdoor and v the wind speed; this is B, the stack term.',
       }),
       new Scale({
         key: 'ventilation', quantityKind: 'airChanges', label: 'Ventilation', value: 0,
@@ -4374,12 +4412,14 @@ export const CHANNELS = Object.freeze([
         min: 10, max: 32, step: 0.5, digits: 1, unit: '°C',
         when: scheduled,
         needs: (p) => p.ventilation > 0,
+        note: 'ZoneVentilation:DesignFlowRate, Minimum Indoor Temperature. The schema\'s memo reads "this is the indoor temperature below which ventilation is shutoff", in °C, -100 to 100, default -100. The face runs 10 to 32 °C, well inside the schema\'s range.',
       }),
       new Scale({
         key: 'ventMaxOutdoor', quantityKind: 'temperature', label: 'Open below outdoor', value: 20,
         min: 5, max: 32, step: 0.5, digits: 1, unit: '°C',
         when: scheduled,
         needs: (p) => p.ventilation > 0,
+        note: 'ZoneVentilation:DesignFlowRate, Maximum Outdoor Temperature. The schema\'s memo reads "this is the outdoor temperature above which ventilation is shutoff", in °C, -100 to 100, default 100. With the indoor minimum and the ΔT below, it is one of the three conditions a night flush needs.',
       }),
       new Scale({
         key: 'ventDeltaT', quantityKind: 'temperatureDifference', label: 'Minimum ΔT', value: 2,
@@ -4427,7 +4467,7 @@ export const CHANNELS = Object.freeze([
           ...TM59_SPACES.map((space) => ({ value: space, label: space })),
         ],
         implies: gainsForRoom,
-        note: 'Naming a space swaps the densities for the counts and the band for three profiles, and brings that space\u2019s published figures with it.',
+        note: 'Naming a space swaps the densities for the counts and the band for three profiles, and brings that space\u2019s figures with it. The spaces and their figures are those of CIBSE TM59, Appendix E.',
       }),
       new Scale({
         // 0.05 m²/pp, from 0.5: one old step is 5.38 ft²/person, and a density
@@ -4440,6 +4480,7 @@ export const CHANNELS = Object.freeze([
         // control belonging to the other instrument, and ten dim rows read as a
         // strip that has broken rather than as a strip that has been switched.
         when: asDrawn,
+        note: 'People, Floor Area per Person, written with the calculation method Area/Person while the room type is As drawn. Under a named room type the count is written instead, and this is withdrawn. The schema declares it in m2/person, at least 0.',
       }),
       // A count, not a density, and that is what lets a standard prescribe it:
       // people per square metre would need the floor area, and Massing is
@@ -4457,6 +4498,7 @@ export const CHANNELS = Object.freeze([
         key: 'peopleCount', quantityKind: 'people', label: 'Occupants', value: 1,
         min: 0, max: 10, step: 0.5, digits: 1, unit: 'pp', zero: 'Empty',
         when: prescribed,
+        note: 'People, Number of People, written with the calculation method People while a named room type is chosen. As drawn, the density is written instead, and this is withdrawn. The schema declares it at least 0.',
       }),
       new Scale({
         // 0.25 W/pp, from 5: one old step is 17.06 Btu/h·pp. This is also where
@@ -4473,6 +4515,7 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'lighting', quantityKind: 'powerDensity', label: 'Lighting', value: 8, min: 0, max: 30, step: 0.1, digits: 1, unit: 'W/m²', zero: 'Dark',
         landmarks: LIGHTING,
+        note: 'Lights, Watts per Floor Area, written with the calculation method Watts/Area under every room type; only its schedule changes. The schema declares it in W/m2, at least 0. At 0 no Lights object is written.',
       }),
       new Scale({
         key: 'lightRadiant', quantityKind: 'ratio', label: 'Lighting radiant fraction', value: 0.42,
@@ -4484,6 +4527,7 @@ export const CHANNELS = Object.freeze([
         key: 'equipment', quantityKind: 'powerDensity', label: 'Equipment', value: 8, min: 0, max: 60, step: 0.1, digits: 1, unit: 'W/m²', zero: 'None',
         landmarks: EQUIPMENT,
         when: asDrawn,
+        note: 'ElectricEquipment, Watts per Floor Area, written with the calculation method Watts/Area while the room type is As drawn. Under a named room type the equipment peak is written instead, and this is withdrawn. The schema declares it in W/m2, at least 0. At 0 no ElectricEquipment object is written.',
       }),
       // Whole watts, because every figure in Table E.1 is one — 450 W, 150 W, a
       // 19 W base — and a step and a floor that are both whole numbers is what
@@ -4495,6 +4539,7 @@ export const CHANNELS = Object.freeze([
         key: 'equipPeak', quantityKind: 'appliancePower', label: 'Equipment peak', value: 150,
         min: 0, max: 1000, step: 1, digits: 0, unit: 'W', zero: 'None',
         when: prescribed,
+        note: 'ElectricEquipment, Design Level, written with the calculation method EquipmentLevel while a named room type is chosen. As drawn, the density is written instead, and this is withdrawn. The schema declares it in W, at least 0. The 150 W starting value is the home office peak in CIBSE TM59 Table E.1.',
       }),
       // The gate has to ask whichever of the two levels is in force. Left at
       // `equipment > 0` it would grey a latent fraction that was reaching a
@@ -4505,6 +4550,7 @@ export const CHANNELS = Object.freeze([
         key: 'equipLatent', quantityKind: 'ratio', label: 'Equipment latent fraction', value: 0,
         min: 0, max: 0.6, step: 0.01, digits: 2, zero: 'Dry',
         needs: (p) => (asDrawn(p) ? p.equipment : p.equipPeak) > 0,
+        note: 'ElectricEquipment, Fraction Latent, under either calculation method. The schema declares it 0 to 1, default 0. It is the share of the equipment\'s heat released as moisture rather than as sensible heat; the face stops at 0.6.',
       }),
       // Three shapes where the desk's own model has one, and that is the fourth
       // and last of the gaps TM59 opens in this strip: the lights run 18:00 to
@@ -4609,6 +4655,7 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'dlSetpoint', quantityKind: 'illuminance', label: 'Illuminance setpoint', value: 500, min: 100, max: 1000, step: 10, digits: 0, unit: 'lx',
         landmarks: ILLUMINANCE,
+        note: 'Daylighting:Controls, Illuminance Setpoint at Reference Point, in the control data group for the one sensor. The schema declares it in lux, at least 0, default 500. The controlled lighting is dimmed or stepped down as daylight at the sensor rises towards this figure, and is at its minimum once daylight alone meets it.',
       }),
       new Scale({
         key: 'dlFraction', quantityKind: 'ratio', label: 'Fraction controlled', value: 1,
@@ -4623,6 +4670,7 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'dlHeight', quantityKind: 'length', label: 'Sensor height', value: 0.8, min: 0.1, max: 2, step: 0.05, digits: 2, unit: 'm',
         landmarks: WORK_PLANE,
+        note: 'Daylighting:ReferencePoint, Z Coordinate of Reference Point: the sensor\'s height above the floor. The schema declares it in m, default 0.8, and the desk\'s default is the schema\'s.',
       }),
     ],
   }),
@@ -4686,10 +4734,12 @@ export const CHANNELS = Object.freeze([
       new Scale({
         key: 'heatSet', quantityKind: 'temperature', label: 'Heating setpoint', value: 20, min: 10, max: 26, step: 0.5, digits: 1, unit: '°C',
         landmarks: HEAT_SET,
+        note: 'The occupied value of the Heating Setpoints Schedule:Compact, named by ThermostatSetpoint:DualSetpoint, Heating Setpoint Temperature Schedule Name, or by the single heating setpoint under Heat only. A setback lowers the unoccupied hours. Under the dual setpoint, a heating setpoint above the cooling one is refused by the System strip.',
       }),
       new Scale({
         key: 'coolSet', quantityKind: 'temperature', label: 'Cooling setpoint', value: 26, min: 18, max: 34, step: 0.5, digits: 1, unit: '°C',
         landmarks: COOL_SET,
+        note: 'The occupied value of the Cooling Setpoints Schedule:Compact, named by ThermostatSetpoint:DualSetpoint, Cooling Setpoint Temperature Schedule Name, or by the single cooling setpoint under Cool only. A setback raises the unoccupied hours. Under the dual setpoint, a cooling setpoint below the heating one is refused by the System strip.',
       }),
       new Scale({
         key: 'setback', quantityKind: 'temperatureDifference', label: 'Night setback', value: 0,
@@ -4733,8 +4783,12 @@ export const CHANNELS = Object.freeze([
       // `ZoneHVAC:IdealLoadsAirSystem.maximum_heating_supply_air_temperature`,
       // which the 26.1.0 schema types `number`, so the fraction `refuses` will
       // now admit reaches no integer field.
-      new Scale({ key: 'supplyMaxT', quantityKind: 'temperature', label: 'Max supply air', value: 50, min: 25, max: 60, step: 0.5, digits: 1, unit: '°C' }),
-      new Scale({ key: 'supplyMinT', quantityKind: 'temperature', label: 'Min supply air', value: 13, min: 5, max: 20, step: 0.5, digits: 1, unit: '°C' }),
+      new Scale({ key: 'supplyMaxT', quantityKind: 'temperature', label: 'Max supply air', value: 50, min: 25, max: 60, step: 0.5, digits: 1, unit: '°C',
+        note: 'ZoneHVAC:IdealLoadsAirSystem, Maximum Heating Supply Air Temperature: the warmest air the ideal system may deliver. The schema declares it in °C, above 0 and below 100, default 50, and the desk\'s default is the schema\'s.',
+      }),
+      new Scale({ key: 'supplyMinT', quantityKind: 'temperature', label: 'Min supply air', value: 13, min: 5, max: 20, step: 0.5, digits: 1, unit: '°C',
+        note: 'ZoneHVAC:IdealLoadsAirSystem, Minimum Cooling Supply Air Temperature: the coldest air the ideal system may deliver. The schema declares it in °C, above -100 and below 50, default 13, and the desk\'s default is the schema\'s.',
+      }),
       new Selector({
         key: 'humidity', label: 'Dehumidification', value: 'None',
         options: [
@@ -4850,11 +4904,13 @@ export const CHANNELS = Object.freeze([
         key: 'elecPrice', quantityKind: 'money', label: 'Electricity', value: 0.15, min: 0.02, max: 0.6, step: 0.005, digits: 3,
         unit: '/kWh', needs: (p) => p.rateBasis === 'Assumed',
         withdrawn: () => 'The tariff is Published; set it to Assumed to price electricity here.',
+        note: 'Tariff reaches no IDF object: this rate is applied to the electricity meters after the run, only while the tariff is Assumed, in the currency of the card published for this place.',
       }),
       new Scale({
         key: 'gasPrice', quantityKind: 'money', label: 'Gas', value: 0.07, min: 0.01, max: 0.3, step: 0.005, digits: 3,
         unit: '/kWh', needs: (p) => p.rateBasis === 'Assumed',
         withdrawn: () => 'The tariff is Published; set it to Assumed to price gas here.',
+        note: 'Tariff reaches no IDF object: this rate is applied to the gas meters after the run, only while the tariff is Assumed, in the currency of the card published for this place.',
       }),
       new Selector({
         key: 'factorBasis', label: 'Grid factor', value: 'Published',
@@ -4928,16 +4984,22 @@ export const CHANNELS = Object.freeze([
           { value: 'DetailedSkyDiffuseModeling', label: 'Detailed' },
         ],
       }),
-      new Scale({ key: 'warmupMin', quantityKind: 'days', label: 'Warmup, minimum', value: 6, min: 1, max: 25, step: 1, digits: 0, unit: 'days' }),
+      new Scale({ key: 'warmupMin', quantityKind: 'days', label: 'Warmup, minimum', value: 6, min: 1, max: 25, step: 1, digits: 0, unit: 'days',
+        note: 'Building, Minimum Number of Warmup Days, schema default 1. The schema\'s memo records that 6 days was suggested for all reference buildings, that this can repeat warmup needlessly, and that faster runs rely on the convergence criteria; a minimum above the maximum resets the maximum to it. The desk starts at 6, the stock example\'s, 1ZoneUncontrolled.idf.',
+      }),
       new Scale({
         key: 'warmupMax', quantityKind: 'days', label: 'Warmup, maximum', value: 30, min: 5, max: 60, step: 1, digits: 0, unit: 'days',
         landmarks: WARMUP_MAX,
+        note: 'Building, Maximum Number of Warmup Days, schema default 25. The schema\'s memo reads "EnergyPlus will only use as many warmup days as needed to reach convergence tolerance. This field\'s value should NOT be set less than 25." The face runs from 5, below that advice, so a short limit can be tested. The desk writes the larger of this and the minimum. It starts at the stock example\'s 30.',
       }),
       new Scale({
         key: 'loadsTol', quantityKind: 'ratio', label: 'Loads tolerance', value: 0.04, min: 0.001, max: 0.2, step: 0.001, digits: 3,
         landmarks: LOADS_TOL,
+        note: 'Building, Loads Convergence Tolerance Value. The schema\'s memo reads "Loads Convergence Tolerance Value is a change in load from one warmup day to the next", in W, above 0 and at most 0.5, default 0.04. Warmup ends once both tolerances hold, and the desk\'s default is the schema\'s and the stock example\'s.',
       }),
-      new Scale({ key: 'tempTol', quantityKind: 'temperatureDifference', label: 'Temperature tolerance', value: 0.004, min: 0.001, max: 0.05, step: 0.001, digits: 3, unit: 'K' }),
+      new Scale({ key: 'tempTol', quantityKind: 'temperatureDifference', label: 'Temperature tolerance', value: 0.004, min: 0.001, max: 0.05, step: 0.001, digits: 3, unit: 'K',
+        note: 'Building, Temperature Convergence Tolerance Value, in deltaC, above 0 and at most 0.5, schema default 0.4. Warmup ends once the zone temperatures change by less than this from one warmup day to the next. The desk starts at 0.004 K, the stock example\'s, 1ZoneUncontrolled.idf, a hundred times tighter than the schema\'s default.',
+      }),
     ],
   }),
 

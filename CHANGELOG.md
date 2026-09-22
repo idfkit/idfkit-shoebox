@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every slider parameter now carries an explanatory note**, in the Model
+  Console and in the Design Space Survey's axis choosers, citing its EnergyPlus
+  schema field where it has one, so a reader can learn what a face does before
+  moving it or cutting a ground along it.
+
 - **Thermal lag as a study and survey reading.** Hours from the summer design
   day's outdoor peak to the zone's, read by the same arithmetic as the results
   schedule's row. Design days only for now: a desk that skips them is refused
