@@ -911,6 +911,11 @@ than across it.
   the list. It is drawn on available and refused rows alike, and hidden with its
   row by the filter. `option.note` remains the in-view short line (a unit, for
   example) and never carries the long form.
+- **A console control carries its note the same way.** The `+` marker follows
+  the label in the control's head; the Study offer and the value keep their
+  places on the right. Pressed, it turns to `−` and sets the note under the
+  head at the row's full width, pushing the face down. A closed note adds no
+  height to the row.
 
 ### Two boxes for a range
 

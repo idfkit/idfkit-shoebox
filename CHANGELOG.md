@@ -12,7 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Every slider parameter now carries an explanatory note**, in the Model
   Console and in the Design Space Survey's axis choosers, citing its EnergyPlus
   schema field where it has one, so a reader can learn what a face does before
-  moving it or cutting a ground along it.
+  moving it or cutting a ground along it. In the console the note opens from a
+  `+` beside the control's label and stands under the head at full width, so a
+  shut note adds no height to the row.
 
 - **Thermal lag as a study and survey reading.** Hours from the summer design
   day's outdoor peak to the zone's, read by the same arithmetic as the results
