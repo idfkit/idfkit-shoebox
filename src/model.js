@@ -592,6 +592,25 @@ function contextVertices(params) {
 /* ══ the base document ═══════════════════════════════════════════════════ */
 
 /**
+ * The probe's own series, confirmed in a real `.rdd` from this desk rather than
+ * recalled:
+ *
+ *     Output:Variable,*,Daylighting Reference Point 1 Illuminance,hourly; !- Zone Average [lux]
+ *
+ * The ordinal in the name is the *point's*, not a version number, and it is the
+ * probe's because `applyProbe` writes the probe into `control_data` first on
+ * every solve. Note the neighbouring `Daylighting Window Reference Point 1
+ * Illuminance`, which is the per-window contribution and differs by one word.
+ *
+ * Declared where the run is asked for it and re-exported by `daylight.js`, which
+ * is the reader. Spelled twice it is a fault that exists at exactly one of them:
+ * changed in the request, the reader matches nothing and every desk letters
+ * "solve the desk itself" with nothing thrown. The same rule that keeps
+ * `OCCUPANCY_SCHEDULE` in one place.
+ */
+export const ILLUMINANCE_VARIABLE = 'Daylighting Reference Point 1 Illuminance';
+
+/**
  * What the run reports, before the console adds anything.
  *
  * The stock example also asks for around thirty per-surface and per-zone-face
@@ -614,6 +633,7 @@ const VARIABLES_HOURLY = [
   'Zone Mean Radiant Temperature',
   'Zone Air Heat Balance Surface Convection Rate',
   'Zone Air Heat Balance Air Energy Storage Rate',
+  ILLUMINANCE_VARIABLE,
 ];
 
 const VARIABLES_DAILY = ['Site Daylight Saving Time Status', 'Site Day Type Index'];
@@ -940,9 +960,23 @@ export function applyModel(doc, params, bypass = {}, { reporting = 'sheet' } = {
   applyBlinds(doc, params, on('blinds'));
   applyAir(doc, params, on('air'));
   applyGains(doc, params, on('gains'));
-  applyDaylight(doc, params, on('daylight'), on('gains'));
+  // Before the channel, and unconditionally. The probe owns the daylighting
+  // objects the channel contributes an entry to, and it reads the floor's own
+  // vertices, so it has to follow `applyMassing` and precede `applyDaylight`.
+  // The plan frame the probe was placed against, handed on rather than measured
+  // again: the sensor stands on the same axis through the same room, and two
+  // readings of one geometry are two things free to disagree.
+  applyDaylight(doc, params, on('daylight'), on('gains'), applyProbe(doc));
   applySystem(doc, params, on('system'), on('gains'));
   applyGrounds(doc, params, on('grounds'));
+  // Last of the appliers that touch materials, and last is what makes its rule
+  // true. Placed after Mass it covered the five materials that existed by then,
+  // which is a list wearing a rule's clothes: an opaque material added by any
+  // later applier -- a real construction on a skylight curb, an opaque spandrel,
+  // a ground-contact layer -- would keep its own reflectance while the reader
+  // went on moving a control that claimed to speak for the room. It adds and
+  // removes nothing, so standing here changes no object's place in the file.
+  applyOptics(doc, params);
   applySolver(doc, params);
   applyRun(doc, params);
   syncReporting(doc, state, reporting);
@@ -989,6 +1023,46 @@ const MONTHS_LOWER = [
   'july', 'august', 'september', 'october', 'november', 'december',
 ];
 
+/**
+ * 07z — what the inside of the room does to light, as one rule.
+ *
+ * Every opaque material the desk builds takes the same interior visible
+ * reflectance, written as its complement into `visible_absorptance`. One rule
+ * rather than a list of five named materials, and the list is the reason: the
+ * desk builds `R13LAYER`, `R31LAYER`, `WALLMASS`, the concrete slab and
+ * `FLOORLIGHT` depending on where its faces stand, three of them carried
+ * hard-coded values nothing on the desk could reach, and a sixth material added
+ * later would escape a list while the reader went on moving a control that
+ * claimed to speak for the room.
+ *
+ * Split flux reads only the innermost layer of each construction, so what this
+ * has to reach is every material that can be innermost. `Material` and
+ * `Material:NoMass` are exactly the opaque ones: glazing is `WindowMaterial:*`
+ * and is not touched here, which is right, because the glass's own visible
+ * transmittance is the Glazing channel's business.
+ *
+ * It runs last rather than inside `applyFabric`, because the slab and
+ * `FLOORLIGHT` do not exist until Mass has run and a rule that covered four of
+ * the five materials would be the same defect one surface along -- and because
+ * running it merely *after Mass* was that defect again, one applier further on:
+ * a rule that covers every material added before it is a list, and the list
+ * this exists to replace is the one a sixth material escapes.
+ */
+function applyOptics(doc, params) {
+  // Rounded, because the complement of a decimal is where binary floating point
+  // shows. 36 of the control's 91 stops have a non-terminating complement and it
+  // reached the file verbatim: `interiorRef 0.9` wrote
+  // `0.09999999999999998;   !- Visible Absorptance`, seventeen significant
+  // digits of a field the reader set to two, carried on into the run bundle and
+  // the report hand-off. Six places rather than the face's own two, so that
+  // refining the step does not silently start truncating the value instead.
+  const absorptance = Number((1 - params.interiorRef).toFixed(6));
+  for (const type of ['Material', 'Material:NoMass']) {
+    if (!holds(doc, type)) continue;
+    for (const material of doc.all(type).toArray()) material.visible_absorptance = absorptance;
+  }
+}
+
 /** 02 — the neighbours. */
 function applyContext(doc, params, engaged) {
   drop(doc, 'Shading:Site:Detailed', CONTEXT_SHADE);
@@ -1007,8 +1081,13 @@ function applyFabric(doc, params, engaged) {
   roof.solar_absorptance = params.roofAbs;
   wall.thermal_absorptance = params.emittance;
   roof.thermal_absorptance = params.emittance;
-  wall.visible_absorptance = params.wallAbs;
-  roof.visible_absorptance = params.roofAbs;
+  // `visible_absorptance` is not written here any more, and the two lines that
+  // did are the defect. `wallAbs` and `roofAbs` are exterior solar
+  // absorptances; setting the *visible* absorptance from them said that a wall
+  // painted dark outside is a dark wall inside, and put the shipped desk's
+  // interior at 0.25, which is about black paint. `applyOptics` owns the
+  // interior now, from a control that means it, and these two keep the
+  // `solar_absorptance` above and the meaning they were declared with.
 
   // An optional masonry leaf set inboard of the insulation. Rebuilt rather than
   // edited, because a construction's layer count is its identity.
@@ -2140,43 +2219,213 @@ function applyGains(doc, params, engaged) {
   }
 }
 
-/** 11 — the sensor that dims the lights against the daylight. */
-function applyDaylight(doc, params, engaged, gainsOn) {
+/** What the probe and the Daylight channel's sensor are called in the document. */
+const PROBE_POINT = 'Probe';
+const SENSOR_POINT = 'Sensor';
+const DAYLIGHT_CONTROLS = 'Daylighting';
+
+/**
+ * Where the probe stands, and why it is a constant rather than a control.
+ *
+ * Seven tenths of the way across the plan from the south wall, on the 0.8 m
+ * work plane. Deep in the room is the honest place for it: depth is what makes
+ * the absolute value least trustworthy and the ordering most trustworthy, and
+ * the ordering is the only claim this reading makes. The ranking test that
+ * unblocked the feature was run at exactly this point, against a Radiance
+ * annual daylight coefficient chain, and came back at Spearman 0.9957 with an
+ * identical thirteen-point Pareto frontier.
+ *
+ * **Not `dlDepth` and not `dlHeight`**, though both would place a point and the
+ * first draft of this used them. Those two are Daylight *channel* faces, and the
+ * channel is bypassed on the desk the page boots on. A bypassed channel's slider
+ * reaching the IDF is the thing `applyModel`'s own rule forbids -- bypass
+ * removes, it does not zero -- and here it would do worse than reach the IDF: it
+ * would silently move a reading that is on the sheet whether or not the channel
+ * is in, which is exactly what FR-014 says the measurement must never be. So the
+ * probe is a fact about the method, the reading states it, and no face moves it.
+ */
+export const PROBE_DEPTH = 0.7;
+export const PROBE_HEIGHT = 0.8;
+
+/**
+ * Required by the field list and read by nothing: a point controlling no lights
+ * has no setpoint behaviour. A constant rather than `dlSetpoint` for the same
+ * reason the depth is one.
+ */
+const PROBE_SETPOINT = 500;
+
+/**
+ * 11a — the point that measures the daylight and dims nothing.
+ *
+ * Written on **every** solve, outside any channel's gate, which is the whole of
+ * FR-014 and the reason this is its own applier rather than a branch inside
+ * `applyDaylight`. The Daylight channel is bypassed on the desk the page boots
+ * on, so a reading gated behind it would be absent exactly where the problem
+ * lives: the sheet recommending the smallest window it can sweep, with nothing
+ * on the page about the light that window was put there to deliver.
+ *
+ * `fraction_of_lights_controlled_by_reference_point: 0` is the whole trick, and
+ * it is inside the schema rather than exploiting it — the field's own minimum is
+ * 0.0. The engine computes the daylight at the point and dims nothing against
+ * it. Measured neutral to full precision in `.harness/tmp-daylight-neutral.mjs`:
+ * 5975.5 kWh of annual lighting with the probe and without, and 3698.4 kWh with
+ * and without where the channel is in and actually dimming.
+ *
+ * **The probe is written first, and that is load-bearing.** The output variable
+ * carries the point's *ordinal*, not its name:
+ * `Daylighting Reference Point 1 Illuminance`. Written second, the probe would
+ * be point 1 with the channel out and point 2 with it in, and the reading would
+ * have to ask the document which variable it is today — a reading whose own name
+ * changes underneath it. `.harness/tmp-probe-arrangement.mjs` measured point 1
+ * at 194 lx in all three arrangements with the probe written first, against the
+ * sensor's own 322 lx arriving as point 2.
+ *
+ * **This applier owns both daylighting types.** `applyDaylight` owns one entry
+ * inside the controls object and the dimming fields on it, and nothing else.
+ */
+function applyProbe(doc) {
   clear(doc, 'Daylighting:Controls');
   clear(doc, 'Daylighting:ReferencePoint');
+
+  const frame = planFrame(doc);
+  const [px, py] = pointAt(frame, PROBE_DEPTH);
+  doc.add('Daylighting:ReferencePoint', PROBE_POINT, {
+    zone_or_space_name: ZONE_NAME,
+    x_coordinate_of_reference_point: px,
+    y_coordinate_of_reference_point: py,
+    z_coordinate_of_reference_point: PROBE_HEIGHT,
+  });
+
+  // No `lighting_control_type` and no dimming fields here: the schema defaults
+  // them, and a point controlling zero lights has no control behaviour for them
+  // to describe. They belong to the channel that actually dims, so that a reader
+  // moving a Daylight face with the channel bypassed reaches no IDF object.
+  const controls = doc.add('Daylighting:Controls', DAYLIGHT_CONTROLS, {
+    zone_or_space_name: ZONE_NAME,
+    daylighting_method: 'SplitFlux',
+  });
+  controls.set('control_data', [
+    {
+      daylighting_reference_point_name: PROBE_POINT,
+      fraction_of_lights_controlled_by_reference_point: 0,
+      illuminance_setpoint_at_reference_point: PROBE_SETPOINT,
+    },
+  ]);
+
+  return frame;
+}
+
+/**
+ * The room's plan measured once: where its centre is, which way is into it, and
+ * how deep it runs along that axis.
+ *
+ * Read off the box the document holds rather than recomputed from `width` and
+ * `depth`, per Principle III. The centre comes from the floor's own vertices and
+ * the depth axis from the south wall's own normal, because `Building.north_axis`
+ * is ignored here and orientation lives in the vertices — measuring along a
+ * fixed axis would put the point outside a turned room.
+ *
+ * One frame serves both reference points. The probe and the channel's dimming
+ * sensor stand at different fractions along the same axis through the same room,
+ * and measuring it twice per apply would be two readings of one geometry, free
+ * to disagree and paid for on every solve and twice per study sample.
+ */
+function planFrame(doc) {
+  const floor = must(doc, 'BuildingSurface:Detailed', FLOOR);
+  const corners = plan(floor);
+  const centre = [
+    corners.reduce((total, [x]) => total + x, 0) / corners.length,
+    corners.reduce((total, [, y]) => total + y, 0) / corners.length,
+  ];
+
+  // The wall's own bottom edge, `verts[1]` → `verts[2]`, which is the convention
+  // `reachOff`, `edgeLength` and `bearingOf` all measure against. The first
+  // draft took `verts[0]` → `verts[2]` and computed the same normal by hand:
+  // identical in plan on the box this file builds, because vertices 0 and 1
+  // share their x and y, and therefore a fourth copy of the convention that
+  // would not follow the other three if the winding ever changed.
+  const south = must(doc, 'BuildingSurface:Detailed', WALLS[0].name);
+  const face = plan(south);
+  const length = edgeLength(face);
+  if (!(length > 0)) throw new Error(`the south wall ${WALLS[0].name} has no length to measure the plan across`);
+
+  // `reachOff` gives the outward normal; inward is its negation. The depth is
+  // the floor's own extent projected onto that axis, which is exactly what
+  // `reachOff` returns for a polygon measured against a wall -- sign-invariant
+  // and origin-invariant, so a plan of any proportion answers for itself.
+  const [nx, ny] = [(face[2][1] - face[1][1]) / length, -(face[2][0] - face[1][0]) / length];
+  return { centre, inward: [-nx, -ny], depth: reachOff(face, corners) };
+}
+
+/** The plan footprint of one surface: its vertices, x and y only. */
+const plan = (surface) =>
+  surface.extensible.map((v) => [Number(v.vertex_x_coordinate), Number(v.vertex_y_coordinate)]);
+
+/**
+ * A point on the frame's depth axis. `fraction` is the way across the plan from
+ * the south wall, so 0.5 is the centre and 1 is the north wall.
+ */
+function pointAt({ centre, inward, depth }, fraction) {
+  const offset = depth * (fraction - 0.5);
+  return [centre[0] + inward[0] * offset, centre[1] + inward[1] * offset];
+}
+
+/**
+ * 11b — the sensor that dims the lights against the daylight.
+ *
+ * It no longer creates either daylighting object. `applyProbe` ran immediately
+ * before it and owns both; this appends one entry to the `control_data` the
+ * probe wrote, as point 2, and sets the dimming fields that describe its own
+ * behaviour. With the channel out it appends nothing, and the entry is gone
+ * because the probe rewrote the list rather than because anything removed it —
+ * the same clear-and-rewrite discipline `syncReporting` keeps, and the reason
+ * three applies come back byte-identical while ownership is moving.
+ */
+function applyDaylight(doc, params, engaged, gainsOn, frame) {
   // Nothing to dim without a Lights object to dim, so the channel stays out
   // rather than writing a controller that speaks for nothing.
   if (!engaged || !gainsOn || !(params.lighting > 0)) return;
 
-  // Set across the plan from the south wall, then turned with the building —
-  // the point is in world coordinates, so it has to follow the box it is in.
-  const [sx, sy] = turn(
-    [params.width / 2, params.depth * params.dlDepth],
-    params.northAxis,
-    [params.width / 2, params.depth / 2],
-  );
-  doc.add('Daylighting:ReferencePoint', 'Sensor', {
+  const [sx, sy] = pointAt(frame, params.dlDepth);
+  doc.add('Daylighting:ReferencePoint', SENSOR_POINT, {
     zone_or_space_name: ZONE_NAME,
     x_coordinate_of_reference_point: sx,
     y_coordinate_of_reference_point: sy,
     z_coordinate_of_reference_point: params.dlHeight,
   });
 
-  const controls = doc.add('Daylighting:Controls', 'Daylighting', {
-    zone_or_space_name: ZONE_NAME,
-    daylighting_method: 'SplitFlux',
-    lighting_control_type: params.dlControl,
-    minimum_input_power_fraction_for_continuous_or_continuousoff_dimming_control: 0.3,
-    minimum_light_output_fraction_for_continuous_or_continuousoff_dimming_control: 0.2,
-    number_of_stepped_control_steps: 3,
+  const controls = must(doc, 'Daylighting:Controls', DAYLIGHT_CONTROLS);
+  // The ordinal the reading is named after, asserted rather than left to the
+  // order of two calls in `applyModel`. `ILLUMINANCE_VARIABLE` hardcodes
+  // `Point 1`, so appending the sensor to a list the probe does not head would
+  // silently re-point the reading at the dimming sensor: a figure that changed
+  // meaning with no error, on the one desk where the channel is in. Three
+  // paragraphs of comment said this; this says it to the machine.
+  const first = controls.extensible[0]?.daylighting_reference_point_name;
+  if (String(first) !== PROBE_POINT) {
+    throw new Error(
+      `the daylight sensor is being appended to a control list headed by "${first}" rather than ` +
+        `"${PROBE_POINT}"; the reading is named for reference point 1, so the probe has to be ` +
+        'written first or the reading silently becomes the sensor\'s',
+    );
+  }
+  controls.lighting_control_type = params.dlControl;
+  controls.minimum_input_power_fraction_for_continuous_or_continuousoff_dimming_control = 0.3;
+  controls.minimum_light_output_fraction_for_continuous_or_continuousoff_dimming_control = 0.2;
+  controls.number_of_stepped_control_steps = 3;
+  // Appended, never read back and re-written. The first draft spread
+  // `controls.extensible.map(...)` into a fresh list, which meant this function
+  // named the probe's three fields by hand: a fourth field added to the group --
+  // and this group has grown before -- would have been silently dropped from the
+  // probe's entry on every desk with the channel in, and kept on every desk
+  // without it, so "lean then sheet" would stop being byte-identical for a
+  // reason nothing on the page could show. `extensible` is the live array and
+  // pushing to it is heard, which is the idiom `syncReporting` already uses.
+  controls.extensible.push({
+    daylighting_reference_point_name: SENSOR_POINT,
+    fraction_of_lights_controlled_by_reference_point: params.dlFraction,
+    illuminance_setpoint_at_reference_point: params.dlSetpoint,
   });
-  controls.set('control_data', [
-    {
-      daylighting_reference_point_name: 'Sensor',
-      fraction_of_lights_controlled_by_reference_point: params.dlFraction,
-      illuminance_setpoint_at_reference_point: params.dlSetpoint,
-    },
-  ]);
 }
 
 const NODE = Object.freeze({

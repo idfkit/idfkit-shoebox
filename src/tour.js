@@ -54,7 +54,14 @@ import { fold } from './console.js';
 // the published sheet would never be shown the step that now tells them a
 // weather file of their own can go on this desk. A key is only worth keeping if
 // every meaning it has ever had is its own.
-const STORE = 'shoebox-general-notes-v6';
+//
+// v7, per FR-021. A ninth step was added -- the sheet now carries a reading
+// nothing published judges -- and the patch step changed meaning under it: the
+// Daylight channel no longer owns the daylighting objects it writes, a probe
+// outside every gate does, so "takes a channel's objects out of the document"
+// has an exception it has to name. A returning reader with the old key would be
+// shown a set of notes that had been taught a different sheet.
+const STORE = 'shoebox-general-notes-v7';
 const VIEWS = ['open', 'folded', 'retired'];
 
 // A sheet counts its own notes in words, and the count is read off the
@@ -142,10 +149,15 @@ export const NOTES = Object.freeze([
     id: 'patch',
     title: 'Patch a channel out',
     step: 'Patch a channel out to take its objects out of the model.',
+    // Amended with the daylight probe, which is the first object on this desk
+    // that no channel owns. Left as it was, this note would have told a reader
+    // that patching Daylight out removes the daylighting objects, on a sheet
+    // that goes on lettering a reading taken by one of them.
     body:
       'The patch button takes a channel\'s objects out of the document — ' +
       'removed, not zeroed — so the drawing and the model always agree ' +
-      'about what is in the path.',
+      'about what is in the path. The daylight probe is the exception that ' +
+      'proves it: no channel owns it, so no channel can take it out.',
     target: '#desk-open',
     focus: '#desk .patch',
     desk: true,
@@ -178,6 +190,27 @@ export const NOTES = Object.freeze([
     // A click goes to the rows, because that is where the criteria are and the
     // ledes are already in view above them once the table is centred.
     focus: '#score',
+  }),
+  // The window's own consequence, and it goes here because it is the reading
+  // that answers the one the board has just finished teaching: every criterion
+  // above it improves as the window shrinks, and this is the one that does not.
+  new Note({
+    id: 'daylight',
+    title: 'See what the window delivers',
+    step: 'Patch Gains in, run a year, and widen the south window.',
+    body:
+      'Every other figure on this sheet gets better as the window gets smaller, ' +
+      'so the sheet on its own points at a room nobody would want to sit in. ' +
+      'The daylight reading is the other half of that trade: a typical ' +
+      'illuminance over occupied hours, at one point seven tenths of the way ' +
+      'into the room. It stands in the results schedule beside the demand ' +
+      'intensities, one figure per environment, because it is a reading of the ' +
+      'run rather than a setting of any channel: the point that takes it is ' +
+      'written on every solve, dims nothing and changes no energy figure. No ' +
+      'published line judges it, and the note under the table says so.',
+    // The results schedule, which is on the sheet rather than in the console,
+    // so this note needs no desk and circles the row itself.
+    focus: '#schedule',
   }),
   // E-02's own step, and it goes after the board rather than before it for a
   // reason the flow decides: a survey is read *against* something, and the
