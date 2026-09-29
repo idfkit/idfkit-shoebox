@@ -92,10 +92,9 @@ export function fold(key, summary, { label } = {}, ...children) {
 const SUMMARY = Object.freeze(
   Object.fromEntries(
     Object.entries({
-      // One word each where the aria-label names the subject: eighteen strips,
-      // sixty-odd notes and eight meters letter these at once on a wide desk,
-      // and three words a summary is three words a fold, every time.
-      note: 'Note',
+      // One word each where the aria-label names the subject: eighteen strips
+      // and eight meters letter these at once on a wide desk, and three words
+      // a summary is three words a fold, every time.
       channel: 'Background',
       reading: 'Method',
       category: 'Who this category is for',
@@ -105,15 +104,44 @@ const SUMMARY = Object.freeze(
 );
 
 /**
- * A control's note, one press down on the control it explains. About ninety
- * controls carry one, of up to seventy-seven words, and a wide desk printed
- * every one of them; the label and the face are the control, and the note is
- * how it reaches the engine, which is for the reader who asks. The key is the
- * control's own, so an open note survives every redraw of its strip.
+ * A control's note, one press down on the control it explains. About a
+ * hundred and ten controls carry one, of up to seventy-seven words
+ * (`CONTROL_NOTE` in `copy.js`, asserted by `assertCopy` in `controls.js`), and
+ * a wide desk printed every one of them; the label and the face are the
+ * control, and the note is how it reaches the engine, which is for the reader
+ * who asks.
+ *
+ * The marker stands in the head, beside the label, so a shut note costs the
+ * row no line of its own; the open note is set between the head and the face,
+ * at the row's full width, and pushes the face down. The Study offer and the
+ * value keep their places. `head` must already be the row's first child and
+ * the label its own. The open state is kept in `openFolds` under the key the
+ * fold used, so an open note survives every redraw of its strip.
  */
-function noteFold(control) {
-  const key = control.key ?? control.from ?? control.label;
-  return fold(`ctl:${key}`, SUMMARY.note, { label: `Note on ${control.label}` }, el('p', 'ctl-note', control.note));
+function attachNote(control, head) {
+  const key = `ctl:${control.key ?? control.from ?? control.label}`;
+  const id = `note-${key.replace(/[^\w-]/g, '_')}`;
+  const body = el('p', 'ctl-note ctl-note-open');
+  body.id = id;
+  body.textContent = control.note;
+  const mark = el('button', 'ctl-note-mark');
+  mark.type = 'button';
+  mark.setAttribute('aria-label', `Note on ${control.label}`);
+  mark.setAttribute('aria-controls', id);
+  const show = (open) => {
+    body.hidden = !open;
+    mark.textContent = open ? '−' : '+';
+    mark.setAttribute('aria-expanded', String(open));
+  };
+  show(openFolds.has(key));
+  mark.addEventListener('click', () => {
+    const open = !openFolds.has(key);
+    if (open) openFolds.add(key);
+    else openFolds.delete(key);
+    show(open);
+  });
+  head.firstElementChild.after(mark);
+  head.after(body);
 }
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -192,15 +220,20 @@ export function mountConsole({
   let sweepGate = { ok: false, reason: 'The engine is still arriving.' };
 
   const stripHost = el('div', 'strips');
-  // The ruled column set the strips lie on, one element inside the scroller
-  // rather than the scroller itself: the desk fixes `stripHost`'s height so it
-  // can scroll, and a multicol box with a fixed height lays its overflow out
-  // as extra columns to the side. The wrapper keeps its natural height, so the
-  // columns balance to the content and the overflow stays vertical.
+  // The ruled columns the strips lie in, one element inside the scroller
+  // rather than the scroller itself, so the overflow stays vertical. The
+  // columns are elements placed by `layColumns` below, not a CSS multicol.
   const stripGrid = el('div', 'strip-grid');
   const railHost = el('div', 'rail');
 
-  for (const channel of CHANNELS) stripGrid.append(buildStrip(channel));
+  // Built into one column, which is what `layColumns` deals from: left loose in
+  // the flex row, eighteen strips would stand side by side and stretch the desk
+  // to thousands of pixels before the first deal could measure it.
+  {
+    const column = el('div', 'strip-col');
+    for (const channel of CHANNELS) column.append(buildStrip(channel));
+    stripGrid.append(column);
+  }
   stripHost.append(stripGrid);
   host.append(stripHost, railHost);
 
@@ -257,11 +290,79 @@ export function mountConsole({
     if (on === indexing) return;
     indexing = on;
     stripHost.classList.toggle('index', on);
+    // The index is one list read top to bottom, so it is dealt into one column.
+    laid = 0;
+    layColumns();
     // Arriving at the index closes everything, because the list is the point of
     // it; leaving it opens everything, which is the desk as it was.
     opened = null;
     refold();
   }
+
+  /* ── the columns ─────────────────────────────────────────────────────────
+   *
+   * The strips are dealt into columns once for a width, in signal order, and
+   * stay where they were dealt while their contents change height. They used
+   * to lie on a balanced CSS multicol, which re-balanced on every change of
+   * height: opening a study card's reading chooser under an attached year made
+   * its strip a few hundred pixels taller, the columns re-balanced, and the
+   * strip, with the card the reader was working, jumped to the next column.
+   * The vertical anchor `setStudy` keeps could not follow a move sideways.
+   *
+   * So a column only grows downward now. The deal is redone when the number of
+   * columns the width can hold changes, and when the desk is opened again
+   * (there is no context to lose on the way in). Between those, a column that
+   * grows long is the price of the reader's place staying put.
+   */
+  let laid = 0; // columns dealt at the last lay, 0 while the desk is not drawn
+
+  function columnCount() {
+    if (indexMode()) return 1;
+    const card = parseFloat(getComputedStyle(stripHost).getPropertyValue('--card')) || 320;
+    // The rule between columns is 1px, as the multicol's `column-gap` was.
+    return Math.min(5, Math.max(1, Math.floor((stripHost.clientWidth + 1) / (card + 1))));
+  }
+
+  /** Which column each strip goes in, in signal order, balanced by height. */
+  function deal(heights, n) {
+    const total = heights.reduce((a, b) => a + b, 0);
+    let column = 0;
+    let before = 0;
+    return heights.map((h) => {
+      // Move on once this strip's middle would land past the column's share,
+      // never leaving a column empty and never skipping one.
+      if (column < n - 1 && before > 0 && before + h / 2 > (total * (column + 1)) / n) column += 1;
+      before += h;
+      return column;
+    });
+  }
+
+  function layColumns() {
+    if (!stripHost.clientWidth) {
+      laid = 0;
+      return;
+    }
+    const n = columnCount();
+    if (n === laid) return;
+    const list = CHANNELS.map((channel) => strips.get(channel.id).strip);
+    // A focused control is carried across the move rather than dropped.
+    const focused = stripGrid.contains(document.activeElement) ? document.activeElement : null;
+    const place = (assignment) => {
+      const columns = Array.from({ length: n }, () => el('div', 'strip-col'));
+      list.forEach((strip, i) => columns[assignment[i]].append(strip));
+      stripGrid.replaceChildren(...columns);
+    };
+    // Twice: the heights are only true at the new columns' width, so the first
+    // deal is measured again and redone if that moved anything.
+    let assignment = deal(list.map((strip) => strip.offsetHeight), n);
+    place(assignment);
+    const again = deal(list.map((strip) => strip.offsetHeight), n);
+    if (again.some((column, i) => column !== assignment[i])) place((assignment = again));
+    focused?.focus({ preventScroll: true });
+    laid = n;
+  }
+
+  new ResizeObserver(() => layColumns()).observe(stripHost);
 
   relayout();
   window.addEventListener('resize', relayout);
@@ -645,7 +746,7 @@ export function mountConsole({
     derived.hidden = true;
     row.append(derived);
     derivedLines.set(control.key, derived);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     // Why a withdrawn priced face cannot be studied, in view. A sibling of the
     // row rather than a child, because `.ctl.idle` dims the row with opacity
@@ -739,7 +840,7 @@ export function mountConsole({
       return { button, option };
     });
     row.append(group);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     // What the row was last drawn showing, so the scroll below can tell a
     // value that moved from a redraw that did not. Every station attach, study
@@ -855,7 +956,7 @@ export function mountConsole({
     });
 
     row.append(root);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     faces.set(control.key, () => {
       const v = params[control.key];
@@ -1006,7 +1107,7 @@ export function mountConsole({
       return { side, item, out, stand, studyBtn, surveyBtn };
     });
     row.append(legend);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     // Four curves can stand under one plan key, so each wall gets an anchor of
     // its own and its card is hung after that. A card is inserted after the
@@ -1218,7 +1319,7 @@ export function mountConsole({
       return { face, item, out };
     });
     row.append(legend);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     const redraw = () => {
       turning.setAttribute('transform', `rotate(${params.northAxis})`);
@@ -1280,7 +1381,7 @@ export function mountConsole({
     const grab = svg('rect', { x: 0, y: 0, width: 240, height: 20, fill: 'transparent', class: 'band-grab' });
     root.append(grab);
     row.append(root);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     let anchor = null;
     const hourAt = (event) => {
@@ -1472,7 +1573,7 @@ export function mountConsole({
     });
     row.append(fold);
 
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     const redraw = () => {
       const text = params[control.key];
@@ -1620,7 +1721,7 @@ export function mountConsole({
     row.append(grid);
     const periods = el('p', 'ctl-note months-periods');
     row.append(periods);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     faces.set(control.key, () => {
       const now = mask();
@@ -1721,7 +1822,7 @@ export function mountConsole({
     const outsideNote = el('p', 'ctl-note out');
     outsideNote.hidden = true;
     row.append(outsideNote);
-    if (control.note) row.append(noteFold(control));
+    if (control.note) attachNote(control, head);
 
     // The weekday the run's year begins on, from the attached file, or null
     // while there is no file and therefore no calendar to letter against.

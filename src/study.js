@@ -23,7 +23,7 @@ import {
   ReadingQualification,
   readDaylight,
 } from './daylight.js';
-import { readDemand, readExtremes, readOverheat, readPeaks } from './readings.js';
+import { readDemand, readExtremes, readLag, readOverheat, readPeaks } from './readings.js';
 import { PRESETS } from './schemes.js';
 import {
   CATEGORIES,
@@ -123,6 +123,21 @@ export function refusesSweep(control) {
     }
   }
   return null;
+}
+
+// Every control that can be a study subject or a survey axis must carry a
+// note, as every `Landmark` must. The console and the survey's axis chooser
+// both draw it, so a sweepable control without one would leave a parameter
+// unexplained on both surfaces. Checked here rather than in `controls.js`
+// because `refusesSweep` lives in this module and `controls.js` cannot import
+// it without a cycle.
+for (const channel of CHANNELS) {
+  for (const control of channel.controls) {
+    if (refusesSweep(control) !== null) continue;
+    if (typeof control.note !== 'string' || !control.note.trim()) {
+      throw new Error(`${channel.id}:${control.key ?? control.label} has a face to sweep and no note`);
+    }
+  }
 }
 
 /**
@@ -267,6 +282,7 @@ export class Quantity {
     series = null,
     meterScope = null,
     wholeYear = false,
+    designDay = false,
     priced = null,
     movedBy = [],
     criterion = null,
@@ -359,6 +375,9 @@ export class Quantity {
     this.series = Object.freeze([...lines]);
     this.meterScope = meterScope;
     this.wholeYear = Boolean(wholeYear);
+    // Read over a sizing day and nothing else, so a desk with Design days
+    // taken off the Run strip cannot answer it however much weather it has.
+    this.designDay = Boolean(designDay);
     this.priced = priced;
     // The priced controls that can move this reading, and only those. A Plant
     // or Tariff face is applied to the bill after the run, so it reaches a
@@ -471,6 +490,7 @@ export class PricingAvailability {
 }
 
 const ZONE_AIR = request('Zone Mean Air Temperature');
+const OUTDOOR_AIR = request('Site Outdoor Air Drybulb Temperature');
 const OPERATIVE = request('Zone Operative Temperature');
 const OCCUPANCY = request('Schedule Value', 'Hourly', 'Occupancy');
 const SYSTEM_TRANSFER = request('Zone Air Heat Balance System Air Transfer Rate');
@@ -481,6 +501,7 @@ const meterFor = (id) => {
 };
 
 const EXTREMES = new RunContents({ variables: [ZONE_AIR] });
+const LAG = new RunContents({ variables: [ZONE_AIR, OUTDOOR_AIR] });
 const ANNUAL_EXTREMES = new RunContents({ variables: [ZONE_AIR], annual: true });
 const DEMAND = new RunContents({
   variables: [ZONE_AIR],
@@ -568,6 +589,18 @@ export const QUANTITIES = Object.freeze([
       new QuantitySeries({ id: 'high', label: 'High', pen: '--warm', select: (reading) => reading?.high }),
       new QuantitySeries({ id: 'low', label: 'Low', pen: '--cold', select: (reading) => reading?.low }),
     ],
+  }),
+  new Quantity({
+    // Hours from the summer design day's outdoor peak to the zone's. A design
+    // day only: over a run period the two peaks are the year's and the hours
+    // between them measure nothing, so a desk that has taken Design days off
+    // the Run strip is refused rather than drawn as a line of gaps. No
+    // improving direction is declared for it (`SENSE` in survey.js): a longer
+    // lag moves the peak into the evening, which helps an office and not a
+    // bedroom, and which of those the zone is is not the reading's to say.
+    id: 'lag', label: 'Thermal lag', unit: 'h', quantityKind: 'count', digits: 0, needs: LAG,
+    designDay: true,
+    read: (landed) => finite(readLag(landed.eso)),
   }),
   new Quantity({
     id: 'demand', label: 'Heating + cooling demand', unit: 'kWh/m²·yr', quantityKind: 'energyIntensity', digits: 1, needs: DEMAND,
@@ -812,11 +845,15 @@ export function pairingFix(key) {
   return `Choose ${either(moved.map((quantity) => inSentence(quantity.label)))}.`;
 }
 
+/** The press that gives a design-day reading its day back. */
+const DESIGN_DAY_FIX = withinBudget(BUDGETS.STANDING, 'the design-day fix', 'Set Design days to Run on the Run strip.');
+
 /** All declared quantities measured against current run capabilities. */
 export function offersFor({
   annual = false,
   wholeYear = false,
   season = false,
+  designDays = false,
   channels = [],
   pricing = null,
   // The study's own control, when the offers are for one card. Its pairing
@@ -858,6 +895,14 @@ export function offersFor({
         available: false,
         reason: `${quantity.label} needs all twelve months, and this run covers only part of the year.`,
         fix: 'Put all twelve months back on the Run strip.',
+      });
+    }
+    if (quantity.designDay && !designDays) {
+      return new Offer({
+        quantity,
+        available: false,
+        reason: `${quantity.label} is read over the summer design day, which this run leaves out.`,
+        fix: DESIGN_DAY_FIX,
       });
     }
     if (quantity.needs.season && !season) {
@@ -992,19 +1037,20 @@ export function assertQuantityReachability(quantities, reachableOffers) {
   }
 
   // Every priced pairing, once: refused with a sentence that stands in view, or
-  // drawn. Six sweepable priced faces against fourteen readings is 84, of which
+  // drawn. Six sweepable priced faces against fifteen readings is 90, of which
   // twelve draw — the three plant faces against the three bill readings, and
   // each tariff face against the one reading it prices — and the count is
   // asserted so a reach declaration widened by accident fails here rather than
   // as a curve that should have been refused. The figures moved from 66 and 54
   // when TM59's two by-category criteria went onto the roster at both
   // categories: neither new reading declares `movedBy`, so all twelve of the new
-  // pairings are refused, and both numbers rose by the same twelve. They moved
-  // again, from 78 and 66, when the daylight reading joined: it reads no meter
-  // and no bill, so all six of its pairings are refused and both numbers rose by
-  // the same six. **Both rising together is the invariant**, not either figure
-  // standing still: a reading that reached the bill without declaring `movedBy`
-  // would raise the total and not the refusals, and that is what this catches.
+  // pairings are refused, and both numbers rose by the same twelve. Thermal lag
+  // made it 84 and 72: a price reaches no temperature, so its six are refused.
+  // The daylight reading made it 90 and 78: it reads no meter and no bill, so
+  // all six of its pairings are refused and both numbers rose by the same six.
+  // **Both rising together is the invariant**, not either figure standing
+  // still: a reading that reached the bill without declaring `movedBy` would
+  // raise the total and not the refusals, and that is what this catches.
   let refusedPairings = 0;
   let pairings = 0;
   for (const channel of CHANNELS.filter((candidate) => candidate.prices)) {
@@ -1020,9 +1066,9 @@ export function assertQuantityReachability(quantities, reachableOffers) {
       withinBudget(BUDGETS.STANDING, `pairing fix ${control.key}`, pairingFix(control.key));
     }
   }
-  if (pairings !== 84 || refusedPairings !== 72) {
+  if (pairings !== 90 || refusedPairings !== 78) {
     throw new Error(
-      `${refusedPairings} of ${pairings} priced pairings are refused, where the reach table refuses 72 of 84`,
+      `${refusedPairings} of ${pairings} priced pairings are refused, where the reach table refuses 78 of 90`,
     );
   }
 
@@ -1045,6 +1091,7 @@ export function assertQuantityReachability(quantities, reachableOffers) {
   // because it letters in lux beside criteria that do carry limits.
   const nonTargets = new Map([
     ['extremes', false],
+    ['lag', false],
     ['demand', false],
     ['high', false],
     ['low', false],
@@ -1133,6 +1180,7 @@ export function assertQuantityReachability(quantities, reachableOffers) {
       annual: true,
       wholeYear: true,
       season: true,
+      designDays: true,
       channels: CHANNELS.map((channel) => channel.id),
       pricing: new PricingAvailability({ currency: 'USD', cost: available, carbon: available }),
     }),

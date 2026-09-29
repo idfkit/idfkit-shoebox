@@ -534,6 +534,57 @@ export function readExtremes(eso) {
 }
 
 /**
+ * Hours from the outdoor peak to the zone peak, over one daily cycle.
+ *
+ * Two parallel hourly series of one environment, as plain values. Positive
+ * where the zone peaks after the outdoor air, which is the envelope's delay;
+ * negative is possible and is a finding rather than an error, since sun on
+ * glass can peak the zone before the air outside it. The first hour of each
+ * peak is taken, so a flat top reads from where it begins.
+ *
+ * The one arithmetic for it: the results schedule's row and the study reading
+ * both call this, so a curve's point at the desk's own position is the
+ * schedule's figure.
+ */
+export function peakLag(zone, outdoor) {
+  if (!zone.length || zone.length !== outdoor.length) return NaN;
+  let zi = 0;
+  let oi = 0;
+  for (let i = 1; i < zone.length; i += 1) {
+    if (zone[i] > zone[zi]) zi = i;
+    if (outdoor[i] > outdoor[oi]) oi = i;
+  }
+  return zi - oi;
+}
+
+/**
+ * The thermal lag of the summer design day, or null.
+ *
+ * Only a design day is a single diurnal cycle, so only a design day has a lag
+ * to measure: over a run period the two peaks are the year's, and the hours
+ * between them described nothing (504 h at Boston-Logan). The summer day is the
+ * one read, because the winter sizing day is often lettered with no daily range
+ * at all, and a flat outdoor series has no peak to lag behind. Reading a lag
+ * over a run period, day by day, is future work.
+ *
+ * Null, never zero, where the run carries no summer design day, no outdoor
+ * series, or an outdoor series that does not swing.
+ */
+export function readLag(eso) {
+  const zr = zoneRuns(eso);
+  if (!zr) return null;
+  const outdoor = hourly(eso, /Site Outdoor Air Drybulb Temperature/i);
+  if (outdoor.length !== zr.points.length) return null;
+  const day = zr.runs.find((r) => r.kind === 'Summer design day');
+  if (!day) return null;
+  const slice = (points) => points.slice(day.start, day.end + 1).map((p) => p.value);
+  const out = slice(outdoor);
+  if (Math.max(...out) - Math.min(...out) <= 0.05) return null;
+  const lag = peakLag(slice(zr.points), out);
+  return Number.isFinite(lag) ? lag : null;
+}
+
+/**
  * How much of the year the zone spent above a temperature.
  *
  * The form every comfort criterion worth having is written in: not a peak,
