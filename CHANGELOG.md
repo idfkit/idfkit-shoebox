@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Seven ways to draw one run.** The plate draws the run as a time series,
+  psychrometric chart, adaptive comfort chart, carpet plot, duration curve,
+  average day or energy signature, all from one reading of the run. Changing
+  view starts no solve. The view rides the link and is never kept on a scheme.
+
 - **Every slider parameter now carries an explanatory note**, in the Model
   Console and in the Design Space Survey's axis choosers, citing its EnergyPlus
   schema field where it has one, so a reader can learn what a face does before

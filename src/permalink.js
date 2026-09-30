@@ -51,6 +51,7 @@ import {
 } from './controls.js';
 import { QUANTITY_BY_ID } from './study.js';
 import { READING_BY_ID, refusesAxis, refusesSurveyPairing } from './survey.js';
+import { decodeView, encodeView } from './views.js';
 
 export const LINK_VERSION = 'v1';
 
@@ -100,8 +101,11 @@ const MIGRATIONS = Object.freeze({});
  * wild omits it, and an omitted `wf` means what it has always meant — that no
  * weather file is wanted. Only a changed default, a renamed key or a narrowed
  * range costs a version.
+ *
+ * `pv`, the plate's view (spec 015), joined on the same terms: an old link
+ * omits it and means the time series, which is what the plate always drew.
  */
-const RESERVED = Object.freeze(['in', 'out', 'stn', 'win', 'at', 'sty', 'sv', 'wf', 'wfd']);
+const RESERVED = Object.freeze(['in', 'out', 'stn', 'win', 'at', 'sty', 'sv', 'wf', 'wfd', 'pv']);
 for (const key of RESERVED) {
   if (ALL_KEYS.includes(key)) {
     throw new Error(`the reserved link key "${key}" collides with a control parameter`);
@@ -244,7 +248,7 @@ export { PIN_KINDS, encodePin, decodePin };
  * claiming two climates is a caller bug and the address bar is the last place
  * it should surface.
  */
-export function encodeState({ params, bypass, station = null, file = null, pin = null, quantity = null, studies = [], survey = null }) {
+export function encodeState({ params, bypass, station = null, file = null, pin = null, quantity = null, studies = [], survey = null, view = null }) {
   const pairs = new URLSearchParams();
   for (const key of ALL_KEYS) {
     // `String` rather than a display format: the display rounds, and a link
@@ -297,6 +301,16 @@ export function encodeState({ params, bypass, station = null, file = null, pin =
     pairs.append('sty', `${quantity}${studyKeys.length ? `.${studyKeys.join(',')}` : ''}`);
   }
   if (survey) pairs.append('sv', encodeSurvey(survey));
+  // The plate's view, last, and only when it differs from the time series at
+  // its defaults: `encodeView` returns null there, which is what keeps a link
+  // built at the default byte-identical to one built before the key existed
+  // (SC-004). Like the pin it is a way of reading the run and reaches no IDF
+  // object; unlike the pin a kept scheme never stores it (FR-024), which is
+  // the caller's choice to pass `view: null`.
+  if (view) {
+    const pv = encodeView(view);
+    if (pv) pairs.append('pv', pv);
+  }
   const body = pairs.toString();
   return body ? `${LINK_VERSION}&${body}` : '';
 }
@@ -631,6 +645,14 @@ export function decodeState(raw) {
   const encodedSurvey = pairs.get('sv');
   const survey = encodedSurvey === null ? null : decodeSurvey(encodedSurvey);
 
+  // The plate's view, read here above `readValue` for the reason `sv` is. Two
+  // `pv` pairs, or one with nothing in it, refuse the link whole (rule 8 of
+  // contracts/view-key.md); a well-formed view the desk cannot draw does not,
+  // because what the plate can draw is a fact about the run, not the link.
+  const views = pairs.getAll('pv');
+  if (views.length > 1) throw new Error(`the plate view "pv" is given ${views.length} times (rule 8)`);
+  const view = views.length ? decodeView(views[0]) : null;
+
   // `in` and `out` are lists and repeat by design; every other key — the
   // station pair included — is one claim, and a repeated one is two claims
   // about one thing. Either could be meant, so neither is taken. The check
@@ -671,5 +693,6 @@ export function decodeState(raw) {
     scheme.studies = study.controls;
   }
   if (survey) scheme.survey = survey;
+  if (view) scheme.view = view;
   return scheme;
 }

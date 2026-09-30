@@ -865,13 +865,33 @@ export class RunningMean {
  * @throws  where the file does not carry 23 April to 30 September
  */
 export function runningMean(dailyMeans, source = null) {
+  return runningMeanOver(dailyMeans, source);
+}
+
+/**
+ * The same recursion over a period a caller names (spec 015, FR-013).
+ *
+ * The plate's adaptive views need it over the whole file, and a second
+ * implementation would be free to drift from this one, so there is one and
+ * `runningMean` is it with TM59's season. `from` is the day the seed is
+ * assigned to (30 April for TM59) and the seven days before it are the
+ * lead-in; `to` is the last day computed. With neither, every figure is the
+ * one `runningMean` has always returned.
+ *
+ * @param {{from?: number, to?: number}} period  day numbers of a 365-day year
+ */
+export function runningMeanOver(dailyMeans, source = null, { from = null, to = null } = {}) {
   if (!Array.isArray(dailyMeans)) {
     throw new Error('runningMean: expected an array of daily mean dry-bulb temperatures');
   }
-  const first = dayNumber(SEASON.seedFrom);
-  const seedTo = dayNumber(SEASON.seedTo);
-  const seedAt = seedTo + 1;
-  const last = dayNumber(SEASON.to);
+  const tm59 = from === null && to === null;
+  const seedAt = from ?? dayNumber(SEASON.seedTo) + 1;
+  const seedTo = seedAt - 1;
+  const first = seedTo - SEED_WEIGHTS.length + 1;
+  const last = to ?? dayNumber(SEASON.to);
+  if (first < 1 || last > 365 || last < seedAt) {
+    throw new Error(`runningMean: a period from day ${seedAt} to day ${last} leaves no room for its lead-in`);
+  }
   // Checked over the whole span before anything is computed, so a truncated
   // file is refused whole with the first day it is missing rather than seeded
   // from a guess and carrying the error through the first week of the period —
@@ -879,8 +899,11 @@ export function runningMean(dailyMeans, source = null) {
   for (let d = first; d <= last; d += 1) {
     if (!Number.isFinite(dailyMeans[d - 1])) {
       throw new Error(
-        `runningMean: the weather file carries no daily mean for ${dayText(d)}, and TM59:2026 §2.4.1 ` +
-          `seeds the running mean from ${dayText(first)}, so the comfort line cannot be started`,
+        tm59
+          ? `runningMean: the weather file carries no daily mean for ${dayText(d)}, and TM59:2026 §2.4.1 ` +
+              `seeds the running mean from ${dayText(first)}, so the comfort line cannot be started`
+          : `runningMean: the weather file carries no daily mean for ${dayText(d)}, inside the period ` +
+              `${dayText(first)} to ${dayText(last)}`,
       );
     }
   }

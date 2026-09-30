@@ -3003,6 +3003,160 @@ auto margin as well and stays centred. Open state is still held in `openFolds`
 under the fold's former `ctl:<key>` key, so an open note survives a redraw of
 its strip. The `note` entry of `SUMMARY` had no other reader and was removed.
 
+### Seven ways to draw one run (src/views.js, src/plate.js, src/comfort.js, src/psychro.js)
+
+Spec 015. The plate draws the current run in one of seven views: time series
+(the default), psychrometric, adaptive comfort, carpet, duration curve,
+average day and energy signature. The time series also gains a series choice,
+a daily or monthly grain and a zoomed range. None of this reaches the IDF, a
+solve key or a study.
+
+**One snapshot per run.** `readRunSeries` in `readings.js` reads a completed
+run once into a frozen `RunSeries`: the hourly stamps, the environment runs,
+one `Float64Array` per declared series (scaled once to the kind's SI unit),
+the daily series aligned by environment and date, the series that are absent
+with their reasons, and `RunFacts`. `plot` in `main.js` is that object, and
+the ghost is a reference to the one standing when a gesture began, so every
+view can draw it without a copy. The ghost is drawn only when both snapshots
+carry the same `hours` fingerprint (environment count, first stamp, last stamp,
+length); the old test, equal length, admitted two different runs. The
+fingerprint carries no climate: annual runs at Golden, San Francisco and
+Chicago all read `1|0.1-1T1|0.12-31T24|8760`. A change of climate is therefore
+answered where it happens: `attachClimate` clears the ghost and the carpet's
+change toggle, since a second attach commits a `sizingPeriods` it already
+holds and opens no gesture that would replace them.
+
+**Document facts are captured before the await.** `readDocumentFacts(model)`
+runs beside `writeIdf(model)` in `solve`, for the reason `capture` exists: the
+elevation that sets the psychrometric chart's pressure and the "mechanical
+cooling in the path" test for the adaptive strip must describe the document
+that was solved, not the one a slider has since moved.
+
+**Computation apart from drawing.** `views.js`, `comfort.js`, `psychro.js` and
+`pmv.js` are DOM-free; `plate.js` draws a `PlateFrame` and computes nothing it
+letters. A view joins `VIEWS` only in the change that adds its renderer, and
+`plate.js` throws at load if the two lists disagree, so a partial build never
+offers a view it cannot draw and the codec refuses a link naming one.
+`views.js` must not import `tm59.js`: `tm59.js` imports `readings.js`, which
+imports `views.js` for the series declarations, and the cycle would put a
+declaration in its temporal dead zone at load. It carries its own two-line
+day-of-year arithmetic instead.
+
+**FR-002 was verified byte for byte.** The plate's SVG at the default was
+captured from `main` for a design-day run and a Boston year at a forced
+720 × 320 viewBox (`.harness/fixtures/`), and the relocated renderer reproduces
+both files exactly, including after it was generalised to draw any of the four
+selectable series. The capture has to force a paint first: the automation tab
+reports `document.visibilityState === 'hidden'`, and a `ResizeObserver` does
+not fire until something paints, which is the hidden-tab trap already recorded
+under Invariants.
+
+**The link.** `pv` is a reserved key with a canonical grammar
+(`contracts/view-key.md`); a field at its default is never written, and the
+whole key is omitted at the default setting, so every link minted before this
+feature and every link at the default is byte-identical to `main`
+(`.harness/views-link.mjs`, against `.harness/fixtures/links-main.json`). A
+kept scheme is saved with `schemeHash(params, { view: null })`; the address
+bar and Share pass the live setting.
+
+**One running mean.** The adaptive views need TM59's recursion over the whole
+file, with the first seven carried days as the lead-in. `runningMean` keeps its
+signature, because `.harness/comfort-line.mjs` asserts its parameter list as
+text to prove that nothing about the run can reach it; the recursion moved into
+`runningMeanOver(dailyMeans, source, { from, to })` and `runningMean` is that
+call with TM59's season. Hours on days the recursion does not reach are
+counted as unassessed, never wrapped onto December.
+
+**The adaptive counts.** Five counts that sum to the occupied hours: above,
+within, below, unassessed, and out of scope. For EN 16798-1 the upper limit
+applies at a running mean of 10 to 30 °C and the lower at 15 to 30 °C; an hour
+between 10 and 15 °C can be judged above, but if it is not above it can be
+judged neither within nor below and is counted out of scope. The EN upper
+offsets for Categories I and II are read from `tm59.CATEGORIES` and asserted
+equal at three running means. The lower offsets and the 15 °C bound are an open
+merge item (tasks.md T029): they are transcribed but must be checked against
+the purchased text of EN 16798-1:2019.
+
+**The graphic zones are generated and re-checked.** `scripts/build-comfort.mjs`
+traces the §5.3.1 zones by the PMV model at the figure's conditions (1.1 met,
+0.1 m/s, mean radiant equal to air) at every 0.5 g/kg of humidity ratio. The
+PMV code reproduces the reference values it was checked against (PMV 0.08 at
+25 °C, 50 % RH, 1.2 met, 0.5 clo, and ISO 7730 Annex D's −0.75 and +0.77 at 22
+and 27 °C, 60 % RH). `pmv.js` is shared with `comfort.js`, which re-evaluates
+PMV at every vertex at load, so a polygon shifted by 1 K refuses to load
+(measured: its first vertex reads PMV 0.813). The Figure 5.3.1 spot values
+that would catch an error in the generator itself are an open merge item
+(tasks.md T028, `FIGURE_SPOTS`).
+
+**What the desk does to the psychrometric chart.** With Gains in and no
+ventilation the sealed box accumulates moisture: on the Boston year the zone
+reaches about 70 g/kg along the saturation curve. The chart's declared domain
+(−10 to 40 °C, 0 to 30 g/kg) extends to the data, as research R3 requires, so
+on that desk the comfort zones occupy a small part of the field. That is the
+building, not the drawing.
+
+**Refusals.** Every unavailable view stays in the chooser with its reason in
+view and draws its reason and remedy in place of the field. One wording
+deviates from the contract table: the year-only views' remedy is "Attach a
+station or a file.", not "Set months on the Run strip.", because this desk's
+calendar is a full year by default and only a weather source turns a
+design-day run into a year. The change carpet is lettered through
+`KINDS.temperatureDifference` (K, Δ°F) rather than `deltaKindOf`, which maps a
+temperature to `temperatureSwing` (°C); FR-020c asks for a temperature
+difference, and a signed change lettered `+2 °C` reads as a temperature.
+
+**Aggregation.** A daily grain on an annual run draws 367 points: the 365 days
+of the year and the two design days, each its own period, because periods
+never span environments.
+
+**Measured.**
+
+- SC-002, the solve cost of the added series: interleaved A/B, 10 pairs, native
+  EnergyPlus 26.1.0, Chicago year, one process per run
+  (`.harness/views-cost.mjs`). Default desk, two hourly humidity series: medians
+  427 ms without and 421 ms with, ratio 0.985. System desk, two hourly and two
+  daily series: 409 ms and 411 ms, ratio 1.005. Both are within 1.05; the
+  differences are inside run-to-run noise.
+- SC-001, the redraw on a year run (Boston, System and Gains in), `?measure`,
+  unthrottled on the development Mac: the median `plate-draw` over ten switches
+  per view pair is 3.8 ms (duration) to 10.5 ms (psychrometric); a switch
+  including the chooser is at most 16.7 ms. The 4× CPU slowdown measurement has
+  not been taken: it needs DevTools throttling, which the automation used here
+  cannot set.
+- SC-003: every count agrees with an independent loop over the hourly arrays
+  (`.harness/views-counts.mjs`): both graphic shares, all five adaptive
+  models' five counts, hours at or above 26 and 18 °C, 288 average-day means,
+  and the energy signature, whose daily sums equal the district meters to
+  about 1e-15 relative.
+
+**Findings on the way.**
+
+- `main` already warns that the two monthly Other Equipment series were
+  requested but not generated. The reporting harness checks only that none of
+  this feature's four names joins that list.
+- `main.js` already declares a `setCursor` (the site picker's); the duration
+  cursor's setter is `setDurationCursor`. A duplicate declaration in a module
+  is a load-time `SyntaxError` that leaves the page blank.
+- A 390 px viewport cannot be had by resizing the automation's window, which
+  did not take effect; a 390 × 844 same-origin iframe gives a true viewport,
+  with media and container queries both applying. At that width no view
+  scrolls sideways and nothing in the chooser overflows.
+- A station archive is not put through `dailyMeansCarried`; only a file is.
+  About twenty-five polar stations in the index (Vostok among them) carry dry
+  bulbs at or below -70 °C, which the parser refuses and EnergyPlus runs. The
+  plate's running mean is therefore caught as an absence, as `runningMeanFor`
+  catches it: thrown, it left `solve` after the run was filed as solved, and
+  every run on such a station stood unlettered and undimmed.
+- WebKit throws a `SecurityError` on the 101st `history.replaceState` within
+  ten seconds (measured in WebKit 26.5); Chromium drops calls silently from
+  the 201st. A held arrow key on the plate repeats at about 30 Hz, so the
+  keyboard's steps hold the address back and write it on the key's release,
+  as a drag writes it on the pointer's.
+- `drawChooser` rebuilds only when its key (the run, the ghost, the setting,
+  the note, the readings and the citation) changes, and hands focus back by
+  a `data-focus` key when it does. Rebuilt on every `renderTrace`, it dropped
+  keyboard focus to the body after every choice and shut an open citation.
+
 ## Invariants that fail quietly
 
 - **`Building.north_axis` is ignored** because `GlobalGeometryRules` declares

@@ -44,6 +44,7 @@ const roster = [
   new Budget({ id: 'STANDING', words: 15, scope: 'a blocking reason, a refusal', asserted: true }),
   new Budget({ id: 'ABSENCE', words: 12, scope: 'a reason beside an em dash', asserted: false }),
   new Budget({ id: 'SUMMARY', words: 6, scope: "a fold's summary", asserted: true }),
+  new Budget({ id: 'LABEL', words: 4, scope: "an option's name in a chooser on the plate", asserted: true }),
   new Budget({ id: 'BLOCK', words: 25, scope: "one block's explanation in view; a page lede", asserted: false }),
   new Budget({ id: 'CHASE', words: 20, scope: 'the Chase sentence above the board', asserted: false }),
   new Budget({ id: 'DESCRIPTION', words: 60, scope: 'description and finding together', asserted: false }),

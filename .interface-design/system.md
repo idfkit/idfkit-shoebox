@@ -558,9 +558,47 @@ plate already had the axis for it.
 
 The trace is a control as well as a picture: clicking it chooses the hour, with
 `cursor: crosshair` while there is a run to read. It keeps `role="img"` and an
-`aria-label` that states the current instant, which is honest but not
-sufficient — choosing an arbitrary hour is pointer-only until the trace takes
-arrow keys. Do not add a second pointer-only control here without closing that.
+`aria-label` that states the current instant. The trace takes the keyboard as
+well (spec 015): it is a tab stop, Left and Right step the held hour by one,
+Page Up and Page Down by one per cent of the hours shown, Home and End go to
+the ends, and Enter on the held hour releases it. A polite live region states
+the hour after each step. Do not add a pointer-only control to the plate.
+
+### The plate's views
+
+The plate draws one run in one of seven views. Five patterns come with them.
+
+1. **The view chooser.** A wrapping row of offers under the chart row, in the
+   idiom of the hour bar's offers: `--inset` fill, hairline border, the chosen
+   view bordered in `--redline`. Every view is always listed. A view the run
+   cannot support stays in the row with `aria-disabled="true"` and its reason
+   lettered under its name, never in a tooltip; choosing it draws the reason
+   and its remedy in place of the field and never another view. The view's own
+   choices (series, region, model, shade, grain, range) follow in the same
+   block as fieldsets of check boxes, radios and native selects, then the
+   view's readings, then its citation with the method in a fold.
+2. **Scatter marks by shape.** A scatter view draws each series as one path of
+   zero-length subpaths, so a year is one node. The cap is the mark's shape:
+   square for the zone, round for outdoors; on the energy signature, round for
+   heating and square for cooling. Every scatter carries a gutter key naming
+   each shape, so no series is told apart by ink alone.
+3. **The 90 % outline ghost.** On a scatter view the ghost is not a second
+   cloud but the boundary of the densest cells of a fixed 48 × 32 grid holding
+   90 % of the ghost's marks, dashed in `--redline` at a ghost's weight, with
+   no smoothing. Every count or share the view letters reads `was → now` while
+   it stands.
+4. **The carpet's binned shade and change toggle.** A carpet is shaded in
+   declared bins, nine steps of one hue, each bin's range lettered in a gutter
+   legend so the scale is read in figures. The change toggle is offered only
+   while a ghost stands; it redraws the carpet as live minus ghost on eleven
+   signed bins, `--cold` and `--warm` either side of a clear zero bin, lettered
+   as a temperature difference. It is withdrawn and reset when the ghost
+   clears. Weekends and holidays are ticks under the field of two lengths.
+5. **The keyboard cursor on the plate.** On the duration curve the plate's
+   keys and a tap move a cursor rather than the hour, and the value and the
+   hours at or above it are lettered in view for every drawn series and
+   announced through the live region. No reading on the plate exists only on
+   hover or in a `<title>`.
 
 ### Signed meter bar
 
