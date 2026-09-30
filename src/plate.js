@@ -42,7 +42,7 @@ import {
   zoomText,
 } from './views.js';
 import { ADAPTIVE_MODELS, GRAPHIC, MODEL_BY_ID, REGIONS, adaptiveCounts, graphicShares, occupiedHours } from './comfort.js';
-import { rhCurve } from './psychro.js';
+import { humidityRatio, rhCurve, saturationPressure } from './psychro.js';
 
 /* ══ drawing primitives ══════════════════════════════════════════════════ */
 
@@ -889,6 +889,39 @@ function drawPsychrometric(host, frame, box) {
     frame.cite = { text: REGIONS.adaptive.citation, fold: REGIONS.adaptive.fold };
   }
 
+  // Two zone states that read as a fault unless the sheet says what it
+  // measured. A zone that trades moisture with nothing and holds no source
+  // keeps the humidity ratio it was initialised with, lowered only where
+  // EnergyPlus caps the air at saturation: at Chicago the starting desk holds
+  // 1.634 g/kg for 8,584 of 8,760 hours, a horizontal line. Give it occupants
+  // and no exchange and their moisture builds until the air saturates, which
+  // it then rides for 5,623 hours within 2 % (79.1 g/kg at 48 °C). The cause is stated
+  // only where the document shows it.
+  const sealed = !live.facts.moistureExchange;
+  if (sealed && !live.facts.moistureSource) {
+    const tally = new Map();
+    for (const i of hours) if (Number.isFinite(wZone[i])) tally.set(wZone[i], (tally.get(wZone[i]) ?? 0) + 1);
+    const [mode, held] = [...tally].reduce((a, b) => (b[1] > a[1] ? b : a), [NaN, 0]);
+    if (held) {
+      readout.push({
+        label: 'Zone humidity',
+        value: `${letter(KINDS.humidityRatio, mode, { digits: 2 })} for ${pct(held / hours.length)} of hours: nothing adds, removes or exchanges moisture.`,
+      });
+    }
+  }
+  // Within 2 %, since the engine takes the weather file's station pressure and
+  // the curve is drawn at the standard one (see psychro.js).
+  let saturated = 0;
+  for (const i of hours) {
+    if (Number.isFinite(tZone[i]) && wZone[i] >= 0.98 * 1000 * humidityRatio(saturationPressure(tZone[i]), pressure)) saturated += 1;
+  }
+  if (saturated) {
+    readout.push({
+      label: 'Saturated',
+      value: hoursText(saturated) + (sealed && live.facts.moistureSource ? ': occupants add moisture a sealed zone cannot lose.' : ''),
+    });
+  }
+
   // The ghost's zone states as they stood when the gesture began (FR-020b).
   if (ghost) {
     const gx = Float64Array.from(hours, (i) => s.x(ghost.series.get('air')[i]));
@@ -971,10 +1004,14 @@ function drawAdaptive(host, frame, box) {
     `L${s.x(Math.min(upperTo, lowerTo)).toFixed(1)},${s.y(model.lowerAt(Math.min(upperTo, lowerTo))).toFixed(1)}` +
     `L${s.x(Math.max(upperFrom, lowerFrom)).toFixed(1)},${s.y(model.lowerAt(Math.max(upperFrom, lowerFrom))).toFixed(1)}Z`;
   root.append(svg('path', { d: band, fill: 'var(--ink)', 'fill-opacity': 0.05, stroke: 'none' }));
-  root.append(line(upperFrom, upperTo, (t) => model.upperAt(t), { stroke: 'var(--warm)', 'stroke-width': 1.2 }));
-  root.append(line(lowerFrom, lowerTo, (t) => model.lowerAt(t), { stroke: 'var(--cold)', 'stroke-width': 1.2 }));
+  // Graphite, told apart by their words. A published limit is not a signed
+  // quantity (system.md), and a hue here read two ways: warm for "too hot
+  // above", or, beside the signature view's cooling in `--cold`, for "cooling
+  // needed above".
+  root.append(line(upperFrom, upperTo, (t) => model.upperAt(t), { stroke: 'var(--ink)', 'stroke-width': 1.2 }));
+  root.append(line(lowerFrom, lowerTo, (t) => model.lowerAt(t), { stroke: 'var(--ink)', 'stroke-width': 1.2 }));
   root.append(line(Math.min(upperFrom, lowerFrom), Math.max(upperTo, lowerTo), (t) => model.neutral(t), { stroke: 'var(--ink-3)', 'stroke-width': 0.8, 'stroke-dasharray': '4 3' }));
-  for (const [text, at, fill] of [['UPPER', model.upperAt(upperTo), 'var(--warm)'], ['LOWER', model.lowerAt(lowerTo), 'var(--cold)']]) {
+  for (const [text, at, fill] of [['UPPER', model.upperAt(upperTo), 'var(--ink-2)'], ['LOWER', model.lowerAt(lowerTo), 'var(--ink-2)']]) {
     const t = svg('text', { x: s.x(Math.min(upperTo, lowerTo)) + 4, y: s.y(at) + 3, fill, 'font-family': 'var(--cond)', 'font-size': 9, 'letter-spacing': '0.1em' });
     t.textContent = text;
     root.append(t);

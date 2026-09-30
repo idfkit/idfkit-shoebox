@@ -949,13 +949,19 @@ const holdsAny = (doc, type) => {
  * only desk is free-running in summer and is not excluded.
  */
 export class DocumentFacts {
-  constructor({ elevation, idealLoads, mechanicalCooling, occupancy }) {
+  constructor({ elevation, idealLoads, mechanicalCooling, occupancy, moistureExchange, moistureSource }) {
     if (!Number.isFinite(elevation)) throw new Error('the simulated document carries no Site:Location elevation');
     this.elevation = elevation;
     this.pressure = standardPressure(elevation);
     this.idealLoads = idealLoads;
     this.mechanicalCooling = mechanicalCooling;
     this.occupancy = occupancy;
+    // Whether anything trades moisture with the zone air (outdoor air by
+    // infiltration, ventilation or the network, or an ideal loads unit's
+    // supply air), and whether anything in it releases moisture. The psychrometric view states the cause of a flat or
+    // supersaturated zone only when these say it (a sealed zone, occupied).
+    this.moistureExchange = moistureExchange;
+    this.moistureSource = moistureSource;
     Object.freeze(this);
   }
 }
@@ -969,6 +975,12 @@ export function readDocumentFacts(doc) {
     idealLoads,
     mechanicalCooling: idealLoads && holdsAny(doc, 'ZoneControl:Thermostat') && cooling,
     occupancy: holdsAny(doc, 'Schedule:Compact') && Boolean(doc.get('Schedule:Compact', 'Occupancy')),
+    moistureExchange:
+      holdsAny(doc, 'ZoneInfiltration:DesignFlowRate') ||
+      holdsAny(doc, 'ZoneVentilation:DesignFlowRate') ||
+      holdsAny(doc, 'AirflowNetwork:SimulationControl') ||
+      idealLoads,
+    moistureSource: holdsAny(doc, 'People'),
   });
 }
 
@@ -982,6 +994,8 @@ export class RunFacts {
     this.pressure = document.pressure;
     this.mechanicalCooling = document.mechanicalCooling;
     this.idealLoads = document.idealLoads;
+    this.moistureExchange = document.moistureExchange;
+    this.moistureSource = document.moistureSource;
     this.runs = runs;
     this.weatherDays = weatherDays;
     this.floor = floor;

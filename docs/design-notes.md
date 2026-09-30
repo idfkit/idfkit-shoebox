@@ -3156,6 +3156,24 @@ never span environments.
   the note, the readings and the citation) changes, and hands focus back by
   a `data-focus` key when it does. Rebuilt on every `renderTrace`, it dropped
   keyboard focus to the body after every choice and shut an open citation.
+- On the starting desk (Air and Gains both out) the zone humidity ratio is
+  1.634 g/kg in 8,584 of 8,760 annual hours at Chicago: nothing adds, removes
+  or exchanges moisture and the conduction model stores none, so the zone
+  keeps its initial value, lowered only in the first week where EnergyPlus
+  caps the air at saturation as it reaches new lows. With Gains in and Air
+  out, occupants' moisture builds until the air saturates and then rides the
+  saturation curve for 5,623 hours within 2 % (79.1 g/kg at 48 °C, against 79.2 at
+  saturation). Both drew as apparent faults. The psychrometric readout now
+  states the held value and the saturated hours, with the cause only where
+  the document shows it (`DocumentFacts.moistureExchange`, `moistureSource`).
+  A harness run against a station must set `Site:Location` from its file: the
+  desk's default elevation (1,829 m) put the chart's saturation curve at
+  81 kPa while the engine used Chicago's station pressure.
+- The adaptive view's limits were drawn `--warm` (upper) and `--cold` (lower).
+  A reader took the upper line for the one that should be blue, since above
+  it cooling is needed, which is how the signature view uses `--cold`. A
+  published limit is not a signed quantity, so both are now graphite and are
+  told apart by their labels.
 
 ## Invariants that fail quietly
 
