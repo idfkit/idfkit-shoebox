@@ -868,9 +868,16 @@ function setDurationCursor(rank) {
 
 /** Draw the plate and its chooser from the run in hand. Starts nothing. */
 function renderTrace() {
+  const host = $('trace');
   const frame = buildFrame();
-  plateField = drawPlate($('trace'), frame);
+  const height = host.clientHeight;
+  plateField = drawPlate(host, frame);
   renderPlateControls(frame);
+  // The chooser shares the chart's column, so a view with more choices takes
+  // height from the chart's row. Drawn at the height it measured before, the
+  // chart ran over the range preview and the chooser until the
+  // ResizeObserver's redraw 80ms later; drawn again here it never shows that.
+  if (host.clientHeight !== height) plateField = drawPlate(host, buildFrame());
   renderCaption();
 }
 
@@ -892,7 +899,7 @@ function renderCaption() {
 }
 
 /**
- * The range preview and the chooser under the plate, from the frame
+ * The range preview and the chooser under the chart, from the frame
  * `drawPlate` has just drawn and lettered. The preview first, so the chooser
  * can hand the keyboard to its window when "Whole run" leaves the row.
  */
@@ -2332,7 +2339,7 @@ function syncStudies() {
 // measurements of the desk as it stands and are true the instant a control
 // moves — dimming those would say the opposite of what they mean.
 //
-// The plate's views letter their readings under the plate, in `#plate-views`,
+// The plate's views letter their readings under the chart, in `#plate-views`,
 // beside the chooser. The block is listed so its readings dim with the chart;
 // the stylesheet dims only the readings and the citation in it, since the
 // chooser's controls are not results.

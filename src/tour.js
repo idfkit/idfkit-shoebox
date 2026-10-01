@@ -104,7 +104,7 @@ export const NOTES = Object.freeze([
     body:
       'The engine compiles inside this tab and solves two Denver design days ' +
       'unasked. Every figure below is read off that run — nothing on the ' +
-      'sheet is lettered by hand. The row of views under the plate draws the ' +
+      'sheet is lettered by hand. The row of views under the chart draws the ' +
       'same run another way — a psychrometric chart, a carpet, a duration ' +
       'curve and three more — without solving again; a view the run cannot ' +
       'support says why.',

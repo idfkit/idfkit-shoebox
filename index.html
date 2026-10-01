@@ -958,12 +958,14 @@
         display: grid;
         grid-template-columns: 268px minmax(0, 1fr);
         /* The chart's row takes whatever height the model column leaves the
-           range preview: as two auto rows, the spanning column's extra height
-           was shared between them and the preview grew an empty band. */
-        grid-template-rows: 1fr auto;
+           range preview and the view chooser: as auto rows, the spanning
+           column's extra height was shared between them and the preview grew
+           an empty band. */
+        grid-template-rows: 1fr auto auto;
       }
-      /* Over the chart and the range preview beneath it (spec 015, FR-018a). */
-      .plate-body > .model { grid-row: span 2; }
+      /* Over the chart, the range preview and the view chooser beneath it
+         (spec 015, FR-018a). */
+      .plate-body > .model { grid-row: span 3; }
       @container plate (max-width: 640px) {
         .plate-body { --plate-stretch: 0; grid-template-columns: 1fr; grid-template-rows: none; }
         .plate-body > .model { grid-row: auto; }
@@ -1191,6 +1193,7 @@
         flex-direction: column;
         gap: 8px;
         padding: 9px 16px 10px;
+        min-width: 0;
         border-top: 1px solid var(--rule-soft);
       }
       .plate-views[hidden] { display: none; }
@@ -5907,13 +5910,15 @@
                    `drawRangePreview` in plate.js; hidden on any other view
                    and on a run without weather-file days. -->
               <div class="plate-range" id="plate-range" hidden></div>
+              <!-- How the plate is looking at the run, and that view's own
+                   choices: drawn by `drawChooser` in plate.js from the view
+                   declarations in views.js (spec 015). In the chart's column,
+                   under the chart and its preview, so a view's choices sit
+                   beside the drawing they change; the chart's row gives up
+                   the height they take. The live region below says where the
+                   keyboard put the hour. -->
+              <div class="plate-views" id="plate-views"></div>
             </div>
-            <!-- How the plate is looking at the run, and that view's own
-                 choices: drawn by `drawChooser` in plate.js from the view
-                 declarations in views.js (spec 015). Beneath the chart row
-                 rather than inside it, so the row still sets the chart's
-                 height. The live region says where the keyboard put the hour. -->
-            <div class="plate-views" id="plate-views"></div>
             <p class="sr-only" id="plate-live" aria-live="polite"></p>
             <!-- The hour every meter on the desk is read at, and the two ways
                  of choosing another: the named instants a modeller already has
