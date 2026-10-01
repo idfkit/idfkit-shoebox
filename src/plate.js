@@ -158,8 +158,11 @@ const PENS = Object.freeze({
 function measure(host, frame) {
   // The content box, less the 16px padding each side, so a user unit is a
   // client pixel: drawn at the padded width the svg was scaled by about 0.95
-  // and its hairlines landed between pixels.
-  const w = Math.max(host.clientWidth - 32, 320);
+  // and its hairlines landed between pixels. The floor is the preview's, not
+  // the 320px it was: a phone leaves 282px, and a 320-unit drawing scaled into
+  // it lettered every figure at 0.88 of its size and stood 6 to 9px off the
+  // range preview drawn 1:1 under it.
+  const w = Math.max(host.clientWidth - 32, 120);
   // Beside the model column the plate fills the row the column sets; the svg
   // is out of the flow there, so this reads the row and never the chart.
   // Stacked, there is no row to fill and it keeps its own height.
@@ -345,8 +348,26 @@ function drawTimeSeries(host, frame, { w, H, inner }) {
     const bot = bins.map((b, i) => `${x(i, bins.length).toFixed(2)},${y(b.min).toFixed(2)}`).reverse();
     return `M${top.join('L')}L${bot.join('L')}Z`;
   };
-  const linePath = (vals) =>
-    'M' + vals.map((v, i) => `${x(i, vals.length).toFixed(2)},${y(v).toFixed(2)}`).join('L');
+  // A line never joins two environments: the last hour of the winter design
+  // day and the first of the summer one are a day of the year apart and were
+  // solved separately, and the stroke between them drew a 50 K swing that
+  // happened in no run. A missing value lifts the pen for the same reason,
+  // where it used to letter `NaN` into the path and end it there.
+  const runOf = (point) => live.runs.findIndex((r) => point >= r.start && point <= r.end);
+  const runAt = periods
+    ? (i) => runOf(periods.get(drawn[0])[i].start)
+    : (i) => runOf(hours[i]);
+  const linePath = (vals, broken = true) => {
+    let d = '';
+    let pen = null;
+    vals.forEach((v, i) => {
+      if (!Number.isFinite(v)) { pen = null; return; }
+      const run = broken ? runAt(i) : 0;
+      d += `${pen === run ? 'L' : 'M'}${x(i, vals.length).toFixed(2)},${y(v).toFixed(2)}`;
+      pen = run;
+    });
+    return d;
+  };
   const seriesValues = (id, run = live) => (periods ? periods.get(run === live ? id : `ghost:${id}`).map((p) => p.mean) : [...valuesOf(id, run)]);
 
   // The shape you took hold of, drawn first so the live curve reads on top of
@@ -386,7 +407,7 @@ function drawTimeSeries(host, frame, { w, H, inner }) {
     for (const id of [...zones].reverse()) {
       root.append(
         svg('path', {
-          d: linePath(zoneBins.get(id).map((b) => b.mean)), fill: 'none',
+          d: linePath(zoneBins.get(id).map((b) => b.mean), false), fill: 'none',
           stroke: PENS[id].stroke, 'stroke-width': PENS[id].denseWidth, 'stroke-dasharray': PENS[id].dash,
           'stroke-linejoin': 'round',
         }),
@@ -432,7 +453,8 @@ function drawTimeSeries(host, frame, { w, H, inner }) {
     const stamp = stampText(live.points, frame.reading.at);
     frame.readout.push({
       label: 'Reading hour',
-      value: periods ? `cannot be placed on ${mean}` : `${stamp}, outside the range shown`,
+      value: periods ? null : stamp,
+      note: periods ? `cannot be placed on ${mean}` : 'outside the range shown',
     });
     root.setAttribute(
       'aria-label',
@@ -537,7 +559,10 @@ function drawTimeSeries(host, frame, { w, H, inner }) {
     // day gets on a phone is about 100px, and the full "WINTER DESIGN DAY ·
     // 21 DEC" in tracked capitals needs about 160, so the two centred labels
     // ran into each other.
-    const short = seg.kind ? seg.label.replace(/ design day/i, '').toUpperCase() : null;
+    // A month has one too, its initial: a year on a phone gives each month
+    // about 14px, and "JAN" needs 22, so every month name was erased and the
+    // axis said nothing about when.
+    const short = seg.kind ? seg.label.replace(/ design day/i, '').toUpperCase() : seg.label ? seg.label[0].toUpperCase() : null;
     // On a period axis a segment of one point, which is every month under
     // Month mean, spans no distance between its ends: measured that way its
     // band was zero and `fitLabels` erased every month name. Its band is the
@@ -678,7 +703,10 @@ function reach(domain, values) {
  */
 function scatterAxes(root, { w, H, inner }, s, { xDomain, yDomain, xKind, yKind, xName, yName }) {
   const grid = svg('g', { 'shape-rendering': 'crispEdges' });
-  const xStep = Math.max(1, roundStep(xDomain[1] - xDomain[0], Math.max(5, Math.round(inner.w / 70))));
+  // About one figure per 70px, never fewer than three: the floor of five put
+  // five four-digit hour counts into the 168px a phone leaves the duration
+  // field, and they ran together as "0 2000400060008000".
+  const xStep = Math.max(1, roundStep(xDomain[1] - xDomain[0], Math.max(3, Math.round(inner.w / 70))));
   for (let v = Math.ceil(xDomain[0] / xStep) * xStep; v <= xDomain[1] + 1e-9; v += xStep) {
     const gx = Math.round(s.x(v)) + 0.5;
     grid.append(svg('line', { x1: gx, y1: PAD.t, x2: gx, y2: PAD.t + inner.h, stroke: 'var(--rule-soft)', 'stroke-width': 1 }));
@@ -705,7 +733,9 @@ function scatterAxes(root, { w, H, inner }, s, { xDomain, yDomain, xKind, yKind,
   // is not a unit anybody writes.
   const named = (text, kind) => (suffixIn(kind) ? `${text.toUpperCase()}, ${suffixIn(kind)}` : text.toUpperCase());
   name(named(xName, xKind), { x: w - PAD.r, y: H - 3, 'text-anchor': 'end' });
-  name(named(yName, yKind), { x: PAD.l + 6, y: PAD.t + 9 });
+  // Above the field rather than inside its top corner, where a datum near the
+  // top of the range (the average day's 1 % cooling line) was lettered over it.
+  name(named(yName, yKind), { x: PAD.l - 0.5, y: PAD.t - 7 });
   root.append(grid);
 }
 
@@ -825,7 +855,9 @@ function drawPsychrometric(host, frame, box) {
     const [lx, ly] = points.at(-1);
     const t = svg('text', { x: lx + 3, y: ly + 3, fill: 'var(--ink-3)', 'font-family': 'var(--mono)', 'font-size': 8.5 });
     t.textContent = `${Math.round(phi * 100)} %`;
-    if (ly > PAD.t + 6) curves.append(t);
+    // Below the gutter's two-entry legend: at 282px the 60 % curve met the
+    // gutter at the legend's own height and its label was lettered over it.
+    if (ly > PAD.t + 34) curves.append(t);
   }
   root.append(curves);
 
@@ -838,12 +870,17 @@ function drawPsychrometric(host, frame, box) {
       const d = `M${polygon.map(([t, W]) => `${s.x(t).toFixed(1)},${s.y(W).toFixed(1)}`).join('L')}Z`;
       root.append(svg('path', { d, fill: 'var(--ink)', 'fill-opacity': 0.04, stroke: 'var(--ink-2)', 'stroke-width': 1, 'stroke-dasharray': clo === 1 ? '5 3' : null }));
       // Each zone is named at its own outer edge, the 1.0 clo zone on its cold
-      // side and the 0.5 clo zone on its warm side, since the two overlap.
+      // side and the 0.5 clo zone on its warm side, since the two overlap, and
+      // near the top of that edge: halfway up, at 390px, the 0.5 clo name sat
+      // on the summer zone states and the reading marker. The halo keeps it
+      // legible where hours still fall on it.
       const warm = clo < 1;
-      const [lt, lw] = warm ? polygon[Math.floor(polygon.length / 4)] : polygon[Math.floor((polygon.length * 3) / 4)];
+      const edge = warm ? polygon.slice(0, polygon.length / 2) : polygon.slice(polygon.length / 2);
+      const [lt, lw] = edge[warm ? edge.length - 3 : 2];
       const t = svg('text', {
-        x: s.x(lt) + (warm ? 5 : -5), y: s.y(lw), 'text-anchor': warm ? 'start' : 'end',
+        x: s.x(lt) + (warm ? 5 : -5), y: s.y(lw) + 3, 'text-anchor': warm ? 'start' : 'end',
         fill: 'var(--ink-2)', 'font-family': 'var(--cond)', 'font-size': 9, 'letter-spacing': '0.1em',
+        stroke: 'var(--sheet)', 'stroke-width': 3, 'paint-order': 'stroke',
       });
       t.textContent = `${clo.toFixed(1)} CLO`;
       root.append(t);
@@ -851,7 +888,7 @@ function drawPsychrometric(host, frame, box) {
     const shares = graphicShares(live);
     const was = ghost ? graphicShares(ghost) : null;
     if (!shares) {
-      readout.push({ label: 'Occupied hours inside', value: `— ${REFUSAL.gains.remedy}` });
+      readout.push({ label: 'Occupied hours inside', value: `— ${REFUSAL.gains.reason} ${REFUSAL.gains.remedy}` });
     } else {
       shares.forEach((z, i) => {
         const share = z.occupied ? z.inside / z.occupied : NaN;
@@ -904,12 +941,21 @@ function drawPsychrometric(host, frame, box) {
   const sealed = !live.facts.moistureExchange;
   if (sealed && !live.facts.moistureSource) {
     const tally = new Map();
-    for (const i of hours) if (Number.isFinite(wZone[i])) tally.set(wZone[i], (tally.get(wZone[i]) ?? 0) + 1);
+    // Counted at the precision the figure is lettered at. Counted exactly, a
+    // sealed Boston year whose every hour letters as 11.3 gr/lb differed in
+    // its last bits from hour to hour and was said to hold it for 0.5 % of
+    // hours; counted this way it is 100.0 %.
+    for (const i of hours) {
+      if (!Number.isFinite(wZone[i])) continue;
+      const w = Math.round(wZone[i] * 100) / 100;
+      tally.set(w, (tally.get(w) ?? 0) + 1);
+    }
     const [mode, held] = [...tally].reduce((a, b) => (b[1] > a[1] ? b : a), [NaN, 0]);
     if (held) {
       readout.push({
-        label: 'Zone humidity',
-        value: `${letter(KINDS.humidityRatio, mode, { digits: 2 })} for ${pct(held / hours.length)} of hours: nothing adds, removes or exchanges moisture.`,
+        label: 'Zone humidity held at',
+        value: letter(KINDS.humidityRatio, mode, { digits: 2 }),
+        note: `for ${pct(held / hours.length)} of hours: nothing adds, removes or exchanges moisture.`,
       });
     }
   }
@@ -922,7 +968,8 @@ function drawPsychrometric(host, frame, box) {
   if (saturated) {
     readout.push({
       label: 'Saturated',
-      value: hoursText(saturated) + (sealed && live.facts.moistureSource ? ': occupants add moisture a sealed zone cannot lose.' : ''),
+      value: hoursText(saturated),
+      note: sealed && live.facts.moistureSource ? 'Occupants add moisture a sealed zone cannot lose.' : null,
     });
   }
 
@@ -948,7 +995,7 @@ function drawPsychrometric(host, frame, box) {
     root.append(readingSquare(s.x(tZone[reading.at]), s.y(wZone[reading.at]), reading.held));
   }
 
-  const shares = readout.map((r) => `${r.label}: ${r.value}`).join('; ');
+  const shares = readout.map((r) => `${r.label}: ${spoken(r)}`).join('; ');
   root.setAttribute(
     'aria-label',
     `${view.describe(setting)}, one mark per hour for the zone (squares) ` +
@@ -967,7 +1014,7 @@ function drawPsychrometric(host, frame, box) {
 /** The five adaptive counts, lettered apart (FR-011a), `was → now` while a ghost stands. */
 function pushCounts(readout, counts, before) {
   if (!counts) {
-    readout.push({ label: 'Occupied hours', value: `— ${REFUSAL.gains.remedy}` });
+    readout.push({ label: 'Occupied hours', value: `— ${REFUSAL.gains.reason} ${REFUSAL.gains.remedy}` });
     return;
   }
   for (const [key, label] of [['above', 'Above'], ['within', 'Within'], ['below', 'Below'], ['unassessed', 'Unassessed'], ['outOfScope', 'Out of scope']]) {
@@ -1050,7 +1097,7 @@ function drawAdaptive(host, frame, box) {
   root.setAttribute(
     'aria-label',
     `Adaptive comfort: operative temperature against the running mean outdoor temperature for occupied hours, ` +
-      `with the ${model.label} band. ${readout.map((r) => `${r.label} ${r.value}`).join(', ')}.` +
+      `with the ${model.label} band. ${readout.map((r) => `${r.label} ${spoken(r)}`).join(', ')}.` +
       (reading ? ` The desk's meters are ${reading.held ? 'held at' : 'reading at'} ${stampText(live.points, reading.at)}.` : ''),
   );
   host.append(root);
@@ -1204,14 +1251,14 @@ function drawCarpet(host, frame, box) {
   // FR-019: an hour the carpet has no cell for, such as a design-day hour, is
   // said, not dropped.
   if (reading && !at) {
-    readout.push({ label: 'Reading hour', value: `${stampText(live.points, reading.at)}, outside the days drawn` });
+    readout.push({ label: 'Reading hour', value: stampText(live.points, reading.at), note: 'outside the days drawn' });
   }
-  readout.push({ label: 'Ticks', value: 'short for weekends, tall for holidays' });
+  readout.push({ label: 'Ticks', value: null, note: 'short for weekends, tall for holidays' });
   frame.readout = readout;
   root.setAttribute(
     'aria-label',
     `Carpet of ${change ? 'the change in ' : ''}${def.name}: hour of day down, day of the run across, in ${grid.bins.length} ` +
-      `lettered bins. ${readout.slice(0, 2).map((r) => `${r.label} ${r.value}`).join(', ')}.` +
+      `lettered bins. ${readout.slice(0, 2).map((r) => `${r.label} ${spoken(r)}`).join(', ')}.` +
       (reading ? ` The desk's meters are ${reading.held ? 'held at' : 'reading at'} ${stampText(live.points, reading.at)}.` : ''),
   );
   host.append(root);
@@ -1298,7 +1345,7 @@ function drawDuration(host, frame, box) {
     if (!c.length) continue;
     const v = c[Math.min(c.length, cursor) - 1];
     const count = hoursAtOrAbove(c, v);
-    readout.push({ label: SERIES_BY_ID[id].label, value: `${letter(KINDS.temperature, v, { digits: 1 })} · ${hoursText(count)} at or above` });
+    readout.push({ label: SERIES_BY_ID[id].label, value: `${letter(KINDS.temperature, v, { digits: 1 })} · ${hoursText(count)}`, note: 'at or above' });
   }
   const labels = drawn.map((id) => ({ text: SERIES_BY_ID[id].label, y: s.y(curves.get(id)[Math.floor(curves.get(id).length / 2)] ?? 0), fill: PENS[id].label }));
   gutterLabels(root, labels, box);
@@ -1306,7 +1353,7 @@ function drawDuration(host, frame, box) {
   root.setAttribute(
     'aria-label',
     `Duration curve of ${listedNames(drawn)}, each sorted from highest to lowest against hours. ` +
-      `${readout.map((r) => `${r.label} ${r.value}`).join('; ')}.`,
+      `${readout.map((r) => `${r.label} ${spoken(r)}`).join('; ')}.`,
   );
   host.append(root);
   const field = {
@@ -1386,7 +1433,7 @@ function drawAverageDay(host, frame, box) {
   gutterLabels(root, labels, box);
   // A single hour cannot be placed on an averaged day, so the reading hour is
   // marked at its month and hour of day instead (FR-019, US6 scenario 2).
-  const readout = [{ label: 'Reading hour', value: 'cannot be placed on an averaged day' }];
+  const readout = [{ label: 'Reading hour', value: null, note: 'cannot be placed on an averaged day' }];
   if (reading) {
     const t = live.points[reading.at].timestamp;
     const h = (t.hour + 23) % 24;
@@ -1444,7 +1491,7 @@ function drawSignature(host, frame, box) {
   const readout = [
     { label: 'Heating', value: pair(sig.heat, was?.heat, say) },
     { label: 'Cooling', value: pair(sig.cool, was?.cool, say) },
-    { label: 'Reading hour', value: 'cannot be placed on a daily total' },
+    { label: 'Reading hour', value: null, note: 'cannot be placed on a daily total' },
   ];
   frame.readout = readout;
   root.setAttribute(
@@ -1521,9 +1568,8 @@ export function drawRangePreview(host, frame) {
   }
   const had = host.contains(document.activeElement) ? (document.activeElement.dataset?.focus ?? null) : null;
   const segments = rangeSegments(live);
-  // Drawn at the width it is given, with no floor: at 390px the plate's own
-  // 320px floor is wider than the 282px a phone leaves, and the scaled
-  // drawing stood about 3px off the handles placed over it.
+  // Drawn at the width it is given, as the plate is: a floor wider than the
+  // 282px a phone leaves scales the drawing off the handles placed over it.
   const w = Math.max(host.clientWidth - 32, 120);
   const total = segments.reduce((n, s) => n + s.days, 0);
   const dw = (w - PAD.l - PAD.r - RANGE_GAP * (segments.length - 1)) / total;
@@ -1589,12 +1635,14 @@ export function drawRangePreview(host, frame) {
           stroke: 'var(--rule-firm)', 'stroke-width': 1, 'shape-rendering': 'crispEdges',
         }));
       }
-      if (x1 - x0 >= 22) {
+      // The month's initial where its name does not fit, as on the chart.
+      if (x1 - x0 >= 8) {
         const t = svg('text', {
           x: (x0 + x1) / 2, y: RANGE_H - 5, 'text-anchor': 'middle',
           fill: 'var(--ink-3)', 'font-family': 'var(--cond)', 'font-size': 9, 'letter-spacing': '0.12em',
         });
-        t.textContent = MONTHS[month - 1].toUpperCase();
+        const name = MONTHS[month - 1].toUpperCase();
+        t.textContent = x1 - x0 >= 22 ? name : name[0];
         root.append(t);
       }
       day = end + 1;
@@ -1830,6 +1878,21 @@ export function drawChooser(host, frame) {
   const had = host.contains(document.activeElement) ? (document.activeElement.dataset?.focus ?? null) : null;
   host.textContent = '';
   const group = html('div', { class: 'plate-choice', role: 'radiogroup', 'aria-label': 'Plate view' });
+  // An unavailable view keeps its place in the row, and its reason and remedy
+  // are lettered once under the row for every view that shares them. Under
+  // each name, a design-day run said "Needs a run over a weather file." four
+  // times, and at 390px the row stood 330px tall for one sentence; the remedy
+  // was not lettered at all (FR-004).
+  const absent = new Map();
+  for (const view of VIEWS) {
+    const why = frame.live ? availabilityOf(view, frame.live) : { available: true };
+    if (!why.available) {
+      const text = [why.reason, why.remedy].filter(Boolean).join(' ');
+      if (!absent.has(text)) absent.set(text, []);
+      absent.get(text).push(view);
+    }
+  }
+  const whyId = (text) => `plate-why-${[...absent.keys()].indexOf(text)}`;
   for (const view of VIEWS) {
     const why = frame.live ? availabilityOf(view, frame.live) : { available: true };
     const on = frame.setting.view === view.id;
@@ -1841,15 +1904,24 @@ export function drawChooser(host, frame) {
       'aria-disabled': why.available ? null : 'true',
       'data-view': view.id,
       'data-focus': `view:${view.id}`,
+      'aria-describedby': why.available ? null : whyId([why.reason, why.remedy].filter(Boolean).join(' ')),
     });
     button.append(html('span', { class: 'plate-view-name' }, view.label));
-    if (!why.available) button.append(html('span', { class: 'plate-view-why' }, why.reason));
     button.addEventListener('click', () => {
       if (!on) frame.on.choose(settingFor(frame.setting, { view: view.id }));
     });
     group.append(button);
   }
   host.append(group);
+  if (absent.size) {
+    const key = html('div', { class: 'plate-why' });
+    for (const [text, views] of absent) {
+      const line = html('p', { id: whyId(text) });
+      line.append(html('span', { class: 'plate-why-names' }, views.map((v) => v.label).join(' · ')), ' ', text);
+      key.append(line);
+    }
+    host.append(key);
+  }
   drawOptions(host, frame);
   // A refusal or a release is in view until the next choice, never on hover.
   if (frame.note) host.append(html('p', { class: 'plate-note', role: 'status' }, frame.note));
@@ -1862,6 +1934,9 @@ export function drawChooser(host, frame) {
     back?.focus();
   }
 }
+
+/** A readout entry as a sentence fragment, for a field's `aria-label`: the figure and its note. */
+const spoken = (r) => [r.value, r.note].filter(Boolean).join(' ');
 
 /** Each run's identity as a number, for the chooser's key. */
 const runIds = new WeakMap();
@@ -1903,9 +1978,17 @@ function drawOptions(host, frame) {
 function drawReadout(host, frame) {
   if (frame.readout?.length) {
     const p = html('p', { class: 'plate-readout' });
-    for (const { label, value } of frame.readout) {
+    // A figure is set in mono and a sentence is not. An absence arrives as
+    // `— reason`, and its reason is prose like any other note: lettered in
+    // the figure's bold mono it read as a measurement.
+    for (const { label, value, note } of frame.readout) {
+      const absent = typeof value === 'string' && value.startsWith('— ');
+      const figure = absent ? '—' : value;
+      const words = [absent ? value.slice(2) : null, note].filter(Boolean).join(' ');
       const item = html('span');
-      item.append(`${label} `, html('b', {}, value));
+      item.append(label);
+      if (figure) item.append(' ', html('b', {}, figure));
+      if (words) item.append(' ', html('span', { class: 'plate-readout-note' }, words));
       p.append(item);
     }
     host.append(p);
@@ -1937,7 +2020,7 @@ function radioRow(row, frame, { legend, options, current, field }) {
       if (radio.checked) frame.on.choose(settingFor(frame.setting, { [field]: value }));
     });
     item.append(radio, html('span', { class: 'plate-toggle-name' }, label));
-    if (why && !why.available) item.append(html('span', { class: 'plate-view-why' }, why.reason));
+    if (why && !why.available) item.append(html('span', { class: 'plate-view-why' }, [why.reason, why.remedy].filter(Boolean).join(' ')));
     group.append(item);
   }
   row.append(group);

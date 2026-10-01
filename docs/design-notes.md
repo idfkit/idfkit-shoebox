@@ -3051,6 +3051,16 @@ reports `document.visibilityState === 'hidden'`, and a `ResizeObserver` does
 not fire until something paints, which is the hidden-tab trap already recorded
 under Invariants.
 
+**One deliberate departure from FR-002 since.** On `main` the time series drew
+one stroke through every hour of the run, so on the default design-day desk
+the zone line ran from the last winter hour (about -23 °C) to the first summer
+one (about 31 °C) as a vertical stroke at the boundary between the two days.
+No run contains that swing: the two days are separate environments, a day of
+the year apart. The line now lifts its pen where the run period changes and at
+a missing value, which also stops a `NaN` being written into the path. The
+design-day fixture therefore no longer matches byte for byte; the year fixture
+still does, because the dense year is drawn from bins, which are left joined.
+
 **The link.** `pv` is a reserved key with a canonical grammar
 (`contracts/view-key.md`); a field at its default is never written, and the
 whole key is omitted at the default setting, so every link minted before this
@@ -3205,9 +3215,11 @@ are sliders, so the range stays reachable by tap and by keyboard.
   waiting" flag on the state object it began with, which the redraw had
   already replaced, so the release wrote nothing. The handler now asks the map
   again after the step.
-- The preview is drawn at the width it is given. With the chart's 320 px floor
-  it was drawn wider than the 282 px a 390 px viewport leaves, scaled down,
-  and stood about 3 px off the handles placed over it.
+- The preview and the chart are both drawn at the width they are given, with
+  a 120 px floor. The chart's former 320 px floor exceeded the 282 px a 390 px
+  viewport leaves: the chart was scaled to 0.88, its field stood 6 to 9 px off
+  the preview's, and every month name was erased. A month now falls back to
+  its initial where its name does not fit, on both drawings.
 - On a short range of a year (a week is about 9 px at 606 px wide) the 24 px
   handles cover the window, and a press there takes a handle. The window is
   then moved by a tap beside it or by its keys.

@@ -1273,8 +1273,20 @@
         color: var(--ink-3);
         white-space: normal;
       }
+      /* The reasons the dimmed views give, once each, under the row: the
+         names in the chooser's own lettering at ghost weight, then the
+         sentence. Read, never pressed. */
+      .plate-why { display: flex; flex-direction: column; gap: 2px; margin-top: -2px; }
+      .plate-why p { margin: 0; font: 400 10px/1.45 var(--sans); color: var(--ink-3); }
+      .plate-why-names {
+        margin-right: 2px;
+        font: 500 9px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--ink-2);
+      }
       .plate-options-head {
-        padding: 0;
+        padding: 0 0 4px;
         margin-right: 4px;
         font: 500 9px/1 var(--cond);
         text-transform: uppercase;
@@ -1304,6 +1316,7 @@
         color: var(--ink-2);
       }
       .plate-readout b { font: 500 10.5px/1.45 var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+      .plate-readout-note { color: var(--ink-3); }
       .plate-cite { margin: 0; font: 400 10px/1.4 var(--sans); color: var(--ink-3); }
       .plate-cite summary { cursor: pointer; }
       /* `markStale` puts `.stale` on the whole block, which holds the chooser
@@ -1723,7 +1736,10 @@
         text-transform: none;
         letter-spacing: 0;
       }
-      .pin-inline .mark { width: 7px; height: 7px; }
+      /* The plate's reading line may wrap: `.pin` will not shrink, and on a
+         phone "Read at 08:00, 23 Jan · zone 25 °F" ran past the plate's edge. */
+      .when-row .pin-inline { flex: 0 1 auto; min-width: 0; text-align: left; }
+      .pin-inline .mark { flex: none; width: 7px; height: 7px; }
 
       /* ── the meter heads: quantity × rate = amount ──────────────── */
 
