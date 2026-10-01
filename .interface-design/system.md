@@ -566,7 +566,7 @@ the hour after each step. Do not add a pointer-only control to the plate.
 
 ### The plate's views
 
-The plate draws one run in one of seven views. Five patterns come with them.
+The plate draws one run in one of seven views. Six patterns come with them.
 
 1. **The view chooser.** A wrapping row of offers under the chart row, in the
    idiom of the hour bar's offers: `--inset` fill, hairline border, the chosen
@@ -574,9 +574,11 @@ The plate draws one run in one of seven views. Five patterns come with them.
    cannot support stays in the row with `aria-disabled="true"` and its reason
    lettered under its name, never in a tooltip; choosing it draws the reason
    and its remedy in place of the field and never another view. The view's own
-   choices (series, region, model, shade, grain, range) follow in the same
-   block as fieldsets of check boxes, radios and native selects, then the
-   view's readings, then its citation with the method in a fold.
+   choices (series, region, model, shade, grain) follow in the same block as
+   fieldsets of check boxes and radios, then the view's readings, then its
+   citation with the method in a fold. The time series' range is not among
+   them: it is set on the range preview (pattern 6), and the block keeps only
+   the range in words and the one "Whole run" action back.
 2. **Scatter marks by shape.** A scatter view draws each series as one path of
    zero-length subpaths, so a year is one node. The cap is the mark's shape:
    square for the zone, round for outdoors; on the energy signature, round for
@@ -599,6 +601,21 @@ The plate draws one run in one of seven views. Five patterns come with them.
    hours at or above it are lettered in view for every drawn series and
    announced through the live region. No reading on the plate exists only on
    hover or in a `<title>`.
+6. **The range preview.** Under the time series, in the chart's own column
+   and ruled with the chart's margins, a reduced-height overview (56 px) of
+   the whole run at daily means, in the series' own pens, on an `--inset`
+   field with a hairline border. Each run period is its own field, with an
+   8 px break between periods so January and July never read as one stretch.
+   No ghost, no design days, no aggregation; a tick at the reading hour in the
+   marker's inks. The range is a window bordered in `--redline` over a
+   `--redline-wash`, the rest veiled in `--sheet`, with a handle at each end.
+   The window and both handles are positioned blocks over the drawing with
+   `role="slider"`, a 24 px hit area, and a date as `aria-valuetext`; only
+   the preview takes `touch-action: none`. A drag shows each day step and
+   writes the link once, on release; a tap beside the window moves it there;
+   keys step one day, Page Up and Page Down a week, Home and End to the run's
+   ends. When the range is narrower than the handles, the handles are on top:
+   the window is then moved by a tap beside it or by its keys.
 
 ### Signed meter bar
 

@@ -957,9 +957,16 @@
         --plate-stretch: 1;
         display: grid;
         grid-template-columns: 268px minmax(0, 1fr);
+        /* The chart's row takes whatever height the model column leaves the
+           range preview: as two auto rows, the spanning column's extra height
+           was shared between them and the preview grew an empty band. */
+        grid-template-rows: 1fr auto;
       }
+      /* Over the chart and the range preview beneath it (spec 015, FR-018a). */
+      .plate-body > .model { grid-row: span 2; }
       @container plate (max-width: 640px) {
-        .plate-body { --plate-stretch: 0; grid-template-columns: 1fr; }
+        .plate-body { --plate-stretch: 0; grid-template-columns: 1fr; grid-template-rows: none; }
+        .plate-body > .model { grid-row: auto; }
         .model { border-right: 0; border-bottom: 1px solid var(--rule-soft); }
       }
       .model {
@@ -1187,6 +1194,46 @@
         border-top: 1px solid var(--rule-soft);
       }
       .plate-views[hidden] { display: none; }
+      /* The range preview sits under the chart in the chart's own column, so
+         the model column spans both rows and the chart gives up the height
+         the preview takes. Its field is ruled with the chart's own margins,
+         so the two fields start and end at the same x. A handle or the window
+         is a positioned block over the drawing with a 24px hit area; only the
+         preview refuses the page's own pan, so a drag on it never scrolls. */
+      .plate-range {
+        position: relative;
+        padding: 2px 16px 10px;
+        min-width: 0;
+        touch-action: none;
+        user-select: none;
+      }
+      .plate-range[hidden] { display: none; }
+      .plate-range svg { display: block; width: 100%; }
+      .range-window, .range-handle {
+        position: absolute;
+        box-sizing: border-box;
+        cursor: grab;
+      }
+      .range-window {
+        border: 1px solid var(--redline);
+        background: var(--redline-wash);
+      }
+      .range-window.whole { border-color: var(--rule-firm); background: transparent; cursor: default; }
+      .range-handle { width: 24px; margin-left: -12px; }
+      .range-handle::before {
+        content: '';
+        position: absolute;
+        left: 9px; top: 50%;
+        width: 6px; height: 18px;
+        margin-top: -9px;
+        box-sizing: border-box;
+        background: var(--sheet);
+        border: 1px solid var(--redline);
+        border-radius: 1px;
+      }
+      .plate-range.dragging .range-window,
+      .plate-range.dragging .range-handle { cursor: grabbing; }
+      .range-window:focus-visible, .range-handle:focus-visible { outline: 1px solid var(--rule-focus); outline-offset: 1px; }
       .plate-choice, .plate-options, .plate-series {
         display: flex;
         flex-wrap: wrap;
@@ -5838,6 +5885,12 @@
                 </dl>
               </aside>
               <div class="trace" id="trace" tabindex="0" aria-describedby="plate-live"></div>
+              <!-- The range preview: the whole run at daily means, with two
+                   handles and a window that set the range the time series
+                   above draws at every hour (FR-018a). Drawn by
+                   `drawRangePreview` in plate.js; hidden on any other view
+                   and on a run without weather-file days. -->
+              <div class="plate-range" id="plate-range" hidden></div>
             </div>
             <!-- How the plate is looking at the run, and that view's own
                  choices: drawn by `drawChooser` in plate.js from the view

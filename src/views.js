@@ -38,7 +38,7 @@ function dateOfDay(n) {
   }
   throw new Error(`${n} is not a day of a 365-day year`);
 }
-export { dayNumber as dayOfYear };
+export { dayNumber as dayOfYear, dateOfDay };
 
 /* ══ series ══════════════════════════════════════════════════════════════ */
 
@@ -853,6 +853,116 @@ export const zoomText = (zoom) => {
   };
   return `${say(zoom.from)} – ${say(zoom.to)}`;
 };
+
+/** One day number lettered as the preview's sliders letter it: `12 Jul`. */
+export const dayText = (n) => {
+  const { month, day } = dateOfDay(n);
+  return `${day} ${MONTHS[month - 1]}`;
+};
+
+/* ══ the range preview (FR-018a to FR-018d) ══════════════════════════════ */
+
+/**
+ * One run period as the range preview draws it: its first and last day, its
+ * first and last hour, and the daily mean of each series the run reports,
+ * one slot per day with `NaN` where a day has no hour to average.
+ */
+export class RangeSegment {
+  constructor({ from, to, start, end, means }) {
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from > to) throw new Error(`a run period runs forwards, and this one runs ${from} to ${to}`);
+    this.from = from;
+    this.to = to;
+    this.start = start;
+    this.end = end;
+    this.means = means;
+    Object.freeze(this);
+  }
+
+  get days() {
+    return this.to - this.from + 1;
+  }
+
+  holds(day) {
+    return day >= this.from && day <= this.to;
+  }
+}
+
+/**
+ * The run periods of a run's weather-file environments, in run order, read
+ * off the hours as `zoomSpan` reads them. A design day is not a run period
+ * and is never in the preview (FR-018b).
+ */
+export function rangeSegments(run) {
+  return remember(run, 'range', () => Object.freeze(run.runs.filter((r) => r.kind === null).map((r) => {
+    const from = dayNumber(run.points[r.start].timestamp);
+    const to = dayNumber(run.points[r.end].timestamp);
+    const indices = Int32Array.from({ length: r.end - r.start + 1 }, (_, k) => r.start + k);
+    const means = new Map();
+    for (const [id, values] of run.series) {
+      const slots = new Float64Array(to - from + 1).fill(NaN);
+      for (const p of aggregate(values, run.points, 'd', indices)) slots[dayNumber(p) - from] = p.mean;
+      means.set(id, slots);
+    }
+    return new RangeSegment({ from, to, start: r.start, end: r.end, means });
+  })));
+}
+
+/**
+ * Move one part of the range to a day and return the zoom that results, or
+ * null where it is the whole run (FR-018a, FR-018d).
+ *
+ * `part` is `from` or `to` for a handle and `window` for the whole range,
+ * whose `to` is then the day its first day should land on. A handle stops at
+ * the other handle, so a range is never shorter than one day, and at the edge
+ * of its run period. The window keeps its length and stops at the edge of its
+ * period too, unless the day asked for lies in another period: then it moves
+ * there whole, clipped to that period's length. Every range returned is one
+ * `zoomSpan` draws, which is asserted rather than assumed: the date lists this
+ * replaces could compose a range across two periods, and it was drawn as the
+ * whole run with nothing said.
+ */
+export function moveRange(run, zoom, part, to) {
+  const segments = rangeSegments(run);
+  if (!segments.length) throw new Error('a range is days of a weather file, and this run has none');
+  if (!Number.isFinite(to)) throw new Error(`a range moves to a day, not to ${to}`);
+  const day = Math.round(to);
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  let current;
+  let home;
+  if (zoom) {
+    home = segments.find((s) => s.holds(zoom.from) && s.holds(zoom.to));
+    if (!home || !zoomSpan(run, zoom)) throw new Error(`the zoom to ${zoomText(zoom)} is not a range of this run`);
+    current = zoom;
+  } else {
+    // The whole run: on a run of several periods each handle stands at an
+    // end of the run, so it belongs to the period at that end.
+    home = part === 'to' ? segments.at(-1) : segments[0];
+    current = { from: home.from, to: home.to };
+  }
+  let next;
+  switch (part) {
+    case 'from':
+      next = { from: clamp(day, home.from, current.to), to: current.to };
+      break;
+    case 'to':
+      next = { from: current.from, to: clamp(day, current.from, home.to) };
+      break;
+    case 'window': {
+      if (!zoom) return null;
+      const length = current.to - current.from + 1;
+      const into = segments.find((s) => s.holds(day)) ?? home;
+      const kept = Math.min(length, into.days);
+      const from = clamp(day, into.from, into.to - kept + 1);
+      next = { from, to: from + kept - 1 };
+      break;
+    }
+    default:
+      throw new Error(`"${part}" is not a part of the range`);
+  }
+  if (segments.length === 1 && next.from === segments[0].from && next.to === segments[0].to) return null;
+  if (!zoomSpan(run, next)) throw new Error(`the range ${zoomText(next)} is not one run period's`);
+  return next;
+}
 
 /* ══ the ghost's outline, and finding an hour by where it was drawn ══════ */
 

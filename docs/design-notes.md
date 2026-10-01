@@ -3175,6 +3175,48 @@ never span environments.
   published limit is not a signed quantity, so both are now graphite and are
   told apart by their labels.
 
+**The range preview (FR-018a to FR-018d).** The range of the time series was
+first set by two date lists. They were replaced on 2026-09-30, at a reader's
+request, by a preview under the chart: the whole run at daily means, with two
+handles and a window. A range is found by eye against the shape of the year,
+which a list of 365 dates cannot show, and the preview's handles and window
+are sliders, so the range stays reachable by tap and by keyboard.
+
+- The arithmetic is in `views.js` and is DOM-free: `rangeSegments` (one
+  frozen `RangeSegment` per run period, with its daily means) and `moveRange`
+  (snap to a day, at least one day, stop at the period's edge, move the
+  window whole into another period, `null` at the whole run).
+  `.harness/views-range.mjs` holds it to 30 checks on a year and on a January
+  and July run, and every range it returns passes `zoomSpan` and round-trips
+  through the `z-` codec. The date lists could compose a range across two
+  periods, which was drawn as the whole run with nothing said; `moveRange`
+  asserts that it never returns one.
+- The listeners sit on `#plate-range`, not on its SVG, for the reason the
+  reading-hour drag's sit on `#trace`: each step redraws the preview and
+  replaces the drawing under the pointer. Pointer capture is requested on the
+  host and the drag is a flag, as "Drag bindings" in `system.md` asks.
+- A drag step calls `frame.on.preview`, which sets the setting and asks for
+  one `requestAnimationFrame` redraw; a later step replaces the setting an
+  earlier one set before it is drawn. In a hidden tab the redraw runs at once,
+  since a flag cleared only in a callback that never comes refuses every later
+  step. The release calls `setView`, which writes the link once. Keys show
+  each step on keydown and write on keyup, for the WebKit limit above.
+- That synchronous redraw found a defect: the key handler set its "a step is
+  waiting" flag on the state object it began with, which the redraw had
+  already replaced, so the release wrote nothing. The handler now asks the map
+  again after the step.
+- The preview is drawn at the width it is given. With the chart's 320 px floor
+  it was drawn wider than the 282 px a 390 px viewport leaves, scaled down,
+  and stood about 3 px off the handles placed over it.
+- On a short range of a year (a week is about 9 px at 606 px wide) the 24 px
+  handles cover the window, and a press there takes a handle. The window is
+  then moved by a tap beside it or by its keys.
+- Measured, unthrottled, in a hidden automation tab: a drag of the end handle
+  over five weeks of a year run redrew four times (the automation sends few
+  pointer moves), median `plate-draw` 4.6 ms, and wrote the link exactly once.
+  The 4× CPU slowdown figure has not been taken, for the reason given under
+  SC-001.
+
 ## Invariants that fail quietly
 
 - **`Building.north_axis` is ignored** because `GlobalGeometryRules` declares

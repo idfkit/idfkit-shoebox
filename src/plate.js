@@ -31,12 +31,16 @@ import {
   dailySignature,
   durationCurve,
   hoursAtOrAbove,
-  runDays,
   availabilityOf,
   dayOfYear,
+  dateOfDay,
+  dayText,
   densityOutline,
+  hourIndex,
   hourIndexOf,
+  moveRange,
   nearestHour,
+  rangeSegments,
   settingFor,
   zoomSpan,
   zoomText,
@@ -1479,6 +1483,324 @@ const RENDERERS = Object.freeze({
   if (orphan.length) throw new Error(`plate.js draws ${orphan.join(', ')}, which views.js does not offer`);
 }
 
+/* ══ the range preview, beneath the time series (FR-018a to FR-018d) ════ */
+
+// The preview's height, and its field inside it: the month names go under.
+const RANGE_H = 56;
+const RANGE_PAD = { t: 4, b: 18 };
+// The break between two run periods, so January and July never read as one
+// stretch of days.
+const RANGE_GAP = 8;
+// A step of Page Up or Page Down, in days.
+const RANGE_PAGE = 7;
+// A slider's keys: the plate's own, and Up and Down, which a slider also takes.
+const RANGE_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageDown', 'PageUp', 'Home', 'End']);
+
+/**
+ * Where each host's preview stands: the frame it was last drawn from, its
+ * layout, the range as last previewed (ahead of the redraw that letters it)
+ * and any drag in progress. Read by listeners attached once per host, which
+ * is why they sit on the host and not on the drawing a redraw replaces.
+ */
+const ranges = new WeakMap();
+
+/**
+ * The whole run at daily means, with two handles and a window over the range
+ * the time series draws at every hour (FR-018a). Its own drawing: no ghost,
+ * no design days, no aggregation, and a tick where the reading hour stands
+ * (FR-018b). Shown only under the time series of a run with weather-file days.
+ */
+export function drawRangePreview(host, frame) {
+  const { live, setting } = frame;
+  const shown = setting.view === 'ts' && Boolean(live?.facts.weatherDays) && rangeSegments(live).length > 0;
+  host.hidden = !shown;
+  if (!shown) {
+    host.textContent = '';
+    ranges.delete(host);
+    return;
+  }
+  const had = host.contains(document.activeElement) ? (document.activeElement.dataset?.focus ?? null) : null;
+  const segments = rangeSegments(live);
+  // Drawn at the width it is given, with no floor: at 390px the plate's own
+  // 320px floor is wider than the 282px a phone leaves, and the scaled
+  // drawing stood about 3px off the handles placed over it.
+  const w = Math.max(host.clientWidth - 32, 120);
+  const total = segments.reduce((n, s) => n + s.days, 0);
+  const dw = (w - PAD.l - PAD.r - RANGE_GAP * (segments.length - 1)) / total;
+  // Each segment's place along the run's days, gaps left out, and its x.
+  let before = 0;
+  const placed = segments.map((s, k) => {
+    const at = { segment: s, before, x: PAD.l + before * dw + k * RANGE_GAP };
+    before += s.days;
+    return at;
+  });
+  const placeOf = (day) => placed.find((p) => p.segment.holds(day));
+  const xOf = (day) => {
+    const p = placeOf(day);
+    return p.x + (day - p.segment.from) * dw;
+  };
+  const top = RANGE_PAD.t;
+  const h = RANGE_H - RANGE_PAD.t - RANGE_PAD.b;
+
+  const root = svg('svg', { viewBox: `0 0 ${w} ${RANGE_H}`, width: '100%', height: RANGE_H, 'aria-hidden': 'true' });
+  const drawn = setting.series.filter((id) => live.series.has(id));
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const s of segments) for (const id of drawn) for (const v of s.means.get(id)) if (Number.isFinite(v)) {
+    lo = Math.min(lo, v);
+    hi = Math.max(hi, v);
+  }
+  const span = hi - lo || 1;
+  const y = (v) => top + h - 2 - ((v - lo) / span) * (h - 4);
+  for (const p of placed) {
+    root.append(svg('rect', {
+      x: p.x, y: top, width: p.segment.days * dw, height: h,
+      fill: 'var(--inset)', stroke: 'var(--rule)', 'stroke-width': 1, 'shape-rendering': 'crispEdges',
+    }));
+  }
+  // The daily means, broken at a day with no hour to average and between
+  // periods, in the pens the time series uses so each curve is the same one.
+  for (const id of drawn) {
+    let d = '';
+    for (const p of placed) {
+      let open = false;
+      p.segment.means.get(id).forEach((v, k) => {
+        if (!Number.isFinite(v)) { open = false; return; }
+        d += `${open ? 'L' : 'M'}${(p.x + (k + 0.5) * dw).toFixed(2)},${y(v).toFixed(2)}`;
+        open = true;
+      });
+    }
+    root.append(svg('path', {
+      d, fill: 'none', stroke: PENS[id].stroke, 'stroke-width': 1,
+      'stroke-dasharray': PENS[id].dash, 'stroke-linejoin': 'round',
+    }));
+  }
+  // Month names under the field, where a month is wide enough to carry one.
+  for (const p of placed) {
+    for (let day = p.segment.from; day <= p.segment.to;) {
+      const { month } = dateOfDay(day);
+      let end = day;
+      while (end + 1 <= p.segment.to && dateOfDay(end + 1).month === month) end += 1;
+      const x0 = xOf(day);
+      const x1 = xOf(end) + dw;
+      if (day > p.segment.from) {
+        root.append(svg('line', {
+          x1: x0, y1: top + h, x2: x0, y2: top + h + 3,
+          stroke: 'var(--rule-firm)', 'stroke-width': 1, 'shape-rendering': 'crispEdges',
+        }));
+      }
+      if (x1 - x0 >= 22) {
+        const t = svg('text', {
+          x: (x0 + x1) / 2, y: RANGE_H - 5, 'text-anchor': 'middle',
+          fill: 'var(--ink-3)', 'font-family': 'var(--cond)', 'font-size': 9, 'letter-spacing': '0.12em',
+        });
+        t.textContent = MONTHS[month - 1].toUpperCase();
+        root.append(t);
+      }
+      day = end + 1;
+    }
+  }
+  // The reading hour, at its hour within its day, in the marker's own inks.
+  const at = frame.reading?.at;
+  if (at != null && segments.some((s) => at >= s.start && at <= s.end)) {
+    const t = live.points[at].timestamp;
+    const rx = xOf(dayOfYear(t)) + ((hourIndex(t) + 0.5) / 24) * dw;
+    root.append(svg('line', {
+      x1: rx, y1: top, x2: rx, y2: top + h,
+      stroke: frame.reading.held ? 'var(--redline)' : 'var(--ink-ghost)', 'stroke-width': 1,
+      'stroke-dasharray': frame.reading.held ? null : '2 2', 'shape-rendering': 'crispEdges',
+    }));
+  }
+
+  // What is shown: the zoom, or on the whole run every period end to end.
+  const zoom = setting.zoom && zoomSpan(live, setting.zoom) ? setting.zoom : null;
+  const range = zoom ?? { from: segments[0].from, to: segments.at(-1).to };
+  // Outside the range is veiled, so the window reads as the part held.
+  const left = zoom ? xOf(range.from) : PAD.l;
+  const right = zoom ? xOf(range.to) + dw : w - PAD.r;
+  for (const p of placed) {
+    const a = p.x;
+    const b = p.x + p.segment.days * dw;
+    for (const [x0, x1] of [[a, Math.min(b, left)], [Math.max(a, right), b]]) {
+      if (x1 - x0 > 0.01) root.append(svg('rect', { x: x0, y: top, width: x1 - x0, height: h, fill: 'var(--sheet)', 'fill-opacity': 0.62 }));
+    }
+  }
+  host.textContent = '';
+  host.append(root);
+
+  // The handles and the window: blocks over the drawing, each a slider, at
+  // the drawing's own scale whatever width the host lays it out at.
+  const across = (x) => `calc(16px + (100% - 32px) * ${(x / w).toFixed(5)})`;
+  const first = segments[0].from;
+  const last = segments.at(-1).to;
+  const slider = (part, label, now, text, x0, x1) => {
+    const el = html('div', {
+      class: part === 'window' ? `range-window${zoom ? '' : ' whole'}` : 'range-handle',
+      role: 'slider',
+      tabindex: '0',
+      'aria-label': label,
+      'aria-valuemin': String(first),
+      'aria-valuemax': String(last),
+      'aria-valuenow': String(now),
+      'aria-valuetext': text,
+      'data-part': part,
+      'data-focus': `range:${part}`,
+    });
+    el.style.left = across(x0);
+    if (x1 !== undefined) el.style.width = `calc((100% - 32px) * ${((x1 - x0) / w).toFixed(5)})`;
+    el.style.top = `${2 + top}px`;
+    el.style.height = `${h}px`;
+    return el;
+  };
+  host.append(
+    slider('window', 'Range shown', range.from, zoom ? zoomText(range) : 'the whole run', left, right),
+    slider('from', 'Range start', range.from, dayText(range.from), left),
+    slider('to', 'Range end', range.to, dayText(range.to), right),
+  );
+
+  const state = ranges.get(host);
+  ranges.set(host, { frame, w, dw, placed, zoom, drag: state?.drag ?? null, keyed: state?.keyed ?? false });
+  wireRange(host);
+  if (had) host.querySelector(`[data-focus="${CSS.escape(had)}"]`)?.focus();
+}
+
+/** Position along the run's days, gaps left out, of a client x: continuous, clamped to the run. */
+function positionAt(host, clientX) {
+  const { w, dw, placed } = ranges.get(host);
+  const box = host.querySelector('svg').getBoundingClientRect();
+  const px = (clientX - box.left) * (w / (box.width || w));
+  // A point in a gap belongs to the nearer period's edge.
+  let best = placed[0];
+  for (const p of placed) if (px >= p.x - RANGE_GAP / 2) best = p;
+  const k = Math.min(best.segment.days, Math.max(0, (px - best.x) / dw));
+  return best.before + k;
+}
+
+/** The day at a whole position along the run's days, clamped to the run. */
+function dayAtPosition(host, position) {
+  const { placed } = ranges.get(host);
+  const total = placed.at(-1).before + placed.at(-1).segment.days;
+  const k = Math.min(total - 1, Math.max(0, position));
+  const p = placed.findLast((q) => q.before <= k);
+  return p.segment.from + (k - p.before);
+}
+
+const positionOf = (host, day) => {
+  const p = ranges.get(host).placed.find((q) => q.segment.holds(day));
+  return p.before + (day - p.segment.from);
+};
+
+const sameZoom = (a, b) => (a === null ? b === null : b !== null && a.from === b.from && a.to === b.to);
+
+/** Show a range without writing it: a step of a drag or a held key (FR-018c). */
+function previewRange(host, zoom) {
+  const state = ranges.get(host);
+  if (sameZoom(zoom, state.zoom)) return false;
+  state.zoom = zoom;
+  state.frame.on.preview(settingFor(state.frame.setting, { zoom }));
+  return true;
+}
+
+/** Commit the range shown: the one write of the link a gesture makes. */
+function commitRange(host) {
+  const state = ranges.get(host);
+  state.frame.on.choose(settingFor(state.frame.setting, { zoom: state.zoom }));
+}
+
+const wired = new WeakSet();
+function wireRange(host) {
+  if (wired.has(host)) return;
+  wired.add(host);
+
+  host.addEventListener('pointerdown', (event) => {
+    const state = ranges.get(host);
+    if (!state || event.button !== 0) return;
+    const part = event.target.closest?.('[data-part]')?.dataset.part ?? null;
+    const zoom = state.zoom;
+    const live = state.frame.live;
+    if (part === 'window' && !zoom) return;
+    event.preventDefault();
+    const at = positionAt(host, event.clientX);
+    if (!part) {
+      // A tap beside the window moves it there, centred where it can be.
+      if (!zoom) return;
+      const day = dayAtPosition(host, Math.floor(at));
+      const length = zoom.to - zoom.from + 1;
+      const into = state.placed.find((p) => p.segment.holds(day)).segment;
+      if (previewRange(host, moveRange(live, zoom, 'window', Math.max(into.from, day - Math.floor(length / 2))))) commitRange(host);
+      return;
+    }
+    const range = zoom ?? { from: state.placed[0].segment.from, to: state.placed.at(-1).segment.to };
+    const anchor = part === 'to' ? positionOf(host, range.to) + 1 : positionOf(host, range.from);
+    state.drag = { pointerId: event.pointerId, part, zoom, anchor, at, moved: false };
+    // An enhancement, never the gate (system.md, "Drag bindings"): the drag
+    // is the flag above, and capture can be declined with a throw.
+    try {
+      host.setPointerCapture(event.pointerId);
+    } catch {
+      // Declined: the drag still follows the pointer while it stays over the preview.
+    }
+    host.classList.add('dragging');
+    event.target.closest('[data-part]').focus({ preventScroll: true });
+  });
+
+  host.addEventListener('pointermove', (event) => {
+    const state = ranges.get(host);
+    const drag = state?.drag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    const moved = Math.round(drag.anchor + positionAt(host, event.clientX) - drag.at);
+    const day = dayAtPosition(host, drag.part === 'to' ? moved - 1 : moved);
+    // Snapped to whole days by `moveRange`; the plate redraws only when the
+    // day changes, never on every pixel of the pointer.
+    if (previewRange(host, moveRange(state.frame.live, drag.zoom, drag.part, day))) drag.moved = true;
+  });
+
+  const release = (event) => {
+    const state = ranges.get(host);
+    const drag = state?.drag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    state.drag = null;
+    host.classList.remove('dragging');
+    if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
+    if (drag.moved && !sameZoom(state.zoom, drag.zoom)) commitRange(host);
+  };
+  host.addEventListener('pointerup', release);
+  host.addEventListener('pointercancel', release);
+
+  // The keyboard's way to the same range: Left and Right one day, Page Up and
+  // Page Down a week, Home and End to the run's ends. Shown on each step and
+  // written on the key's release, as the plate's own hour is: a held arrow
+  // repeats at about 30 Hz, and WebKit throws on the 101st `replaceState`
+  // within ten seconds.
+  host.addEventListener('keydown', (event) => {
+    const state = ranges.get(host);
+    const part = event.target.closest?.('[data-part]')?.dataset.part;
+    if (!state || !part || !RANGE_KEYS.has(event.key) || event.altKey || event.ctrlKey || event.metaKey) return;
+    event.preventDefault();
+    const zoom = state.zoom;
+    if (part === 'window' && !zoom) return;
+    const first = state.placed[0].segment;
+    const last = state.placed.at(-1).segment;
+    const range = zoom ?? { from: first.from, to: last.to };
+    const length = range.to - range.from + 1;
+    const now = part === 'to' ? range.to : range.from;
+    const step = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -RANGE_PAGE, PageUp: RANGE_PAGE }[event.key];
+    let day;
+    if (event.key === 'Home') day = first.from;
+    else if (event.key === 'End') day = part === 'window' ? Math.max(last.from, last.to - length + 1) : last.to;
+    else day = now + step;
+    // Asked of the map again: a redraw drawn at once, as a hidden tab draws
+    // it, has replaced the state this handler began with.
+    if (previewRange(host, moveRange(state.frame.live, zoom, part, day))) ranges.get(host).keyed = true;
+  });
+  host.addEventListener('keyup', (event) => {
+    const state = ranges.get(host);
+    if (!state?.keyed || !RANGE_KEYS.has(event.key)) return;
+    state.keyed = false;
+    commitRange(host);
+  });
+}
+
 /* ══ the chooser and the readout, beneath the field ══════════════════════ */
 
 /**
@@ -1533,9 +1855,10 @@ export function drawChooser(host, frame) {
   if (frame.note) host.append(html('p', { class: 'plate-note', role: 'status' }, frame.note));
   if (had) {
     // "Whole run" leaves the row once it has done its work, so its keyboard
-    // goes to the range it released.
+    // goes to the range it released: the preview's window, which the caller
+    // has drawn before this.
     const back = host.querySelector(`[data-focus="${CSS.escape(had)}"]`) ??
-      (had === 'whole' ? host.querySelector('[data-focus="range-from"]') : null);
+      (had === 'whole' ? document.querySelector('[data-focus="range:window"]') : null);
     back?.focus();
   }
 }
@@ -1652,10 +1975,12 @@ function drawShadeChoice(row, frame) {
 }
 
 /**
- * The time series' grain and range (FR-018): hourly, daily or monthly means,
- * and a range of days drawn at every hour, with one control back to the
- * whole run. Two date lists rather than a drag, so the range is reachable by
- * tap and by keyboard; the drag on the plate stays the hour's.
+ * The time series' grain (FR-018): hourly, daily or monthly means, and the
+ * one action back to the whole run while a range is drawn. The range itself
+ * is set on the range preview beneath the plate (FR-018a), which replaced two
+ * date lists: a drag is how a range is found by eye, and the preview's
+ * handles are sliders, so it is still reachable by tap and by keyboard. The
+ * drag on the plate stays the hour's.
  */
 function drawTimeChoices(row, frame) {
   radioRow(row, frame, {
@@ -1668,59 +1993,14 @@ function drawTimeChoices(row, frame) {
       { value: 'm', label: 'Month mean' },
     ],
   });
-  // A range is days of the weather file. The grain alone is offered on a run
-  // without one, so a link that arrived aggregated can still be set back to
-  // the hour.
-  if (!frame.live.facts.weatherDays) return;
-  const days = runDays(frame.live);
-  if (!days.length) return;
-  const byNumber = new Map(days.map((d) => [dayOfYear(d), d]));
-  const numbers = [...byNumber.keys()].sort((a, b) => a - b);
-  const said = (n) => {
-    const d = byNumber.get(n);
-    return `${d.day} ${MONTHS[d.month - 1]}`;
-  };
+  const zoom = frame.setting.zoom;
+  if (!zoom || !frame.live.facts.weatherDays) return;
   const group = html('fieldset', { class: 'plate-series' });
   group.append(html('legend', { class: 'plate-options-head' }, 'Range'));
-  const zoom = frame.setting.zoom;
-  const pickDay = (label, focus, value) => {
-    const select = html('select', { 'aria-label': label, 'data-focus': focus });
-    for (const n of numbers) {
-      const option = html('option', { value: String(n) }, said(n));
-      if (n === value) option.selected = true;
-      select.append(option);
-    }
-    return select;
-  };
-  const from = pickDay('Range from', 'range-from', zoom?.from ?? numbers[0]);
-  const to = pickDay('Range to', 'range-to', zoom?.to ?? numbers.at(-1));
-  const apply = () => {
-    const a = Number(from.value);
-    const b = Number(to.value);
-    if (a > b) {
-      frame.on.refuse('A range runs forwards: its first day must come before its last.');
-      return;
-    }
-    const whole = a === numbers[0] && b === numbers.at(-1);
-    const range = whole ? null : { from: a, to: b };
-    // Judged by the one predicate that draws it. The lists hold the days of
-    // every run period, and a range across two of them, January into July,
-    // was taken into the setting and the link and then drawn as the whole run
-    // with nothing said, because no single run period holds both its days.
-    if (range && !zoomSpan(frame.live, range)) {
-      frame.on.refuse('A range must lie within one run period of this run.');
-      return;
-    }
-    frame.on.choose(settingFor(frame.setting, { zoom: range }));
-  };
-  from.addEventListener('change', apply);
-  to.addEventListener('change', apply);
-  group.append(from, html('span', { class: 'plate-toggle-name' }, 'to'), to);
-  if (zoom) {
-    const back = html('button', { type: 'button', class: 'link', 'data-focus': 'whole' }, 'Whole run');
-    back.addEventListener('click', () => frame.on.choose(settingFor(frame.setting, { zoom: null })));
-    group.append(back);
-  }
+  group.append(html('span', { class: 'plate-toggle' }, zoomText(zoom)));
+  const back = html('button', { type: 'button', class: 'link', 'data-focus': 'whole' }, 'Whole run');
+  back.addEventListener('click', () => frame.on.choose(settingFor(frame.setting, { zoom: null })));
+  group.append(back);
   row.append(group);
 }
 

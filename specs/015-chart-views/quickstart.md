@@ -133,7 +133,12 @@ strip and attach a station.
 | Duration curve, focus the plate, press Right and Page Down | The cursor moves and the value and hour count are lettered in view (US5). |
 | Average day | One profile per covered month. The reading hour is stated as its month and hour (US6). |
 | Energy signature with System in the path | Daily marks. The totals equal the bill's heating and cooling (US7). |
-| Time series, daily aggregation, then select 12 to 19 July, then return | One point per day; then every hour of the week; then the whole run in one action (US8). |
+| Time series, daily aggregation | One point per day. The range preview under the chart draws the whole run at daily means (US8). |
+| Drag the preview's start handle to 12 Jul, then focus its end handle and press Home and Right seven times | The chart draws every hour of 12 to 19 July; each handle stops at the other, and the link reads `z-0712_0719` (FR-018a). |
+| Drag the window | The range keeps its length and stops at the run period's edge (FR-018d). |
+| On a January and July run, drag the window across the break, then tap in January | The window moves whole into July, then back to January, centred on the tap (FR-018d). |
+| Count `history.replaceState` calls over one drag | Exactly one, on release (FR-018c). |
+| Press "Whole run" | The whole run in one action; `pv` leaves the link and the keyboard goes to the preview's window (US8). |
 | Copy the link on psychrometric, open it in a new window | The same view and region (SC-004). |
 | Start a study, then switch views five times | The study continues and is not cancelled (FR-003). |
 | Switch to a design-day run on Carpet | The carpet is refused in place with the reason, with no fallback to the time series (Edge Cases). |

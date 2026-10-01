@@ -38,6 +38,28 @@
   10 switches: under 150 ms on the maintainer's development Mac unthrottled,
   and under 500 ms in Chrome with 4× CPU slowdown.
 
+### Session 2026-09-30
+
+- Q: Should the range preview's two handles move in whole days, or stop at
+  any hour? → A: Whole days. Handles and panning snap to whole days, the
+  shortest range is one day, and the link format for a range is unchanged.
+- Q: How does a reader set the range without a mouse, once the date lists
+  are removed? → A: Each handle and the window takes keyboard focus as a
+  slider: arrow keys move one day, Page Up and Page Down seven days, Home and
+  End to the run's ends; touch targets are at least 24 px. The range is
+  dragged on the preview only; a drag on the main chart still pins the
+  reading hour.
+- Q: What does the range preview draw? → A: The series the main chart
+  shows, as daily means, with a tick at the reading hour. No ghost and no
+  design-day lines.
+- Q: During a drag on the range preview, when does the main chart redraw?
+  → A: At each day boundary crossed, latest-wins; the link is updated once,
+  on release.
+- Q: How does the range preview behave across a gap between run periods
+  (for example January and July)? → A: Each run period is its own segment
+  with a visible break; handles and the window stop at their period's edges;
+  a tap or a drag inside another period moves the window there.
+
 ## Definitions
 
 - **Plate**: the chart beside the axonometric that currently draws zone mean
@@ -299,9 +321,10 @@ drawn individually.
 1. **Given** the time series view on a year run, **When** the reader chooses
    hourly, daily or monthly aggregation, **Then** the series are drawn at that
    grain, each point the mean of its period with the period's range shown.
-2. **Given** a year run, **When** the reader selects a date range on the time
-   axis, **Then** the plate redraws that range with every hour drawn, the
-   range is lettered, and a single action returns to the whole run.
+2. **Given** a year run, **When** the reader drags the handles or the window
+   of the range preview beneath the time series, **Then** the plate redraws
+   that range with every hour drawn, the range is lettered, and a single
+   action returns to the whole run.
 3. **Given** a zoomed range, **When** a new run arrives, **Then** the range is
    kept if the new run covers it, and released with a stated reason if it does
    not.
@@ -310,6 +333,9 @@ drawn individually.
 
 ### Edge Cases
 
+- A year run holds two run periods (for example January and July): the range
+  preview draws both with a break between them, and a handle dragged towards
+  the break stops at its period's edge rather than being refused (FR-018d).
 - A view that needs a year run is chosen during a design-day run: the view is
   refused in place with the reason, and the chooser does not fall back to the
   time series silently.
@@ -423,7 +449,29 @@ drawn individually.
 - **FR-018**: The time series view MUST offer hourly, daily and monthly
   aggregation, each point the mean of its period with the period's range
   shown, and MUST allow the reader to select a date range and return to the
-  whole run in one action.
+  whole run in one action. The range is selected on a range preview drawn
+  beneath the time series (see FR-018a).
+- **FR-018a**: The range preview MUST draw the whole run at reduced height
+  beneath the time series, with two handles bounding the shown range and a
+  window between them that can be dragged to pan. Handles and panning MUST
+  snap to whole days of the weather file; the shortest range is one day.
+  The range preview replaces the two date lists. Each handle and the window
+  MUST take keyboard focus and be announced as a slider: arrow keys move one
+  day, Page Up and Page Down seven days, Home and End to the run's ends. Each
+  touch target MUST be at least 24 px. The range is set on the preview only;
+  a drag on the main chart continues to pin the reading hour.
+- **FR-018b**: The range preview MUST draw the series the time series view
+  shows, as daily means, and a tick at the reading hour. It MUST NOT draw the
+  ghost or the design-day lines.
+- **FR-018c**: While a handle or the window is dragged, the time series MUST
+  redraw at each day boundary crossed, a later step replacing an earlier one
+  not yet drawn. The view key in the permalink MUST be written once, on
+  release, not at each step.
+- **FR-018d**: Where the run holds more than one run period, the range
+  preview MUST draw each as its own segment with a visible break between
+  them. A handle or the window MUST stop at the edge of its run period, and a
+  tap or a drag inside another run period MUST move the window there, so no
+  range spans two run periods.
 
 #### Shared behaviour
 

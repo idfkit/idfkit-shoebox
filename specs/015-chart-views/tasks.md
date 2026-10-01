@@ -237,8 +237,8 @@ heating and cooling and that the daily sums equal the meter totals.
 action back to the whole run.
 
 **Independent Test**: Choose daily aggregation and confirm one point per day;
-select 12 to 19 July and confirm every hour is drawn; return to the whole run
-in one action.
+drag the range preview's handles to 12 to 19 July and confirm every hour is
+drawn; return to the whole run in one action.
 
 ### Implementation for User Story 8
 
@@ -246,6 +246,22 @@ in one action.
 - [X] T056 [US8] Extend the `ts` renderer and controls in `src/plate.js`: the aggregation choice (`h`, `d`, `m`) drawing each point as its period's mean with the range shown; range selection on the time axis by drag, by two taps, and by keyboard; the zoomed range lettered; one control returning to the whole run.
 - [X] T057 [US8] In `src/main.js`, on each new run keep a zoom the new `RunSeries` covers and otherwise release it to `null` with the reason lettered in the plate's status line (US8 scenario 3), and update the permalink.
 - [X] T058 [US8] Extend `.harness/views-link.mjs` for `a-` and `z-` values (including `0230` and a reversed range under rule 7), and drive the aggregation and zoom row of quickstart.md §6.
+
+### Range preview for User Story 8 (FR-018a to FR-018d, clarified 2026-09-30)
+
+The clarification of 2026-09-30 replaces the two date lists of T056 with a
+range preview beneath the time series. T055, T057 and the link format are
+unchanged: a range is still `{from, to}` day numbers, written `z-MMDD_MMDD`.
+
+- [X] T068 [US8] Add `rangeSegments(live)` to `src/views.js`: one frozen `RangeSegment` per run period (first and last day number, first and last hour index), read off `live.points` as `zoomSpan` reads them, and the daily means of each series in `live.series` over non-`NaN` hours by `aggregate(..., 'd', ...)`. DOM-free.
+- [X] T069 [US8] Add `moveRange(live, zoom, part, to)` to `src/views.js`, beside `zoomSpan`, where `part` is `from`, `to` or `window` and `to` is a day number: snap to whole days, keep a range of at least one day, stop a handle or the window at the edge of its run period, move the whole window into another run period when `to` lies in one (keeping its length, clipped to that period), and return `null` when the result is the whole run. Every non-null result must pass `zoomSpan` (FR-018d).
+- [X] T070 [P] [US8] Add the host `<div class="plate-range" id="plate-range" hidden>` to `index.html` between `#trace` and `#plate-views`, with its styles in the same file beside `.plate-views`: reduced height, `--inset` fill and hairline border, a visible break between segments, handles and window with hit areas of at least 24 px, `touch-action: none` on the preview only, and a `.plate-range[hidden]` twin.
+- [X] T071 [US8] Add `drawRangePreview(host, frame)` to `src/plate.js`: an SVG of the whole run drawing each series in `frame.setting.series` as daily means per `RangeSegment`, a tick at the reading hour, no ghost and no design-day lines (FR-018b); two handles and a window, each with `role="slider"`, `tabindex="0"`, `aria-valuemin`, `aria-valuemax`, `aria-valuenow` and an `aria-valuetext` lettered as a date ("12 Jul"), and `data-focus` values `range:from`, `range:to` and `range:window`. The host is hidden unless the view is `ts` and `frame.live.facts.weatherDays` is true.
+- [X] T072 [US8] Wire the preview's gestures in `src/plate.js`, with the listeners on `#plate-range` rather than on its SVG (the redraw replaces the SVG, as it does for the reading-hour drag in `src/main.js`): a pointer drag on a handle or the window calls `moveRange` and, only when the day changes, `frame.on.preview(setting)`; the release calls `frame.on.choose(setting)`; a tap outside the window moves it there. Keys on a focused slider: arrows 1 day, Page Up and Page Down 7 days, Home and End to the run's ends, each committed through `frame.on.choose`.
+- [X] T073 [US8] Remove the Range fieldset from `drawTimeChoices` in `src/plate.js` (both `<select>` lists, `apply()` and its two refusals, which `moveRange` makes unreachable), keep the "Whole run" button as the one action back to the whole run, rewrite the function's comment to name the preview, and change the focus fallback in `drawChooser` from `range-from` to `range:window`.
+- [X] T074 [US8] In `src/main.js`, add `preview` to the frame's `on` handlers: set `viewSetting`, redraw through one `requestAnimationFrame` flag so a later step replaces an earlier one not yet drawn, and leave the permalink alone (FR-018c); `setView` on release writes it once. Call `drawRangePreview($('plate-range'), frame)` from `renderPlateControls`, and confirm that a drag on `#trace` still pins the reading hour.
+- [X] T075 [US8] Write `.harness/views-range.mjs` against the real `src/views.js`: a year run and a two-period run (January and July); assert snapping, the one-day minimum, the stop at a period edge, the jump into another period, `null` at the whole run, and that every result passes `zoomSpan` and round-trips through the `z-` codec.
+- [X] T076 [US8] Replace the zoom row of quickstart.md §6 in `specs/015-chart-views/quickstart.md` with rows for a handle drag, a window pan, the keyboard slider, a tap in the other period of a January and July run, and the link written once per drag; then drive them on the page.
 
 **Checkpoint**: all eight user stories work on their own.
 
@@ -265,6 +281,11 @@ measurements and the final passes.
 - [X] T065 [P] Add the one-paragraph short form of the feature to `CLAUDE.md` under Architecture, and add `pv` to the list of reserved keys in its Permalink entry.
 - [X] T066 Repeat quickstart.md §6 for every view in device emulation at 390 × 844 (quickstart.md §7): no horizontal page scroll, the chooser wraps, every unavailable reason is visible, the duration reading is reachable by tap, and nothing is conveyed only by hover or a `<title>`.
 - [X] T067 Run the full quickstart.md: every harness under `.harness/views-*.mjs` and `.harness/comfort-line.mjs`, the whole table of §6 including the study-continues and saved-scheme rows (quickstart.md §3 step 5), and `npm run build`.
+
+- [X] T077 [P] Amend `.interface-design/system.md`: in pattern 1 replace the native selects of the range with the range preview, and record the preview as a pattern (reduced-height overview, handles and window, the break between run periods, 24 px targets).
+- [X] T078 [P] Record the range preview in the section "Seven ways to draw one run" of `docs/design-notes.md`: why the date lists were replaced, why the listeners sit on the host, the latest-wins redraw, and the link written on release.
+- [ ] T079 Repeat the range preview rows of quickstart.md §6 at 390 × 844 in device emulation (SC-006): handles and window reachable by touch, a drag on the preview does not scroll the page, and no horizontal page scroll.
+- [ ] T080 Measure one drag across a month of a year run on `http://localhost:5173/?measure` at Chrome 4× CPU slowdown: the median redraw per day step, and a count of permalink writes, which must be exactly one; record both beside the T062 figures in `docs/design-notes.md`.
 
 ---
 
@@ -291,7 +312,10 @@ measurements and the final passes.
   the default series; it can ship with the default series alone.
 - **US6 (P3)**: as US5.
 - **US7 (P4)**: uses `densityOutline` from US1 (T030).
-- **US8 (P4)**: follows US2 in `src/plate.js`.
+- **US8 (P4)**: follows US2 in `src/plate.js`. Within the range preview,
+  T068 then T069 (one file) precede T071 to T075; T070 runs beside them;
+  T071, T072 and T073 change `src/plate.js` one after the other; T074 needs
+  T071 and T072; T076 needs T074.
 
 ### Within each story
 
@@ -310,7 +334,9 @@ measurements and the final passes.
 - **US4 to US8**: the computation tasks T041, T044, T047, T052 and T055 all
   change `src/views.js` and must be applied one after the other, but each
   can be written as soon as Foundational is done.
-- **Polish**: T059, T060 and T065 run together.
+- **Polish**: T059, T060 and T065 run together; so do T077 and T078.
+- **Range preview**: T070 (`index.html`) runs beside T068 and T069
+  (`src/views.js`).
 
 ### Parallel example: User Story 1
 
@@ -360,3 +386,5 @@ naming a view the build does not yet carry.
   text by the maintainer.
 - T028: the Figure 5.3.1 spot values must be read off the printed figure.
 - T063: SC-002 must be measured, not estimated.
+- T068 to T080: the range preview replaces the date lists on #98 before it
+  leaves draft.

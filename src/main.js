@@ -132,7 +132,7 @@ import {
 } from './epw.js';
 import { sourceFromFile, sourceFromStation } from './source.js';
 import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
-import { STEP_KEYS, drawChooser, drawPlate, stepFor } from './plate.js';
+import { STEP_KEYS, drawChooser, drawPlate, drawRangePreview, stepFor } from './plate.js';
 import { DEFAULT_SETTING, VIEW_BY_ID, availabilityOf, encodeView, settingFor, zoomSpan, zoomText } from './views.js';
 import { yearRunningMean } from './comfort.js';
 import { mountChangelog } from './changelog.js';
@@ -794,6 +794,10 @@ let viewSetting = DEFAULT_SETTING;
 // A refusal the plate letters under itself until the next choice, such as the
 // last series turned off (FR-010) or a zoom a new run did not cover.
 let plateNote = null;
+// The one redraw a range preview drag has asked for and not yet had: a later
+// step replaces the setting an earlier one set, and one frame draws the latest
+// (FR-018c).
+let previewFrame = 0;
 // The carpet's "change" toggle: honoured only while a ghost stands, and reset
 // when it clears (FR-020c).
 let carpetChange = false;
@@ -822,6 +826,23 @@ function buildFrame() {
     note: plateNote,
     on: {
       choose: setView,
+      // A step of a drag or a held key on the range preview: the plate shows
+      // it, the address does not. `setView` on the release writes it once.
+      preview: (next) => {
+        viewSetting = next;
+        plateNote = null;
+        if (previewFrame) return;
+        // A hidden tab starves `requestAnimationFrame`, and a flag cleared only
+        // in its callback would then refuse every later step.
+        if (document.visibilityState !== 'visible') {
+          renderTrace();
+          return;
+        }
+        previewFrame = requestAnimationFrame(() => {
+          previewFrame = 0;
+          renderTrace();
+        });
+      },
       pin: (at, options) => pinFromPlate(at, false, options),
       // A whole redraw, not the chooser alone: the view's readings and its
       // citation are lettered by `drawPlate` onto the frame it draws, and a
@@ -870,8 +891,13 @@ function renderCaption() {
   $('fig-cap').textContent = standard ? runCaption : `${drawn} Geometry drawn from the IDF, tinted by the zone mean.`;
 }
 
-/** The chooser and the readings under the plate, from the frame `drawPlate` has just drawn and lettered. */
+/**
+ * The range preview and the chooser under the plate, from the frame
+ * `drawPlate` has just drawn and lettered. The preview first, so the chooser
+ * can hand the keyboard to its window when "Whole run" leaves the row.
+ */
 function renderPlateControls(frame) {
+  drawRangePreview($('plate-range'), frame);
   drawChooser($('plate-views'), frame);
 }
 
@@ -919,6 +945,10 @@ function plateRunningMean(epw) {
  * solve, no IDF, no solve key, no study cancelled (FR-003).
  */
 function setView(next) {
+  if (previewFrame) {
+    cancelAnimationFrame(previewFrame);
+    previewFrame = 0;
+  }
   viewSetting = next;
   plateNote = null;
   renderTrace();
