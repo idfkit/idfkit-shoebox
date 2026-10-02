@@ -409,7 +409,7 @@ drawn individually.
   occupied hours the zone spends inside that region.
 - **FR-011a**: The psychrometric view MUST offer two comfort regions, one at a
   time:
-  1. **Graphic** (default): the ASHRAE 55-2020 §5.3.1 graphic comfort zones
+  1. **Graphic** (default): the ASHRAE 55-2017 §5.3.1 graphic comfort zones
      for 0.5 clo and 1.0 clo, bounded above by a humidity ratio of 0.012. One
      share is lettered per zone. An hour is inside a zone when its zone
      operative temperature and zone humidity ratio both fall inside it; air
@@ -556,8 +556,9 @@ drawn individually.
 
 ## Assumptions
 
-- The psychrometric view's regions come from ASHRAE 55-2020 only (§5.3.1 and
-  §5.4). A PMV region computed from clothing, activity and air speed is out
+- The psychrometric view's regions come from ASHRAE 55 only: the graphic
+  zones from 55-2017 §5.3.1 (Addendum d to 55-2017 withdrew the method, so
+  55-2020 has none), the adaptive strip from 55-2020 §5.4. A PMV region computed from clothing, activity and air speed is out
   of scope, because the model writes no clothing level or air speed today.
 - The adaptive region's prevailing mean outdoor temperature is computed from
   the weather file by the method the adaptive comfort view uses (FR-013).

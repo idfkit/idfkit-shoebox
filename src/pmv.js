@@ -7,7 +7,7 @@
  * refuses to load. DOM-free.
  */
 
-/** The conditions ASHRAE 55-2020 Figure 5.3.1 is drawn at. */
+/** The conditions ASHRAE 55-2017 Figure 5.3.1 is drawn at. */
 export const FIGURE_531 = Object.freeze({ met: 1.1, speed: 0.1, pressure: 101325, top: 0.012 });
 
 /** Vapour pressure in Pa of air at humidity ratio W (kg/kg), total pressure P (Pa). */

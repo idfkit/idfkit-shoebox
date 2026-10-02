@@ -1,6 +1,13 @@
 /**
- * Rebuild `src/comfort.data.js`: the two ASHRAE 55-2020 §5.3.1 graphic comfort
+ * Rebuild `src/comfort.data.js`: the two ASHRAE 55-2017 §5.3.1 graphic comfort
  * zones the psychrometric view draws (spec 015, research.md R4).
+ *
+ * The edition is 2017 because the method has none later. Addendum d to
+ * 55-2017 (approved 2020) removed the Graphic Comfort Zone Method and Figure
+ * 5.3.1; in 55-2020, §5.3.1 is the Analytical Comfort Zone Method, whose
+ * example charts carry no humidity ceiling. The 12 g/kg ceiling drawn here is
+ * the 2017 method's. Addendum d, which prints the withdrawn figure struck
+ * through, is published free by ASHRAE.
  *
  * Not part of `predev` or `prebuild`. Run by hand, like `build-rates.mjs`:
  *
@@ -8,7 +15,7 @@
  *
  * The figure's zones are not a published table of vertices. They are defined
  * by the PMV computation at the conditions Figure 5.3.1 states, so the
- * traceable route is to run that computation: the PMV model of ASHRAE 55-2020
+ * traceable route is to run that computation: the PMV model of ASHRAE 55-2017
  * Normative Appendix B (the Fanger model of ISO 7730, as the standard's own
  * reference code implements it), at
  *
@@ -73,7 +80,7 @@ const zones = [0.5, 1.0].map((clo) => ({ clo, polygon: zone(clo) }));
 const lines = [
   '/* ═══ generated, do not edit by hand ══════════════════════════════════════',
   ' *',
-  ' * Written by scripts/build-comfort.mjs. The ASHRAE 55-2020 §5.3.1 graphic',
+  ' * Written by scripts/build-comfort.mjs. The ASHRAE 55-2017 §5.3.1 graphic',
   ' * comfort zones (Figure 5.3.1), computed by the PMV model of Normative',
   ' * Appendix B at 1.1 met, 0.1 m/s, mean radiant equal to air temperature,',
   ' * PMV −0.5 to +0.5, humidity ratio 0 to 0.012. Vertices are [operative',
@@ -81,7 +88,7 @@ const lines = [
   ' * cold edge downwards. Rerunning the script is how these are changed.',
   ' */',
   '',
-  "export const GRAPHIC_CITATION = 'ASHRAE 55-2020 §5.3.1, Figure 5.3.1';",
+  "export const GRAPHIC_CITATION = 'ASHRAE 55-2017 §5.3.1, Figure 5.3.1';",
   '',
   'export const GRAPHIC_ZONES = Object.freeze([',
   ...zones.map(

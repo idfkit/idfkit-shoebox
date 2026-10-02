@@ -163,7 +163,7 @@ src/
 ├── comfort.js          # NEW, DOM-free. ComfortRegion (graphic and adaptive),
 │                       #   AdaptiveModel (EN 16798-1 I/II/III, ASHRAE 55 80/90),
 │                       #   whole-year running mean, occupied-hour shares and counts.
-├── comfort.data.js     # NEW, generated. ASHRAE 55-2020 §5.3.1 zone polygons.
+├── comfort.data.js     # NEW, generated. ASHRAE 55-2017 §5.3.1 zone polygons.
 ├── plate.js            # NEW, DOM. drawPlate(host, frame): one renderer per view,
 │                       #   the chooser, series and region controls, keyboard cursor.
 ├── readings.js         # + readRunSeries(eso, doc) -> RunSeries

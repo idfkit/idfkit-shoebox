@@ -6,7 +6,8 @@
  *
  * Two families of published judgement live here:
  *
- *   - the ASHRAE 55-2020 §5.3.1 graphic comfort zones, drawn on the
+ *   - the ASHRAE 55-2017 §5.3.1 graphic comfort zones (the method was
+ *     withdrawn by Addendum d to 55-2017 and is not in 55-2020), drawn on the
  *     psychrometric view, generated into `comfort.data.js` by
  *     `scripts/build-comfort.mjs`;
  *   - the adaptive bands of EN 16798-1:2019 Annex B and ASHRAE 55-2020 §5.4,
@@ -145,7 +146,8 @@ export const REGIONS = Object.freeze({
       'The two zones are PMV −0.5 to +0.5 at 1.1 met, 0.1 m/s and 0.5 or 1.0 clo, bounded above at a humidity ' +
       'ratio of 12 g/kg, computed by the Appendix B procedure. Applicable at 1.0 to 1.3 met and air speed ' +
       'below 0.2 m/s. The zones are drawn against operative temperature, as the figure is, and an hour counts ' +
-      'as inside when its operative temperature and humidity ratio both are; the marks stand at air temperature.',
+      'as inside when its operative temperature and humidity ratio both are; the marks stand at air temperature. ' +
+      'The method is the 2017 edition’s: Addendum d withdrew it, and 55-2020 has no graphic zones.',
   }),
   adaptive: new ComfortRegion({
     id: 'adaptive',
@@ -161,12 +163,25 @@ export const GRAPHIC = GRAPHIC_ZONES;
 
 /*
  * Figure 5.3.1 spot values: the corner temperatures at W = 0 and W = 12 g/kg
- * for each clo, read off the printed figure to its 0.5 K reading precision.
- * An open item (tasks.md T028): the values must be transcribed from the
- * maintainer's copy of the standard. Until they are, the structural checks
- * below still catch a swapped clo, a swapped sign or a zone of the wrong width.
+ * for each clo, read off the printed SI figure as Addendum d to 55-2017
+ * reproduces it (struck through, since the addendum withdrew it). Each edge
+ * was located in a 600 dpi rendering against the 20, 25, 30 and 35 °C rules
+ * and the 0 and 12 g/kg lines, which places it to about 0.1 K; the check
+ * allows 0.5 K, the figure's reading precision. The 1.0 clo warm edge at
+ * W = 0 reads 26.4 °C against the procedure's 26.11, the widest of the eight.
  */
-export const FIGURE_SPOTS = Object.freeze([]);
+export const FIGURE_SPOTS = Object.freeze(
+  [
+    { clo: 0.5, corner: 'warm0', t: 28.3 },
+    { clo: 0.5, corner: 'warm12', t: 26.8 },
+    { clo: 0.5, corner: 'cold12', t: 23.6 },
+    { clo: 0.5, corner: 'cold0', t: 25.1 },
+    { clo: 1, corner: 'warm0', t: 26.4 },
+    { clo: 1, corner: 'warm12', t: 23.9 },
+    { clo: 1, corner: 'cold12', t: 19.6 },
+    { clo: 1, corner: 'cold0', t: 21.5 },
+  ].map((spot) => Object.freeze(spot)),
+);
 
 export function assertGraphic(zones = GRAPHIC, spots = FIGURE_SPOTS) {
   const corners = (polygon) => {
@@ -208,7 +223,7 @@ export function assertGraphic(zones = GRAPHIC, spots = FIGURE_SPOTS) {
       if (Math.abs(at(t) - target) > 0.01) {
         throw new Error(
           `the ${zone.clo} clo comfort zone's vertex at ${t} °C, ${W} g/kg has a PMV of ${at(t).toFixed(3)}, ` +
-            `not ${target}, so it is not the ASHRAE 55-2020 §5.3.1 zone`,
+            `not ${target}, so it is not the ASHRAE 55-2017 §5.3.1 zone`,
         );
       }
     });

@@ -109,7 +109,12 @@ is ever clipped. The `Kind` letters the axes in the sheet's unit system (R8).
 - *Sea-level chart.* At 1,600 m this misplaces the saturation curve by about
   18 %, which the chart would show as marks above saturation.
 
-## R4. The ASHRAE 55-2020 graphic comfort zones
+## R4. The ASHRAE 55-2017 graphic comfort zones
+
+**Edition.** The Graphic Comfort Zone Method is cited from 55-2017. Addendum
+d to 55-2017 (approved 2020) removed it and Figure 5.3.1; in 55-2020, §5.3.1
+is the Analytical Comfort Zone Method. The withdrawn figure is printed, struck
+through, in Addendum d, which ASHRAE publishes free.
 
 **Decision.** The two §5.3.1 zones are generated once by
 `scripts/build-comfort.mjs`, run by hand like `build-rates.mjs`. The script

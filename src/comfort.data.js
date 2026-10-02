@@ -1,6 +1,6 @@
 /* ═══ generated, do not edit by hand ══════════════════════════════════════
  *
- * Written by scripts/build-comfort.mjs. The ASHRAE 55-2020 §5.3.1 graphic
+ * Written by scripts/build-comfort.mjs. The ASHRAE 55-2017 §5.3.1 graphic
  * comfort zones (Figure 5.3.1), computed by the PMV model of Normative
  * Appendix B at 1.1 met, 0.1 m/s, mean radiant equal to air temperature,
  * PMV −0.5 to +0.5, humidity ratio 0 to 0.012. Vertices are [operative
@@ -8,7 +8,7 @@
  * cold edge downwards. Rerunning the script is how these are changed.
  */
 
-export const GRAPHIC_CITATION = 'ASHRAE 55-2020 §5.3.1, Figure 5.3.1';
+export const GRAPHIC_CITATION = 'ASHRAE 55-2017 §5.3.1, Figure 5.3.1';
 
 export const GRAPHIC_ZONES = Object.freeze([
   Object.freeze({ clo: 0.5, polygon: Object.freeze([

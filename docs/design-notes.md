@@ -3096,8 +3096,19 @@ PMV code reproduces the reference values it was checked against (PMV 0.08 at
 and 27 °C, 60 % RH). `pmv.js` is shared with `comfort.js`, which re-evaluates
 PMV at every vertex at load, so a polygon shifted by 1 K refuses to load
 (measured: its first vertex reads PMV 0.813). The Figure 5.3.1 spot values
-that would catch an error in the generator itself are an open merge item
-(tasks.md T028, `FIGURE_SPOTS`).
+catch an error in the generator itself: the eight corner temperatures, read off
+the printed SI figure at 600 dpi against its rules to about 0.1 K, all agree
+with the generated corners within 0.3 K, against a 0.5 K allowance.
+
+**The graphic zones are a 2017 method.** The view first cited them as ASHRAE
+55-2020 §5.3.1. They are not in 55-2020: Addendum d to 55-2017 (approved 2020)
+removed the Graphic Comfort Zone Method and Figure 5.3.1, and in 55-2020
+§5.3.1 is the Analytical Comfort Zone Method, whose example charts state "No
+upper humidity limit". The 12 g/kg ceiling therefore belongs to the 2017 method
+alone. The citation now reads 55-2017. Addendum d is published free and prints
+the withdrawn figure struck through, which is where the spot values were read;
+Addendum h to 55-2020 shows the 2020 table of methods with only the analytical
+and elevated air speed methods in it.
 
 **What the desk does to the psychrometric chart.** With Gains in and no
 ventilation the sealed box accumulates moisture: on the Boston year the zone

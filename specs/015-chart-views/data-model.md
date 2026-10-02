@@ -100,7 +100,7 @@ This entity serves the psychrometric view only.
 | `id` | `'graphic'` or `'adaptive'` | The link tokens are `g` and `a`. |
 | `zones` | `Polygon[]` | For `graphic`, two polygons (0.5 clo and 1.0 clo) from `comfort.data.js`, in (operative temperature in °C, humidity ratio in g/kg). For `adaptive`, a function of the day's running mean. |
 | `needs` | `Need[]` | `adaptive` needs `runningMean` and `noMechanicalCooling`. |
-| `citation` | string | ASHRAE 55-2020 §5.3.1 or §5.4. |
+| `citation` | string | ASHRAE 55-2017 §5.3.1 or 55-2020 §5.4. |
 | `fold` | string | Applicability. For the graphic zones: 1.0 to 1.3 met and air speed below 0.2 m/s (FR-011b). |
 
 **Invariant.** The graphic polygons pass the Figure 5.3.1 spot checks

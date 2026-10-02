@@ -391,5 +391,5 @@ naming a view the build does not yet carry.
 
 ## Phase 12: Convergence
 
-- [ ] T081 Transcribe the ASHRAE 55-2020 Figure 5.3.1 spot values (the corner temperatures at W = 0 and W = 12 g/kg for 0.5 clo and 1.0 clo, to the figure's 0.5 K reading precision) from the maintainer's copy into `FIGURE_SPOTS` in `src/comfort.js`, which is currently empty, so that `assertGraphic` checks the graphic zones against the printed figure; complete only when the maintainer confirms the reading, per FR-011a (partial)
+- [X] T081 Transcribe the ASHRAE 55-2020 Figure 5.3.1 spot values (the corner temperatures at W = 0 and W = 12 g/kg for 0.5 clo and 1.0 clo, to the figure's 0.5 K reading precision) from the maintainer's copy into `FIGURE_SPOTS` in `src/comfort.js`, which is currently empty, so that `assertGraphic` checks the graphic zones against the printed figure; complete only when the maintainer confirms the reading, per FR-011a (partial)
 - [X] T082 Obtain the maintainer's acknowledgement of the FR-002 departure recorded in `docs/design-notes.md` ("One deliberate departure from FR-002 since": the design-day time series now lifts its pen between environments, so `.harness/fixtures/plate-ts-dd.svg` no longer matches byte for byte), and either have FR-002 amended to state the exception or restore the joined stroke, per FR-002 (contradicts)
