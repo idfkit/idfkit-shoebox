@@ -3051,15 +3051,16 @@ reports `document.visibilityState === 'hidden'`, and a `ResizeObserver` does
 not fire until something paints, which is the hidden-tab trap already recorded
 under Invariants.
 
-**One deliberate departure from FR-002 since.** On `main` the time series drew
-one stroke through every hour of the run, so on the default design-day desk
-the zone line ran from the last winter hour (about -23 °C) to the first summer
-one (about 31 °C) as a vertical stroke at the boundary between the two days.
-No run contains that swing: the two days are separate environments, a day of
-the year apart. The line now lifts its pen where the run period changes and at
-a missing value, which also stops a `NaN` being written into the path. The
-design-day fixture therefore no longer matches byte for byte; the year fixture
-still does, because the dense year is drawn from bins, which are left joined.
+**A departure from FR-002, tried and withdrawn.** On `main` the time series
+draws one stroke through every hour of the run, so on the default design-day
+desk the zone line runs from the last winter hour (about -23 °C) to the first
+summer one (about 31 °C) as a vertical stroke at the boundary between the two
+days, a swing no run contains. For a time the line lifted its pen where the
+run period changed. The maintainer chose the joined stroke instead, because
+FR-002 holds the default plate to `main`, and the line joins every hour again.
+A missing value still lifts the pen, where `main` lettered `NaN` into the path
+and ended it there; no run on `main` had one. Both fixtures match byte for
+byte again (the design-day and the year plate at 720 × 320).
 
 **The link.** `pv` is a reserved key with a canonical grammar
 (`contracts/view-key.md`); a field at its default is never written, and the

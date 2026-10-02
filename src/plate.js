@@ -348,23 +348,19 @@ function drawTimeSeries(host, frame, { w, H, inner }) {
     const bot = bins.map((b, i) => `${x(i, bins.length).toFixed(2)},${y(b.min).toFixed(2)}`).reverse();
     return `M${top.join('L')}L${bot.join('L')}Z`;
   };
-  // A line never joins two environments: the last hour of the winter design
-  // day and the first of the summer one are a day of the year apart and were
-  // solved separately, and the stroke between them drew a 50 K swing that
-  // happened in no run. A missing value lifts the pen for the same reason,
-  // where it used to letter `NaN` into the path and end it there.
-  const runOf = (point) => live.runs.findIndex((r) => point >= r.start && point <= r.end);
-  const runAt = periods
-    ? (i) => runOf(periods.get(drawn[0])[i].start)
-    : (i) => runOf(hours[i]);
-  const linePath = (vals, broken = true) => {
+  // The line joins every hour it is given, across environments too: on the
+  // design-day desk that draws the stroke from the last winter hour to the
+  // first summer one, as `main` did, and FR-002 holds the default plate to
+  // `main` byte for byte. A missing value still lifts the pen, where it used
+  // to letter `NaN` into the path and end it there; no run on `main` had one,
+  // so the fixtures are unchanged by it.
+  const linePath = (vals) => {
     let d = '';
-    let pen = null;
+    let open = false;
     vals.forEach((v, i) => {
-      if (!Number.isFinite(v)) { pen = null; return; }
-      const run = broken ? runAt(i) : 0;
-      d += `${pen === run ? 'L' : 'M'}${x(i, vals.length).toFixed(2)},${y(v).toFixed(2)}`;
-      pen = run;
+      if (!Number.isFinite(v)) { open = false; return; }
+      d += `${open ? 'L' : 'M'}${x(i, vals.length).toFixed(2)},${y(v).toFixed(2)}`;
+      open = true;
     });
     return d;
   };
@@ -407,7 +403,7 @@ function drawTimeSeries(host, frame, { w, H, inner }) {
     for (const id of [...zones].reverse()) {
       root.append(
         svg('path', {
-          d: linePath(zoneBins.get(id).map((b) => b.mean), false), fill: 'none',
+          d: linePath(zoneBins.get(id).map((b) => b.mean)), fill: 'none',
           stroke: PENS[id].stroke, 'stroke-width': PENS[id].denseWidth, 'stroke-dasharray': PENS[id].dash,
           'stroke-linejoin': 'round',
         }),
