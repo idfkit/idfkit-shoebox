@@ -64,9 +64,11 @@ export class AdaptiveModel {
  * The upper offsets for Categories I and II are TM59's, taken from
  * `tm59.CATEGORIES` so one published number has one source; Category III is
  * not a TM59 category and carries its own. The lower offsets and the lower
- * limit's 15 °C bound are transcribed here and are an open item (tasks.md
- * T029): they must be checked against the purchased text of EN 16798-1:2019
- * Annex B by the maintainer before merge. The text never enters the repository.
+ * limit's 15 °C bound were checked against the purchased text of EN
+ * 16798-1:2019 Annex B by the maintainer on 2026-10-02 (tasks.md T029). The
+ * 15 °C bound is the standard's, though secondary sources (IEA EBC Annex 69,
+ * Table 3) give 10 to 30 °C for both limits. The text never enters the
+ * repository.
  */
 const EN = {
   family: 'en16798',

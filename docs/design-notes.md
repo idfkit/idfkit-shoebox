@@ -3084,9 +3084,12 @@ applies at a running mean of 10 to 30 °C and the lower at 15 to 30 °C; an hour
 between 10 and 15 °C can be judged above, but if it is not above it can be
 judged neither within nor below and is counted out of scope. The EN upper
 offsets for Categories I and II are read from `tm59.CATEGORIES` and asserted
-equal at three running means. The lower offsets and the 15 °C bound are an open
-merge item (tasks.md T029): they are transcribed but must be checked against
-the purchased text of EN 16798-1:2019.
+equal at three running means. The lower offsets and the 15 °C bound were checked
+against the purchased text of EN 16798-1:2019 by the maintainer (tasks.md
+T029). The bound is worth stating because published summaries disagree with
+it: the IEA EBC Annex 69 report (Table 3) gives 10 to 30 °C for both limits,
+and pythermalcomfort applies 10 to 33.5 °C. The standard says 15 °C for the
+lower limit.
 
 **The graphic zones are generated and re-checked.** `scripts/build-comfort.mjs`
 traces the §5.3.1 zones by the PMV model at the figure's conditions (1.1 met,
