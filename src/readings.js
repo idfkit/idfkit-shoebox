@@ -17,6 +17,8 @@ import { END_USES, J_TO_KWH, meterTotal } from './bill.js';
 // timestamps with them and `main.js` has always taken them from this module.
 import { MONTHS } from './controls.js';
 import { KINDS, inIP, kindFor, letter } from './units.js';
+import { SERIES } from './views.js';
+import { standardPressure } from './psychro.js';
 
 export { MONTHS };
 
@@ -924,4 +926,219 @@ function fenestrationRows(html) {
     [...row[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((cell) =>
       cell[1].replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()),
   );
+}
+
+/* ══ the plate's snapshot of one run (spec 015) ══════════════════════════ */
+
+/** Whether the document holds at least one object of a type, asked without registering it. */
+const holdsAny = (doc, type) => {
+  try {
+    return doc.all(type).size > 0;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * What the simulated document says about itself, read in the same breath as
+ * the IDF is written so a slider moved during an annual run cannot change the
+ * answer (the `capture` rule in `solve`).
+ *
+ * `mechanicalCooling` is the §5.4 exclusion asked of the model: an ideal loads
+ * system and a thermostat whose setpoint object includes cooling. A heating-
+ * only desk is free-running in summer and is not excluded.
+ */
+export class DocumentFacts {
+  constructor({ elevation, idealLoads, mechanicalCooling, occupancy, moistureExchange, moistureSource }) {
+    if (!Number.isFinite(elevation)) throw new Error('the simulated document carries no Site:Location elevation');
+    this.elevation = elevation;
+    this.pressure = standardPressure(elevation);
+    this.idealLoads = idealLoads;
+    this.mechanicalCooling = mechanicalCooling;
+    this.occupancy = occupancy;
+    // Whether anything trades moisture with the zone air (outdoor air by
+    // infiltration, ventilation or the network, or an ideal loads unit's
+    // supply air), and whether anything in it releases moisture. The psychrometric view states the cause of a flat or
+    // supersaturated zone only when these say it (a sealed zone, occupied).
+    this.moistureExchange = moistureExchange;
+    this.moistureSource = moistureSource;
+    Object.freeze(this);
+  }
+}
+
+export function readDocumentFacts(doc) {
+  const site = doc.all('Site:Location').toArray()[0];
+  const idealLoads = holdsAny(doc, 'ZoneHVAC:IdealLoadsAirSystem');
+  const cooling = holdsAny(doc, 'ThermostatSetpoint:DualSetpoint') || holdsAny(doc, 'ThermostatSetpoint:SingleCooling');
+  return new DocumentFacts({
+    elevation: Number(site?.elevation),
+    idealLoads,
+    mechanicalCooling: idealLoads && holdsAny(doc, 'ZoneControl:Thermostat') && cooling,
+    occupancy: holdsAny(doc, 'Schedule:Compact') && Boolean(doc.get('Schedule:Compact', 'Occupancy')),
+    moistureExchange:
+      holdsAny(doc, 'ZoneInfiltration:DesignFlowRate') ||
+      holdsAny(doc, 'ZoneVentilation:DesignFlowRate') ||
+      holdsAny(doc, 'AirflowNetwork:SimulationControl') ||
+      idealLoads,
+    moistureSource: holdsAny(doc, 'People'),
+  });
+}
+
+/**
+ * What a view's availability is judged against: every fact read off the run
+ * or the simulated document, never off `params`.
+ */
+export class RunFacts {
+  constructor({ document, runs, weatherDays, floor, runningMean }) {
+    this.elevation = document.elevation;
+    this.pressure = document.pressure;
+    this.mechanicalCooling = document.mechanicalCooling;
+    this.idealLoads = document.idealLoads;
+    this.moistureExchange = document.moistureExchange;
+    this.moistureSource = document.moistureSource;
+    this.runs = runs;
+    this.weatherDays = weatherDays;
+    this.floor = floor;
+    // `{ mean, absence }` from `comfort.yearRunningMean`, or `{ mean: null,
+    // absence }` on a run with no weather file behind it.
+    this.runningMean = Object.freeze({ ...runningMean });
+    Object.freeze(this);
+  }
+}
+
+/**
+ * One completed run, read once, holding every series any view can draw
+ * (data-model.md §2.2). The ghost is a reference to one of these, so a view
+ * switched to mid-gesture draws its ghost with no re-read (FR-020a).
+ *
+ * The typed arrays cannot be frozen; by convention nothing writes to them
+ * after construction.
+ */
+export class RunSeries {
+  constructor({ points, runs, series, daily, dailyStamps, absent, blocked = new Map(), facts }) {
+    this.points = points;
+    this.runs = runs;
+    this.series = series;
+    this.daily = daily;
+    this.dailyStamps = dailyStamps;
+    this.absent = absent;
+    // Channels patched in but held out by their own `requires`, with the
+    // strip's reason: a series they would have written is refused in those
+    // words, since "patch it in" is wrong advice for a strip already in.
+    this.blocked = blocked;
+    this.facts = facts;
+    const first = points[0].timestamp;
+    const last = points.at(-1).timestamp;
+    const stamp = (t) => `${t.environmentIndex}.${t.month}-${t.day}T${t.hour}`;
+    // The ghost is drawn only against a run of the same hours. Length alone
+    // admitted two different runs of one length, such as two calendars of
+    // equal size. The fingerprint carries no climate: two stations' annual
+    // runs of one calendar read alike, so a change of climate is answered
+    // where it happens, by `attachClimate` clearing the ghost.
+    this.hours = `${runs.length}|${stamp(first)}|${stamp(last)}|${points.length}`;
+    Object.freeze(this);
+  }
+
+  /** Whether the run reported a series at all. */
+  has(id) {
+    return this.series.has(id) || this.daily.has(id);
+  }
+}
+
+/** A daily stamp's identity, by environment and date, which is how daily series are aligned. */
+const dayKey = (t) => `${t.environmentIndex}:${t.month}:${t.day}`;
+
+/**
+ * Read the run into a `RunSeries`, or throw when the zone air temperature is
+ * missing, which is the one series every view is aligned on.
+ *
+ * Each series is found by its exact variable name (and key, where declared),
+ * scaled once by its declaration, and aligned to the zone air hours by index.
+ * A series the run did not report is entered in `absent` with the reason; a
+ * missing hour is `NaN`, never zero.
+ */
+export function readRunSeries(eso, { document, floor, runningMean, blocked = new Map() }) {
+  const byVariable = (def) => {
+    const found = findVariables(eso, exactly(def.variable)).filter(
+      (v) => v.reportFrequency === def.frequency && (def.key === null || v.keyValue.toLowerCase() === def.key.toLowerCase()),
+    );
+    return found.length ? getTimeSeries(eso, found[0].id)?.data ?? [] : [];
+  };
+  const air = byVariable(SERIES[0]);
+  if (!air.length) throw new Error('the run carries no hourly zone mean air temperature');
+  const n = air.length;
+  const points = air;
+  const runs = environmentRuns(points, eso?.environments ?? []);
+  const series = new Map();
+  const daily = new Map();
+  const absent = new Map();
+  let dailyStamps = null;
+  const reason = (def) =>
+    def.needs && blocked.has(def.needs)
+      ? blocked.get(def.needs)
+      : def.needs === 'system'
+      ? 'System is not in the path'
+      : def.needs === 'gains'
+        ? 'Gains is not in the path'
+        : `the run reports no ${def.name}`;
+  for (const def of SERIES) {
+    const data = byVariable(def);
+    if (!data.length) {
+      absent.set(def.id, reason(def));
+      continue;
+    }
+    if (def.frequency === 'hourly') {
+      const values = new Float64Array(n).fill(NaN);
+      const m = Math.min(n, data.length);
+      for (let i = 0; i < m; i += 1) {
+        const v = data[i].value;
+        values[i] = Number.isFinite(v) ? v * def.scale : NaN;
+      }
+      series.set(def.id, values);
+    } else {
+      if (!dailyStamps) {
+        const reference = byVariable(SERIES.find((s) => s.id === 'dayType'));
+        dailyStamps = (reference.length ? reference : data).map((p) => ({
+          env: p.timestamp.environmentIndex,
+          month: p.timestamp.month,
+          day: p.timestamp.day,
+        }));
+      }
+      const at = new Map(data.map((p) => [dayKey(p.timestamp), p.value]));
+      daily.set(
+        def.id,
+        Float64Array.from(dailyStamps, (s) => {
+          const v = at.get(`${s.env}:${s.month}:${s.day}`);
+          return Number.isFinite(v) ? v * def.scale : NaN;
+        }),
+      );
+    }
+  }
+  let weatherDays = 0;
+  for (const r of runs) {
+    if (r.kind !== null) continue;
+    let last = null;
+    for (let i = r.start; i <= r.end; i += 1) {
+      const key = dayKey(points[i].timestamp);
+      if (key !== last) weatherDays += 1;
+      last = key;
+    }
+  }
+  const facts = new RunFacts({
+    document,
+    runs,
+    weatherDays,
+    floor,
+    runningMean: runningMean ?? { mean: null, absence: 'Needs a run over a weather file.' },
+  });
+  return new RunSeries({
+    points,
+    runs,
+    series,
+    daily,
+    dailyStamps: dailyStamps ?? [],
+    absent,
+    blocked,
+    facts,
+  });
 }

@@ -558,9 +558,64 @@ plate already had the axis for it.
 
 The trace is a control as well as a picture: clicking it chooses the hour, with
 `cursor: crosshair` while there is a run to read. It keeps `role="img"` and an
-`aria-label` that states the current instant, which is honest but not
-sufficient — choosing an arbitrary hour is pointer-only until the trace takes
-arrow keys. Do not add a second pointer-only control here without closing that.
+`aria-label` that states the current instant. The trace takes the keyboard as
+well (spec 015): it is a tab stop, Left and Right step the held hour by one,
+Page Up and Page Down by one per cent of the hours shown, Home and End go to
+the ends, and Enter on the held hour releases it. A polite live region states
+the hour after each step. Do not add a pointer-only control to the plate.
+
+### The plate's views
+
+The plate draws one run in one of seven views. Six patterns come with them.
+
+1. **The view chooser.** A wrapping row of offers under the chart row, in the
+   idiom of the hour bar's offers: `--inset` fill, hairline border, the chosen
+   view bordered in `--redline`. Every view is always listed. A view the run
+   cannot support stays in the row with `aria-disabled="true"` and its reason
+   lettered under its name, never in a tooltip; choosing it draws the reason
+   and its remedy in place of the field and never another view. The view's own
+   choices (series, region, model, shade, grain) follow in the same block as
+   fieldsets of check boxes and radios, then the view's readings, then its
+   citation with the method in a fold. The time series' range is not among
+   them: it is set on the range preview (pattern 6), and the block keeps only
+   the range in words and the one "Whole run" action back.
+2. **Scatter marks by shape.** A scatter view draws each series as one path of
+   zero-length subpaths, so a year is one node. The cap is the mark's shape:
+   square for the zone, round for outdoors; on the energy signature, round for
+   heating and square for cooling. Every scatter carries a gutter key naming
+   each shape, so no series is told apart by ink alone.
+3. **The 90 % outline ghost.** On a scatter view the ghost is not a second
+   cloud but the boundary of the densest cells of a fixed 48 × 32 grid holding
+   90 % of the ghost's marks, dashed in `--redline` at a ghost's weight, with
+   no smoothing. Every count or share the view letters reads `was → now` while
+   it stands.
+4. **The carpet's binned shade and change toggle.** A carpet is shaded in
+   declared bins, nine steps of one hue, each bin's range lettered in a gutter
+   legend so the scale is read in figures. The change toggle is offered only
+   while a ghost stands; it redraws the carpet as live minus ghost on eleven
+   signed bins, `--cold` and `--warm` either side of a clear zero bin, lettered
+   as a temperature difference. It is withdrawn and reset when the ghost
+   clears. Weekends and holidays are ticks under the field of two lengths.
+5. **The keyboard cursor on the plate.** On the duration curve the plate's
+   keys and a tap move a cursor rather than the hour, and the value and the
+   hours at or above it are lettered in view for every drawn series and
+   announced through the live region. No reading on the plate exists only on
+   hover or in a `<title>`.
+6. **The range preview.** Under the time series, in the chart's own column
+   and ruled with the chart's margins, a reduced-height overview (56 px) of
+   the whole run at daily means, in the series' own pens, on an `--inset`
+   field with a hairline border. Each run period is its own field, with an
+   8 px break between periods so January and July never read as one stretch.
+   No ghost, no design days, no aggregation; a tick at the reading hour in the
+   marker's inks. The range is a window bordered in `--redline` over a
+   `--redline-wash`, the rest veiled in `--sheet`, with a handle at each end.
+   The window and both handles are positioned blocks over the drawing with
+   `role="slider"`, a 24 px hit area, and a date as `aria-valuetext`; only
+   the preview takes `touch-action: none`. A drag shows each day step and
+   writes the link once, on release; a tap beside the window moves it there;
+   keys step one day, Page Up and Page Down a week, Home and End to the run's
+   ends. When the range is narrower than the handles, the handles are on top:
+   the window is then moved by a tap beside it or by its keys.
 
 ### Signed meter bar
 

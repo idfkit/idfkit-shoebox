@@ -54,7 +54,12 @@ import { fold } from './console.js';
 // the published sheet would never be shown the step that now tells them a
 // weather file of their own can go on this desk. A key is only worth keeping if
 // every meaning it has ever had is its own.
-const STORE = 'shoebox-general-notes-v6';
+//
+// v7 because the plate's step now teaches the view chooser under it (spec 015):
+// the same run drawn as a psychrometric chart, a carpet or five other ways,
+// none of them a new solve. A returning reader's tick was taken against a
+// plate that drew one picture.
+const STORE = 'shoebox-general-notes-v7';
 const VIEWS = ['open', 'folded', 'retired'];
 
 // A sheet counts its own notes in words, and the count is read off the
@@ -95,11 +100,14 @@ export const NOTES = Object.freeze([
   new Note({
     id: 'solve',
     title: 'Watch the first solve',
-    step: 'Wait for the first run: two Denver design days, solved in this tab.',
+    step: 'Wait for the first run, then choose how the plate under it draws it.',
     body:
       'The engine compiles inside this tab and solves two Denver design days ' +
       'unasked. Every figure below is read off that run — nothing on the ' +
-      'sheet is lettered by hand.',
+      'sheet is lettered by hand. The row of views under the chart draws the ' +
+      'same run another way — a psychrometric chart, a carpet, a duration ' +
+      'curve and three more — without solving again; a view the run cannot ' +
+      'support says why.',
     target: '#plate',
   }),
   new Note({

@@ -132,6 +132,9 @@ import {
 } from './epw.js';
 import { sourceFromFile, sourceFromStation } from './source.js';
 import { decodeState, encodeState, isSchemeFragment } from './permalink.js';
+import { STEP_KEYS, drawChooser, drawPlate, drawRangePreview, stepFor } from './plate.js';
+import { DEFAULT_SETTING, VIEW_BY_ID, availabilityOf, encodeView, settingFor, zoomSpan, zoomText } from './views.js';
+import { yearRunningMean } from './comfort.js';
 import { mountChangelog } from './changelog.js';
 import CHANGELOG_SOURCE from '../CHANGELOG.md?raw';
 import {
@@ -147,6 +150,8 @@ import {
   instantOffers,
   pinAt,
   readDemand,
+  readDocumentFacts,
+  readRunSeries,
   peakLag,
   readExtremes,
   readOverheat,
@@ -765,355 +770,196 @@ function renderAxon(meanC) {
   $('q-mean').textContent = meanC == null ? '—' : letter(KINDS.temperature, meanC, { digits: 1 });
 }
 
-/* ══ the plate: zone against outdoors, on a ruled field ══════════════════ */
+/* ══ the plate: one run, in the view the reader chose (plate.js) ═════════ */
 
-const PAD = { t: 18, r: 68, b: 30, l: 46 }; // right gutter holds the curve labels
-// The height the plate is drawn at when it has a row of its own to fill is
-// that row's; `H_FLOOR` is the height it had before, and still has stacked.
-const H_FLOOR = 268;
-let H = H_FLOOR;
 let SURFACES = [];
 let WINDOWS = [];
 let SHADES = [];
 let DATUMS = [];
-let plot = null; // last rendered dataset, kept so a resize can redraw it
-// The zone curve as it stood when the current gesture began. Auto-solve makes a
-// result arrive every second or so, and a number that changes with no record of
-// what it changed from is just a flicker — this is what turns each solve into a
-// reading. Only the zone series: the design days are fixed, so the outdoor
-// curve is the same line in every run and a ghost of it would say nothing.
+// The run the plate draws, read once into a `RunSeries` and kept so a resize,
+// a unit switch or a change of view can redraw it without asking the engine
+// for anything (FR-003).
+let plot = null;
+// The run as it stood when the current gesture began. Auto-solve makes a
+// result arrive every second or so, and a number that changes with no record
+// of what it changed from is just a flicker — this is what turns each solve
+// into a reading. The whole `RunSeries`, by reference, so a view switched to
+// mid-gesture can draw it (FR-020a); drawn only against a run of the same
+// hours, which `RunSeries.hours` states.
 let ghost = null;
+// How the plate is looking at the run. A way of reading, like the unit system:
+// off `params`, reaching no IDF object and no solve key, carried by the
+// address bar's `pv` and never by a kept scheme (FR-023, FR-024).
+let viewSetting = DEFAULT_SETTING;
+// A refusal the plate letters under itself until the next choice, such as the
+// last series turned off (FR-010) or a zoom a new run did not cover.
+let plateNote = null;
+// The one redraw a range preview drag has asked for and not yet had: a later
+// step replaces the setting an earlier one set, and one frame draws the latest
+// (FR-018c).
+let previewFrame = 0;
+// The carpet's "change" toggle: honoured only while a ghost stands, and reset
+// when it clears (FR-020c).
+let carpetChange = false;
+// The duration curve's cursor, as a rank along the hours: set by tap, click
+// or key, and lettered in view for every drawn series (FR-015).
+let durationCursor = null;
 
-function niceStep(span, target) {
-  const raw = span / target;
-  const mag = 10 ** Math.floor(Math.log10(raw));
-  return [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? 10 * mag;
+/** Everything the plate draws, in one argument (data-model.md §3.2). */
+function buildFrame() {
+  const standing = Boolean(plot && ghost && ghost.hours === plot.hours);
+  if (!standing) carpetChange = false;
+  return {
+    live: plot,
+    ghost: standing ? ghost : null,
+    setting: viewSetting,
+    datums: DATUMS,
+    // Guarded on the run the hour was read off being the one drawn, the way
+    // the ghost is: a station change redraws the plate with the new city's
+    // datums while the previous run's curve is still standing.
+    reading:
+      plot && lastReadFrom?.points.length === plot.points.length
+        ? { at: lastReadFrom.at, held: Boolean(pinnedHour) }
+        : null,
+    change: carpetChange,
+    cursor: durationCursor,
+    note: plateNote,
+    on: {
+      choose: setView,
+      // A step of a drag or a held key on the range preview: the plate shows
+      // it, the address does not. `setView` on the release writes it once.
+      preview: (next) => {
+        viewSetting = next;
+        plateNote = null;
+        if (previewFrame) return;
+        // A hidden tab starves `requestAnimationFrame`, and a flag cleared only
+        // in its callback would then refuse every later step.
+        if (document.visibilityState !== 'visible') {
+          renderTrace();
+          return;
+        }
+        previewFrame = requestAnimationFrame(() => {
+          previewFrame = 0;
+          renderTrace();
+        });
+      },
+      pin: (at, options) => pinFromPlate(at, false, options),
+      // A whole redraw, not the chooser alone: the view's readings and its
+      // citation are lettered by `drawPlate` onto the frame it draws, and a
+      // chooser rebuilt from a fresh frame dropped them from under the plate.
+      refuse: (text) => {
+        plateNote = text;
+        renderTrace();
+      },
+      toggleChange: () => {
+        carpetChange = !carpetChange;
+        renderTrace();
+      },
+    },
+  };
 }
 
-function bucket(values, n) {
-  const size = values.length / n;
-  return Array.from({ length: n }, (_, i) => {
-    const slice = values.slice(Math.floor(i * size), Math.max(Math.floor((i + 1) * size), Math.floor(i * size) + 1));
-    return {
-      min: Math.min(...slice),
-      max: Math.max(...slice),
-      mean: slice.reduce((a, b) => a + b, 0) / slice.length,
-    };
-  });
+/** Move the duration curve's cursor. A redraw, and the live region says where it landed. */
+function setDurationCursor(rank) {
+  durationCursor = rank;
+  renderTrace();
+  $('plate-live').textContent = [...document.querySelectorAll('.plate-readout > span')].map((item) => item.textContent).join('; ');
 }
 
+/** Draw the plate and its chooser from the run in hand. Starts nothing. */
 function renderTrace() {
   const host = $('trace');
-  // The content box, less the 16px padding each side, so a user unit is a
-  // client pixel: drawn at the padded width the svg was scaled by about 0.95
-  // and its hairlines landed between pixels.
-  const w = Math.max(host.clientWidth - 32, 320);
-  host.textContent = '';
-  // Beside the model column the plate fills the row the column sets; the svg
-  // is out of the flow there, so this reads the row and never the chart.
-  // Stacked, there is no row to fill and it keeps its own height.
-  const stretch = getComputedStyle(host).getPropertyValue('--plate-stretch').trim() === '1';
-  H = stretch ? Math.max(H_FLOOR, host.clientHeight - 22) : H_FLOOR;
+  const frame = buildFrame();
+  const height = host.clientHeight;
+  plateField = drawPlate(host, frame);
+  renderPlateControls(frame);
+  // The chooser shares the chart's column, so a view with more choices takes
+  // height from the chart's row. Drawn at the height it measured before, the
+  // chart ran over the range preview and the chooser until the
+  // ResizeObserver's redraw 80ms later; drawn again here it never shows that.
+  if (host.clientHeight !== height) plateField = drawPlate(host, buildFrame());
+  renderCaption();
+}
 
-  const inner = { w: w - PAD.l - PAD.r, h: H - PAD.t - PAD.b };
-  // The ghost is inside the field it is drawn on, so it has to be inside the
-  // domain too — otherwise a shape that was hotter than the current one gets
-  // clipped at the top of the plate.
-  const showGhost = Boolean(plot && ghost && ghost.length === plot.zone.length);
-  const vals = plot ? [...plot.zone, ...plot.out, ...(showGhost ? ghost : [])] : [];
-  const lo = Math.min(...DATUMS.map((d) => d.value), ...(vals.length ? vals : [0]));
-  const hi = Math.max(...DATUMS.map((d) => d.value), ...(vals.length ? vals : [0]));
-  const span = (hi - lo) || 1;
-  const [dMin, dMax] = [lo - span * 0.1, hi + span * 0.12];
-  const y = (v) => PAD.t + inner.h - ((v - dMin) / (dMax - dMin)) * inner.h;
-  const x = (i, n) => PAD.l + (n <= 1 ? inner.w / 2 : (i / (n - 1)) * inner.w);
+// The caption the last run earned for the time series at its default, which
+// says what run it was; any other view is captioned by its own description.
+let runCaption = null;
+function renderCaption() {
+  if (!runCaption) return;
+  const view = VIEW_BY_ID[viewSetting.view];
+  const standard = view.id === 'ts' && encodeView(viewSetting) === null;
+  // A view the run cannot support is captioned by its refusal, in the words
+  // the plate above it states: its own description would name a drawing that
+  // is not there.
+  const why = plot ? availabilityOf(view, plot) : null;
+  const drawn = why && !why.available
+    ? `${view.label}: unavailable. ${why.reason}${why.remedy ? ` ${why.remedy}` : ''}`
+    : `${view.describe(viewSetting)}.`;
+  $('fig-cap').textContent = standard ? runCaption : `${drawn} Geometry drawn from the IDF, tinted by the zone mean.`;
+}
 
-  const root = svg('svg', {
-    viewBox: `0 0 ${w} ${H}`,
-    width: '100%',
-    height: H,
-    role: 'img',
-    'aria-label': 'Zone mean air temperature against outdoor drybulb temperature',
-  });
+/**
+ * The range preview and the chooser under the chart, from the frame
+ * `drawPlate` has just drawn and lettered. The preview first, so the chooser
+ * can hand the keyboard to its window when "Whole run" leaves the row.
+ */
+function renderPlateControls(frame) {
+  drawRangePreview($('plate-range'), frame);
+  drawChooser($('plate-views'), frame);
+}
 
-  // ── ruling
-  const grid = svg('g', { 'shape-rendering': 'crispEdges' });
-  const right = w - PAD.r;
-  // About one rule per 48px of field, never fewer than six: drawn to the row's
-  // height the plate is two and a half times as tall as it was, and six rules
-  // across it left 20° between them.
-  const step = niceStep(dMax - dMin, Math.max(6, Math.round(inner.h / 48)));
-  for (let v = Math.ceil(dMin / step) * step; v <= dMax; v += step) {
-    const gy = Math.round(y(v)) + 0.5;
-    grid.append(
-      svg('line', { x1: PAD.l, y1: gy, x2: right, y2: gy, stroke: 'var(--rule-soft)', 'stroke-width': 1 }),
-    );
-    const t = svg('text', {
-      x: PAD.l - 10, y: gy + 3.5, 'text-anchor': 'end',
-      fill: 'var(--ink-3)', 'font-family': 'var(--mono)', 'font-size': 10,
-    });
-    // The degree sign alone, with no C or F after it: the plate's own
-    // `aria-label` names the quantity once and a gridline every 5 units has no
-    // room to repeat it. The figure still converts, which is the half that
-    // would otherwise letter an IP sheet's axis in Celsius.
-    t.textContent = `${figureIn(KINDS.temperature, v, { digits: 0 })}°`;
-    grid.append(t);
-  }
-  grid.append(
-    svg('line', {
-      x1: PAD.l - 0.5, y1: PAD.t, x2: PAD.l - 0.5, y2: PAD.t + inner.h,
-      stroke: 'var(--rule)', 'stroke-width': 1,
-    }),
-  );
-  root.append(grid);
+/**
+ * A zoom the new run does not cover is released, with the reason lettered
+ * under the plate, rather than slid onto the nearest days (US8 scenario 3).
+ */
+function releaseZoom() {
+  if (!viewSetting.zoom || !plot || zoomSpan(plot, viewSetting.zoom)) return;
+  plateNote = `The zoom to ${zoomText(viewSetting.zoom)} was released: this run does not cover it.`;
+  viewSetting = settingFor(viewSetting, { zoom: null });
+  updatePermalink();
+}
 
-  // ── design-day datums
-  for (const d of DATUMS) {
-    const gy = y(d.value);
-    root.append(
-      svg('line', {
-        x1: PAD.l, y1: gy, x2: right, y2: gy,
-        stroke: d.value < 0 ? 'var(--cold)' : 'var(--warm)',
-        'stroke-width': 1, 'stroke-dasharray': '1 4', opacity: 0.75,
-      }),
-    );
-    const t = svg('text', {
-      x: PAD.l + 6, y: gy - 5,
-      fill: d.value < 0 ? 'var(--cold)' : 'var(--warm)',
-      'font-family': 'var(--cond)', 'font-size': 9.5, 'letter-spacing': '0.12em',
-    });
-    // The datum carried no unit at all before this, which was the one figure on
-    // the plate a reader could not name. It has one now, in either system.
-    t.textContent = `${d.label.toUpperCase()} ${letter(KINDS.temperature, d.value, { digits: 1 })}`;
-    root.append(t);
-  }
-
-  if (!plot) {
-    const t = svg('text', {
-      x: PAD.l + inner.w / 2, y: PAD.t + inner.h / 2 + 4, 'text-anchor': 'middle',
-      fill: 'var(--ink-ghost)', 'font-family': 'var(--cond)', 'font-size': 11,
-      'letter-spacing': '0.16em',
-    });
-    t.textContent = 'AWAITING RUN';
-    root.append(t);
-    host.append(root);
-    return;
-  }
-
-  const n = plot.zone.length;
-  const dense = n > 900;
-  const cols = dense ? Math.min(Math.floor(inner.w), 520) : n;
-
-  const bandPath = (bins) => {
-    const top = bins.map((b, i) => `${x(i, bins.length).toFixed(2)},${y(b.max).toFixed(2)}`);
-    const bot = bins.map((b, i) => `${x(i, bins.length).toFixed(2)},${y(b.min).toFixed(2)}`).reverse();
-    return `M${top.join('L')}L${bot.join('L')}Z`;
-  };
-  const linePath = (vals) =>
-    'M' + vals.map((v, i) => `${x(i, vals.length).toFixed(2)},${y(v).toFixed(2)}`).join('L');
-
-  // The shape you took hold of, drawn first so the live curve reads on top of
-  // it. Same pen, no weight: this is where the building was, not a second
-  // measurement.
-  if (showGhost) {
-    root.append(
-      svg('path', {
-        d: linePath(ghost), fill: 'none', stroke: 'var(--redline)',
-        'stroke-width': 1.1, opacity: 0.34, 'stroke-linejoin': 'round',
-      }),
-    );
-  }
-
-  if (dense) {
-    const ob = bucket(plot.out, cols);
-    const zb = bucket(plot.zone, cols);
-    root.append(svg('path', { d: bandPath(ob), fill: 'var(--ink-ghost)', 'fill-opacity': 0.32 }));
-    root.append(svg('path', { d: bandPath(zb), fill: 'var(--redline)', 'fill-opacity': 0.28 }));
-    root.append(
-      svg('path', {
-        d: linePath(zb.map((b) => b.mean)), fill: 'none',
-        stroke: 'var(--redline)', 'stroke-width': 1.4, 'stroke-linejoin': 'round',
-      }),
-    );
-  } else {
-    root.append(
-      svg('path', {
-        d: linePath(plot.out), fill: 'none', stroke: 'var(--ink-ghost)',
-        'stroke-width': 1.4, 'stroke-dasharray': '4 3', 'stroke-linejoin': 'round',
-      }),
-    );
-    root.append(
-      svg('path', {
-        d: linePath(plot.zone), fill: 'none', stroke: 'var(--redline)',
-        'stroke-width': 1.9, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
-      }),
-    );
-  }
-
-  /*
-   * ── the reading hour
-   *
-   * The instant every meter on the desk is reading, drawn on the one picture
-   * that has an axis for it. Before this the hour was stated only in the rail's
-   * footer — ten-pixel mono at the foot of a desk you had to open first — which
-   * made the single most movable thing about the readings the least visible.
-   * The desk's own rule is that a path is readable without opening anything;
-   * the hour the paths are read at had better be too.
-   *
-   * The head is the same square the patch buttons and the rail's pin carry:
-   * filled `--redline` when the hour is held, a hairline outline when it is
-   * whichever hour this run happened to be worst at. One armed idiom, three
-   * places.
-   *
-   * Guarded on the series lengths agreeing, the way the ghost is: a station
-   * change redraws the plate with the new city's datums while the previous
-   * run's curve is still standing, and an index into a run that is no longer
-   * the one plotted would put the marker at an hour nobody is reading.
-   */
-  const reading = lastReadFrom?.points.length === n ? lastReadFrom : null;
-  if (reading) {
-    const mx = x(reading.at, n);
-    const held = Boolean(pinnedHour);
-    const ink = held ? 'var(--redline)' : 'var(--ink-ghost)';
-    const mark = svg('g', { 'pointer-events': 'none' });
-    mark.append(
-      svg('line', {
-        x1: mx, y1: PAD.t + 5, x2: mx, y2: PAD.t + inner.h,
-        stroke: ink, 'stroke-width': 1,
-        'stroke-dasharray': held ? null : '2 3',
-        'shape-rendering': 'crispEdges',
-      }),
-    );
-    mark.append(
-      svg('rect', {
-        x: mx - 3.5, y: PAD.t - 1, width: 7, height: 7,
-        fill: held ? 'var(--redline)' : 'none',
-        stroke: held ? 'var(--redline)' : 'var(--ink-ghost)', 'stroke-width': 1,
-      }),
-    );
-    // The point on the zone curve the desk is actually reading off.
-    mark.append(
-      svg('circle', { cx: mx, cy: y(plot.zone[reading.at]), r: 2.6, fill: ink }),
-    );
-    const title = svg('title');
-    title.textContent = `${held ? 'Held at' : 'Read at'} ${stampText(reading.points, reading.at)}`;
-    mark.append(title);
-    root.append(mark);
-    // The plate's description says what it is now showing, since the marker is
-    // part of the picture a reader who cannot see it is being told about.
-    root.setAttribute(
-      'aria-label',
-      `Zone mean air temperature against outdoor drybulb temperature. ` +
-        `The desk's meters are ${held ? 'held at' : 'reading at'} ` +
-        `${stampText(reading.points, reading.at)}.`,
-    );
-  }
-
-  // ── direct labels in the right gutter beat a legend box
-  const labels = [
-    { text: 'Zone', y: y(plot.zone[n - 1]), fill: 'var(--redline)', opacity: 1 },
-    { text: 'Outdoor', y: y(plot.out[n - 1]), fill: 'var(--ink-3)', opacity: 1 },
-  ];
-  if (showGhost) {
-    labels.push({ text: 'Was', y: y(ghost[n - 1]), fill: 'var(--redline)', opacity: 0.55 });
-  }
-  // Three labels can converge on one point when the curves end together, so
-  // settle them top to bottom against a minimum gap rather than nudging pairs.
-  labels.sort((a, b) => a.y - b.y);
-  const GAP = 11.5;
-  for (const [i, l] of labels.entries()) {
-    if (i > 0) l.y = Math.max(l.y, labels[i - 1].y + GAP);
-  }
-  for (const l of labels) {
-    const t = svg('text', {
-      x: right + 8, y: Math.max(PAD.t + 4, Math.min(l.y + 3.5, PAD.t + inner.h)),
-      fill: l.fill, opacity: l.opacity,
-      'font-family': 'var(--cond)', 'font-size': 10, 'letter-spacing': '0.11em', 'font-weight': 500,
-    });
-    t.textContent = l.text.toUpperCase();
-    root.append(t);
-  }
-
-  // ── x axis: one label per environment, or per month for an annual run
-  const axis = svg('g');
-  const lettered = []; // each label with the band it has to fit, checked once drawn
-  for (const seg of plot.segments) {
-    const x0 = x(seg.start, n);
-    const x1 = x(Math.min(seg.end, n - 1), n);
-    if (seg.start > 0) {
-      axis.append(
-        svg('line', {
-          x1: x0, y1: PAD.t, x2: x0, y2: PAD.t + inner.h,
-          stroke: 'var(--rule)', 'stroke-width': 1, 'shape-rendering': 'crispEdges',
-        }),
-      );
+/**
+ * The whole-year running mean the adaptive views read, off the EPW this run
+ * was solved against, cached on the file's identity like `runningMeanFor`.
+ */
+let plateMeanCache = null;
+function plateRunningMean(epw) {
+  if (!epw) return { mean: null, absence: 'Needs a run over a weather file.' };
+  if (plateMeanCache?.epw !== epw) {
+    let value;
+    try {
+      value = yearRunningMean(dailyMeansCarried(epw), declaredWeather(epw)?.source ?? null);
+    } catch {
+      // Answered as `runningMeanFor` answers the same parse: an absence the
+      // adaptive views letter, never a throw. A station archive is not gated
+      // by `dailyMeansCarried` the way a file is, and the index carries about
+      // twenty-five polar stations (Vostok among them) whose dry bulbs reach
+      // -70 °C, which the parser refuses and EnergyPlus runs. Thrown from
+      // here, it left `solve` after the run had been filed as solved, and every
+      // run on that station stood unlettered and undimmed under its title block.
+      // The parser's own sentence is `runningMeanFor`'s to letter, in criterion
+      // a's margin cell; the plate states the absence in its one line.
+      value = { mean: null, absence: 'This weather file’s daily means cannot be read.' };
     }
-    const t = svg('text', {
-      x: (x0 + x1) / 2, y: H - 10, 'text-anchor': 'middle',
-      fill: 'var(--ink-3)', 'font-family': 'var(--cond)', 'font-size': 9.5, 'letter-spacing': '0.12em',
-    });
-    t.textContent = seg.label.toUpperCase();
-    axis.append(t);
-    // A design day also has a short form, its season and date: the band a
-    // day gets on a phone is about 100px, and the full "WINTER DESIGN DAY ·
-    // 21 DEC" in tracked capitals needs about 160, so the two centred labels
-    // ran into each other.
-    const short = seg.kind ? seg.label.replace(/ design day/i, '').toUpperCase() : null;
-    lettered.push({ t, band: Math.abs(x1 - x0), short });
+    plateMeanCache = { epw, value };
   }
-  root.append(axis);
+  return plateMeanCache.value;
+}
 
-  /*
-   * ── choosing the hour
-   *
-   * Point at the moment you want explained. The curve is the instrument, and
-   * pointing at it is reading back off the model in the same sense everything
-   * else here is.
-   *
-   * This used to be the *only* way to choose an hour, on the argument that a
-   * date field asks the reader to type "14 February, 15:00" at a picture of 14
-   * February already on the screen, and invites February the 30th and hour 25
-   * purely to meet a refusal message. Half of that still holds and half of it
-   * never did. The objection was to a *free* date field validated by refusal;
-   * a picker whose every option is walked out of the run's own timestamps
-   * cannot express an hour the run does not contain, so there is nothing left
-   * to refuse. And the gesture has a reach it cannot argue its way out of: an
-   * annual plate at ten hours to the pixel is physically unable to name 15:00
-   * on 14 February, and a pointer is not the keyboard's instrument at all.
-   * Both routes now stand, under `renderWhen` — the curve for the hour you can
-   * see, the picker for the hour you can name.
-   */
-  // Where the field the marker travels in ended up, so the gesture below can
-  // hit-test it. Read off the render rather than measured on demand, because
-  // this function is the only thing that knows where it put the field — and
-  // it redraws on every step of a drag, including the ones that drag makes.
-  plateField = reading
-    ? {
-        root,
-        w,
-        innerW: inner.w,
-        n,
-        // Snapping is decided by the axis's own resolution rather than by run
-        // kind, because the resolution is what the reader is actually up
-        // against and it moves with the window: an annual run at ten hours to
-        // the pixel cannot mean an hour, a design day at five pixels to the
-        // hour can.
-        snap: n / inner.w > 1,
-      }
-    : null;
-  host.classList.toggle('pickable', Boolean(reading));
-
-  host.append(root);
-
-  // Only a drawn label has a length. One that overruns its band takes its
-  // short form, and one that overruns in that too is left out, as a month
-  // too narrow to letter already is: a label over its neighbour's band reads
-  // as the neighbour's.
-  for (const { t, band, short } of lettered) {
-    if (t.getComputedTextLength() <= band) continue;
-    if (short) t.textContent = short;
-    if (!short || t.getComputedTextLength() > band) t.textContent = '';
+/**
+ * Look at the run another way. A redraw and an address, nothing else: no
+ * solve, no IDF, no solve key, no study cancelled (FR-003).
+ */
+function setView(next) {
+  if (previewFrame) {
+    cancelAnimationFrame(previewFrame);
+    previewFrame = 0;
   }
+  viewSetting = next;
+  plateNote = null;
+  renderTrace();
+  updatePermalink();
 }
 
 /*
@@ -1145,23 +991,9 @@ function renderTrace() {
 let plateField = null;
 let plateDrag = null; // { pointerId, at, moved, frame }
 
-/** Which point of the plotted series a client x lands on, or null. */
-function plateIndexAt(clientX, { clamped = false } = {}) {
-  if (!plateField) return null;
-  const box = plateField.root.getBoundingClientRect();
-  if (!box.width) return null;
-  const { w, innerW, n } = plateField;
-  // The viewBox is `0 0 w H` against a width of 100 %, so a client pixel is
-  // `w / box.width` user units — read per event rather than cached, since the
-  // plate resizes with the window and with the desk opening.
-  const px = (clientX - box.left) * (w / box.width);
-  const i = Math.round(((px - PAD.l) / innerW) * (n - 1));
-  // A press outside the field is not a pick: the gutters carry the axis labels
-  // and the curve names, and the left one is where the pointer rests on its
-  // way to the temperature scale. Once a drag is under way the same overshoot
-  // means the end of the axis, so it clamps instead.
-  if (i < 0 || i > n - 1) return clamped ? Math.min(n - 1, Math.max(0, i)) : null;
-  return i;
+/** Which hour a client point on the plate lands on, or null. The field decides, per view. */
+function plateIndexAt(clientX, clientY, options = {}) {
+  return plateField?.pick(clientX, clientY, options) ?? null;
 }
 
 {
@@ -1169,8 +1001,14 @@ function plateIndexAt(clientX, { clamped = false } = {}) {
 
   host.addEventListener('pointerdown', (event) => {
     if (!plateField || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
-    const at = plateIndexAt(event.clientX);
+    const at = plateIndexAt(event.clientX, event.clientY);
     if (at == null) return;
+    // On the duration curve a press sets the cursor rather than an hour.
+    if (plateField.cursor) {
+      setDurationCursor(at);
+      event.preventDefault();
+      return;
+    }
     plateDrag = { pointerId: event.pointerId, at, moved: false, frame: 0 };
     host.setPointerCapture(event.pointerId);
     host.classList.add('dragging');
@@ -1182,7 +1020,7 @@ function plateIndexAt(clientX, { clamped = false } = {}) {
 
   host.addEventListener('pointermove', (event) => {
     if (!plateDrag || event.pointerId !== plateDrag.pointerId) return;
-    const at = plateIndexAt(event.clientX, { clamped: true });
+    const at = plateIndexAt(event.clientX, event.clientY, { clamped: true });
     if (at == null || at === plateDrag.at) return;
     plateDrag.at = at;
     plateDrag.moved = true;
@@ -1210,6 +1048,42 @@ function plateIndexAt(clientX, { clamped = false } = {}) {
   };
   host.addEventListener('pointerup', release);
   host.addEventListener('pointercancel', release);
+
+  // The keyboard's way to the same hour (research.md R11): Left and Right one
+  // hour, Page Up and Page Down one per cent of the hours shown, Home and End
+  // to the ends, each held as a drag holds it; Enter on the held hour lets it
+  // go, as a click on it does. The live region says where the hour now is.
+  host.addEventListener('keydown', (event) => {
+    if (!plateField || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (plateField.cursor) {
+      const to = stepFor(event.key, plateField, plateField.current);
+      if (to == null) return;
+      event.preventDefault();
+      setDurationCursor(to);
+      return;
+    }
+    if (!lastReadFrom) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      pinFromPlate(lastReadFrom.at, false);
+    } else {
+      const to = stepFor(event.key, plateField, lastReadFrom.at);
+      if (to == null) return;
+      event.preventDefault();
+      // The address is held back as a drag holds it and written on the key's
+      // release below. Written on every step, a held arrow key repeats at
+      // about 30 Hz, and WebKit throws a SecurityError on the 101st
+      // `replaceState` within ten seconds (measured in WebKit 26.5): the
+      // throw left this handler before the live region, which then fell
+      // silent, and the address stood at the hundredth step.
+      pinFromPlate(to, false, { hold: true, address: false });
+    }
+    const said = lastReadFrom ? stampText(lastReadFrom.points, lastReadFrom.at) : null;
+    $('plate-live').textContent = said ? `${pinnedHour ? 'Held at' : 'Reading at'} ${said}` : '';
+  });
+  host.addEventListener('keyup', (event) => {
+    if (STEP_KEYS.has(event.key)) updatePermalink();
+  });
 }
 
 let resizeTimer;
@@ -1221,42 +1095,6 @@ const stats = (v) => {
   const max = Math.max(...v);
   return { min, max, mean: v.reduce((a, b) => a + b, 0) / v.length, swing: max - min };
 };
-
-/**
- * Design days become one labelled band each; a year long enough to crowd them
- * gets month ticks instead.
- *
- * An annual run is both at once — two design days ahead of a year — and each
- * environment is bucketed on its own, because running the month walk across the
- * whole axis would print the design days as two more months and set their names
- * against the year's January.
- *
- * Whether a band is lettered is decided by how wide it lands, not by what kind
- * of environment it came from. Twenty-four hours out of 8,808 is far too narrow
- * a band to letter, so the design days keep their rule and give up their label;
- * a run period of one month is half of a two-month axis and takes its name. A
- * count-based rule got this wrong the moment a run period could be a single
- * month: a desk set to January and July drew four bands and lettered none of
- * them.
- */
-function axisSegments(points, runs) {
-  if (runs.length > 1 && points.length <= 400) return runs;
-  const months = (run) => {
-    const found = [];
-    for (let i = run.start; i <= run.end; i++) {
-      const m = points[i].timestamp.month;
-      if (!found.length || found.at(-1).key !== m) found.push({ key: m, start: i, end: i, label: MONTHS[m - 1] });
-      else found.at(-1).end = i;
-    }
-    return found;
-  };
-  // Six per cent of the axis: below it a label sits over a band narrower than
-  // the label itself and reads as belonging to its neighbour.
-  const wide = (seg) => (seg.end - seg.start + 1) / points.length > 0.06;
-  return runs.flatMap((run) =>
-    months(run).map((seg) => (wide(seg) ? seg : { ...seg, label: '' })),
-  );
-}
 
 function metricsFor(zone, out, run, hasOutdoor, demand = null) {
   const slice = (a) => a.slice(run.start, run.end + 1);
@@ -2500,8 +2338,13 @@ function syncStudies() {
 // with the plate and the bill, while the console's conformance chips are
 // measurements of the desk as it stands and are true the instant a control
 // moves — dimming those would say the opposite of what they mean.
+//
+// The plate's views letter their readings under the chart, in `#plate-views`,
+// beside the chooser. The block is listed so its readings dim with the chart;
+// the stylesheet dims only the readings and the citation in it, since the
+// chooser's controls are not results.
 const resultPanels = () =>
-  [$('trace'), $('when'), $('finding'), $('schedule'), $('bill'), $('score'), $('shelf-table'), $('chase')];
+  [$('trace'), $('plate-views'), $('when'), $('finding'), $('schedule'), $('bill'), $('score'), $('shelf-table'), $('chase')];
 
 // Results describe a shape. Once the shape moves, they describe a building that
 // is no longer on the sheet, so say so rather than letting them sit there.
@@ -4236,7 +4079,7 @@ function beginGesture({ priced = false } = {}) {
   // not letter them with a baseline it did not shift.
   if (priced || !solvedColumns || !solvedParams) return;
   baseline = { columns: solvedColumns, label: shapeLabel(solvedParams) };
-  ghost = plot ? plot.zone : null;
+  ghost = plot;
   $('baseline-note').textContent = `Δ against ${baseline.label}`;
 }
 
@@ -4788,6 +4631,17 @@ function attachClimate(source, { sizing = 'No', studyContext = null, conditions 
   // And the extent with it, on the same identity and for the same reason: 1 May
   // to 30 September is a fact about the file that just left.
   periodCache = null;
+  // The plate's year of running means is the departed file's too.
+  plateMeanCache = null;
+  // And the plate's ghost, with the carpet's change toggle it enables. The
+  // ghost is where the desk stood when a gesture began, and a run under another
+  // climate is not that: two annual runs of one calendar carry the same `hours`
+  // fingerprint (measured: Golden, San Francisco and Chicago all read
+  // `1|0.1-1T1|0.12-31T24|8760`), so without this the next run lettered one
+  // city's readings as the "was" of another's. A second attach commits a
+  // `sizingPeriods` it already holds, so it opens no gesture to replace it.
+  ghost = null;
+  carpetChange = false;
 
   // The whole climate arrives together: the year on the EPW, the design days
   // and the location on the DDY. Denver's come out, this station's go in.
@@ -5432,9 +5286,13 @@ let linkAttachPending = false;
  * one per surface, and they disagreed under solo: the address bar carried the
  * pre-solo patch state while the bundle's manifest carried the solo map.
  */
-const schemeHash = (p = params) =>
+const schemeHash = (p = params, { view = viewSetting } = {}) =>
   encodeState({
     params: p,
+    // The plate's view rides the address bar and Share, and never the shelf:
+    // a kept scheme is what was simulated, and the view is how it is being
+    // looked at (FR-024). `saveScheme` passes `view: null`.
+    view,
     bypass: patching(),
     station: stationToken(),
     file: fileToken(),
@@ -5518,12 +5376,19 @@ function refuseLink(message) {
   linkAttachPending = false;
   syncSweepGate();
   stopAuto();
+  // The plate's view rides the same link and is neither a parameter nor the
+  // patch bay, so it is released by name as the pin is below. Released before
+  // `revert`, whose gesture writes the address, so the refused link's `pv` is
+  // not written back into the bar this function is about to clear.
+  viewSetting = DEFAULT_SETTING;
+  plateNote = null;
   revert();
   // `revert` restores the parameters and the patch bay; the pinned hour is
   // neither, so it has to be released by name or a refused link would leave
   // its one surviving claim on the desk.
   pinnedHour = null;
   clearResults();
+  renderTrace();
   history.replaceState(null, '', location.pathname + location.search);
   statusEl.className = 'status bad';
   statusEl.textContent = message;
@@ -6325,7 +6190,7 @@ function saveScheme() {
     // The scheme is stored exactly as the address bar carries it, `patching()`
     // and all, so a scheme kept under solo reproduces the soloed building —
     // the one place the raw patch bay and what actually reaches the IDF differ.
-    hash: schemeHash() || 'v1',
+    hash: schemeHash(params, { view: null }) || 'v1',
     savedAt: Date.now(),
     station: $('t-location').textContent,
     // Beside the place, never instead of it. A DSY1 and a TMYx for the same
@@ -6411,7 +6276,11 @@ function restoreScheme(scheme) {
     statusEl.textContent = state.file
       ? `Restoring ${scheme.name}, which was solved against another weather file — reloading to ask for it…`
       : `Restoring ${scheme.name}, which names another station — reloading to fetch its weather…`;
-    history.replaceState(null, '', `#${scheme.hash}`);
+    // The shelf never stores the view, so the reload would boot at the time
+    // series; the view being looked at goes onto the address with it, last,
+    // where `encodeState` puts it (FR-024).
+    const pv = encodeView(viewSetting);
+    history.replaceState(null, '', `#${scheme.hash}${pv ? `&pv=${pv}` : ''}`);
     location.reload();
     return;
   }
@@ -7880,6 +7749,9 @@ if (location.hash.length > 1) {
     // would letter its own worst hour first and jump to the link's, which is
     // the flicker a link exists to avoid.
     pinnedHour = linked.pin;
+    // The view the link was looking through. A well-formed view this desk
+    // cannot draw still loads, and the plate says why (Edge Cases).
+    if (linked.view) viewSetting = linked.view;
     desk?.sync();
   } catch (error) {
     linkError = error;
@@ -8064,6 +7936,17 @@ async function solve() {
   // bundle exists to remove: a slider nudged since the solve would have it
   // shipping inputs that never produced the results on the sheet.
   const idf = writeIdf(model);
+  // What the plate's views are judged against, off the document being solved
+  // and in the same breath, for the reason `capture` is: a slider moved during
+  // an annual run must not change whether this run counts as mechanically
+  // cooled, or at which pressure its psychrometric chart is drawn.
+  const documentFacts = readDocumentFacts(model);
+  // Taken before the await with the document, so the refusals name the block
+  // this run was written under.
+  const blocked = new Map(
+    [...(modelState ?? [])].filter(([, state]) => state.blocked).map(([id, state]) => [id, state.blocked]),
+  );
+  const floor = occupiedFloor(snapshot);
 
   /**
    * The download's copy of this run, filed the moment its outcome is known.
@@ -8214,7 +8097,8 @@ async function solve() {
   const points = zonePts.slice(0, nn);
   const runs = environmentRuns(points, eso?.environments ?? []);
 
-  plot = { zone, out, segments: axisSegments(points, runs) };
+  plot = readRunSeries(eso, { document: documentFacts, floor, runningMean: plateRunningMean(capture.epw), blocked });
+  releaseZoom();
 
   // `noun` rides along beside the column's label because the finding says the
   // environment in a sentence and the label heads a column: "the winter design
@@ -8311,13 +8195,14 @@ async function solve() {
   // into the same narrow-axis branch as a design-day run, so another city's
   // January was being lettered as Denver's two design days by nothing more
   // than its hour count. The run kind decides the sentence, not the width.
-  $('fig-cap').textContent = hasOutdoor
+  runCaption = hasOutdoor
     ? nn > 900
       ? 'Zone mean air temperature against outdoor drybulb over the full run period; each column spans its hourly range. Geometry drawn from the IDF.'
       : capture.annual
         ? 'Zone mean air temperature against outdoor drybulb over the months in the run. Geometry drawn from the IDF, tinted by the zone mean.'
         : 'Zone mean air temperature against outdoor drybulb across both Denver design days. Geometry drawn from the IDF, tinted by the zone mean.'
     : 'Zone mean air temperature over the run. No outdoor drybulb was recorded in the ESO.';
+  renderCaption();
 
   // Declared here rather than inside the record below, because the traverse
   // stop further down reads it too.

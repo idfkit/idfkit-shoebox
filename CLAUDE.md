@@ -244,7 +244,7 @@ geometry earlier ones wrote).
   that is not measured; two moves, sixty-word budget shared with the finding.
 - **General notes** (`tour.js`): markers fill only from real events via
   `tour?.note(...)`. **Any feature change that alters what a step teaches must update
-  `NOTES` and the call sites, and bump the storage key** (`shoebox-general-notes-v4`).
+  `NOTES` and the call sites, and bump the storage key** (`shoebox-general-notes-v7`).
 - **Units** (`units.js`): SI or IP is **lettering, never model**. Every value on
   `params` stays the SI number the document holds; a frozen `Kind` says how it
   converts and how precisely it reads, and conversion happens at the moment of
@@ -259,7 +259,7 @@ geometry earlier ones wrote).
 - **Permalink** (`permalink.js`): delta-encoded against versioned defaults. Changing a
   default, renaming a key or narrowing a range means bumping `LINK_VERSION`, freezing
   `DEFAULTS_BY_VERSION` and writing a `MIGRATIONS` step. Links are refused whole.
-  Reserved keys (`in`, `out`, `stn`, `win`, `at`, `sty`, `sv`) are read in
+  Reserved keys (`in`, `out`, `stn`, `win`, `at`, `sty`, `sv`, `wf`, `wfd`, `pv`) are read in
   `decodeState` above `readValue`. Only `*`, `.`, `-`, `_` survive `URLSearchParams`
   unescaped. The bar encodes `patching()`; one builder, `schemeHash`.
 - **Register** (`schemes.js`): a standard is an overlay, a kept scheme a replacement
@@ -281,6 +281,17 @@ geometry earlier ones wrote).
   `occupiedFloor(params)`. dT rounds half-up (`roundDT`). Design days are excluded.
   Criterion d is never read. The count is not a verdict. The purchased method text
   never enters the repo; `scripts/build-tm59.mjs` holds the transcription.
+- **Plate views** (`views.js`, `plate.js`, `comfort.js`, `psychro.js`, `pmv.js`): the
+  plate draws one run in seven views from one frozen `RunSeries` (`readRunSeries`),
+  read once per run; the ghost is a reference to the previous one, drawn only when
+  `hours` fingerprints match. `views.js` and `comfort.js` are DOM-free and compute
+  every lettered figure; `plate.js` draws a `PlateFrame` and nothing else. A view
+  joins `VIEWS` only with its renderer (asserted at load). A view change starts no
+  solve. `pv` is omitted at the default, never stored on a kept scheme
+  (`schemeHash(params, { view: null })`). `views.js` must not import `tm59.js`
+  (cycle through `readings.js`). Adaptive views use `runningMeanOver`, the one
+  recursion. Document facts are read beside `writeIdf` in `solve`. See "Seven ways
+  to draw one run".
 - **Layout:** the index sheet at `780px` wide or `600px` tall (`--index` flag read
   back by `console.js`); the register folds between 600 and 1000 px tall
   (`--fold`); schedules fold at `620px` with `data-head` and `keepTableSemantics`.

@@ -614,6 +614,13 @@ const VARIABLES_HOURLY = [
   'Zone Mean Radiant Temperature',
   'Zone Air Heat Balance Surface Convection Rate',
   'Zone Air Heat Balance Air Energy Storage Rate',
+  // The psychrometric view's two axes of moist air (spec 015). Both are one
+  // series each: the site variable has one key and the zone one has one zone.
+  // `Zone Mean Air Humidity Ratio` is the Zone Average variable and pairs with
+  // `Zone Mean Air Temperature`; `Zone Air Humidity Ratio` is the HVAC Average
+  // one and is not used.
+  'Site Outdoor Air Humidity Ratio',
+  'Zone Mean Air Humidity Ratio',
 ];
 
 const VARIABLES_DAILY = ['Site Daylight Saving Time Status', 'Site Day Type Index'];
@@ -2645,6 +2652,18 @@ function syncReporting(doc, state, reporting) {
     if (doc.all('AirflowNetwork:MultiZone:Component:SimpleOpening').size) {
       addVariable(doc, 'AFN Surface Venting Window or Door Opening Factor', 'Hourly');
     }
+  }
+
+  // The energy signature's two series (spec 015), where there is an ideal
+  // loads system to report them. Asked of the document, beside the network's
+  // gate and for its reason: a System bypassed or blocked by its own
+  // `requires` writes no system, so nothing is requested it cannot produce.
+  // Supply-air *total* energy, because that is what the two district meters
+  // the bill reads total, so the daily sums reconcile with the sheet (FR-017).
+  // Daily, because the signature reads nothing finer: 365 values, not 8,760.
+  if (holds(doc, 'ZoneHVAC:IdealLoadsAirSystem') && doc.all('ZoneHVAC:IdealLoadsAirSystem').size) {
+    addVariable(doc, 'Zone Ideal Loads Supply Air Total Heating Energy', 'Daily');
+    addVariable(doc, 'Zone Ideal Loads Supply Air Total Cooling Energy', 'Daily');
   }
 
   doc.add('Output:VariableDictionary', null, { key_field: 'IDF' });

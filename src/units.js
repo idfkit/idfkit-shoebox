@@ -180,6 +180,12 @@ const ROSTER = [
   // is about where they are.
   kind({ id: 'distance', si: 'km', ip: 'mi', factor: 1000 / (FT * 5280), digits: 0 }),
   kind({ id: 'carbonIntensity', si: 'gCO₂e/kWh', ip: 'lb/MWh', factor: 1000 / LB, digits: 0 }),
+  // The psychrometric chart's vertical axis. The engine reports kg/kg, which
+  // `readRunSeries` scales to g/kg once at read time; a grain is 1/7000 lb, so
+  // 1 g/kg is 7000/1000 = 7 gr/lb exactly, and the factor needs no constant
+  // beyond the definition of the grain. A reading, never a parameter, so the
+  // rule that `params` holds what the document holds is not in play.
+  kind({ id: 'humidityRatio', si: 'g/kg', ip: 'gr/lb', factor: 7, digits: 1 }),
 
   /* ── identity ────────────────────────────────────────────────────────── */
   kind({ id: 'ratio', si: '', ip: '', digits: 2, why: 'A fraction is a fraction.' }),
