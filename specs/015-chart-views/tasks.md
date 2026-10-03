@@ -284,7 +284,7 @@ measurements and the final passes.
 
 - [X] T077 [P] Amend `.interface-design/system.md`: in pattern 1 replace the native selects of the range with the range preview, and record the preview as a pattern (reduced-height overview, handles and window, the break between run periods, 24 px targets).
 - [X] T078 [P] Record the range preview in the section "Seven ways to draw one run" of `docs/design-notes.md`: why the date lists were replaced, why the listeners sit on the host, the latest-wins redraw, and the link written on release.
-- [ ] T079 Repeat the range preview rows of quickstart.md §6 at 390 × 844 in device emulation (SC-006): handles and window reachable by touch, a drag on the preview does not scroll the page, and no horizontal page scroll.
+- [X] T079 Repeat the range preview rows of quickstart.md §6 at 390 × 844 in device emulation (SC-006): handles and window reachable by touch, a drag on the preview does not scroll the page, and no horizontal page scroll.
 - [ ] T080 Measure one drag across a month of a year run on `http://localhost:5173/?measure` at Chrome 4× CPU slowdown: the median redraw per day step, and a count of permalink writes, which must be exactly one; record both beside the T062 figures in `docs/design-notes.md`.
 
 ---
