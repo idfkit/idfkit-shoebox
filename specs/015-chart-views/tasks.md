@@ -275,7 +275,7 @@ measurements and the final passes.
 - [X] T059 [P] Rewrite the plate step in `NOTES` in `src/tour.js` to teach the chooser, and bump `STORE` from `shoebox-general-notes-v6` to `shoebox-general-notes-v7` (FR-026).
 - [X] T060 [P] Record the five patterns in `.interface-design/system.md`: the view chooser, scatter marks by shape, the 90 % outline ghost, the carpet's binned shade and change toggle, and the keyboard cursor on the plate; close the gap recorded under "The reading hour on the plate".
 - [X] T061 Remove the dead time series code left in `renderTrace` in `src/main.js` after T016, and confirm the T001 fixture comparison still passes.
-- [ ] T062 Measure SC-001 per quickstart.md §8 on `http://localhost:5173/?measure`: 10 switches per view pair on a year run, unthrottled and at Chrome 4× CPU slowdown; the medians must be under 150 ms and 500 ms.
+- [X] T062 Measure SC-001 per quickstart.md §8 on `http://localhost:5173/?measure`: 10 switches per view pair on a year run, unthrottled and at Chrome 4× CPU slowdown; the medians must be under 150 ms and 500 ms.
 - [X] T063 Run `.harness/views-cost.mjs` on both desks for the final SC-002 figures; each ratio must be at most 1.05.
 - [X] T064 Add the section "Seven ways to draw one run" to `docs/design-notes.md`, recording the design decisions of research.md, the SC-001 and SC-002 figures from T062 and T063, and the non-obvious findings met during implementation.
 - [X] T065 [P] Add the one-paragraph short form of the feature to `CLAUDE.md` under Architecture, and add `pv` to the list of reserved keys in its Permalink entry.
@@ -285,7 +285,7 @@ measurements and the final passes.
 - [X] T077 [P] Amend `.interface-design/system.md`: in pattern 1 replace the native selects of the range with the range preview, and record the preview as a pattern (reduced-height overview, handles and window, the break between run periods, 24 px targets).
 - [X] T078 [P] Record the range preview in the section "Seven ways to draw one run" of `docs/design-notes.md`: why the date lists were replaced, why the listeners sit on the host, the latest-wins redraw, and the link written on release.
 - [X] T079 Repeat the range preview rows of quickstart.md §6 at 390 × 844 in device emulation (SC-006): handles and window reachable by touch, a drag on the preview does not scroll the page, and no horizontal page scroll.
-- [ ] T080 Measure one drag across a month of a year run on `http://localhost:5173/?measure` at Chrome 4× CPU slowdown: the median redraw per day step, and a count of permalink writes, which must be exactly one; record both beside the T062 figures in `docs/design-notes.md`.
+- [X] T080 Measure one drag across a month of a year run on `http://localhost:5173/?measure` at Chrome 4× CPU slowdown: the median redraw per day step, and a count of permalink writes, which must be exactly one; record both beside the T062 figures in `docs/design-notes.md`.
 
 ---
 

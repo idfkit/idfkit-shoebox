@@ -3145,9 +3145,15 @@ never span environments.
 - SC-001, the redraw on a year run (Boston, System and Gains in), `?measure`,
   unthrottled on the development Mac: the median `plate-draw` over ten switches
   per view pair is 3.8 ms (duration) to 10.5 ms (psychrometric); a switch
-  including the chooser is at most 16.7 ms. The 4× CPU slowdown measurement has
-  not been taken: it needs DevTools throttling, which the automation used here
-  cannot set.
+  including the chooser is at most 16.7 ms. Measured again with throttling
+  (`.harness/views-timing.mjs`, Chrome headless over the DevTools protocol,
+  1728 × 1030 at 2×, all seven views offered, ten switches for each of the 21
+  pairs): the click to the end of the synchronous redraw has a median of
+  5.4 ms unthrottled (worst pair psychrometric/carpet, 14.9 ms) and 18.9 ms at
+  4× CPU slowdown (worst pair 51.3 ms), against budgets of 150 and 500 ms.
+  The click to the second animation frame is about 33 ms in both, which is two
+  frames at 60 Hz and says nothing about the redraw. No switch sent a message
+  to the engine's worker.
 - SC-003: every count agrees with an independent loop over the hourly arrays
   (`.harness/views-counts.mjs`): both graphic shares, all five adaptive
   models' five counts, hours at or above 26 and 18 °C, 288 average-day means,
@@ -3241,8 +3247,12 @@ are sliders, so the range stays reachable by tap and by keyboard.
 - Measured, unthrottled, in a hidden automation tab: a drag of the end handle
   over five weeks of a year run redrew four times (the automation sends few
   pointer moves), median `plate-draw` 4.6 ms, and wrote the link exactly once.
-  The 4× CPU slowdown figure has not been taken, for the reason given under
-  SC-001.
+  At 4× CPU slowdown (`.harness/views-timing.mjs`), the window of a 31-day
+  range dragged at half a day per pointer step moved from day 1 to day 40 and
+  redrew 40 times, once per day crossed, with a median `plate-draw` of 4.4 ms.
+  A pointer step to the second painted frame, protocol round trips included,
+  has a median of 49.5 ms. The address was written once, on release, and not
+  during the drag; the engine's worker received nothing.
 
 ## Invariants that fail quietly
 
