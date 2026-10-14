@@ -1,7 +1,8 @@
 import { defineConfig } from 'vite';
-import { wasmFile } from '@idfkit/engine-assets';
+import { energyPlusVersion, wasmFile } from '@idfkit/engine-assets';
 import { revision } from './scripts/revision.mjs';
 import { toolkit } from './scripts/toolkit.mjs';
+import { ENERGYPLUS_VERSION } from './src/version.js';
 
 /**
  * climate.onebuilding.org serves the TMYx archives without an
@@ -51,6 +52,24 @@ const toolkitVersion = toolkit();
  * once a bundler has inlined the module.
  */
 const engineWasmFile = wasmFile;
+
+/**
+ * The installed assets and the release the page states must be of one
+ * EnergyPlus release line. Before the file name was read from the package, a
+ * pin on another line failed in the browser, on a request for a file that was
+ * not staged. That request now succeeds, so the disagreement is refused here:
+ * otherwise the page would run one release's engine on a model, a schema and
+ * a report that all name another. Lines are compared and not full versions,
+ * because the line is what the file name and the model's version carry.
+ */
+const releaseLine = (version) => version.split('.').slice(0, 2).join('.');
+if (releaseLine(energyPlusVersion) !== releaseLine(ENERGYPLUS_VERSION)) {
+  throw new Error(
+    `The installed @idfkit/engine-assets carries EnergyPlus ${energyPlusVersion}, ` +
+      `and src/version.js states ${ENERGYPLUS_VERSION}. ` +
+      'Move both together with: node scripts/adopt-energyplus.mjs X.Y.Z',
+  );
+}
 
 export default defineConfig({
   define: {

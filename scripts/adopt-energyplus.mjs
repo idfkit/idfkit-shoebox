@@ -65,10 +65,10 @@ class Literal {
     Object.freeze(this);
   }
 
-  /** The file's text with the literal moved. Refuses unless it occurs exactly once. */
-  rewritten() {
-    const text = readFileSync(resolve(ROOT, this.path), 'utf8');
-    const found = [...text.matchAll(this.pattern)];
+  /** The file's text as read and with the literal moved. Refuses unless it occurs exactly once. */
+  #moved() {
+    const before = readFileSync(resolve(ROOT, this.path), 'utf8');
+    const found = [...before.matchAll(this.pattern)];
     if (found.length !== 1) {
       throw new Refusal(
         `${this.path}: expected exactly one match of ${this.pattern}, found ${found.length}.`,
@@ -76,15 +76,20 @@ class Literal {
     }
     const [match] = found;
     const start = match.index + match[0].indexOf(match[1]);
-    return text.slice(0, start) + this.value + text.slice(start + match[1].length);
+    const after = before.slice(0, start) + this.value + before.slice(start + match[1].length);
+    return { before, after };
+  }
+
+  /** The precondition alone: refuses unless the literal occurs exactly once. Writes nothing. */
+  check() {
+    this.#moved();
   }
 
   /** Write the moved text. Returns whether the file changed. */
   apply() {
-    const path = resolve(ROOT, this.path);
-    const next = this.rewritten();
-    if (readFileSync(path, 'utf8') === next) return false;
-    writeFileSync(path, next);
+    const { before, after } = this.#moved();
+    if (before === after) return false;
+    writeFileSync(resolve(ROOT, this.path), after);
     return true;
   }
 }
@@ -130,15 +135,37 @@ function assetsFor(release, stated) {
   return newest;
 }
 
-function pinned() {
-  return JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')).dependencies?.[ASSETS];
+/**
+ * Whether the manifest and the lockfile both state the version. A manifest
+ * that was moved by hand leaves the lockfile behind, and `npm ci` then fails.
+ */
+function pinned(assets) {
+  const read = (name) => JSON.parse(readFileSync(resolve(ROOT, name), 'utf8'));
+  return (
+    read('package.json').dependencies?.[ASSETS] === assets &&
+    read('package-lock.json').packages?.[`node_modules/${ASSETS}`]?.version === assets
+  );
+}
+
+/** The command line: one release, and the assets version when it is stated. */
+class Arguments {
+  constructor(argv) {
+    const flag = argv.indexOf('--assets');
+    const positional = argv.filter((_, index) => flag === -1 || (index !== flag && index !== flag + 1));
+    const unknown = positional.find((word) => word.startsWith('-'));
+    if (unknown) throw new Refusal(`'${unknown}' is not an option. The only option is --assets X.Y.N.`);
+    if (positional.length > 1) throw new Refusal(`Expected one release, found ${positional.length}.`);
+    this.stated = flag === -1 ? null : argv[flag + 1];
+    if (flag !== -1 && (!this.stated || this.stated.startsWith('-'))) {
+      throw new Refusal('--assets takes a version, as X.Y.N.');
+    }
+    this.release = new Release(positional[0]);
+    Object.freeze(this);
+  }
 }
 
 function main(argv) {
-  const flag = argv.indexOf('--assets');
-  const stated = flag === -1 ? null : argv[flag + 1];
-  const positional = argv.filter((_, index) => flag === -1 || (index !== flag && index !== flag + 1));
-  const release = new Release(positional[0]);
+  const { release, stated } = new Arguments(argv);
 
   const literals = [
     new Literal({
@@ -153,13 +180,13 @@ function main(argv) {
     }),
   ];
   // Every refusal happens here, before the first write.
-  for (const literal of literals) literal.rewritten();
+  for (const literal of literals) literal.check();
   const assets = assetsFor(release, stated);
 
   // `npm install` and not an edit of the manifest: the lockfile carries the
   // version and its integrity, and the build that follows needs the package
   // installed. It is a no-op on a tree that already pins and holds the version.
-  if (pinned() === assets) {
+  if (pinned(assets)) {
     console.log(`${ASSETS} is already pinned to ${assets}`);
   } else {
     execFileSync('npm', ['install', '--save-exact', `${ASSETS}@${assets}`], {

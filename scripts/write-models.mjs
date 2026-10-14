@@ -26,7 +26,7 @@
  * The default directory is under `harness/`, which is ignored by git, so the
  * files never enter a pull request.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -38,7 +38,12 @@ import { applyModel, buildModel } from '../src/model.js';
 import { ENERGYPLUS_VERSION } from '../src/version.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = resolve(ROOT, process.argv[2] ?? `harness/energyplus-${ENERGYPLUS_VERSION}`);
+// A stated directory is relative to where the command is run, as any path on a
+// command line is. The default is relative to the repository.
+const STATED = process.argv[2];
+const OUT = STATED
+  ? resolve(process.cwd(), STATED)
+  : resolve(ROOT, `harness/energyplus-${ENERGYPLUS_VERSION}`);
 
 /** One desk position: a file name and the patch state the model is built at. */
 class Position {
@@ -80,6 +85,10 @@ try {
   process.exit(1);
 }
 
+// The default directory is this script's own, so it is emptied first: a model
+// left by an earlier run at a position that no longer exists would otherwise
+// be run and accepted with the rest. A stated directory is left as it is.
+if (!STATED) rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
 
 const failures = [];
