@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { wasmFile } from '@idfkit/engine-assets';
 import { revision } from './scripts/revision.mjs';
 import { toolkit } from './scripts/toolkit.mjs';
 
@@ -40,10 +41,22 @@ const sheetRevision = revision();
  */
 const toolkitVersion = toolkit();
 
+/**
+ * The engine's file name, frozen in for the same reason. `prebuild` and
+ * `predev` stage the installed `@idfkit/engine-assets`, and that package
+ * exports the name of the WebAssembly file it carries, so the page requests
+ * the file that was staged whichever EnergyPlus release the pin names. It is
+ * imported here, where Node resolves it, and not in `src/`: the package's
+ * entry module also computes a URL relative to itself, which has no meaning
+ * once a bundler has inlined the module.
+ */
+const engineWasmFile = wasmFile;
+
 export default defineConfig({
   define: {
     __SHEET_REVISION__: JSON.stringify(sheetRevision),
     __IDFKIT_VERSION__: JSON.stringify(toolkitVersion),
+    __ENGINE_WASM_FILE__: JSON.stringify(engineWasmFile),
   },
   // A preview harness hands the port over in PORT; vite reads no such variable
   // itself, and left alone it would contend for 5173 with any other dev server.

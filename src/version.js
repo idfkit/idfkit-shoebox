@@ -32,6 +32,18 @@ export const TOOLKIT = typeof __IDFKIT_VERSION__ === 'undefined' ? null : __IDFK
 export const ENERGYPLUS_VERSION = '26.1.0';
 
 /**
+ * The file name of the WebAssembly engine inside the staged assets, from the
+ * third literal `vite.config.js` freezes in. The installed
+ * `@idfkit/engine-assets` states it, and the loader in `@idfkit/engine` is
+ * given it explicitly. The loader's own default is the file name of a single
+ * EnergyPlus release line, so relying on it would request a missing file as
+ * soon as the assets pin moves to another line. Undefined outside a build,
+ * which the loader reads as its default.
+ */
+export const ENGINE_WASM_FILE =
+  typeof __ENGINE_WASM_FILE__ === 'undefined' ? undefined : __ENGINE_WASM_FILE__;
+
+/**
  * `version` is `0.2.0` on a tagged release and `0.2.0+cd5881e` on everything
  * else; see `scripts/revision.mjs` for why. `commit` is the full sha, because
  * the seven characters shown are for reading and the forty are for linking.

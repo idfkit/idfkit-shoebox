@@ -1,0 +1,44 @@
+# Adopt one EnergyPlus release, as a pull request (feature 012 of the unification).
+#
+# This repository is `idfkit-shoebox` in the version roster, governance/energyplus.toml in
+# idfkit-conformance. The called workflow reads the roster at the pinned tag, runs the commands the
+# roster declares for this repository, rewrites the declared statements, runs the gate, and opens a
+# draft pull request on the branch energyplus/X.Y.Z. It never merges, publishes or deploys. This
+# file carries no other logic.
+#
+# The commands the roster calls are `scripts/adopt-energyplus.mjs`, which moves the release
+# constant, the @idfkit/engine-assets pin and the model's version literal, and
+# `scripts/write-models.mjs`, which writes the generated model at several desk positions for the
+# run a person makes outside the browser. The @idfkit/core, @idfkit/schemas and @idfkit/weather
+# level is not moved here: bump-idfkit-js.yml moves it when idfkit-js releases.
+#
+# The tag is written twice, on `uses:` and as the input, because a called workflow cannot see its
+# own ref. The called workflow refuses the run unless the two are identical. Move both together,
+# and only to a tag that exists.
+
+name: adopt-energyplus
+
+run-name: Adopt EnergyPlus ${{ inputs.release }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: The EnergyPlus release to adopt, as X.Y.Z.
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  adopt:
+    uses: idfkit/idfkit-conformance/.github/workflows/adopt-energyplus.yml@governance-2026.24
+    with:
+      project: idfkit-shoebox
+      governance_level: governance-2026.24
+      release: ${{ inputs.release }}
+    secrets:
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

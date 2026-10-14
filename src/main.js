@@ -96,7 +96,7 @@ import { PullReading, axesFrom, entryFrom, pullProbes, pullReadingFor, rankPull 
 import { createEnginePool, poolLimit } from './pool.js';
 import { createStudyScheduler, makeStudyJob } from './scheduler.js';
 import { runBundle } from './bundle.js';
-import { ENERGYPLUS_VERSION, REVISION, revisionHref } from './version.js';
+import { ENERGYPLUS_VERSION, ENGINE_WASM_FILE, REVISION, revisionHref } from './version.js';
 import { readSignature, writeSignature } from './sign.js';
 import { errors, provide, trail } from './report.js';
 import { END_USES, GROUPS, computeBill, meterTotal } from './bill.js';
@@ -7702,6 +7702,10 @@ const enginePromise = createEnergyPlus({
   // `--base=/<pr>/` and served from that subdirectory, and an absolute path
   // would have it download the published site's engine. See `weather.js`.
   assetBaseUrl: `${import.meta.env.BASE_URL}energyplus`,
+  // Stated, not left to the loader. The loader's default is the file name of
+  // one EnergyPlus release line, so a page staged with the assets of another
+  // line would request a file that is not there. See `src/version.js`.
+  wasmFile: ENGINE_WASM_FILE,
   onConsole: log,
   onProgress: ({ phase, message }) => {
     if (quiet) return;
@@ -8369,7 +8373,11 @@ const studyPool = createEnginePool({
   // Born silent: no console, no progress. The pump's engine narrates the
   // sheet; a background sample writing the status line five times a second
   // would make the one number worth reading impossible to read.
-  createEngine: () => createEnergyPlus({ assetBaseUrl: `${import.meta.env.BASE_URL}energyplus` }),
+  createEngine: () =>
+    createEnergyPlus({
+      assetBaseUrl: `${import.meta.env.BASE_URL}energyplus`,
+      wasmFile: ENGINE_WASM_FILE,
+    }),
   limit: studyCapacity,
 });
 
