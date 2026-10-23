@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-23
+
 ### Added
 
 - **Seven ways to draw one run.** The plate draws the run as a time series,
@@ -63,7 +65,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reload does — and merely offered on a bare address, so one URL still means
   one thing on every machine.
 
+- **Published thresholds drawn across the surveyed ground.** On E-02, every
+  standard's published limit for the chosen reading is drawn as its own isoline
+  on both the plan and the relief, with the passing side hatched. Chasing a
+  standard narrows the drawing to its line; a reading no standard publishes a
+  limit for says so.
+
+- **TM59 Category I as a reading.** Studies and surveys can now be plotted
+  against the stricter category for sensitive occupants, not only Category II.
+  A threshold is matched on criterion and category, since both categories
+  publish the same limit.
+
+- **Commands that adopt an EnergyPlus release** (`scripts/adopt-energyplus.mjs`,
+  `scripts/write-models.mjs`), as declared for this project in
+  idfkit-conformance. The build refuses an engine package and `src/version.js`
+  that name different EnergyPlus release lines.
+
 ### Changed
+
+- **Damping and thermal lag are measured only over a design day.** Read over a
+  year they compared summer's high with winter's low (a lag of 504 hours at
+  Boston-Logan). The schedule drops the rows when no column is a design day.
+
+- **The plate takes the height of its row** beside the model column instead of
+  a fixed 268 px, and stacks below 640 px of its own width rather than
+  shrinking to a thumbnail.
+
+- **The idfkit libraries move to 0.4.0.** `@idfkit/core`, `@idfkit/schemas` and
+  `@idfkit/weather` remain pinned exactly and together.
 
 - A kept scheme now names the weather file it was solved against, and restoring
   one solved against a different file reloads to ask for that file instead of
@@ -79,6 +108,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   picker; it stopped being true of the page the day a reader could attach a
   British file of their own. It now reads the rule off the file in hand and off
   the Daylight saving control, and says which of the two states the run is in.
+
+### Fixed
+
+- **A console strip stays in its column.** Opening a study's reading chooser
+  could make a strip tall enough to re-balance the columns and move it, card
+  and all, into the next one.
+
+- **Units on the survey chooser and targets board keep their case.** Upper-casing
+  made kilowatt-hours read KWH and hours read H.
+
+- **A TM59 count of one criterion reads as a sentence**, and the description's
+  moves close the building's sentence instead of standing verbless.
 
 ## [0.4.0] - 2026-09-15
 
@@ -1026,7 +1067,8 @@ laid out as a drafting sheet, served at
 - Licensing and disclosure section citing the open datasets and npm packages
   behind the page.
 
-[unreleased]: https://github.com/idfkit/idfkit-shoebox/compare/v0.4.0...HEAD
+[unreleased]: https://github.com/idfkit/idfkit-shoebox/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/idfkit/idfkit-shoebox/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/idfkit/idfkit-shoebox/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/idfkit/idfkit-shoebox/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/idfkit/idfkit-shoebox/compare/v0.1.0...v0.2.0
