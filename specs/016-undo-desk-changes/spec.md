@@ -17,6 +17,9 @@
   keyboard shortcuts. The browser's history is left as it is today: the address
   is overwritten so it always carries the current desk, and Back still means
   "leave this page".
+- Q: Should the undo stack survive a reload of the tab? → A: Yes. It is kept for
+  the tab and used again when the page boots on the scheme the stack ends on
+  (User Story 3, FR-014).
 
 ## Why not the browser's history
 
@@ -112,13 +115,14 @@ Then redo all five.
 
 ---
 
-### User Story 3 - Undo survives a reload of the tab (Priority: P3)
+### User Story 3 - Undo survives a reload of the tab (Priority: P2)
 
 A reader reloads the tab, by accident or to recover from a stuck run, and still
 wants to step back through what they did before the reload.
 
 **Why this priority**: This is the one benefit the browser's history would have
-given for free. It is worth keeping, but the feature stands without it.
+given for free, and it was asked for explicitly. A reload is the reader's own
+way out of a stuck run, and it should not also throw away the path they took.
 
 **Independent Test**: Make three changes, reload the tab, press Undo three times,
 and check that each step matches what it would have been without the reload.
