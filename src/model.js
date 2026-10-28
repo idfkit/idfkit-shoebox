@@ -2334,18 +2334,21 @@ function applySystem(doc, params, engaged, gainsOn) {
     if (params.economizer !== 'NoEconomizer') {
       // EnergyPlus refuses an economizer with no ceiling on the cooling air
       // flow — it is a severe error, not a warning. Nothing here is autosized
-      // (the console does not run a sizing pass), so the ceiling is set from
-      // the zone's own volume at 20 air changes: far above anything a shoebox
-      // will ask for, so it bounds the economizer without shaping the result.
+      // (the console does not run a sizing pass), so the ceiling is set at 20
+      // air changes of the building's gross volume: far above anything a
+      // shoebox will ask for, so it bounds the economizer without shaping the
+      // result.
       //
-      // The volume is the gross one, multiplier included. The ideal loads
-      // system meets the load and the outdoor air of every storey the
-      // multiplier stacks, so a ceiling sized on one storey's volume shaped the
-      // result instead: Singapore at a multiplier of 8 pinned the supply at
-      // 5.2 kg/s and 13 °C in every occupied hour and held the room near
-      // 26.2 °C against a 24 °C setpoint, while the same desk without an
-      // economizer held 24.0 °C at no more than 12.5 kg/s. Read off the
-      // document, not `params`, so a sweep's overlay is what is bounded.
+      // Gross, multiplier included, because the ideal loads system meets the
+      // load and the outdoor air of every storey the multiplier stacks. A
+      // ceiling sized on one storey's volume shaped the result instead:
+      // an 18 × 12 × 3.6 m storey in Singapore at a multiplier of 8 pinned the
+      // supply at 5.2 kg/s and 13 °C in 2,595 of 2,600 occupied hours and
+      // held the room near 26.2 °C against a 24 °C setpoint, while the same desk without an economizer held 24.0 °C at no
+      // more than 12.5 kg/s. Read off the document, by the rule the sheet is
+      // built on: `geometryFacts` is the one place the multiplier is applied to
+      // a volume, and a second product of `params` here is a second place for
+      // it to be forgotten.
       ideal.cooling_limit = 'LimitFlowRate';
       ideal.maximum_cooling_air_flow_rate = (geometryFacts(doc).grossVolume * 20) / 3600;
     }
