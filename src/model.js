@@ -2337,9 +2337,17 @@ function applySystem(doc, params, engaged, gainsOn) {
       // (the console does not run a sizing pass), so the ceiling is set from
       // the zone's own volume at 20 air changes: far above anything a shoebox
       // will ask for, so it bounds the economizer without shaping the result.
+      //
+      // The volume is the gross one, multiplier included. The ideal loads
+      // system meets the load and the outdoor air of every storey the
+      // multiplier stacks, so a ceiling sized on one storey's volume shaped the
+      // result instead: Singapore at a multiplier of 8 pinned the supply at
+      // 5.2 kg/s and 13 °C in every occupied hour and held the room near
+      // 26.2 °C against a 24 °C setpoint, while the same desk without an
+      // economizer held 24.0 °C at no more than 12.5 kg/s. Read off the
+      // document, not `params`, so a sweep's overlay is what is bounded.
       ideal.cooling_limit = 'LimitFlowRate';
-      ideal.maximum_cooling_air_flow_rate =
-        (params.width * params.depth * params.height * 20) / 3600;
+      ideal.maximum_cooling_air_flow_rate = (geometryFacts(doc).grossVolume * 20) / 3600;
     }
     if (params.heatRecovery > 0) {
       ideal.heat_recovery_type = 'Sensible';
