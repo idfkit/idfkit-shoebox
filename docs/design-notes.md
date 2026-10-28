@@ -3418,7 +3418,15 @@ are sliders, so the range stays reachable by tap and by keyboard.
     otherwise measure the channel leaving instead of the control moving, which
     is the largest effect on the board and about nothing.
 - **An economizer requires a cooling flow limit**, or EnergyPlus raises a severe
-  error. Nothing here is autosized, so the limit is computed from zone volume.
+  error. Nothing here is autosized, so the limit is computed from zone volume,
+  and it has to be the **gross** volume (`geometryFacts(doc).grossVolume`). The
+  ideal loads system meets the load and outdoor air of every storey the
+  multiplier stacks, so 20 air changes of one storey stopped being a bound and
+  became the answer: an 18 × 12 × 3.6 m storey in Singapore at a multiplier of
+  8 sat at the 5.2 kg/s ceiling (4.32 m³/s) with 13 °C supply in 2,595 of its
+  2,600 occupied hours and held about 26.2 °C against a 24 °C setpoint. Nothing warned, and the 8,514 unmet hours looked like
+  climate. With the gross volume, the occupied hours hold 24.0 °C apart from
+  the first hour after the 08:00 start-up (50 hours, at most 0.19 K over).
 - **A shading device cannot be hung on `WindowMaterial:SimpleGlazingSystem`**,
   which is why the Blinds channel requires the layered glazing model.
 - **EnergyPlus merges two vertices closer than 0.01 m and deletes the surface
