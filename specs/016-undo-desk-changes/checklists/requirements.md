@@ -31,10 +31,10 @@
 
 ## Notes
 
-- The request is itself a mechanism question ("use the browser's history?"), so the
-  spec names browser history, Back/Forward and keyboard shortcuts as the user-facing
-  surface. These are interaction choices the reader sees, not implementation; no
-  module, function or code structure is named.
+- Revised 2026-10-28: the browser's history was rejected as the undo record in
+  favour of a stack held inside the page (recorded under Clarifications). The spec
+  names Back/Forward, keyboard shortcuts and per-tab persistence because they are
+  behaviour the reader sees; no module, function or code structure is named.
 - No clarification markers: scope defaults (reading state and units excluded, climate
-  changes included via the link path, one-second merge window) are recorded under
-  Edge Cases and Assumptions and can be revisited in `/speckit-clarify`.
+  changes included via the link path, one-second merge window, 100-step limit) are
+  recorded under Edge Cases and Assumptions and can be revisited in `/speckit-clarify`.
