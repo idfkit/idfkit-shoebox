@@ -215,7 +215,10 @@ the same path a link naming that station takes.
 - **FR-006**: Each step MUST be held in the same form the address carries (the
   scheme link). Undo and Redo MUST restore it through the same path a kept
   scheme is restored through: in place when it names the attached climate,
-  through the link path (refusals included) when it names another.
+  through the link path (refusals included) when it names another. Because the
+  address bakes solo into the patch bay, a step MUST also carry the console's
+  solo state, so undoing to a soloed desk brings solo back rather than its
+  patch map.
 - **FR-007**: After an undo or redo, the desk (parameters, patch bay, solo,
   priced channels, climate) MUST equal the step's decoded scheme, and the
   address MUST equal that scheme.
