@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The sheet carries the idfkit lockup**, with the property name Shoebox, at the
+  head of the title block, so that the page shows the same mark as every other
+  idfkit host.
 - **The sheet wears the idfkit identity**, at `identity-2026.1`. The standard's
   derivation is vendored under `identity/` and served as its build wrote it;
   every colour, typeface and easing on the page now reads from it, and the
