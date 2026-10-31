@@ -4,7 +4,7 @@
   "version": "0.5.0",
   "type": "module",
   "idfkit": {
-    "identity": "identity-2026.1"
+    "identity": "identity-2026.2"
   },
   "scripts": {
     "predev": "idfkit-engine-assets public/energyplus && node scripts/copy-schemas.mjs && node scripts/stage-weather.mjs",
