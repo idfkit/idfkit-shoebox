@@ -39,7 +39,7 @@ signals "type here" without needing a heavy border.
 
 **Source of every value: the idfkit visual identity**, the standard in
 `idfkit/idfkit-brand`, at the tag `package.json` declares under
-`idfkit.identity` (`identity-2026.2` today). The standard's derivation is
+`idfkit.identity` (`identity-2026.3` today). The standard's derivation is
 vendored under `identity/` and served as its build wrote it; `index.html`
 links `identity/css/tokens.css` before its own stylesheet and declares no
 colour of its own. The names below are the sheet's vocabulary, kept as aliases
