@@ -364,15 +364,14 @@ function svg(tag, attrs = {}) {
 // is `readings.js`'s, because the reading hour is measured from the same point
 // and two copies of "neutral" would drift.
 function tint(celsius) {
-  const cold = [61, 100, 120];
-  const paper = [178, 170, 154];
-  const warm = [180, 85, 42];
   const below = celsius <= NEUTRAL_C;
   const k = below
     ? 1 - Math.max(0, Math.min(1, (celsius + 15.5) / (NEUTRAL_C + 15.5)))
     : Math.max(0, Math.min(1, (celsius - NEUTRAL_C) / (32 - NEUTRAL_C)));
-  const [a, b] = below ? [paper, cold] : [paper, warm];
-  return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * k)).join(' ')})`;
+  // The pair is the sheet's own `--cold` / `--warm`, which read the identity's
+  // tokens, mixed over the underlay tone: the hues are the stylesheet's to
+  // decide, and the drawing holds no colour of its own.
+  return `color-mix(in srgb, var(${below ? '--cold' : '--warm'}) ${Math.round(k * 100)}%, var(--ink-ghost))`;
 }
 
 function renderAxon(meanC) {

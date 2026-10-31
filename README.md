@@ -1,4 +1,18 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/idfkit/idfkit-brand/releases/download/identity-2026.1/mark-on-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://github.com/idfkit/idfkit-brand/releases/download/identity-2026.1/mark-on-light.svg">
+    <img alt="idfkit" width="72" src="https://github.com/idfkit/idfkit-brand/releases/download/identity-2026.1/tile.svg">
+  </picture>
+</p>
+
 # idfkit-shoebox
+
+EnergyPlus in the browser: a client-side shoebox model on a drafting sheet.
+
+[idfkit](https://idfkit.com) · [Developers](https://developers.idfkit.com) · [EnergyPlus docs](https://docs.idfkit.com) · [Envelop](https://app.idfkit.com) · [MCP](https://mcp.idfkit.com) · [Shoebox](https://shoebox.idfkit.com) · [GitHub](https://github.com/idfkit)
+
+[![check](https://github.com/idfkit/idfkit-shoebox/actions/workflows/check.yml/badge.svg)](https://github.com/idfkit/idfkit-shoebox/actions/workflows/check.yml) [![License](https://img.shields.io/github/license/idfkit/idfkit-shoebox)](https://github.com/idfkit/idfkit-shoebox)
 
 Live at **[shoebox.idfkit.com](https://shoebox.idfkit.com)**, which carries the
 last tagged release. The current `main` is at

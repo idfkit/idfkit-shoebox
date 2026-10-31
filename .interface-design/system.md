@@ -21,34 +21,55 @@ the same board, never as a dialog floating over one.
 **Hairline borders only.** No shadows anywhere, in either theme. Paper does not
 float. Elevation is expressed by surface lightness and by border weight.
 
-Surface scale, base to highest:
+Surface scale, base to highest. Each surface is an alias of a role of the
+idfkit identity (see Colour below), and the role a surface takes changes with
+the theme so that the sheet always lies lighter than the board:
 
 | Token | Light | Dark | Used for |
 | --- | --- | --- | --- |
-| `--board` | `#e6e2da` | `#131518` | the desk the sheet lies on |
-| `--sheet` | `#f6f3ec` | `#1b1e22` | the drawing |
-| `--vellum` | `#f1ede4` | `#191c20` | the console, a second sheet |
-| `--inset` | `#efebe2` | `#17191d` | fields that receive content, meter troughs |
+| `--board` | `--idfkit-color-surface-raised` | `--idfkit-color-ground` | the desk the sheet lies on |
+| `--sheet` | `--idfkit-color-ground` | `--idfkit-color-surface-raised` | the drawing |
+| `--vellum` | `--idfkit-color-surface` | `--idfkit-color-surface` | the console, a second sheet |
+| `--inset` | `--idfkit-color-surface-raised` | `--idfkit-color-ground` | fields that receive content, meter troughs |
 
 Inputs are **darker** than their surroundings, not lighter. An inset field
 signals "type here" without needing a heavy border.
 
 ## Colour
 
-Four ink levels, all used: `--ink` (primary), `--ink-2` (supporting),
-`--ink-3` (labels and metadata), `--ink-ghost` (underlay, empty, disabled).
+**Source of every value: the idfkit visual identity**, the standard in
+`idfkit/idfkit-brand`, at the tag `package.json` declares under
+`idfkit.identity` (`identity-2026.1` today). The standard's derivation is
+vendored under `identity/` and served as its build wrote it; `index.html`
+links `identity/css/tokens.css` before its own stylesheet and declares no
+colour of its own. The names below are the sheet's vocabulary, kept as aliases
+of the standard's `--idfkit-*` roles in the `:root` block of `index.html`; a
+rule reads the sheet's name, and the standard decides what it resolves to. A
+value is never written in this repository: a change of hue is a change of tag.
+
+Four ink levels, all used: `--ink` (`--idfkit-color-ink`, primary), `--ink-2`
+(`--idfkit-color-ink-muted`, supporting), `--ink-3` (`--idfkit-color-ink-label`,
+labels and metadata), `--ink-ghost` (the standard's `slate-400` primitive in
+the light theme and `slate-600` in the dark: underlay, empty, disabled).
 
 Four border weights, matched to the importance of the boundary:
 `--rule-soft` (within a group), `--rule` (standard), `--rule-firm` (emphasis,
-sheet edge), `--rule-focus` (focus rings only).
+sheet edge), `--rule-focus` (focus rings only). The first three are the ink
+mixed to 7, 14 and 32 percent over transparent with `color-mix()`, so they
+follow the ink through both themes; the focus rule is `--idfkit-color-focus`.
 
 **Colour means something or it does not appear.**
 
-- `--redline` is the markup pen. It marks what is live, what has changed, and
-  what the pointer is on. One accent, nothing else.
+- `--redline` is the markup pen, `--idfkit-color-accent`. It marks what is
+  live, what has changed, and what the pointer is on. One accent, nothing else.
+  `--redline-wash` is the same pen at 10 percent over transparent.
 - `--cold` / `--warm` encode a signed physical quantity and nothing else:
   degrees Celsius on the drawing, watts into or out of the zone on the console.
-  Warm is heat arriving, cold is heat leaving.
+  Warm is heat arriving, cold is heat leaving. Warm is
+  `--idfkit-color-status-warning`, the one warm hue the standard sets for
+  lettering; cold is the standard's `blue-700` primitive in the light theme and
+  `blue-300` in the dark, the deeper and the paler blue so that it stands apart
+  from the accent, which is the middle one.
 
 **And that sentence is now on the page, because a hue cannot be the only one
 saying it.** The balance rail letters five signed figures whose direction was
@@ -77,23 +98,38 @@ accent; ghost-weight graphite says the same thing in the palette that exists.
 
 ## Typography
 
-`IBM Plex Sans` for prose, `IBM Plex Sans Condensed` for every label and
-heading, `IBM Plex Mono` with `font-variant-numeric: tabular-nums` for every
-number. A number that can change is always mono and always tabular, so it does
-not jitter as it updates.
+**Source of every face: the idfkit visual identity**, at the same tag as the
+colours. The pair is self-hosted from the vendored `identity/css/fonts.css`
+and read through `--idfkit-font-text` and `--idfkit-font-code`; the sheet's
+`--sans` and `--mono` are aliases of those two, and no `font-family` names a
+family anywhere in this repository.
 
-Labels are condensed, uppercase, and tracked. Tracking rises as size falls:
+`--sans` (Inter) for prose; `--mono` (JetBrains Mono) with
+`font-variant-numeric: tabular-nums` for every number. A number that can
+change is always mono and always tabular, so it does not jitter as it updates.
+
+The condensed face the labels were designed in has no counterpart in the
+standard (research R9 of the identity feature). `--cond` survives as a name
+and resolves to the code face; every rule set in it keeps its uppercase and
+takes half the tracking it had, since a mono face is already wide, and sets
+weight 500 at most, the heaviest the code face ships.
+
+Labels are uppercase and tracked. Tracking rises as size falls:
 
 | Role | Spec |
 | --- | --- |
-| Eyebrow | `500 10.5px/1` cond, upper, `0.13em` |
-| Panel heading | `600 17px/1.1` cond, upper, `0.05em` |
-| Strip heading | `600 12px/1` cond, upper, `0.11em` |
-| Control label | `500 9.5px/1.3` cond, upper, `0.11em` |
-| Segment label | `500 9px/1.3` cond, upper, `0.07em` |
+| Eyebrow | `500 10.5px/1` cond, upper, `0.065em` |
+| Panel heading | `500 17px/1.1` cond, upper, `0.025em` |
+| Strip heading | `500 12px/1` cond, upper, `0.055em` |
+| Control label | `500 9.5px/1.3` cond, upper, `0.055em` |
+| Segment label | `500 9px/1.3` cond, upper, `0.035em` |
 | Value readout | `400 11px/1.3` mono, tabular |
 | Control note | `400 10.5px/1.45` sans, `--ink-ghost` |
 | Strip blurb | `400 11.5px/1.5` sans, `--ink-3` |
+
+Motion follows the standard as well: every transition on the sheet eases with
+`--ease`, an alias of `--idfkit-motion-ease-out-quart`, at the sheet's own
+durations, and the vendored `motion.css` stops it under reduced motion.
 
 ## Radius
 

@@ -117,6 +117,7 @@ const TYPES = {
   '.png': ['image/png', false],
   '.ico': ['image/x-icon', false],
   '.woff2': ['font/woff2', false],
+  '.webmanifest': ['application/manifest+json; charset=utf-8', true],
 };
 
 const describe = (key) => {
