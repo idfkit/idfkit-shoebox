@@ -95,16 +95,18 @@ ok('chasing started no run', runsAfterChase === runs, `${runs} → ${runsAfterCh
 // Off the grid: 6.56 → 6.585 sits between two sweep positions. Moving the
 // studied lever moves no rest shape, so the curve stays and is not re-swept;
 // the desk re-solves, and that run judges the setting.
-// By attribute rather than by role: the margin field is a text input under a
-// strip that may be scrolled away, and a role query skips what it deems hidden.
+// The margin field may sit in a strip that is not on screen, where Playwright
+// refuses to click it; the field's own focus, value and blur are what a reader
+// typing into it fires, so they are fired directly (src/field.js commits on blur).
 const field = page.locator('input[aria-label="Wall resistance value"]').first();
 if (await field.count()) {
-  await field.scrollIntoViewIfNeeded();
-  await field.click();
-  await field.fill('6.585');
-  await field.press('Enter');
+  await field.evaluate((input) => {
+    input.focus();
+    input.value = '6.585';
+    input.blur();
+  });
   await page.waitForFunction(() => /solved locally/.test(document.getElementById('status')?.textContent ?? ''), null, { timeout: 300000 });
-  await page.waitForTimeout(2500);
+  await page.waitForTimeout(4000);
   const moved = await bandLine();
   console.log(`\nat 6.585: ${moved}`);
   ok('off the grid, the setting is judged by the desk’s own run', /by the desk’s own run/.test(moved) && !/not judged at this setting/.test(moved), moved);
