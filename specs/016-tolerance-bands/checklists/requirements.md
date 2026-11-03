@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,6 +31,7 @@
 
 ## Notes
 
-- Two `[NEEDS CLARIFICATION]` markers remain, in FR-001 (which levers are banded) and FR-003 (which targets are in force). Both are scope decisions that change run cost and what "meet all of them" means, so they are put to the user rather than guessed.
-- The spec uses the sheet's own vocabulary (desk, lever, scoreboard, chase, design days, priced lever) because these are the product's user-facing terms, not implementation names. Shared runs with studies and surveys (FR-006, SC-004) are stated as observable run counts, not mechanisms.
+- Both clarifications are resolved (Session 2026-11-03): the targets in force are every line of the chased standard (FR-003), and the levers banded are the ones with a study running (FR-001). Bands therefore add no engine runs of their own (FR-006, SC-004).
+- One assumption for planning to verify: a study's runs must keep every reading the chased standard's lines need, not only the reading its curve draws.
+- The spec uses the sheet's own vocabulary (desk, lever, scoreboard, chase, design days, priced lever) because these are the product's user-facing terms, not implementation names. Reuse of the studies' runs (FR-006, SC-004) is stated as an observable run count, not a mechanism.
 - The one-at-a-time limitation is deliberate and stated (FR-010, Assumptions), not an open question.
