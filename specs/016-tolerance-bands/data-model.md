@@ -55,7 +55,8 @@ The tolerance band for one studied lever, under one chased standard.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `key` | string | the swept control key |
-| `stance` | number | the snapshot's value of that key |
+| `stance` | number | the lever's **current** setting (FR-002), snapped onto the sampled position it equals; a band follows the reader's hand without a re-sweep, since moving the swept lever only walks the study's tick |
+| `swept` | number | the setting the study was swept at, which the coarse-versus-fine check lays its grid around |
 | `judged` | `Target[]` | the targets of the chased standard this curve can read (R6) |
 | `unjudged` | `{ target, says }[]` | the rest, each with `targetBlock`'s reason or the standard's `asks` |
 | `verdicts` | `Verdict[]` | one per curve position, in position order |

@@ -54,9 +54,25 @@ Two module bugs found and fixed on the way:
   correctly declared inert, and a "symmetric" tie was not symmetric on the real
   grid. Both fixtures were corrected rather than the module bent to them.
 
-## G3: bands agree with the scoreboard (T025)
+## G3: bands agree with the scoreboard (T025): PASS
 
-`g3-agreement.mjs`. See the result section at the foot of this file.
+`g3-agreement.mjs`. **45 of 45 checks agree** across ten desks: Passivhaus
+specification chased against Passivhaus, EnerPHit and LETI; the same at
+U-factor 2.5 and 1.6; SHGC at its stop; Fabric bypassed; a heating setpoint
+swept past a cooling setpoint of 22 °C (refused positions); the EnerPHit
+specification failing with no single lever; and a free-running desk where
+heating is not judged. For every edge closed by a line failing, the desk was
+reloaded without studies at the edge's last passing position (every readable
+line clears on the chase line) and at its first failing one (the line the edge
+named fails). Every named move restores every readable line (SC-003). Closest
+call: ground reflectance at 0.54 reads 15.0 against 15, "over by 0.0", a fail
+on both the band and the board.
+
+The first run of this harness paired band lines with levers in link order;
+cards come back in console order (Site before Glazing). It was stopped and
+corrected before any result was read. The code review's fixes landed while
+the second run was under way, so its later desks ran against the reviewed
+build.
 
 ## G4: nothing leaks (T040): PASS
 
@@ -143,3 +159,36 @@ called every line unjudged. The job now carries `climateEpoch` from
 Found and not fixed here, because it predates this feature: the chase line
 letters its limit raw in SI beside an IP reading ("reads 10.6 against 25, over
 by 2.7 kBtu/ft²·yr").
+
+## Code review (xhigh, with fixes)
+
+Fourteen findings; ten fixed and re-verified (G2, G5, the build, and the page
+harness on two desks), three of them first reproduced in a browser:
+
+- the band now measures from the lever's **current** setting, not the setting
+  it was swept at, so moving the studied lever to the named position stops
+  the card saying "Fails" (FR-002);
+- a curve rebuilt from the cache drops placeholder points, so positions never
+  run read as unlanded rather than as failed runs, and the climate reason
+  survives an attach (FR-018);
+- "Fails here" is said only where a run at the setting failed; otherwise the
+  setting is "not judged" (FR-013);
+- the block reads the curve each card is showing, partial sweeps included;
+- `console.js` no longer imports `tolerance.js`, which had pulled its load-time
+  checks ahead of the report sheet's error trap in the bundle;
+- a chase change re-reads bands of sweeps still in flight;
+- the climate flag resets on Clear;
+- ties between levers compare shares within 1e-9 of travel;
+- hidden-tab repaints coalesce on a microtask;
+- the move wording has one helper.
+
+Left, with reasons:
+
+- **Survey or pull samples answering a study position.** A narrow cached sample
+  carries none of the band's readings, so those positions read as gaps.
+  Re-running them would add engine runs (FR-006) and give up the cache sharing
+  the survey is built on.
+- **Unjudged reasons read the live desk** (`targetBlock`), by design the
+  board's own sentence; a per-study reason would need state the board lacks.
+- **Keyboard focus on the method fold** is lost when the block repaints; fixing
+  it means restructuring the block's markup so the fold survives a repaint.

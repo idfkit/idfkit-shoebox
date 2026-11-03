@@ -335,12 +335,20 @@ function inertness({ key, label, preset, lines, verdicts, priced }) {
  * visit, so an unlanded position is known to be there rather than silently
  * bridged by a bracket. `says(target)` is the board's own sentence for a line
  * the run cannot read, injected so this module stays free of the page.
+ *
+ * `stance` is where the lever stands now and `swept` where it stood when the
+ * sweep was made, the position `samplePoints` forced into the grid. They part
+ * the moment the reader moves the studied lever itself: that moves no rest
+ * shape, so the curve stays current and is never re-swept, and a band measured
+ * from the old setting went on saying "fails here, move +0.05" after the
+ * reader had made exactly that move (FR-002 measures from the current setting).
  */
 export function bandFor({
   key,
   label = key,
   control,
   stance,
+  swept = stance,
   curve,
   positions = null,
   preset,
@@ -352,12 +360,20 @@ export function bandFor({
 }) {
   if (!preset) throw new Error(`the band of ${key} was asked for with no standard chased`);
   if (!Number.isFinite(stance)) throw new Error(`the band of ${key} has no stance to measure from`);
+  if (!Number.isFinite(swept)) throw new Error(`the band of ${key} has no record of where it was swept from`);
   if (typeof says !== 'function') throw new Error(`the band of ${key} has no way to say why a line is not judged`);
 
   const points = (curve ?? []).filter(Boolean);
   const byValue = (value) => points.find((point) => near(point.value, value, control.step)) ?? null;
   const at = [...new Set([...(positions ?? []), ...points.map((point) => point.value)])].sort((a, b) => a - b);
   const order = at.filter((value, index) => index === 0 || !near(value, at[index - 1], control.step));
+  // Snapped onto the position the sweep ran there, where it ran one. The desk's
+  // own value and the grid's arrive a few ulps apart (`samplePoints` snaps
+  // through floating point), and compared exactly a desk standing on a
+  // measured position read as just outside its own band, with a move of
+  // 3e-17 to make. Off the grid it stays where it is: a setting between two
+  // runs, which the band can place but no verdict speaks for.
+  const here = order.find((value) => near(value, stance, control.step)) ?? stance;
 
   // Judged: a line with a figure that this curve carries somewhere. A line the
   // run cannot read takes no part, and says so in the board's own words.
@@ -379,7 +395,7 @@ export function bandFor({
   const incomplete = order.some((value) => !byValue(value));
   const inert = lines.length ? inertness({ key, label, preset, lines, verdicts, priced }) : null;
 
-  const base = { key, label, stance, judged, unjudged: Object.freeze(unjudged), verdicts, coarse, stale, incomplete, landed };
+  const base = { key, label, stance: here, judged, unjudged: Object.freeze(unjudged), verdicts, coarse, stale, incomplete, landed };
   if (!lines.length || inert) {
     return new Band({
       ...base,
@@ -395,7 +411,7 @@ export function bandFor({
     });
   }
 
-  const read = bracket(verdicts, stance, control);
+  const read = bracket(verdicts, here, control);
   const travel = control.max - control.min;
   let contains = false;
   let share = null;
@@ -403,11 +419,11 @@ export function bandFor({
   let others = [];
   if (read.band) {
     const { lower, upper } = read.band;
-    contains = lower.inside <= stance && stance <= upper.inside;
+    contains = lower.inside <= here && here <= upper.inside;
     share = (upper.inside - lower.inside) / travel;
     if (!contains) {
-      const to = stance < lower.inside ? lower.inside : upper.inside;
-      move = Object.freeze({ to, by: to - stance, share: Math.abs(to - stance) / travel });
+      const to = here < lower.inside ? lower.inside : upper.inside;
+      move = Object.freeze({ to, by: to - here, share: Math.abs(to - here) / travel });
     }
     others = read.segments.filter((segment) => !(segment.from === read.chosen.from && segment.to === read.chosen.to));
   }
@@ -422,7 +438,7 @@ export function bandFor({
     share,
     move,
     others: Object.freeze(others),
-    steppedOver: !coarse && !incomplete ? steppedOver({ verdicts, read, stance, control }) : false,
+    steppedOver: !coarse && !incomplete ? steppedOver({ verdicts, read, here, swept, control }) : false,
   });
 }
 
@@ -434,11 +450,15 @@ export function bandFor({
  * curve. The band is read again over those positions only, and a fine edge
  * outside the coarse bracket on its side is a stretch the coarse pass stepped
  * over. Nothing about an earlier band is kept between renders.
+ *
+ * The coarse grid is laid around `swept`, the position both passes forced in,
+ * so it is the grid the coarse pass actually ran; the bracket is still chosen
+ * around `here`, where the lever stands now, as the fine band's was.
  */
-function steppedOver({ verdicts, read, stance, control }) {
-  const grid = samplePoints(control, stance, COARSE_SAMPLES);
+function steppedOver({ verdicts, read, here, swept, control }) {
+  const grid = samplePoints(control, swept, COARSE_SAMPLES);
   const coarse = verdicts.filter((verdict) => grid.some((value) => near(value, verdict.value, control.step)));
-  const thin = bracket(coarse, stance, control);
+  const thin = bracket(coarse, here, control);
   if (!thin.band || !read.band) return Boolean(thin.band) !== Boolean(read.band);
   return ['lower', 'upper'].some((side) => {
     const fine = read.band[side];
@@ -526,9 +546,18 @@ export function toleranceFor({ preset, bands, climateReason = null }) {
     return new Tolerance({ preset, bands, passing, ranked, inert, stale, unjudged });
   }
 
-  const movers = live.filter((band) => band.move).sort((a, b) => a.move.share - b.move.share);
+  // Equal within a billionth of the travel, far below any lever's one step
+  // (the finest face here is 1 in 3,600) and far above the ulps two equal shares
+  // arrive apart by: 0.085 of SHGC's 0.85 is 0.09999999999999996 and 5 of a
+  // setpoint's 50 is 0.1, so compared exactly two levers ten per cent away
+  // were never tied, and which one was named came down to rounding — the trap
+  // `bracket` already met with distances inside one lever.
+  const sameShare = (a, b) => Math.abs(a - b) < 1e-9;
+  const movers = live
+    .filter((band) => band.move)
+    .sort((a, b) => (sameShare(a.move.share, b.move.share) ? 0 : a.move.share - b.move.share));
   const best = movers[0] ?? null;
-  const tied = best ? movers.filter((band) => band.move.share === best.move.share).map((band) => band.key) : [];
+  const tied = best ? movers.filter((band) => sameShare(band.move.share, best.move.share)).map((band) => band.key) : [];
   const alone = new Map(
     failing.map((target) => [
       target,

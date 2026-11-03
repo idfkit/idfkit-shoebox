@@ -244,7 +244,7 @@ geometry earlier ones wrote).
   that is not measured; two moves, sixty-word budget shared with the finding.
 - **General notes** (`tour.js`): markers fill only from real events via
   `tour?.note(...)`. **Any feature change that alters what a step teaches must update
-  `NOTES` and the call sites, and bump the storage key** (`shoebox-general-notes-v7`).
+  `NOTES` and the call sites, and bump the storage key** (`shoebox-general-notes-v8`).
 - **Units** (`units.js`): SI or IP is **lettering, never model**. Every value on
   `params` stays the SI number the document holds; a frozen `Kind` says how it
   converts and how precisely it reads, and conversion happens at the moment of

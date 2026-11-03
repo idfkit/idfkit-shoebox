@@ -122,7 +122,7 @@ Results are in `verify/README.md`.
   - `restore.lever` and its `move.to`, marked with `--redline`;
   - `restore.tied` stated when more than one lever shares the smallest share;
   - or, with no lever, the sentence that no studied lever restores every line alone, with "only the studied levers were asked" and, per failing target, the keys in `restore.alone`.
-- [ ] T025 [US2] Write the G3 harness at `$SCRATCH/g3-agreement.mjs` over at least ten desks (including a lever at its stop, Fabric bypassed, a heating setpoint swept past cooling, and a failing desk):
+- [X] T025 [US2] Write the G3 harness at `$SCRATCH/g3-agreement.mjs` over at least ten desks (including a lever at its stop, Fabric bypassed, a heating setpoint swept past cooling, and a failing desk):
   - Build the studies' samples through the real `buildSample` path and compute bands.
   - Re-solve each edge's `inside` and `outside`, and each `move.to`.
   - Read the targets the way the scoreboard does.

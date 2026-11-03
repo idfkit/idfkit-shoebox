@@ -21,7 +21,24 @@ import { BUDGETS, withinBudget } from './copy.js';
 // figure changed precision on one surface and not the other.
 import { flowPhrase, flowWord, watts } from './readings.js';
 import { letter } from './units.js';
-import { SAYS as TOLERANCE_SAYS } from './tolerance.js';
+// Nothing from `tolerance.js`, deliberately: `report-sheet.js` imports `fold`
+// from here and is the entry that must stand when `main.js` does not, and
+// `tolerance.js` pulls `schemes.js`, `study.js`, `survey.js`, `tm59.js` and
+// `model.js` into its graph along with four load-time invariants of its own. A
+// throw in any of them would take the Report button down with the sheet. The
+// one sentence a card needs from it arrives with the band (`setBand`).
+
+/**
+ * A move along one face, as the card and the tolerance block both letter it:
+ * the signed span, and the share of the lever's travel it covers.
+ *
+ * A span is a difference, so it goes through `spanKind` at the face's flat
+ * precision, never `quantityKind` — five degrees of room would read `41 °F`.
+ */
+export function moveWords(move, control) {
+  const span = letter(control.spanKind, Math.abs(move.by), { digits: control.digits, unit: control.unit });
+  return { span: `${move.by > 0 ? '+' : '−'}${span}`, share: `${Math.round(move.share * 100)} % of travel` };
+}
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -2354,7 +2371,7 @@ export function mountConsole({
   }
 
   /** The band in one or two sentences, every figure in the system showing. */
-  function bandWords({ band, standard }, control) {
+  function bandWords({ band, standard, noneAlone }, control) {
     if (band.inert) return [band.inert];
     if (!band.judged.length) {
       const why = [...new Set(band.unjudged.map((line) => line.says))].join('; ');
@@ -2362,7 +2379,7 @@ export function mountConsole({
     }
     const lines = band.judged.length + band.unjudged.filter((line) => line.target.limit != null).length;
     const of = band.judged.length < lines ? ` (${band.judged.length} of ${lines} lines)` : '';
-    if (!band.band) return [`${TOLERANCE_SAYS.noneAlone}${of ? ` Judged on ${band.judged.length} of ${lines} lines.` : ''}`];
+    if (!band.band) return [`${noneAlone}${of ? ` Judged on ${band.judged.length} of ${lines} lines.` : ''}`];
     const said = [];
     const { lower, upper } = band.band;
     const state = [band.coarse ? 'coarse' : null, band.incomplete ? 'still landing' : null].filter(Boolean);
@@ -2370,11 +2387,16 @@ export function mountConsole({
     if (band.contains) {
       said.push(`Passes ${standard}${of} from ${edgeWords(lower, control)} to ${edgeWords(upper, control)}${tail}.`);
     } else {
-      const span = letter(control.spanKind, Math.abs(band.move.by), { digits: control.digits, unit: control.unit });
-      const sign = band.move.by > 0 ? '+' : '−';
+      const { span, share } = moveWords(band.move, control);
+      // "Fails here" only over a run that failed here. Outside the band is not
+      // the same as failing: the setting may sit between two runs, or on one
+      // that was refused, did not finish or has not landed, and none of those
+      // is a line failing (FR-013).
+      const here = band.verdicts.find((verdict) => verdict.value === band.stance);
+      const verdict = here?.kind === 'fail' ? `Fails ${standard}${of} here.` : `${standard}${of} is not judged at this setting.`;
       said.push(
-        `Fails ${standard}${of} here. Passes from ${edgeWords(lower, control)} to ${edgeWords(upper, control)}${tail}: ` +
-          `move ${sign}${span} (${Math.round(band.move.share * 100)} % of travel).`,
+        `${verdict} Passes from ${edgeWords(lower, control)} to ${edgeWords(upper, control)}${tail}: ` +
+          `move ${span} (${share}).`,
       );
       if (band.tie) said.push('The stretch on the other side is exactly as near.');
     }
@@ -2867,8 +2889,10 @@ export function mountConsole({
 
     /**
      * The tolerance band under one study card, or null to take it down
-     * (feature 016). `entry` is `{ band, standard }`: the `Band` from
-     * `tolerance.js` and the chased standard's name to letter it against.
+     * (feature 016). `entry` is `{ band, standard, noneAlone }`: the `Band`
+     * from `tolerance.js`, the chased standard's name to letter it against, and
+     * `SAYS.noneAlone`, handed in rather than imported (see the head of this
+     * module for why nothing here imports `tolerance.js`).
      */
     setBand(key, entry) {
       if (entry) bandsShown.set(key, entry);
