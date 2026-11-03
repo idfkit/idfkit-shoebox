@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The study and survey reading "Cost" is now "Utility cost"**, as is the
+  kept-scheme column, so that it is not read as a construction cost. The link
+  token `cost` is unchanged.
+
 ## [0.5.0] - 2026-10-23
 
 ### Added

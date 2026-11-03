@@ -7466,7 +7466,7 @@ const SHELF_COLUMNS = Object.freeze([
   // the first would keep settling the second by accident. It is also the one
   // column here a design-day run can fill.
   { label: 'Peak heat', field: 'peakHeat', unit: 'W/m²', kind: 'fluxDensity', digits: 1 },
-  { label: 'Cost', field: 'cost', unit: '', kind: 'currency', fmt: (v, m) => `${group(v, 0)} ${m.currency ?? ''}`.trim() },
+  { label: 'Utility cost', field: 'cost', unit: '', kind: 'currency', fmt: (v, m) => `${group(v, 0)} ${m.currency ?? ''}`.trim() },
   { label: 'Carbon', field: 'carbon', unit: 'kgCO₂e', kind: 'carbonMass', fmt: (v) => group(v, 0) },
 ]);
 
