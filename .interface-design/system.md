@@ -51,6 +51,11 @@ Four ink levels, all used: `--ink` (`--idfkit-color-ink`, primary), `--ink-2`
 (`--idfkit-color-ink-muted`, supporting), `--ink-3` (`--idfkit-color-ink-label`,
 labels and metadata), `--ink-ghost` (the standard's `slate-400` primitive in
 the light theme and `slate-600` in the dark: underlay, empty, disabled).
+Small type a reader needs, such as notes, hints, counts, placeholders and chart
+labels, takes `--ink-note` (`slate-500` in the light theme, `slate-400` in the
+dark), which clears 4.5:1 on the sheet in both. `--ink-ghost` stays on drawn
+underlays and on states that are inactive: disabled controls, refused offers,
+inert rows, empty cells and removed items.
 
 Four border weights, matched to the importance of the boundary:
 `--rule-soft` (within a group), `--rule` (standard), `--rule-firm` (emphasis,
@@ -124,7 +129,7 @@ Labels are uppercase and tracked. Tracking rises as size falls:
 | Control label | `500 9.5px/1.3` cond, upper, `0.055em` |
 | Segment label | `500 9px/1.3` cond, upper, `0.035em` |
 | Value readout | `400 11px/1.3` mono, tabular |
-| Control note | `400 10.5px/1.45` sans, `--ink-ghost` |
+| Control note | `400 10.5px/1.45` sans, `--ink-note` |
 | Strip blurb | `400 11.5px/1.5` sans, `--ink-3` |
 
 Motion follows the standard as well: every transition on the sheet eases with
@@ -444,7 +449,7 @@ the text opens where it stands, under the thing it explains.
   `Sources`, `Criteria c and d`. Where the word alone names nothing, as
   `Note` does, the summary carries an `aria-label` naming its subject.
 - **Summary in the control note's face**: `400 10.5px/1.45` sans in
-  `--ink-ghost`, `--ink-2` on hover, the `--rule-focus` ring on
+  `--ink-note`, `--ink-2` on hover, the `--rule-focus` ring on
   `:focus-visible`, `width: fit-content` so the target is the words and not
   the column. The open body keeps its host's own note style, so moving a note
   into a fold does not restyle it.

@@ -1373,7 +1373,7 @@ export function mountConsole({
     for (const h of [0, 6, 12, 18, 24]) {
       const t = svg('text', {
         x: h * 10, y: 31, 'text-anchor': h === 0 ? 'start' : h === 24 ? 'end' : 'middle',
-        fill: 'var(--ink-ghost)', 'font-family': 'var(--mono)', 'font-size': 7.5,
+        fill: 'var(--ink-note)', 'font-family': 'var(--mono)', 'font-size': 7.5,
       });
       t.textContent = String(h).padStart(2, '0');
       root.append(t);
@@ -1500,7 +1500,7 @@ export function mountConsole({
     for (const h of [0, 6, 12, 18, 24]) {
       const t = svg('text', {
         x: h * 10, y: 31, 'text-anchor': h === 0 ? 'start' : h === 24 ? 'end' : 'middle',
-        fill: 'var(--ink-ghost)', 'font-family': 'var(--mono)', 'font-size': 7.5,
+        fill: 'var(--ink-note)', 'font-family': 'var(--mono)', 'font-size': 7.5,
       });
       t.textContent = String(h).padStart(2, '0');
       drawing.append(t);
@@ -2300,7 +2300,7 @@ export function mountConsole({
       root.append(t);
     }
 
-    const foot = (text, fx, anchor, pen = 'var(--ink-ghost)') => {
+    const foot = (text, fx, anchor, pen = 'var(--ink-note)') => {
       const t = svg('text', {
         x: fx, y: 56, 'text-anchor': anchor, fill: pen,
         'font-family': 'var(--mono)', 'font-size': 7.5,

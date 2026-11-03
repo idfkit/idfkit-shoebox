@@ -63,6 +63,7 @@
         --ink-2: var(--idfkit-color-ink-muted); /* supporting text */
         --ink-3: var(--idfkit-color-ink-label); /* metadata, labels */
         --ink-ghost: var(--idfkit-color-primitive-slate-400); /* underlay, disabled, empty */
+        --ink-note: var(--idfkit-color-primitive-slate-500); /* notes, hints, counts: small type a reader needs */
 
         --rule: color-mix(in srgb, var(--ink) 14%, transparent); /* standard separation */
         --rule-soft: color-mix(in srgb, var(--ink) 7%, transparent); /* within a group */
@@ -102,6 +103,7 @@
           --sheet: var(--idfkit-color-surface-raised);
           --inset: var(--idfkit-color-ground);
           --ink-ghost: var(--idfkit-color-primitive-slate-600);
+          --ink-note: var(--idfkit-color-primitive-slate-400);
           --cold: var(--idfkit-color-primitive-blue-300);
         }
       }
@@ -110,6 +112,7 @@
         --sheet: var(--idfkit-color-surface-raised);
         --inset: var(--idfkit-color-ground);
         --ink-ghost: var(--idfkit-color-primitive-slate-600);
+        --ink-note: var(--idfkit-color-primitive-slate-400);
         --cold: var(--idfkit-color-primitive-blue-300);
       }
 
@@ -281,7 +284,7 @@
       .note.here .note-mark { border-color: var(--redline); }
       .note-no {
         font: 400 10px/1 var(--mono);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         letter-spacing: 0.04em;
       }
       .note.here .note-no { color: var(--redline); }
@@ -374,7 +377,7 @@
         padding: 0 0 14px 20px;
         font: 400 11.5px/1 var(--mono);
         letter-spacing: 0.01em;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         transition: color 0.18s var(--ease);
       }
       .ledger li:last-child { padding-bottom: 0; }
@@ -427,7 +430,7 @@
       }
       .ledger-foot > div { display: flex; flex-direction: column; gap: 5px; }
       .ledger-foot b { font: 400 15px/1 var(--mono); color: var(--ink); }
-      .ledger-foot .sub { font: 400 10.5px/1 var(--mono); color: var(--ink-ghost); }
+      .ledger-foot .sub { font: 400 10.5px/1 var(--mono); color: var(--ink-note); }
 
       .field { padding: 26px 32px 30px; min-width: 0; border-left: 1px solid var(--rule); }
 
@@ -715,7 +718,7 @@
         border-bottom: 1px solid var(--rule);
         border-radius: var(--r) var(--r) 0 0;
       }
-      .site-search::placeholder { color: var(--ink-ghost); }
+      .site-search::placeholder { color: var(--ink-note); }
       /* No focus ring on the search box: the panel only ever opens focused, so
          a ring would be lit the whole time it is visible and would say nothing.
          The caret is the indication. */
@@ -825,7 +828,7 @@
       .site-own-kept {
         margin: 0;
         font: 400 10.5px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* What the browser is holding, and how to make it stop. Never folded: a
          reader has to be able to see that a file of theirs is being kept without
@@ -843,7 +846,7 @@
         padding: 8px 13px;
         border-top: 1px solid var(--rule);
         font: 400 10.5px/1.3 var(--mono);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
 
       .status {
@@ -924,7 +927,7 @@
         overflow-wrap: anywhere;
       }
       .report-item.removed .report-item-summary { color: var(--ink-ghost); }
-      .report-item-fixed { font: 400 10.5px/1.45 var(--sans); color: var(--ink-ghost); }
+      .report-item-fixed { font: 400 10.5px/1.45 var(--sans); color: var(--ink-note); }
       .report-files,
       .report-actions { display: flex; flex-wrap: wrap; align-items: start; gap: 10px 22px; }
       .report-file,
@@ -1499,7 +1502,7 @@
         margin: 0;
         max-width: 62ch;
         font: 400 10.5px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
 
       /* The plate takes a gesture, so it says so under the pointer. `pan-y`
@@ -1559,7 +1562,7 @@
       .chase-ghost,
       .chase-part {
         font-style: normal;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .chase-ghost { font-family: var(--mono); }
 
@@ -1669,7 +1672,7 @@
         text-transform: none;
         letter-spacing: 0;
         font: 400 10.5px/1 var(--mono);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         margin-left: 10px;
       }
       .schedule .base:empty,
@@ -1826,7 +1829,7 @@
         font: 400 10.5px/1.5 var(--mono);
         font-variant-numeric: tabular-nums;
       }
-      .buildup .op { color: var(--ink-ghost); }
+      .buildup .op { color: var(--ink-note); }
       .buildup .what { color: var(--ink-3); }
       .buildup .amount { color: var(--ink); text-align: right; white-space: nowrap; }
       .buildup .amount.void { color: var(--ink-ghost); }
@@ -1841,7 +1844,7 @@
         padding-top: 9px;
         border-top: 1px solid var(--rule-soft);
         font: 400 10px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .meterhead .cite b {
         font: 500 9px/1.45 var(--cond);
@@ -1904,7 +1907,7 @@
       }
       .bar-item span { flex: 1; color: var(--ink-3); }
       .bar-item b { font-weight: 400; color: var(--ink); }
-      .bar-item em { font-style: normal; color: var(--ink-ghost); }
+      .bar-item em { font-style: normal; color: var(--ink-note); }
 
       /* ── the schedule below it ──────────────────────────────────── */
 
@@ -1942,7 +1945,7 @@
         display: inline-block;
         margin-top: 3px;
         font: 400 10.5px/1.4 var(--mono);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* The one mark the redline makes down here: this row ranks differently
          under cost than under carbon, which is the argument the whole section
@@ -1968,7 +1971,7 @@
       .bill-refs:empty { display: none; }
       .bill-refs {
         font-size: 11px;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         border-top: 1px solid var(--rule-soft);
         padding-top: 12px;
       }
@@ -2051,7 +2054,7 @@
         max-width: 54ch;
         font: 400 10.5px/1.45 var(--sans);
         font-style: normal;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* The fold: every explanation that is not itself a reading, one press
          away under the thing it explains.
@@ -2081,7 +2084,7 @@
         max-width: 54ch;
         font: 400 10.5px/1.45 var(--sans);
         font-style: normal;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .fold > summary::-webkit-details-marker { display: none; }
       .fold > summary::before {
@@ -2107,7 +2110,7 @@
       .register #score td.delta.absent {
         font: 400 10.5px/1.45 var(--sans);
         text-align: left;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* The one mark on the whole board. A criterion that has been missed is
          a divergence, and this is the markup pen doing what it is for. */
@@ -2337,7 +2340,7 @@
         flex: none;
         width: 1ch;
         font-family: var(--mono);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .presets[open] > summary::before { content: "−"; }
       /* Closed, the register still reads — the folded strip's rule, applied to
@@ -2350,7 +2353,7 @@
         text-transform: none;
         letter-spacing: 0;
         font-style: normal;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .presets-state.met { color: var(--ink-2); }
       .presets[open] > summary .presets-state { display: none; }
@@ -2381,7 +2384,7 @@
         margin: 9px 0 0;
         max-width: 52ch;
         font: 400 10.5px/1.5 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       #presets {
         margin-top: 7px;
@@ -2407,7 +2410,7 @@
         flex: none;
         width: 1ch;
         font-family: var(--mono);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .preset[open] > summary::before { content: "−"; }
       .preset > summary:hover { color: var(--ink); }
@@ -2438,7 +2441,7 @@
          at ghost weight is the whole of the distinction: it is this sheet
          talking, not a published document, and it should not borrow the
          authority of the line above it. */
-      .preset.parti .preset-cite { color: var(--ink-ghost); font-style: italic; }
+      .preset.parti .preset-cite { color: var(--ink-note); font-style: italic; }
       .preset-blurb {
         margin: 8px 0 0;
         max-width: 52ch;
@@ -2507,7 +2510,7 @@
       .preset tr.adrift td:first-child { color: var(--ink); }
       .preset td.asks { color: var(--ink-3); }
       .preset td.delta { color: var(--ink-3); }
-      .preset td.delta.absent { font-size: 10.5px; color: var(--ink-ghost); }
+      .preset td.delta.absent { font-size: 10.5px; color: var(--ink-note); }
       /* The one mark on the whole register. A criterion that has been missed
          is a divergence, and this is the markup pen doing what it is for. */
       .preset td.delta.over { color: var(--redline); }
@@ -2517,7 +2520,7 @@
         max-width: 50ch;
         font: 400 10.5px/1.45 var(--sans);
         font-style: normal;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
 
       /* The clause build-up is the longest thing on the console — Passivhaus
@@ -2574,7 +2577,7 @@
       .unjudged dd,
       .qualifications dd {
         font: 400 11px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .unjudged dd {
         margin: 2px 0 9px;
@@ -2662,7 +2665,7 @@
         margin-top: 5px;
         font: 400 10.5px/1.45 var(--mono);
         font-style: normal;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* The shelf runs to ten cells — four readings, each with its delta beside
          it — so the name column gives up the 40 % the schedules hand their
@@ -2783,7 +2786,7 @@
          currently is, the way an em dash states that a reading is absent, and
          an instruction in a cell would be the one imperative on a page of
          facts. */
-      .drawn .text-field::placeholder { color: var(--ink-ghost); opacity: 1; }
+      .drawn .text-field::placeholder { color: var(--ink-note); opacity: 1; }
 
       /* ── field notes ────────────────────────────────────────────── */
 
@@ -2821,7 +2824,7 @@
         font: 400 11px/1.55 var(--mono);
         color: var(--ink-3);
       }
-      #log:empty::before { content: "No engine output yet."; color: var(--ink-ghost); }
+      #log:empty::before { content: "No engine output yet."; color: var(--ink-note); }
 
       /* ── colophon ───────────────────────────────────────────────── */
 
@@ -2859,7 +2862,7 @@
       }
       .disclosure-body h2 em {
         font-style: normal;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         letter-spacing: 0.08em;
       }
       /* The colophon is prose, so it takes the disclaimers' face and measure
@@ -2959,7 +2962,7 @@
         margin: 0;
         font-size: 11px;
         line-height: 1.6;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .rev-source code { font: 400 10.5px/1 var(--mono); color: var(--ink-3); }
 
@@ -2989,7 +2992,7 @@
       .rev-no {
         font: 400 10px/1 var(--mono);
         letter-spacing: 0.04em;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .rev-version { font: 500 13px/1 var(--mono); color: var(--ink); }
       .rev.unreleased .rev-version { color: var(--redline); }
@@ -3209,7 +3212,7 @@
       .strip-toggle:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: -2px; }
       .strip-no {
         font: 400 10px/1 var(--mono);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         letter-spacing: 0.04em;
       }
       .strip-name {
@@ -3343,7 +3346,7 @@
       .ctl-note {
         margin: 5px 0 0;
         font: 400 10.5px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* A control's note behind a marker in its head (`attachNote` in
          console.js): the marker follows the label on the head's own line, so
@@ -3409,7 +3412,7 @@
         font: 500 9px/1.3 var(--cond);
         text-transform: uppercase;
         letter-spacing: 0.055em;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         cursor: pointer;
         border-bottom: 1px solid transparent;
       }
@@ -3453,7 +3456,7 @@
         flex: 1;
         min-width: 0;
         font: 400 9px/1.3 var(--mono);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -3512,7 +3515,7 @@
       .study-quantity-presumes {
         margin: 0 0 5px;
         font: 400 10.5px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .study-quantity-choices {
         border: 0;
@@ -3603,7 +3606,7 @@
         min-height: 32px;
         margin: 6px 0 0;
         font: 400 10px/1.4 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
 
       /* A ruled calibration face with a penciled tick. The range input is
@@ -3719,7 +3722,7 @@
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      .ctl-standing.between, .dim-standing.between { color: var(--ink-ghost); }
+      .ctl-standing.between, .dim-standing.between { color: var(--ink-note); }
 
       /* Exclusive states on one segmented rule. Never a dropdown: the desk
          has to be readable without opening anything. */
@@ -3831,7 +3834,7 @@
         font: 500 8px/1.25 var(--cond);
         text-transform: uppercase;
         letter-spacing: 0.03em;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* A wall whose number reaches no object in the document — an overhang on
          a solid elevation. Dimmed here and on its own bar of the plan, which
@@ -3959,7 +3962,7 @@
       .pattern-at {
         font: 400 8.5px/1 var(--mono);
         font-variant-numeric: tabular-nums;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* The same 11px tabular mono every other reading on this desk is
          lettered in, and settable in place like all of them: `.num-field`
@@ -4075,7 +4078,7 @@
       .day-when {
         font: 400 10px/1.3 var(--mono);
         font-variant-numeric: tabular-nums;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         white-space: nowrap;
       }
       /* Dropped whole by the run, so the engine will lose it without a word. */
@@ -4106,7 +4109,7 @@
         cursor: pointer;
         padding: 0 2px;
         font: 400 12px/1 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* The guard every unset button on this sheet carries: the one real
          `button:hover:not(:disabled)` rule is more specific than a bare class
@@ -4127,7 +4130,7 @@
         font: 400 10.5px/1.4 var(--mono);
         color: var(--ink);
       }
-      .day-field::placeholder { color: var(--ink-ghost); }
+      .day-field::placeholder { color: var(--ink-note); }
       .day-field:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: -2px; }
       .day-put {
         all: unset;
@@ -4166,7 +4169,7 @@
         font: 500 9px/1.3 var(--cond);
         text-transform: uppercase;
         letter-spacing: 0.055em;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         border-bottom: 1px solid transparent;
       }
       .day-presets button.day-set:hover:not(:disabled) {
@@ -4203,7 +4206,7 @@
         font-style: normal;
         text-transform: uppercase;
         letter-spacing: 0.055em;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         border: 1px solid var(--rule);
         border-radius: 1px;
         padding: 2px 3px;
@@ -4253,7 +4256,7 @@
       .meter-note {
         margin: 6px 0 0;
         font: 400 10.5px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
 
       /* ── what the engine made of a channel's declaration ───────────────
@@ -4471,7 +4474,7 @@
            the narrow desk is left exactly as it was. */
         max-width: 62ch;
         font: 400 10.5px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .rail-note.loose { color: var(--ink-3); }
 
@@ -4963,7 +4966,7 @@
       }
       .survey-extent-rule {
         font: 400 10.5px/1.3 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
 
       /* Each picker is a title-block cell: one hairline round the caption, the
@@ -5033,7 +5036,7 @@
       .survey-pick-count {
         grid-column: 2 / 4;
         justify-self: end;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         text-align: right;
       }
 
@@ -5077,7 +5080,7 @@
         font: inherit;
         color: var(--ink);
       }
-      .survey-pick-field::placeholder { color: var(--ink-ghost); }
+      .survey-pick-field::placeholder { color: var(--ink-note); }
       .survey-pick-close {
         grid-column: 3;
         color: var(--redline);
@@ -5156,7 +5159,7 @@
 
       .survey-options-group small {
         font: 400 10px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
 
       .survey-option:hover { color: var(--redline); }
@@ -5165,7 +5168,7 @@
       .survey-option[disabled] { color: var(--ink-ghost); cursor: not-allowed; }
       .survey-option small {
         display: block;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         font-size: 10px;
         line-height: 1.4;
         /* A unit or a refusal, neither of which is a label: through the
@@ -5208,7 +5211,7 @@
         padding: 3px 5px;
         font: 400 11px/1.35 var(--mono);
         letter-spacing: 0;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         cursor: pointer;
         border-radius: var(--r);
       }
@@ -5628,7 +5631,7 @@
       }
 
       .survey-coverage b { color: var(--ink); font-weight: 400; }
-      .survey-coverage .loose { color: var(--ink-ghost); }
+      .survey-coverage .loose { color: var(--ink-note); }
 
       /* The design under the reader, in the mono face every figure on this
          page is set in, because it is a reading and not a caption — it is what
@@ -5648,7 +5651,7 @@
       }
 
       /* Not a measurement: bare ground under the pointer, or no survey cut. */
-      .spot-readout.loose { color: var(--ink-ghost); }
+      .spot-readout.loose { color: var(--ink-note); }
 
       /* The complete record, shut by default. The summary states its count in
          view, so what is behind the fold is known without opening it — the
