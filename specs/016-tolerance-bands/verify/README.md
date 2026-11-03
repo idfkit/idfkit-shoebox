@@ -229,3 +229,8 @@ run that does not finish) are in G2: a gap inside a stretch is listed as
 unread, never an edge, and "stepped over" is claimed only past a coarse run
 that failed (46 cases, all passing). G4 now asserts `bandQuantities` is called
 only from `sweepContents`, reached only by `jobForStudy` and `surveyContents`.
+
+Re-run after these fixes, `page-bands.mjs` with the Passivhaus specification
+chased against Passivhaus Classic (synthetic London year): every check passes,
+including SC-004 (78 → 78 runs), SC-007 and 390 px. The off-grid wording was
+re-checked on the reporter's link as its own sentence. G3 was not re-run.
