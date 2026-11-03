@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   kept-scheme column, so that it is not read as a construction cost. The link
   token `cost` is unchanged.
 
+### Fixed
+
+- **Landmark tooltips and slider descriptions now follow the unit system.**
+  They were lettered once, when the faces were built, so a sheet opened in IP
+  described the console's bands in SI, and a sheet switched back to SI
+  described its dimension sliders in feet.
+- **The airtightness arithmetic line is lettered in SI in both systems.** In IP
+  its area and volume converted while the density stayed in kg/m³, so redoing
+  the division gave 35.3 times the coefficient it explains.
+
 ## [0.5.0] - 2026-10-23
 
 ### Added
