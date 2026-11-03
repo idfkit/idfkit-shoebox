@@ -82,7 +82,10 @@ console.log(`band: ${line}`);
 console.log(`block: ${(await text('#tolerance')).replace(/ Method.*$/, '')}\n`);
 
 ok('a band line under the wall resistance card', line.length > 0);
-ok('no position reads as carrying nothing', !/carried no/.test(line), line);
+// Above about 7 m²K/W this zone never heats in the Boston year; that is a peak
+// heating load of zero, a pass, and it read as "carried no Peak heating load"
+// until `readPeaks` was taught that a series with no heating hour measured 0.
+ok('no position reads as carrying nothing', !/carried no|not read/.test(line), line);
 ok('no stretch is a single point split from the rest', !/from (\S+ m²K\/W) to \1/.test(line) && !/kept apart/.test(line), line);
 ok('no stepped-over claim', !/stepped over/.test(line));
 ok('the setting is judged', !/not judged at this setting/.test(line));
@@ -92,8 +95,11 @@ ok('chasing started no run', runsAfterChase === runs, `${runs} → ${runsAfterCh
 // Off the grid: 6.56 → 6.585 sits between two sweep positions. Moving the
 // studied lever moves no rest shape, so the curve stays and is not re-swept;
 // the desk re-solves, and that run judges the setting.
-const field = page.getByRole('textbox', { name: /^Wall resistance value/ }).first();
+// By attribute rather than by role: the margin field is a text input under a
+// strip that may be scrolled away, and a role query skips what it deems hidden.
+const field = page.locator('input[aria-label="Wall resistance value"]').first();
 if (await field.count()) {
+  await field.scrollIntoViewIfNeeded();
   await field.click();
   await field.fill('6.585');
   await field.press('Enter');

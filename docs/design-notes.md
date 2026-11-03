@@ -2690,6 +2690,14 @@ finish):
 - **"Stepped over" only past a coarse position that failed.** Wider than the
   coarse band past a coarse gap is the coarse pass not seeing, not missing.
 
+**A run that never heated measured a peak heating load of zero.** With the
+cache fixed, the same link still read "not read beyond: at 7.06 m²K/W this run
+carried no Peak heating load". Past about 7 m²K/W that zone never heats in the
+Boston year, and `readPeaks` returned null when no hour was positive, so the
+stretch where the Passivhaus load line is met most comfortably fell out of
+every judgement, the board's included. It now returns 0 whenever the series is
+present; null stays for the series being absent (System out).
+
 **A setting between two sweep positions is judged by the desk's own run.**
 Moving the studied lever moves no rest shape, so the curve is not re-swept and
 the setting may sit between two samples. The chase line's run is a run at
