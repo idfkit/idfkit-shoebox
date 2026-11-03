@@ -10,8 +10,10 @@
  *     on (the standing idempotence gate; this feature does not touch the
  *     applier, and this proves it rather than assuming it);
  *   - the live solve's reporting is untouched: the wider contents reach the
- *     engine through `bandQuantities`, and its one caller in `main.js` is
- *     `jobForStudy`, so the live solve's `'sheet'` profile never sees them;
+ *     engine through `bandQuantities`, whose one caller in `main.js` is
+ *     `sweepContents`, reached by a study (`jobForStudy`) and by the survey and
+ *     the pull (`surveyContents`), so the live solve's `'sheet'` profile never
+ *     sees them;
  *   - `encodeState` takes no chase and no band, so neither can reach a link.
  *
  * Run: node specs/016-tolerance-bands/verify/g4-no-leak.mjs
@@ -49,7 +51,12 @@ const calls = [...main.matchAll(/bandQuantities\(/g)].map((m) => m.index);
 // The enclosing top-level function of each call: the last `\nfunction NAME(`
 // before it, which is how every function in main.js is declared.
 const caller = calls.map((at) => [...main.slice(0, at).matchAll(/\nfunction (\w+)\(/g)].at(-1)?.[1] ?? '?');
-ok('bandQuantities has one caller in main.js, jobForStudy', calls.length === 1 && caller[0] === 'jobForStudy', caller.join());
+ok('bandQuantities has one caller in main.js, sweepContents', calls.length === 1 && caller[0] === 'sweepContents', caller.join());
+// And sweepContents is reached only by the sweeps: a study, and the survey and
+// the pull through surveyContents. Never by the live solve.
+const sweepCalls = [...main.matchAll(/(?<!function )sweepContents\(/g)].map((m) => m.index);
+const sweepCallers = [...new Set(sweepCalls.map((at) => [...main.slice(0, at).matchAll(/\nfunction (\w+)\(/g)].at(-1)?.[1] ?? '?'))].sort();
+ok('sweepContents is called by jobForStudy and surveyContents only', sweepCallers.join() === 'jobForStudy,surveyContents', sweepCallers.join());
 
 // The codec's whole input surface. A chase or a band would have to be one of
 // these to reach a link, and none of them is.

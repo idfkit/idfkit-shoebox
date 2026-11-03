@@ -11,16 +11,18 @@ The module is DOM-free and network-free. It imports from `schemes.js`, `survey.j
 export const BAND_QUANTITIES; // Quantity[]
 
 /**
- * The quantities a study sample must carry at this snapshot: the study's own,
+ * The quantities a sweep's samples must carry at this snapshot: the sweep's own
+ * (one quantity for a study, the survey's list for a survey row or pull probe),
  * plus every BAND_QUANTITIES entry whose needs.channels are engaged on it.
  */
-export function bandQuantities(studyQuantity, engagedChannels); // Quantity[]
+export function bandQuantities(own, engagedChannels); // Quantity[]
 
 /** One lever's band under one chased standard. Pure. */
 export function bandFor({
   key, control, stance, curve, preset, coarse, stale,
   priced, // boolean: key is in PRICED_KEYS, so `inert` can be read off `Quantity.movedBy` (R12)
   says, // (target) => string: targetBlock's sentence, injected so the module stays page-free
+  atSetting, // (target) => number | null, or null: the desk's own run, judging a setting between sweep positions
 }); // Band
 
 /** The block under the chase line. Pure. */
@@ -45,7 +47,7 @@ export function readingForTarget(preset, target); // Reading
 
 ### `src/main.js`
 
-- **`jobForStudy`** passes `bandQuantities(quantity, engagedChannels(snapshot, patch))` to `sampleContentsFor` in place of `[quantity]`. The survey's and the pull's `sampleContentsFor` calls are **not** changed.
+- **`sweepContents`** builds `carried` from `bandQuantities(quantities, engagedChannels(snapshot, patch))` and `needed` from the sweep's own quantities. `jobForStudy` and `surveyContents` (the survey and the pull) both call it. Revised after release: the survey's and the pull's contents were first left narrow, and because the sample cache is shared, a survey sample answering a study position carried none of the band's readings.
 - **`sampleIdentity`** is unchanged. The chase never reaches it.
 - **`renderChase`** builds a `Tolerance` from every entry of `studies` with a curve, via `bandFor` and `toleranceFor`, and letters it under the chase line. Absences are lettered in view; the method and the full caveat go in a `fold()`.
 - **The chase click handler** already calls `renderChase`. It also re-renders every open study card (`desk.setStudy(key, study, { stale })`) so each card's band follows the chase. No `refreshStudies` is needed for bands. The existing call stays for its TM59 reason.

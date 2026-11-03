@@ -23,7 +23,8 @@ The classification of one sampled position against the judged targets.
 | `value` | number | the lever's position |
 | `kind` | `'pass' \| 'fail' \| 'refused' \| 'gap' \| 'unsolved'` | see R3; `unsolved` is a position not yet landed |
 | `failing` | `Target[]` | for `fail`, every failing target, worst ratio first; otherwise empty |
-| `reason` | string \| null | for `refused`, the scheduler's sentence; for `gap`, the fixed run-failed sentence |
+| `reason` | string \| null | for `refused`, the scheduler's sentence; for `gap`, the fixed run-failed sentence or the line the run carried no figure for |
+| `byDesk` | boolean | read off the desk's own solve at a setting between two sweep positions (`atSetting`), not off a sample |
 
 **Validation**:
 
@@ -47,6 +48,7 @@ One side of a band.
 - `stop` iff `outside === null` iff `closedBy === null`.
 - A `stop` edge's `inside` equals the control's `min` (lower) or `max` (upper).
 - `inside` and `outside` are adjacent landed positions; nothing lies between them on the curve.
+- `inside` is always a measured pass. A `gap` closes an edge only at the end of a stretch, where no pass lies beyond it.
 
 ## `Band`
 
@@ -60,17 +62,18 @@ The tolerance band for one studied lever, under one chased standard.
 | `judged` | `Target[]` | the targets of the chased standard this curve can read (R6) |
 | `unjudged` | `{ target, says }[]` | the rest, each with `targetBlock`'s reason or the standard's `asks` |
 | `verdicts` | `Verdict[]` | one per curve position, in position order |
-| `segments` | `{ from, to }[]` | the maximal passing runs |
+| `segments` | `{ from, to, unread }[]` | the maximal passing runs, from a pass to a pass; a `gap` between two passes does not end one, and is listed in `unread` |
 | `band` | `{ lower: Edge, upper: Edge } \| null` | the segment containing `stance`, or the nearest one |
 | `contains` | boolean | whether `band` contains `stance` |
 | `tie` | boolean | the nearest segment was chosen between two equidistant ones (stated) |
 | `share` | number \| null | the share of travel inside `band`, in [0, 1] |
 | `move` | `{ to, by, share } \| null` | when `!contains`: the nearest passing position, the signed move, and its share of travel |
-| `others` | `{ from, to }[]` | the passing segments other than `band` (FR-007) |
+| `others` | `{ from, to, unread }[]` | the passing segments other than `band` (FR-007), separated from it by a fail, a refusal or an unlanded position |
+| `unread` | `Verdict[]` | the `gap` positions inside `band`, said in view beside it: they are not passes |
 | `incomplete` | boolean | some positions are `unsolved` (still landing, or stopped) |
 | `inert` | string \| null | why this lever cannot move any judged target, or null (research R12) |
 | `coarse` | boolean | taken from the study |
-| `steppedOver` | boolean | on a fine curve only: an edge computed over every position lies outside the bracket computed over the coarse-grid positions of the same curve (research R3). Always false on a coarse curve |
+| `steppedOver` | boolean | on a fine curve only: an edge computed over every position lies outside the bracket computed over the coarse-grid positions of the same curve (research R3). Wider than the coarse band counts only past a coarse position that **failed**; past one that carried no figure the coarse pass could not see. Always false on a coarse curve |
 | `stale` | boolean | taken from the study's card state |
 
 **Validation (asserted in the constructor):**

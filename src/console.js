@@ -2366,7 +2366,8 @@ export function mountConsole({
     const closed = edge.closedBy;
     if (closed.kind === 'unsolved') return `${at} (unknown beyond until ${beyond} lands)`;
     if (closed.kind === 'refused') return `${at} (${beyond} is refused: ${closed.reason})`;
-    if (closed.kind === 'gap') return `${at} (at ${beyond} ${closed.reason})`;
+    // Not a line failing: nothing is known beyond here, and it says why.
+    if (closed.kind === 'gap') return `${at} (not read beyond: at ${beyond} ${closed.reason})`;
     return `${at} (${closed.failing.map((target) => target.label).join(' and ')} fails at ${beyond})`;
   }
 
@@ -2384,24 +2385,36 @@ export function mountConsole({
     const { lower, upper } = band.band;
     const state = [band.coarse ? 'coarse' : null, band.incomplete ? 'still landing' : null].filter(Boolean);
     const tail = state.length ? ` (${state.join(', ')})` : '';
+    // Where the setting is judged by the desk's own run rather than a sample,
+    // because it sits between two of the sweep's positions.
+    const here = band.verdicts.find((verdict) => verdict.value === band.stance && verdict.solved);
+    const byDesk = here?.byDesk ? ' (this setting by the desk’s own run)' : '';
     if (band.contains) {
-      said.push(`Passes ${standard}${of} from ${edgeWords(lower, control)} to ${edgeWords(upper, control)}${tail}.`);
+      said.push(`Passes ${standard}${of} from ${edgeWords(lower, control)} to ${edgeWords(upper, control)}${tail}${byDesk}.`);
     } else {
       const { span, share } = moveWords(band.move, control);
       // "Fails here" only over a run that failed here. Outside the band is not
       // the same as failing: the setting may sit between two runs, or on one
       // that was refused, did not finish or has not landed, and none of those
       // is a line failing (FR-013).
-      const here = band.verdicts.find((verdict) => verdict.value === band.stance);
-      const verdict = here?.kind === 'fail' ? `Fails ${standard}${of} here.` : `${standard}${of} is not judged at this setting.`;
+      const verdict =
+        here?.kind === 'fail' ? `Fails ${standard}${of} here${byDesk}.` : `${standard}${of} is not judged at this setting.`;
       said.push(
         `${verdict} Passes from ${edgeWords(lower, control)} to ${edgeWords(upper, control)}${tail}: ` +
           `move ${span} (${share}).`,
       );
       if (band.tie) said.push('The stretch on the other side is exactly as near.');
     }
+    // The stretch runs over positions that carried no figure for a line
+    // (`bracket` in tolerance.js), and says which, in view: they are not passes.
+    if (band.unread.length) {
+      const values = band.unread.map((verdict) => control.format(verdict.value));
+      const at = values.length < 2 ? values[0] : `${values.slice(0, -1).join(', ')} and ${values.at(-1)}`;
+      const why = [...new Set(band.unread.map((verdict) => verdict.reason))].join('; ');
+      said.push(`Not read at ${at}: ${why}.`);
+    }
     for (const other of band.others) {
-      said.push(`Also passes from ${control.format(other.from)} to ${control.format(other.to)}, kept apart.`);
+      said.push(`Also passes from ${control.format(other.from)} to ${control.format(other.to)}, with a position between that does not pass.`);
     }
     if (band.steppedOver) said.push('The finer pass found a stretch the coarse pass stepped over.');
     return said;
@@ -2438,6 +2451,13 @@ export function mountConsole({
           const ox = made.x(edge.outside);
           g.append(svg('line', { x1: ox, y1: yBar - 2, x2: ox, y2: yBar + 2, class: 'band-beyond' }));
         }
+      }
+      // A position inside the stretch that carried no figure: the same ghost
+      // tick as the far side of an edge, because it too is a run that does not
+      // speak for the stretch, and the text under the card names it.
+      for (const verdict of band.unread) {
+        const ux = made.x(verdict.value);
+        g.append(svg('line', { x1: ux, y1: yBar - 2, x2: ux, y2: yBar + 2, class: 'band-beyond' }));
       }
       for (const other of band.others) {
         g.append(svg('line', { x1: made.x(other.from), y1: yBar, x2: made.x(other.to), y2: yBar, class: 'band-other' }));

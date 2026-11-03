@@ -192,6 +192,58 @@ const band = (opts) => bandFor({ key: 'shgc', control: shgc, preset: ENERPHIT, s
   ok('stepped over: a fine-only failure is flagged', s.steppedOver === true, `sliver at ${sliver}`);
 }
 
+/* ── gaps inside a stretch are unread, not edges (the survey-sharing report) ── */
+{
+  // Every coarse position carried TEDI only, as a narrow survey sample did;
+  // the fine-only ones carried every line. Before the fix this read as single
+  // points passing alone, "kept apart", and claimed a stepped-over stretch.
+  const stance = 0.4;
+  const coarseGrid = samplePoints(shgc, stance, COARSE_SAMPLES);
+  const onCoarse = (v) => coarseGrid.some((g) => Math.abs(g - v) < 1e-9);
+  const { positions, curve } = curveOf(shgc, stance, SWEEP_SAMPLES, (v) =>
+    onCoarse(v) && Math.abs(v - stance) > 1e-9 ? point(v, { demand: { tedi: 10, cedi: 1 } }) : point(v, bag(10 + v, 0)),
+  );
+  const b = band({ stance, curve, positions });
+  ok('gaps: one stretch across the unread positions', b.band && b.others.length === 0, JSON.stringify(b.others));
+  ok('gaps: edges are measured passes', b.verdicts.find((v) => v.value === b.band.lower.inside).kind === 'pass' && b.verdicts.find((v) => v.value === b.band.upper.inside).kind === 'pass');
+  ok('gaps: the unread positions are listed with their reason', b.unread.length > 0 && b.unread.every((v) => v.kind === 'gap' && /carried no/.test(v.reason)), String(b.unread.length));
+  ok('gaps: no stepped-over claim off unread coarse positions', b.steppedOver === false);
+}
+
+/* ── a stepped-over stretch is claimed only past a coarse run that failed ── */
+{
+  const stance = 0.4;
+  const coarseGrid = samplePoints(shgc, stance, COARSE_SAMPLES);
+  const upper = coarseGrid.filter((g) => g > stance);
+  const blank = upper[1]; // a coarse position that carried nothing
+  const { positions, curve } = curveOf(shgc, stance, SWEEP_SAMPLES, (v) =>
+    Math.abs(v - blank) < 1e-9 ? failedPoint(v) : v > upper[2] + 1e-9 ? point(v, bag(30, 0)) : point(v, bag(10, 0)),
+  );
+  const b = band({ stance, curve, positions });
+  ok('stepped over: not claimed past a coarse gap', b.steppedOver === false, `upper ${b.band.upper.inside}`);
+}
+
+/* ── a setting between two sweep positions is judged by the desk's own run ── */
+{
+  const swept = 0.4;
+  const stance = 0.405; // off the 0.0425 grid
+  const { positions, curve } = curveOf(shgc, swept, SWEEP_SAMPLES, (v) => point(v, bag(10 + v, 0)));
+  const without = band({ stance, swept, curve, positions });
+  const figure = (target) => (target.id === 'heating' ? 12 : 0);
+  const withDesk = band({ stance, swept, curve, positions, atSetting: figure });
+  ok('off-grid: without the desk run it is not judged here', !without.verdicts.some((v) => v.value === stance));
+  const here = withDesk.verdicts.find((v) => v.value === stance);
+  ok('off-grid: the desk run stands at the setting, marked', here?.kind === 'pass' && here.byDesk === true);
+  ok('off-grid: the band contains the setting and offers no move', withDesk.contains && withDesk.move === null);
+  const failing = band({ stance, swept, curve, positions, atSetting: (t) => (t.id === 'heating' ? 40 : 0) });
+  const f = failing.verdicts.find((v) => v.value === stance);
+  ok('off-grid: a desk run that fails is a fail here', f?.kind === 'fail' && f.failing[0].id === 'heating' && !failing.contains);
+  const partial = band({ stance, swept, curve, positions, atSetting: (t) => (t.id === 'heating' ? 12 : null) });
+  ok('off-grid: a desk run missing a line is not used', !partial.verdicts.some((v) => v.value === stance));
+  const onGrid = band({ stance: swept, curve, positions, atSetting: () => 999 });
+  ok('on-grid: the sample, not the desk run, speaks', onGrid.verdicts.every((v) => !v.byDesk) && onGrid.contains);
+}
+
 /* ── the block: ranked, restore, tie, alone, stale, absences ── */
 {
   const mk = (key, control, stance, fn, extra = {}) => {

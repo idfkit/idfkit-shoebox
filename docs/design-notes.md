@@ -2666,6 +2666,40 @@ Three things the harnesses caught:
   band's own invariants are the second line behind each. Either way the load
   fails naming the declaration.
 
+**Every sweep carries the band contents, not only a study, because the sample
+cache is shared.** Reported from the page: a study of wall resistance beside a
+survey of wall resistance and infiltration, the desk standing on the survey's
+infiltration-0 row, read "Passes from 6.57 to 6.57 … Also passes from 4.61 to
+4.61, kept apart … The finer pass found a stretch the coarse pass stepped
+over." The scheduler answers a job from any cached sample in the same bucket
+whose contents answer the job's `needed`, and a study needs only its own
+reading. The survey's samples were built carrying TEDI alone, so every study
+position the survey had run (every coarse one: the survey's fine 11 is the
+study's coarse 11) answered the study and carried no peak heating load, and
+only the study's own fine-only positions could be judged. `sweepContents` now
+builds every sweep's `carried` the same way (study, survey row, pull probe),
+so shared samples carry every line; the contents are the ones G1 measured.
+
+Two rules changed with it, because a gap can still happen (a run that does not
+finish):
+
+- **A gap inside a stretch is unread, not an edge.** A stretch runs from a pass
+  to a pass; gaps between are listed on it (`unread`), said in view and drawn as
+  ghost ticks. An edge is still only ever a measured pass. Ending stretches at
+  gaps lettered missing data as the limits of the design space.
+- **"Stepped over" only past a coarse position that failed.** Wider than the
+  coarse band past a coarse gap is the coarse pass not seeing, not missing.
+
+**A setting between two sweep positions is judged by the desk's own run.**
+Moving the studied lever moves no rest shape, so the curve is not re-swept and
+the setting may sit between two samples. The chase line's run is a run at
+exactly that setting, so where it is current (`outcomeOf` matches the shape and
+the climate epoch) and carries every judged line, `bandFor` takes it as one more
+measured position (`atSetting`, `Verdict.byDesk`), and the card says so. Before,
+the card read "not judged at this setting" and offered a move of a fraction of a
+step. Not for a priced lever, whose positions are priced off one shape, and not
+in the inertness test, which is exact equality and must not mix two readers.
+
 Driven on the built page with a synthetic London year, under a Passivhaus
 specification with U-factor raised to 2.5: heating reads 17.1 against 15, and
 the block names SHGC to 0.60 (+0.10, 12 % of travel) ahead of U-factor (−0.98,

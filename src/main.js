@@ -2137,6 +2137,7 @@ function clearReadings() {
   // arithmetic of a board of em dashes — while a run merely *in flight*
   // touches none of it, because nothing here runs at the top of a solve.
   lastOutcome = null;
+  outcomeOf = null;
   // The instant goes with them: it is an index into a run that is no longer
   // on the sheet. The pin itself survives — it is a calendar stamp and a
   // request, not a reading, so the next solve is asked for the same hour.
@@ -2228,6 +2229,9 @@ const studiesClearBtn = $('desk-clear-studies');
 let climateEpoch = 0;
 let bandsWithdrawnByClimate = false;
 let bandSeq = 0; // landing order, so an all-stale block can read the newest
+// The desk and climate `lastOutcome` was read under, so a band can ask whether
+// the chase line's run is a run at the setting the lever stands at now.
+let outcomeOf = null;
 // key -> what the card's band was last drawn from. Also the tolerance block's
 // roster: it is the one record of what every card is showing, the partial curve
 // of a sweep still landing included, which `studies` does not hold until the
@@ -2289,7 +2293,20 @@ function bandOf(key, study, stale) {
   if (!Number.isFinite(study.stance)) {
     throw new Error(`the study of ${key} reached its band with no stance recorded`);
   }
+  // The chase line's own run, where it is a run of exactly this desk under
+  // this climate: then it is a measurement at the lever's setting, and a
+  // setting between two sweep positions is judged by it rather than read as
+  // "not judged" with a move of a fraction of a step. A priced lever is left
+  // out, because its positions are priced off one shape and the desk's run is
+  // priced at the desk's own rates; a stale card measures another desk.
+  const live =
+    !stale &&
+    !PRICED_KEYS.has(key) &&
+    lastOutcome &&
+    outcomeOf?.epoch === climateEpoch &&
+    outcomeOf.shape === shapeKey(params);
   return bandFor({
+    atSetting: live ? (target) => targetReading(target) : null,
     key,
     label: labelFor(key),
     control: controlFor(key).control,
@@ -2320,7 +2337,7 @@ function showStudy(key, study, { stale = false } = {}) {
   desk?.setStudy(key, study, { stale });
   if (!desk) return;
   const stance = params[key];
-  const drawnFrom = study ? { study, stale, chased, climateEpoch, stance } : null;
+  const drawnFrom = study ? { study, stale, chased, climateEpoch, stance, outcome: outcomeOf } : null;
   const was = bandDrawn.get(key);
   const same =
     was &&
@@ -2329,7 +2346,8 @@ function showStudy(key, study, { stale = false } = {}) {
     was.stale === stale &&
     was.chased === chased &&
     was.climateEpoch === climateEpoch &&
-    was.stance === stance;
+    was.stance === stance &&
+    was.outcome === outcomeOf;
   if (!same) {
     const band = study ? bandOf(key, study, stale) : null;
     desk.setBand(key, band ? { band, standard: PRESET_BY_ID[chased].name, noneAlone: TOLERANCE_SAYS.noneAlone } : null);
@@ -4885,6 +4903,7 @@ function attachClimate(source, { sizing = 'No', studyContext = null, conditions 
   // nothing to say about a criterion being asked of a building in Bavaria, and
   // the kept schemes' deltas would be differencing two climates.
   lastOutcome = null;
+  outcomeOf = null;
   syncPin();
   renderBill();
   renderRegister();
@@ -8153,6 +8172,7 @@ async function solve() {
   // would leave the pump chasing a target it had already hit.
   const shape = shapeKey(params);
   const snapshot = { ...params };
+  const outcomeStamp = Object.freeze({ shape, epoch: climateEpoch });
   // The patch state this shape is being solved under, captured in the same
   // breath and for the same reason. `patching()` rather than `bypass`, because
   // that is what reaches the IDF: under solo the desk sends five channels out
@@ -8490,6 +8510,10 @@ async function solve() {
   // every gesture, and walking 8,760 points to answer a question that cannot
   // have changed would put a stutter in every drag.
   lastOutcome = readOutcome(eso, snapshot, patched, capture.epw);
+  outcomeOf = outcomeStamp;
+  // A band whose lever stands between two of its sweep's positions is judged
+  // there by this run (`atSetting` in `bandOf`), so every band is read again.
+  if (chased && bandDrawn.size) refreshBands();
   syncPin();
   renderBill();
   renderRegister();
@@ -8854,6 +8878,33 @@ function studyOffers(snapshot = params, patch = patching(), epw = epwText ?? nul
     pricing,
     key,
   });
+}
+
+/**
+ * What a sweep asks for, and the wider set every one of its samples carries.
+ *
+ * `needed` is the sweep's own readings: a study's one, a survey's list. What a
+ * sample is *built* carrying is wider, every published standard's needs that
+ * this desk's channels can produce (`bandQuantities`), so a tolerance band can
+ * judge every line off any sample it reads (feature 016, research R1). Every
+ * kind of sweep goes through here, the survey and the pull as well as a study,
+ * because they share one sample cache: a survey row standing on the desk
+ * answers a study's positions from its own samples, and built narrow those
+ * positions carried nothing a band could judge. All standards rather than the
+ * chased one, so chasing another costs no run and the chase never reaches a
+ * sample's identity. Measured before it was built: at most +4 % of a run's
+ * median, design day and year, with every channel in
+ * (`specs/016-tolerance-bands/verify/README.md`, G1).
+ */
+function sweepContents(quantities, snapshot, patch, annual) {
+  const { needed } = sampleContentsFor(quantities, snapshot, patch, annual);
+  const { carried } = sampleContentsFor(
+    bandQuantities(quantities, engagedChannels(snapshot, patch)),
+    snapshot,
+    patch,
+    annual,
+  );
+  return { needed, carried };
 }
 
 /**
@@ -9345,22 +9396,8 @@ function jobForStudy(key, { origin = 'refresh', n = SWEEP_SAMPLES, openingBasis 
   if (!studyQuantity) throw new Error(`the study of ${key} was queued before the desk quantity was initialized`);
   const quantity = quantityOf(studyQuantity);
   // What the study asks for is still its own reading; what every sample of it
-  // carries is wider. A study used to ask the engine for its own quantity and
-  // nothing else, so a curve drawn for zone temperature held no demand, no peak
-  // load and no TM59 criterion, and a tolerance band read off it could judge
-  // none of a standard's lines (feature 016, research R1). So each sample now
-  // carries every published standard's needs that this desk's channels can
-  // produce — all standards rather than the chased one, so that chasing another
-  // costs no run and the chase never reaches a sample's identity. Measured
-  // before it was built: at most +4 % of a run's median, design day and year,
-  // with every channel in (`specs/016-tolerance-bands/verify/README.md`, G1).
-  const { needed } = sampleContentsFor([quantity], snapshot, patch, Boolean(epw));
-  const { carried } = sampleContentsFor(
-    bandQuantities(quantity, engagedChannels(snapshot, patch)),
-    snapshot,
-    patch,
-    Boolean(epw),
-  );
+  // carries is wider, for the bands (`sweepContents`).
+  const { needed, carried } = sweepContents([quantity], snapshot, patch, Boolean(epw));
   const points = samplePoints(control, snapshot[key], n);
   const job = makeStudyJob({
     key,
@@ -9885,7 +9922,7 @@ function surveyRestShape(sv, p = params, patch = patching()) {
 
 /** What one survey's runs must carry: `sampleContentsFor`, over all its quantities. */
 function surveyContents(sv) {
-  return sampleContentsFor(sv.quantities, sv.stance, sv.patch, sv.annual);
+  return sweepContents(sv.quantities, sv.stance, sv.patch, sv.annual);
 }
 
 /**

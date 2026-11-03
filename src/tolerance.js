@@ -71,8 +71,9 @@ export const BAND_QUANTITIES = Object.freeze(
 );
 
 /**
- * The quantities a study sample must carry at a desk with these channels in:
- * the study's own reading, and every band quantity the desk can produce.
+ * The quantities a sweep's samples must carry at a desk with these channels
+ * in: the sweep's own readings (one for a study, the survey's list for a
+ * survey row or a pull probe), and every band quantity the desk can produce.
  *
  * Channel-filtered because `RunContents.channels` is a precondition, not a
  * wish: `syncReporting` throws for a named channel the sample has out, the
@@ -80,13 +81,23 @@ export const BAND_QUANTITIES = Object.freeze(
  * free-running desk would come back as twenty-one holes because Passivhaus
  * reads a peak load off System. A quantity whose channel is out is left off,
  * and its lines are then "not judged" for the reason the board already gives.
+ *
+ * Every kind of sweep carries the same band contents, not only a study,
+ * because the sample cache is shared. A survey row standing on the desk's own
+ * value of its other axis runs exactly the desks a study of its swept axis
+ * would, and the scheduler answers the study from the survey's sample: built
+ * carrying only the survey's reading, every such position read as a gap, and
+ * a study of wall resistance beside a survey of wall resistance and
+ * infiltration lost every second position, which split its band into single
+ * points that each passed alone.
  */
-export function bandQuantities(studyQuantity, engagedChannels) {
+export function bandQuantities(own, engagedChannels) {
+  const ownList = [own].flat();
   const engaged = new Set(engagedChannels);
   const usable = BAND_QUANTITIES.filter(
-    (quantity) => quantity !== studyQuantity && quantity.needs.channels.every((channel) => engaged.has(channel)),
+    (quantity) => !ownList.includes(quantity) && quantity.needs.channels.every((channel) => engaged.has(channel)),
   );
-  return Object.freeze([studyQuantity, ...usable]);
+  return Object.freeze([...ownList, ...usable]);
 }
 
 /* ══ the words in view ═════════════════════════════════════════════════════ */
@@ -140,7 +151,7 @@ const VERDICT_KINDS = Object.freeze(['pass', 'fail', 'refused', 'gap', 'unsolved
  * pass (FR-013), so each closes an edge with its own reason.
  */
 export class Verdict {
-  constructor({ value, kind, failing = [], values = new Map(), reason = null }) {
+  constructor({ value, kind, failing = [], values = new Map(), reason = null, byDesk = false }) {
     if (!Number.isFinite(value)) throw new Error('a verdict needs the position it judges');
     if (!VERDICT_KINDS.includes(kind)) throw new Error(`a verdict cannot be "${kind}"`);
     if ((kind === 'fail') !== failing.length > 0) {
@@ -158,6 +169,10 @@ export class Verdict {
     // levers clear one line alone without re-reading the curve.
     this.values = values;
     this.reason = reason;
+    // Read off the desk's own solve rather than a sweep's sample: the setting
+    // between two of the sweep's positions, judged by the run the chase line
+    // reads (`bandFor`'s `atSetting`).
+    this.byDesk = byDesk;
     Object.freeze(this);
   }
 
@@ -170,18 +185,22 @@ function judge(point, value, lines) {
   if (!point) return new Verdict({ value, kind: 'unsolved' });
   if (point.refused) return new Verdict({ value, kind: 'refused', reason: point.refused });
   if (!point.sample || !point.readings) return new Verdict({ value, kind: 'gap', reason: SAYS.runFailed });
+  const missing = lines.find(({ reading }) => reading.valueOf(point.readings) === null);
+  if (missing) return new Verdict({ value, kind: 'gap', reason: `this run carried no ${missing.target.label}` });
+  return measured(value, lines, ({ reading }) => reading.valueOf(point.readings));
+}
+
+/** A pass or a fail over every judged line, given each line's figure. */
+function measured(value, lines, figureOf, { byDesk = false } = {}) {
   const values = new Map();
   const failing = [];
-  for (const { target, reading } of lines) {
-    const figure = reading.valueOf(point.readings);
-    if (figure === null) {
-      return new Verdict({ value, kind: 'gap', reason: `this run carried no ${target.label}` });
-    }
-    values.set(target, figure);
-    if (target.meets(figure) === false) failing.push(target);
+  for (const line of lines) {
+    const figure = figureOf(line);
+    values.set(line.target, figure);
+    if (line.target.meets(figure) === false) failing.push(line.target);
   }
   failing.sort((a, b) => values.get(b) / b.limit - values.get(a) / a.limit);
-  return new Verdict({ value, kind: failing.length ? 'fail' : 'pass', failing, values });
+  return new Verdict({ value, kind: failing.length ? 'fail' : 'pass', failing, values, byDesk });
 }
 
 /* ══ one side of a band ════════════════════════════════════════════════════ */
@@ -251,19 +270,40 @@ export class Band {
  * run twice rather than a second rule.
  */
 function bracket(verdicts, stance, control) {
+  // A stretch runs from a pass to a pass, and a gap between two passes does not
+  // end it. A gap is a position with no figure for some line (a run that did
+  // not finish, or a sample built before it carried the band's readings): it
+  // says nothing about the lines, so ending the stretch there lettered a hole
+  // in the data as an edge of the design space, and split one passing stretch
+  // into single points that each "passed alone". It is still not a pass: the
+  // unread positions are kept on the stretch and said in view beside it, and
+  // an edge is still only ever a measured pass. A gap at the end of a stretch,
+  // with no pass beyond it, closes that edge in its own words as before. A
+  // refusal, a failure and a position not yet landed all end a stretch.
   const segments = [];
   let start = null;
+  let lastPass = null;
+  const close = () => {
+    if (start !== null) segments.push({ first: start, last: lastPass });
+    start = null;
+    lastPass = null;
+  };
   verdicts.forEach((verdict, index) => {
     if (verdict.kind === 'pass') {
       if (start === null) start = index;
-    } else if (start !== null) {
-      segments.push({ first: start, last: index - 1 });
-      start = null;
+      lastPass = index;
+    } else if (verdict.kind !== 'gap') {
+      close();
     }
   });
-  if (start !== null) segments.push({ first: start, last: verdicts.length - 1 });
+  close();
 
-  const span = (segment) => ({ from: verdicts[segment.first].value, to: verdicts[segment.last].value });
+  const span = (segment) =>
+    Object.freeze({
+      from: verdicts[segment.first].value,
+      to: verdicts[segment.last].value,
+      unread: Object.freeze(verdicts.slice(segment.first, segment.last + 1).filter((verdict) => verdict.kind === 'gap')),
+    });
   const at = segments.find((segment) => span(segment).from <= stance && stance <= span(segment).to);
   let chosen = at ?? null;
   let tie = false;
@@ -281,7 +321,8 @@ function bracket(verdicts, stance, control) {
     chosen = ranked[0];
     tie = ranked.length > 1 && same(ranked[0], ranked[1]);
   }
-  if (!chosen) return { segments: segments.map(span), band: null, tie: false };
+  const spans = segments.map(span);
+  if (!chosen) return { segments: spans, band: null, tie: false };
 
   const edge = (side) => {
     const index = side === 'lower' ? chosen.first : chosen.last;
@@ -297,9 +338,9 @@ function bracket(verdicts, stance, control) {
     return new Edge({ side, inside, outside: verdicts[beyond].value, closedBy: verdicts[beyond] });
   };
   return {
-    segments: segments.map(span),
+    segments: spans,
     band: Object.freeze({ lower: edge('lower'), upper: edge('upper') }),
-    chosen: span(chosen),
+    chosen: spans[segments.indexOf(chosen)],
     tie,
   };
 }
@@ -357,6 +398,7 @@ export function bandFor({
   priced = false,
   landed = 0,
   says,
+  atSetting = null,
 }) {
   if (!preset) throw new Error(`the band of ${key} was asked for with no standard chased`);
   if (!Number.isFinite(stance)) throw new Error(`the band of ${key} has no stance to measure from`);
@@ -391,9 +433,31 @@ export function bandFor({
   }
   const judged = Object.freeze(lines.map(({ target }) => target));
 
-  const verdicts = Object.freeze(lines.length ? order.map((value) => judge(byValue(value), value, lines)) : []);
+  const positionsRead = lines.length ? order.map((value) => judge(byValue(value), value, lines)) : [];
   const incomplete = order.some((value) => !byValue(value));
-  const inert = lines.length ? inertness({ key, label, preset, lines, verdicts, priced }) : null;
+  // A setting between two of the sweep's positions has no sample of its own,
+  // and judged off the sweep alone it read "not judged at this setting" with a
+  // move of one step's fraction to the nearest run, on a desk whose own solve
+  // the chase line was judging a few centimetres above. That solve is a run at
+  // exactly this setting, under the same climate and the same everything else,
+  // so where it carries every judged line it stands in the band as one more
+  // measured position. Never on the grid (a sample is already there), and
+  // never in part: a line the desk's run cannot read leaves the setting
+  // unjudged as before.
+  const deskAt = !order.some((value) => near(value, stance, control.step)) && lines.length && atSetting
+    ? lines.map(({ target }) => atSetting(target))
+    : null;
+  if (deskAt?.every(Number.isFinite)) {
+    const desk = measured(here, lines, (line) => deskAt[lines.indexOf(line)], { byDesk: true });
+    positionsRead.splice(positionsRead.filter((verdict) => verdict.value < here).length, 0, desk);
+  }
+  const verdicts = Object.freeze(positionsRead);
+  // Inertness is a claim of exact flatness across the sweep, so it is asked of
+  // the sweep's own samples only: the desk's run is read by another reader,
+  // and a last-digit difference between the two would call a flat lever live.
+  const inert = lines.length
+    ? inertness({ key, label, preset, lines, verdicts: verdicts.filter((verdict) => !verdict.byDesk), priced })
+    : null;
 
   const base = { key, label, stance: here, judged, unjudged: Object.freeze(unjudged), verdicts, coarse, stale, incomplete, landed };
   if (!lines.length || inert) {
@@ -402,6 +466,7 @@ export function bandFor({
       inert,
       segments: Object.freeze([]),
       band: null,
+      unread: Object.freeze([]),
       contains: false,
       tie: false,
       share: null,
@@ -413,6 +478,7 @@ export function bandFor({
 
   const read = bracket(verdicts, here, control);
   const travel = control.max - control.min;
+  const chosen = read.band ? read.chosen : null;
   let contains = false;
   let share = null;
   let move = null;
@@ -425,7 +491,7 @@ export function bandFor({
       const to = here < lower.inside ? lower.inside : upper.inside;
       move = Object.freeze({ to, by: to - here, share: Math.abs(to - here) / travel });
     }
-    others = read.segments.filter((segment) => !(segment.from === read.chosen.from && segment.to === read.chosen.to));
+    others = read.segments.filter((segment) => segment !== chosen);
   }
 
   return new Band({
@@ -433,6 +499,7 @@ export function bandFor({
     inert: null,
     segments: Object.freeze(read.segments),
     band: read.band,
+    unread: chosen ? chosen.unread : Object.freeze([]),
     contains,
     tie: read.tie,
     share,
@@ -459,14 +526,24 @@ function steppedOver({ verdicts, read, here, swept, control }) {
   const grid = samplePoints(control, swept, COARSE_SAMPLES);
   const coarse = verdicts.filter((verdict) => grid.some((value) => near(value, verdict.value, control.step)));
   const thin = bracket(coarse, here, control);
-  if (!thin.band || !read.band) return Boolean(thin.band) !== Boolean(read.band);
+  // Only what the coarse pass actually saw can have been stepped over. Where
+  // its positions carried no figure the coarse band is narrower for want of
+  // data, not for a line failing, and saying the finer pass "found a stretch
+  // the coarse pass stepped over" there was false: it was said on every card
+  // whose coarse positions came from a narrow survey sample.
+  if (!read.band) return false;
+  if (!thin.band) return coarse.length > 0 && coarse.every((verdict) => verdict.solved);
   return ['lower', 'upper'].some((side) => {
     const fine = read.band[side];
     const rough = thin.band[side];
     if (rough.stop) return !fine.stop;
-    const lo = Math.min(rough.inside, rough.outside);
-    const hi = Math.max(rough.inside, rough.outside);
-    return fine.inside < lo || fine.inside > hi;
+    // Narrower than the coarse band is a failure the coarse pass ran past, and
+    // always a finding. Wider is a finding only past a coarse run that failed:
+    // past one that carried no figure, the coarse pass simply could not see.
+    const toward = side === 'lower' ? -1 : 1;
+    const wider = (fine.inside - rough.outside) * toward >= 0 && !near(fine.inside, rough.inside, control.step);
+    if (wider) return rough.closedBy.kind === 'fail';
+    return (fine.inside - rough.inside) * toward < 0 && !near(fine.inside, rough.inside, control.step);
   });
 }
 

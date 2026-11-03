@@ -63,7 +63,7 @@ function broken(file, from, to) {
 
 // 3. The band contents no longer answer the study's own reading.
 {
-  const r = broken('tolerance.js', 'return Object.freeze([studyQuantity, ...usable]);', 'return Object.freeze([...usable]);');
+  const r = broken('tolerance.js', 'return Object.freeze([...ownList, ...usable]);', 'return Object.freeze([...usable]);');
   ok('contents that drop the study’s own reading throw, naming it', r.status !== 0 && /a study of \w+/.test(r.message), r.message);
 }
 

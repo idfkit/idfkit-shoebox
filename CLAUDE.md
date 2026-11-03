@@ -300,7 +300,11 @@ geometry earlier ones wrote).
   passes, bracketed by runs and never interpolated. **Bands add no runs**: a study
   sample now carries every published standard's needs, channel-filtered
   (`bandQuantities` in `jobForStudy`), so the chase never reaches a sample's
-  identity (measured +0 % to −10 %, budget +10 %). The job is stamped with
+  identity (measured +0 % to −10 %, budget +10 %). Every sweep (study, survey
+  row, pull probe) builds `carried` through `sweepContents`, because the sample
+  cache is shared: a narrow survey sample answering a study position read as a
+  gap. A gap inside a stretch is listed as unread, never an edge; a setting
+  between sweep positions is judged by the desk's own run. The job is stamped with
   `climateEpoch` when made, not when its points land. Inert levers (declared off
   `movedBy` for priced keys, exact flatness otherwise) draw no bar. Every study
   card goes through `showStudy`. See "Tolerance bands" in the notes.
