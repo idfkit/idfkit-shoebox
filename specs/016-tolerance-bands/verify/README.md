@@ -184,11 +184,48 @@ harness on two desks), three of them first reproduced in a browser:
 
 Left, with reasons:
 
-- **Survey or pull samples answering a study position.** A narrow cached sample
-  carries none of the band's readings, so those positions read as gaps.
-  Re-running them would add engine runs (FR-006) and give up the cache sharing
-  the survey is built on.
+- ~~**Survey or pull samples answering a study position.**~~ Fixed after a
+  report from the page; see "A study beside a survey" below.
 - **Unjudged reasons read the live desk** (`targetBlock`), by design the
   board's own sentence; a per-study reason would need state the board lacks.
 - **Keyboard focus on the method fold** is lost when the block repaints; fixing
   it means restructuring the block's markup so the fold survives a repaint.
+
+## A study beside a survey of the same lever (reported from the page): PASS
+
+`page-survey-shared.mjs`, on the reporter's own link: a study of wall
+resistance beside a survey of wall resistance and infiltration, the desk on
+the survey's infiltration-0 row, the Boston Logan TMYx year fetched through the
+preview's proxy, chased against Passivhaus Classic. The card had read:
+
+> Passivhaus Classic is not judged at this setting. Passes from 6.57 m²K/W (at
+> 6.08 m²K/W this run carried no Peak heating load) to 6.57 m²K/W (…): move
+> +0.01 m²K/W (0 % of travel). Also passes from 4.61 m²K/W to 4.61 m²K/W, kept
+> apart. … The finer pass found a stretch the coarse pass stepped over.
+
+Three causes, each fixed and each seen to change the line:
+
+1. **The survey's samples answered the study's positions and carried TEDI
+   alone.** The scheduler answers a job from any cached sample whose contents
+   answer its `needed`, and the survey's fine 11 is the study's coarse 11, so
+   every coarse position was a gap. Every sweep now builds `carried` through
+   `sweepContents`. After this fix alone: "Passes from 4.61 (Peak heating load
+   fails at 4.12) to 6.57 (not read beyond: at 7.06 this run carried no Peak
+   heating load)".
+2. **A run that never heated read as having no peak heating load.** Past about
+   7 m²K/W this zone needs no heating in the Boston year; `readPeaks` returned
+   null when no hour was positive. It now returns 0 when the series is present.
+   After this fix: "Passes Passivhaus Classic from 4.61 m²K/W (Peak heating load
+   fails at 4.12 m²K/W) to 10.00 m²K/W (the stop)", 55 % of travel.
+3. **A setting between sweep positions read "not judged".** With the lever typed
+   to 6.585 m²K/W (off the 0.49 grid; no re-sweep), the card adds "This setting,
+   between two of the sweep's positions, is judged by the desk's own run."
+
+Checks, all passing: a band line under the card; no position "carried no" or
+"not read"; no single-point stretch and no "kept apart"; no stepped-over claim;
+the setting judged; chasing adds no engine run (143 → 143); off the grid, judged
+by the desk's run; no page errors. The rules for a gap that still happens (a
+run that does not finish) are in G2: a gap inside a stretch is listed as
+unread, never an edge, and "stepped over" is claimed only past a coarse run
+that failed (46 cases, all passing). G4 now asserts `bandQuantities` is called
+only from `sweepContents`, reached only by `jobForStudy` and `surveyContents`.

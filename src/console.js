@@ -2388,9 +2388,8 @@ export function mountConsole({
     // Where the setting is judged by the desk's own run rather than a sample,
     // because it sits between two of the sweep's positions.
     const here = band.verdicts.find((verdict) => verdict.value === band.stance && verdict.solved);
-    const byDesk = here?.byDesk ? ' (this setting by the desk’s own run)' : '';
     if (band.contains) {
-      said.push(`Passes ${standard}${of} from ${edgeWords(lower, control)} to ${edgeWords(upper, control)}${tail}${byDesk}.`);
+      said.push(`Passes ${standard}${of} from ${edgeWords(lower, control)} to ${edgeWords(upper, control)}${tail}.`);
     } else {
       const { span, share } = moveWords(band.move, control);
       // "Fails here" only over a run that failed here. Outside the band is not
@@ -2398,13 +2397,14 @@ export function mountConsole({
       // that was refused, did not finish or has not landed, and none of those
       // is a line failing (FR-013).
       const verdict =
-        here?.kind === 'fail' ? `Fails ${standard}${of} here${byDesk}.` : `${standard}${of} is not judged at this setting.`;
+        here?.kind === 'fail' ? `Fails ${standard}${of} here.` : `${standard}${of} is not judged at this setting.`;
       said.push(
         `${verdict} Passes from ${edgeWords(lower, control)} to ${edgeWords(upper, control)}${tail}: ` +
           `move ${span} (${share}).`,
       );
       if (band.tie) said.push('The stretch on the other side is exactly as near.');
     }
+    if (here?.byDesk) said.push('This setting, between two of the sweep’s positions, is judged by the desk’s own run.');
     // The stretch runs over positions that carried no figure for a line
     // (`bracket` in tolerance.js), and says which, in view: they are not passes.
     if (band.unread.length) {
