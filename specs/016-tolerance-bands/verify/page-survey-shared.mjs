@@ -95,16 +95,21 @@ ok('chasing started no run', runsAfterChase === runs, `${runs} → ${runsAfterCh
 // Off the grid: 6.56 → 6.585 sits between two sweep positions. Moving the
 // studied lever moves no rest shape, so the curve stays and is not re-swept;
 // the desk re-solves, and that run judges the setting.
-// The margin field may sit in a strip that is not on screen, where Playwright
-// refuses to click it; the field's own focus, value and blur are what a reader
-// typing into it fires, so they are fired directly (src/field.js commits on blur).
+// The model console is closed until the reader opens it (`#desk-open`), and a
+// field inside it cannot be focused while it is closed: the first version of
+// this step set the value on a hidden input, nothing committed, and no solve
+// followed. Open it, then type the way a reader does (src/field.js commits on
+// blur). The status line is cleared first so the wait below sees the new run.
+await page.click('#desk-open');
 const field = page.locator('input[aria-label="Wall resistance value"]').first();
 if (await field.count()) {
-  await field.evaluate((input) => {
-    input.focus();
-    input.value = '6.585';
-    input.blur();
+  await page.evaluate(() => {
+    document.getElementById('status').textContent = '';
   });
+  await field.scrollIntoViewIfNeeded();
+  await field.click();
+  await field.fill('6.585');
+  await field.press('Enter');
   await page.waitForFunction(() => /solved locally/.test(document.getElementById('status')?.textContent ?? ''), null, { timeout: 300000 });
   await page.waitForTimeout(4000);
   const moved = await bandLine();
