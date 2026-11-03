@@ -4040,11 +4040,27 @@ setSystem(rememberedUnits() ?? firstVisitUnits());
 syncUnits();
 onSystemChange(reletterSheet);
 
-function openDesk(open) {
+/** Whether the console is open, read off the one place that holds it. */
+function deskIsOpen() {
+  return document.body.classList.contains('desk-open');
+}
+
+/**
+ * Open or close the console.
+ *
+ * `noted: false` is the boot honouring a link's `desk=open`: the general
+ * notes fill a square only from something the reader did, and arriving on a
+ * link that was already open is not opening the desk.
+ */
+function openDesk(open, { noted = true } = {}) {
   document.body.classList.toggle('desk-open', open);
   deskButton.setAttribute('aria-expanded', String(open));
   $('desk-count').textContent = open ? 'Close the desk' : 'Every control on the desk';
-  if (open) tour?.note('desk');
+  if (open && noted) tour?.note('desk');
+  // The address carries whether the console is open, so a link copied with
+  // it open arrives open. Before the boot decode this is a no-op, by
+  // `updatePermalink`'s own guard.
+  updatePermalink();
   // The patch note's subject moves with the desk: the first patch button when
   // the console is open, the button that opens it when it is not.
   tour?.syncGuide();
@@ -4053,7 +4069,7 @@ function openDesk(open) {
   resizeTimer = setTimeout(renderTrace, 60);
 }
 
-deskButton.addEventListener('click', () => openDesk(!document.body.classList.contains('desk-open')));
+deskButton.addEventListener('click', () => openDesk(!deskIsOpen()));
 $('desk-revert').addEventListener('click', () => revert());
 $('desk-close').addEventListener('click', () => {
   openDesk(false);
@@ -5307,13 +5323,15 @@ let linkAttachPending = false;
  * one per surface, and they disagreed under solo: the address bar carried the
  * pre-solo patch state while the bundle's manifest carried the solo map.
  */
-const schemeHash = (p = params, { view = viewSetting } = {}) =>
+const schemeHash = (p = params, { view = viewSetting, desk = deskIsOpen() } = {}) =>
   encodeState({
     params: p,
     // The plate's view rides the address bar and Share, and never the shelf:
     // a kept scheme is what was simulated, and the view is how it is being
-    // looked at (FR-024). `saveScheme` passes `view: null`.
+    // looked at (FR-024). `saveScheme` passes `view: null`. Whether the
+    // console is open is the same kind of claim and takes the same route.
     view,
+    desk,
     bypass: patching(),
     station: stationToken(),
     file: fileToken(),
@@ -6211,7 +6229,7 @@ function saveScheme() {
     // The scheme is stored exactly as the address bar carries it, `patching()`
     // and all, so a scheme kept under solo reproduces the soloed building —
     // the one place the raw patch bay and what actually reaches the IDF differ.
-    hash: schemeHash(params, { view: null }) || 'v1',
+    hash: schemeHash(params, { view: null, desk: false }) || 'v1',
     savedAt: Date.now(),
     station: $('t-location').textContent,
     // Beside the place, never instead of it. A DSY1 and a TMYx for the same
@@ -6297,11 +6315,16 @@ function restoreScheme(scheme) {
     statusEl.textContent = state.file
       ? `Restoring ${scheme.name}, which was solved against another weather file — reloading to ask for it…`
       : `Restoring ${scheme.name}, which names another station — reloading to fetch its weather…`;
-    // The shelf never stores the view, so the reload would boot at the time
-    // series; the view being looked at goes onto the address with it, last,
-    // where `encodeState` puts it (FR-024).
+    // The shelf never stores the view or the console, so the reload would boot
+    // at the time series with the console shut; both go onto the address with
+    // it, last, where `encodeState` puts them (FR-024). The restore is pressed
+    // on the console, so it is open here, but asked rather than assumed.
     const pv = encodeView(viewSetting);
-    history.replaceState(null, '', `#${scheme.hash}${pv ? `&pv=${pv}` : ''}`);
+    history.replaceState(
+      null,
+      '',
+      `#${scheme.hash}${pv ? `&pv=${pv}` : ''}${deskIsOpen() ? '&desk=open' : ''}`,
+    );
     location.reload();
     return;
   }
@@ -7786,10 +7809,12 @@ if (location.hash.length > 1) {
 booted = true;
 
 buildSliders();
-// The desk starts closed. The static markup already is the closed state --
-// no `desk-open` on the body, the button reading "Every control on the desk"
-// with `aria-expanded="false"` -- so arrival needs no call at all, and the
-// sheet keeps its full width until the reader asks for the controls.
+// The desk starts closed unless the link says it was open. The static markup
+// already is the closed state -- no `desk-open` on the body, the button
+// reading "Every control on the desk" with `aria-expanded="false"` -- so a
+// plain arrival needs no call at all, and the sheet keeps its full width until
+// the reader asks for the controls.
+if (linked?.desk) openDesk(true, { noted: false });
 applyGeometry(); // also sets SURFACES, draws the axonometric and letters the Timestep cell
 const facts = modelFacts(model);
 $('t-project').textContent = facts.project;

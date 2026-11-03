@@ -104,8 +104,15 @@ const MIGRATIONS = Object.freeze({});
  *
  * `pv`, the plate's view (spec 015), joined on the same terms: an old link
  * omits it and means the time series, which is what the plate always drew.
+ *
+ * `desk`, whether the model console is open, joined on the same terms: an old
+ * link omits it and means a closed console, which is how the sheet has always
+ * opened.
  */
-const RESERVED = Object.freeze(['in', 'out', 'stn', 'win', 'at', 'sty', 'sv', 'wf', 'wfd', 'pv']);
+const RESERVED = Object.freeze(['in', 'out', 'stn', 'win', 'at', 'sty', 'sv', 'wf', 'wfd', 'pv', 'desk']);
+
+/** The one value `desk` carries. A closed console is the key's absence. */
+const DESK_OPEN = 'open';
 for (const key of RESERVED) {
   if (ALL_KEYS.includes(key)) {
     throw new Error(`the reserved link key "${key}" collides with a control parameter`);
@@ -248,7 +255,7 @@ export { PIN_KINDS, encodePin, decodePin };
  * claiming two climates is a caller bug and the address bar is the last place
  * it should surface.
  */
-export function encodeState({ params, bypass, station = null, file = null, pin = null, quantity = null, studies = [], survey = null, view = null }) {
+export function encodeState({ params, bypass, station = null, file = null, pin = null, quantity = null, studies = [], survey = null, view = null, desk = false }) {
   const pairs = new URLSearchParams();
   for (const key of ALL_KEYS) {
     // `String` rather than a display format: the display rounds, and a link
@@ -311,6 +318,12 @@ export function encodeState({ params, bypass, station = null, file = null, pin =
     const pv = encodeView(view);
     if (pv) pairs.append('pv', pv);
   }
+  // Whether the console is open, after the view and on the view's terms: it is
+  // how the sheet is being worked at rather than what was simulated, so it
+  // reaches no IDF object and a kept scheme never stores it. Written only when
+  // open, which keeps every link to a closed console byte-identical to one
+  // built before the key existed.
+  if (desk) pairs.append('desk', DESK_OPEN);
   const body = pairs.toString();
   return body ? `${LINK_VERSION}&${body}` : '';
 }
@@ -653,6 +666,16 @@ export function decodeState(raw) {
   if (views.length > 1) throw new Error(`the plate view "pv" is given ${views.length} times (rule 8)`);
   const view = views.length ? decodeView(views[0]) : null;
 
+  // The console, read here for the same reason. One spelling only: `desk=1` or
+  // `desk=closed` would be a second way of saying something, or a claim this
+  // key cannot make, and a link is refused whole rather than half-read. A
+  // repeated `desk` is refused by the loop below.
+  const encodedDesk = pairs.get('desk');
+  if (encodedDesk !== null && encodedDesk !== DESK_OPEN) {
+    throw new Error(`"${encodedDesk}" is not a console state; "desk" is "${DESK_OPEN}" or absent`);
+  }
+  const desk = encodedDesk !== null;
+
   // `in` and `out` are lists and repeat by design; every other key — the
   // station pair included — is one claim, and a repeated one is two claims
   // about one thing. Either could be meant, so neither is taken. The check
@@ -694,5 +717,6 @@ export function decodeState(raw) {
   }
   if (survey) scheme.survey = survey;
   if (view) scheme.view = view;
+  if (desk) scheme.desk = true;
   return scheme;
 }
