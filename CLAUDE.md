@@ -295,6 +295,15 @@ geometry earlier ones wrote).
 - **Layout:** the index sheet at `780px` wide or `600px` tall (`--index` flag read
   back by `console.js`); the register folds between 600 and 1000 px tall
   (`--fold`); schedules fold at `620px` with `data-head` and `keepTableSemantics`.
+- **Tolerance bands** (`tolerance.js`, feature 016): under a chased standard every
+  study also reads as a band, the stretch of its lever where every limited line
+  passes, bracketed by runs and never interpolated. **Bands add no runs**: a study
+  sample now carries every published standard's needs, channel-filtered
+  (`bandQuantities` in `jobForStudy`), so the chase never reaches a sample's
+  identity (measured +0 % to −10 %, budget +10 %). The job is stamped with
+  `climateEpoch` when made, not when its points land. Inert levers (declared off
+  `movedBy` for priced keys, exact flatness otherwise) draw no bar. Every study
+  card goes through `showStudy`. See "Tolerance bands" in the notes.
 - **E-02 survey:** rows are studies (a row fixes Y and sweeps X), so the sample cache
   is shared. Coarse 6, fine 11 (nests in the 11/21 study grid). A survey's rest shape
   omits both axes. Measured / inferred / unsurveyed are distinct, and unsurveyed is

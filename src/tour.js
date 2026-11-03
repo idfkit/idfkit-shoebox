@@ -59,7 +59,12 @@ import { fold } from './console.js';
 // the same run drawn as a psychrometric chart, a carpet or five other ways,
 // none of them a new solve. A returning reader's tick was taken against a
 // plate that drew one picture.
-const STORE = 'shoebox-general-notes-v7';
+//
+// v8 because the sheet gained a step (spec 016, tolerance bands): chasing a
+// standard with studies open now reads each lever's room against its lines. A
+// returning reader's ticks were taken against eight steps, and a tally that
+// quietly became nine under an old key would read one of them as done.
+const STORE = 'shoebox-general-notes-v8';
 const VIEWS = ['open', 'folded', 'retired'];
 
 // A sheet counts its own notes in words, and the count is read off the
@@ -185,6 +190,28 @@ export const NOTES = Object.freeze([
     target: '.score-wrap',
     // A click goes to the rows, because that is where the criteria are and the
     // ledes are already in view above them once the table is centred.
+    focus: '#score',
+  }),
+  // Tolerance bands (spec 016). After the board, because a band is read against
+  // a standard's published lines and the board is where the reader meets them;
+  // before the survey, because a band is one lever at a time and the survey is
+  // where two are read together. Its square fills off the first band actually
+  // drawn under a study card, never off the chase alone: chasing with no study
+  // open has nothing to show, and the step is the pair.
+  new Note({
+    id: 'tolerance',
+    title: 'Find the room each lever has',
+    step: 'Chase a standard with studies open, and read how far each lever can move.',
+    body:
+      'Every study already sweeps one control with everything else held. Chase a ' +
+      'standard and each study also reads as a tolerance band: the stretch of that ' +
+      'lever where every line of the standard passes, bracketed by the runs either ' +
+      'side of each edge and naming the line that closes it. Beside the chase line, ' +
+      'the levers are ranked by how much of their travel is free; on a failing desk, ' +
+      'the single studied lever whose smallest move restores every line is named, or ' +
+      'the sheet says none does. Each band holds the other levers where they stand, ' +
+      'so two moved to their edges at once are not guaranteed to pass.',
+    target: '.score-wrap',
     focus: '#score',
   }),
   // E-02's own step, and it goes after the board rather than before it for a

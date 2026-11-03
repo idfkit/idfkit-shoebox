@@ -91,6 +91,7 @@ import {
   thresholdsAt,
   thresholdsFor,
 } from './survey.js';
+import { SAYS as TOLERANCE_SAYS, bandFor, bandQuantities, listed, toleranceFor } from './tolerance.js';
 import { createRelief } from './relief.js';
 import { PullReading, axesFrom, entryFrom, pullProbes, pullReadingFor, rankPull } from './pull.js';
 import { createEnginePool, poolLimit } from './pool.js';
@@ -2214,6 +2215,119 @@ const studyStops = new Map(); // key -> the rest-shape the Stop was issued under
 const studiesStopBtn = $('studies-stop');
 const studiesClearBtn = $('desk-clear-studies');
 
+/* ── tolerance bands (feature 016) ──────────────────────────────────────── */
+
+// Declared up here with the study state, for the reason given above: a study
+// card can be drawn during the boot awaits, and every card now carries its
+// band, so anything a band reads has to exist before the foot of the module.
+//
+// `climateEpoch` is how a band knows it outlived its climate. `attachClimate`
+// turns it, and a study's band is drawn only from a curve landed under the
+// current one. Nothing else about the band is remembered: it is rebuilt from
+// the curve and the chase each time it is read.
+let climateEpoch = 0;
+let bandsWithdrawnByClimate = false;
+let bandSeq = 0; // landing order, so an all-stale block can read the newest
+const bandDrawn = new Map(); // key -> what the card's band was last drawn from
+let toleranceFrame = false;
+
+/** What a band needs from a job that the curve does not carry. */
+function bandFacts(job) {
+  bandSeq += 1;
+  return {
+    stance: job.snapshot[job.key],
+    positions: job.points,
+    landed: bandSeq,
+    epoch: job.climateEpoch,
+  };
+}
+
+/**
+ * The band under one study card, or null where there is none to draw: nothing
+ * chased, a card standing refused with no curve, or a curve from a climate the
+ * desk has left.
+ */
+function bandOf(key, study, stale) {
+  const preset = chased ? PRESET_BY_ID[chased] : null;
+  if (!preset || !study?.curve?.length || study.epoch !== climateEpoch) return null;
+  if (!Number.isFinite(study.stance)) {
+    throw new Error(`the study of ${key} reached its band with no stance recorded`);
+  }
+  return bandFor({
+    key,
+    label: labelFor(key),
+    control: controlFor(key).control,
+    stance: study.stance,
+    curve: study.curve,
+    positions: study.positions,
+    preset,
+    coarse: Boolean(study.coarse),
+    stale,
+    priced: PRICED_KEYS.has(key),
+    landed: study.landed,
+    says: (target) => targetBlock(target).says,
+  });
+}
+
+/**
+ * Draw one study card and the band it carries.
+ *
+ * Every study card on the desk goes through here, so no card can be drawn
+ * without its band or keep one after the chase that measured it has gone. The
+ * band is rebuilt only when what it is read from changes — the curve, its
+ * staleness, the chase, the climate — because `syncStudies` calls this per drag
+ * frame and the card's own identity guard is what keeps a drag cheap.
+ */
+function showStudy(key, study, { stale = false } = {}) {
+  desk?.setStudy(key, study, { stale });
+  if (!desk) return;
+  const drawnFrom = study ? { study, stale, chased, climateEpoch } : null;
+  const was = bandDrawn.get(key);
+  const same =
+    was && drawnFrom && was.study === study && was.stale === stale && was.chased === chased && was.climateEpoch === climateEpoch;
+  if (!same) {
+    const band = study ? bandOf(key, study, stale) : null;
+    desk.setBand(key, band ? { band, standard: PRESET_BY_ID[chased].name } : null);
+    if (drawnFrom) bandDrawn.set(key, drawnFrom);
+    else bandDrawn.delete(key);
+    if (band && study.epoch === climateEpoch) bandsWithdrawnByClimate = false;
+  }
+  renderToleranceSoon();
+}
+
+/** Every open card's band again, after the chase moved. No run. */
+function refreshBands() {
+  bandDrawn.clear();
+  for (const [key, study] of studies) {
+    if (studyScheduler?.has(key)) continue;
+    showStudy(key, study, { stale: study.restShape !== restShapeKey(key) });
+  }
+  renderToleranceSoon();
+}
+
+/**
+ * The tolerance block, coalesced to one paint per frame.
+ *
+ * The flag is cleared when the tab is hidden as well as inside the callback: a
+ * background tab starves `requestAnimationFrame`, and a flag cleared only in
+ * the callback stays set for ever, so every later call would early-return and
+ * the block would stop following its studies (the trap `renderSurveySoon` fell
+ * into three times before anyone checked `visibilityState`).
+ */
+function renderToleranceSoon() {
+  if (document.visibilityState !== 'visible') {
+    toleranceFrame = false;
+    renderTolerance();
+    return;
+  }
+  if (toleranceFrame) return;
+  toleranceFrame = true;
+  requestAnimationFrame(() => {
+    toleranceFrame = false;
+    renderTolerance();
+  });
+}
+
 // E-02's state, declared up here with the studies' and for the same reason
 // spelled out above: `applyGeometry` reads `survey` to decide which jobs a
 // desk move reaches, and `applyGeometry` runs during boot — long before the
@@ -2324,7 +2438,7 @@ function syncStudies() {
     // frame off the stored map, and repainting the finished old curve over an
     // in-flight partial would flicker the card backwards mid-drain.
     if (studyScheduler?.has(key)) continue;
-    desk?.setStudy(key, study, { stale: study.restShape !== restShapeKey(key) });
+    showStudy(key, study, { stale: study.restShape !== restShapeKey(key) });
   }
 }
 
@@ -3649,7 +3763,7 @@ desk = mountConsole({
   onStudyClear(key) {
     studies.delete(key);
     openStudies.delete(key);
-    desk.setStudy(key, null);
+    showStudy(key, null);
     updatePermalink();
     // The desk head's Clear counts the cards, and one just came down.
     syncStudyControls();
@@ -4612,6 +4726,15 @@ function attachClimate(source, { sizing = 'No', studyContext = null, conditions 
   // decisions about desks swept under the departed weather.
   studyScheduler?.clearAll();
   studyStops.clear();
+  // A tolerance band measured under the departed climate says nothing about
+  // the new one, so every band is withdrawn with that reason (FR-018) until a
+  // study lands a curve under this one.
+  // Only where there was a band to withdraw: a station attached during boot
+  // has no studies behind it, and the block should then say how to get a band
+  // rather than that one was taken away.
+  bandsWithdrawnByClimate = [...studies.values()].some((study) => study?.curve?.length);
+  climateEpoch += 1;
+  refreshBands();
   // The ground goes with them, and it has to go rather than be re-measured
   // in place: every spot height on it is a run against the outgoing climate,
   // and a relief holding Denver's readings under Munich's title block would be
@@ -5443,7 +5566,7 @@ function restoreLinkedStudies(state) {
     };
     openStudies.add(key);
     studies.set(key, waiting);
-    desk.setStudy(key, waiting, { stale: false });
+    showStudy(key, waiting, { stale: false });
     if (!refusal && autoOn()) studyScheduler.enqueue(job);
   }
   syncStudyControls();
@@ -7052,6 +7175,9 @@ function renderScore() {
       chaseGhost = gesture ? chaseNow() : null;
       renderScore();
       renderChase();
+      // Every study card's band is a reading against the chased standard, so
+      // each is re-read off the curve it already holds: no run (SC-004).
+      refreshBands();
       // Chasing TM59 is what decides whether a study reads criterion a, so the
       // curves already up are now of the wrong quantity. They are re-swept the
       // way any other change to the reading re-sweeps them rather than left to
@@ -7348,6 +7474,9 @@ const mark = (text, hot = false) =>
  * mistaken for a verdict on a standard that states four.
  */
 function renderChase() {
+  // The tolerance block reads the same chase, so it follows every redraw of
+  // the chase line rather than keeping a second trigger list of its own.
+  renderToleranceSoon();
   const host = $('chase');
   const preset = chased ? PRESET_BY_ID[chased] : null;
   host.hidden = !preset;
@@ -7442,6 +7571,110 @@ function renderChase() {
       elem('i', 'chase-ghost', same ? ` was ${was}` : ` was ${chaseGhost.target.label.toLowerCase()}, ${was}`),
     );
   }
+}
+
+/**
+ * The tolerance block under the chase line (feature 016).
+ *
+ * The chase is where the reader has already said which standard matters, so
+ * this is where the studied levers are read against it together: on a passing
+ * desk, how much of each lever's travel is free; on a failing one, the single
+ * studied lever whose smallest move restores every line, or a plain statement
+ * that none does. Readings, verdicts, absences and the one-line caveat stand in
+ * view; the method is one press down.
+ */
+const TOLERANCE_METHOD =
+  'Each band is read off its study’s own runs, with every other control where the desk stood. ' +
+  'An edge lies between the last run that passed every line of the chased standard and the first that ' +
+  'did not; nothing between two runs is claimed. Freedom is the share of a lever’s travel inside its ' +
+  'band, and the smallest move is ranked by the same share, because levers in different units cannot ' +
+  'be compared any other way. Two levers moved to the edges of their own bands at once are not ' +
+  'guaranteed to pass: the survey reads two levers together.';
+
+function renderTolerance() {
+  const host = $('tolerance');
+  if (!host) return;
+  const preset = chased ? PRESET_BY_ID[chased] : null;
+  host.textContent = '';
+  host.hidden = !preset;
+  if (!preset) return;
+
+  const bands = [];
+  let outlived = 0;
+  for (const [key, study] of studies) {
+    if (!study?.curve?.length) continue;
+    if (study.epoch !== climateEpoch) {
+      outlived += 1;
+      continue;
+    }
+    bands.push(bandOf(key, study, study.restShape !== restShapeKey(key)));
+  }
+  const climateReason = !bands.length && (outlived || bandsWithdrawnByClimate) ? TOLERANCE_SAYS.climate : null;
+  const block = toleranceFor({ preset, bands, climateReason });
+  const label = (band) => band.label;
+  const say = (...parts) => host.append(...parts, ' ');
+
+  host.append(elem('span', 'eyebrow tol-head', `Tolerance against ${preset.name}`), ' ');
+  if (block.absence) {
+    host.append(block.absence);
+    return;
+  }
+  const asked = `${block.asked} lever${block.asked === 1 ? '' : 's'} studied`;
+  say(`${asked}.`);
+  if (block.stale) {
+    host.append(
+      elem(
+        'i',
+        'chase-part',
+        block.stale === block.asked
+          ? 'Every band describes the previous desk until its study re-sweeps. '
+          : `${block.stale} of them describe${block.stale === 1 ? 's' : ''} the previous desk. `,
+      ),
+    );
+  }
+
+  if (block.passing === null) {
+    say('The desk’s own position could not be judged on these runs.');
+  } else if (block.passing) {
+    if (block.ranked.length) {
+      const items = block.ranked.map((band) => `${label(band)} ${Math.round(band.share * 100)} %`);
+      say('Every judged line passes. Share of travel inside the band, least free first: ', mark(listed(items)), '.');
+    } else {
+      say('Every judged line passes.');
+    }
+  } else {
+    const { restore } = block;
+    say(`Fails ${listed(restore.failing.map((target) => target.label))}.`);
+    if (restore.lever) {
+      const band = restore.lever;
+      const { control } = controlFor(band.key);
+      const span = letter(control.spanKind, Math.abs(band.move.by), { digits: control.digits, unit: control.unit });
+      say(
+        'Smallest single move measured to restore every line: ',
+        mark(`${label(band)} to ${control.format(band.move.to)}`, true),
+        ` (${band.move.by > 0 ? '+' : '−'}${span}, ${Math.round(band.move.share * 100)} % of travel).`,
+      );
+      if (restore.tied.length) {
+        const others = restore.tied.filter((key) => key !== band.key).map((key) => labelFor(key));
+        say(`${listed(others)} ${others.length === 1 ? 'is' : 'are'} exactly as near.`);
+      }
+    } else {
+      say(`No studied lever restores every line alone; only the ${block.asked} studied were asked.`);
+      for (const [target, keys] of restore.alone) {
+        say(`${target.label} alone: ${keys.length ? listed(keys.map((key) => labelFor(key))) : 'no studied lever'}.`);
+      }
+    }
+  }
+  for (const band of block.inert) say(band.inert);
+  if (block.unjudged.length) {
+    const lines = block.unjudged.map((line) => `${line.target.label} (${line.says})`);
+    host.append(elem('i', 'chase-part', `Not judged: ${lines.join('; ')}. `));
+  }
+  host.append(elem('span', 'tol-caveat', TOLERANCE_SAYS.caveat), ' ');
+  // The general note fills off a band actually drawn, not off the chase: a
+  // chase with no study open has taught nothing about a lever's room.
+  if (block.bands.some((band) => band.band || band.inert)) tour?.note('tolerance');
+  host.append(fold('tolerance:method', FOLD.method, { label: 'How tolerance bands are read' }, elem('span', null, TOLERANCE_METHOD)));
 }
 
 /*
@@ -9041,9 +9274,25 @@ function jobForStudy(key, { origin = 'refresh', n = SWEEP_SAMPLES, openingBasis 
   const epw = epwText ?? null;
   if (!studyQuantity) throw new Error(`the study of ${key} was queued before the desk quantity was initialized`);
   const quantity = quantityOf(studyQuantity);
-  const { needed, carried } = sampleContentsFor([quantity], snapshot, patch, Boolean(epw));
+  // What the study asks for is still its own reading; what every sample of it
+  // carries is wider. A study used to ask the engine for its own quantity and
+  // nothing else, so a curve drawn for zone temperature held no demand, no peak
+  // load and no TM59 criterion, and a tolerance band read off it could judge
+  // none of a standard's lines (feature 016, research R1). So each sample now
+  // carries every published standard's needs that this desk's channels can
+  // produce — all standards rather than the chased one, so that chasing another
+  // costs no run and the chase never reaches a sample's identity. Measured
+  // before it was built: at most +4 % of a run's median, design day and year,
+  // with every channel in (`specs/016-tolerance-bands/verify/README.md`, G1).
+  const { needed } = sampleContentsFor([quantity], snapshot, patch, Boolean(epw));
+  const { carried } = sampleContentsFor(
+    bandQuantities(quantity, engagedChannels(snapshot, patch)),
+    snapshot,
+    patch,
+    Boolean(epw),
+  );
   const points = samplePoints(control, snapshot[key], n);
-  return makeStudyJob({
+  const job = makeStudyJob({
     key,
     snapshot,
     patch,
@@ -9059,6 +9308,13 @@ function jobForStudy(key, { origin = 'refresh', n = SWEEP_SAMPLES, openingBasis 
     asked: n,
     openingBasis: openingBasis ?? studies.get(key)?.openingBasis ?? null,
   });
+  // Which climate this sweep is of, stamped when it is made rather than when
+  // its points land. Stamped at landing, a design-day sweep still in flight
+  // when a year was attached landed its points as though they were the year's,
+  // and the band read them, found no annual figure, and called every line
+  // unjudged — measured on the driven page (T022).
+  job.climateEpoch = climateEpoch;
+  return job;
 }
 
 /**
@@ -9099,7 +9355,7 @@ function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES, openingBa
     };
     openStudies.add(key);
     studies.set(key, waiting);
-    desk.setStudy(key, waiting, { stale: false });
+    showStudy(key, waiting, { stale: false });
     syncStudyControls();
     return;
   }
@@ -9130,9 +9386,10 @@ function redrawStudiesForQuantity({ queue = true, requeueLifted = false } = {}) 
           ? { quantity: quantity.label, missing: cached.missing, reason: null }
           : null,
       restShape: job.restShape,
+      ...bandFacts(job),
     };
     studies.set(key, study);
-    desk.setStudy(key, study, { stale: false });
+    showStudy(key, study, { stale: false });
     // A card that stood refused and no longer does is queued even on a re-price:
     // the refusal lifts through a priced selector (the plant switched back from
     // a heat pump), which moves no shape, so `refreshStudies` never sees it and
@@ -9231,19 +9488,25 @@ const partialStudy = (job) => ({
   quantity: job.quantity,
   offers: studyOffers(job.snapshot, job.patch, job.epw, job.key),
   waiting: null,
+  coarse: job.asked === COARSE_SAMPLES,
   openingBasis: job.openingBasis,
   // Samples still in flight are simply absent, so the silhouette spans them
   // and sharpens as they land; a sample that failed stays in the curve with
   // no quantity reading and draws as a gap, never a substituted value.
   curve: job.curve.filter(Boolean),
   progress: { done: job.done, total: job.total },
+  // What a tolerance band needs that the curve does not say: where the desk
+  // stood on this lever, every position the sweep will visit (so a position
+  // not yet landed is known to be there rather than bridged by a bracket), and
+  // when it landed, so an all-stale block can read the newest.
+  ...bandFacts(job),
 });
 
 /** The stored card back on the console after a cancel or a failure. */
 function restoreStudyCard(key) {
   const prior = studies.get(key);
-  if (prior) desk.setStudy(key, prior, { stale: prior.restShape !== restShapeKey(key) });
-  else desk.setStudy(key, null);
+  if (prior) showStudy(key, prior, { stale: prior.restShape !== restShapeKey(key) });
+  else showStudy(key, null);
 }
 
 /**
@@ -9367,6 +9630,8 @@ function clearAllStudies() {
   openStudies.clear();
   studyStops.clear();
   desk?.clearStudies();
+  bandDrawn.clear();
+  renderToleranceSoon();
   updatePermalink();
   // Through `syncStudyStatus` rather than by writing the line here: it is the
   // one place that knows a run in flight or a refusal already owns the status
@@ -9406,7 +9671,7 @@ function onStudyUpdate(job, event) {
   const withdrawn = withdrawnRefusal([key], params);
 
   if (event === 'point') {
-    if (!withdrawn) desk.setStudy(key, partialStudy(job), { stale: false });
+    if (!withdrawn) showStudy(key, partialStudy(job), { stale: false });
     desk.setStudyProgress(key, { done: job.done, total: job.total });
     syncStudyStatus();
   } else if (event === 'done') {
@@ -9425,13 +9690,14 @@ function onStudyUpdate(job, event) {
       // A coarse first pass is a real study, drawn honestly at eleven points;
       // the flag is what tells the idle densify it is worth finishing.
       coarse: job.asked === COARSE_SAMPLES,
+      ...bandFacts(job),
     };
     studies.set(key, study);
     openStudies.add(key);
     desk.setStudyProgress(key, null);
     // Stale already, when the desk moved while the curve was landing — drawn
     // dimmed rather than fresh, so the card never claims a desk it missed.
-    desk.setStudy(key, study, { stale: study.restShape !== restShapeKey(key) });
+    showStudy(key, study, { stale: study.restShape !== restShapeKey(key) });
     // A curve the reader asked for says so when it lands; one that healed
     // itself in the background just appears, which is the whole point of it.
     // A refused position reached no engine, so it is not a run.
