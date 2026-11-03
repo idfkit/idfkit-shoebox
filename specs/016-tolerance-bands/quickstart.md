@@ -83,7 +83,7 @@ The engine runs in about 50 ms per design day, so drive all of it:
    - Move one lever just past its band's `outside`: the scoreboard row named by that edge fails.
 2. **US1 absences:** Stop chasing and the block states that bands need a chase. Chase again with no study open and the block states that a study gives a lever a band.
 3. **US2:** Move the desk until it fails one Passivhaus line. The block names a lever and a position. Set it there, and every line on the board passes. Find a desk where no studied lever can do it alone, and confirm the sentence says so and lists, per failing line, the levers that could clear it.
-4. **US3:** Watch a study go coarse → fine. Each edge's bracket narrows and stays inside its coarse bracket.
+4. **US3:** Watch a study go coarse → fine. Each edge's bracket narrows and stays inside its coarse bracket, or the card says the finer pass found a stretch the coarse pass stepped over.
 5. **US4:** Take the year off (design days only). Annual lines are listed as not judged with the scoreboard's own sentence, and bands are measured against the peak loads alone.
 6. **US5:**
    - Nudge a lever: bands dim as stale and recover when the re-sweep lands.

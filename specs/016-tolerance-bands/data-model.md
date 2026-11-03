@@ -69,6 +69,7 @@ The tolerance band for one studied lever, under one chased standard.
 | `incomplete` | boolean | some positions are `unsolved` (still landing, or stopped) |
 | `inert` | string \| null | why this lever cannot move any judged target, or null (research R12) |
 | `coarse` | boolean | taken from the study |
+| `steppedOver` | boolean | on a fine curve only: an edge computed over every position lies outside the bracket computed over the coarse-grid positions of the same curve (research R3). Always false on a coarse curve |
 | `stale` | boolean | taken from the study's card state |
 
 **Validation (asserted in the constructor):**
@@ -87,7 +88,7 @@ Read across every `Band` of the chased standard on a failing desk.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `failing` | `Target[]` | the targets the desk currently fails, read off the stance point of any current band |
+| `failing` | `Target[]` | the targets the desk fails, read off the stance point of the current (non-stale) bands. When every band is stale, it is read off the most recently landed band, and `Tolerance.stale` marks the whole block as describing the previous desk |
 | `lever` | `Band \| null` | the non-inert band whose `move.share` is smallest; null when none can restore |
 | `alone` | `Map<Target, string[]>` | per failing target, the studied keys whose curve has a position clearing *that* target alone (US2 scenario 3) |
 | `asked` | number | how many levers were studied |

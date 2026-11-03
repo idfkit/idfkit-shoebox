@@ -40,6 +40,7 @@ Harness scripts go in the **scratch directory** (`$SCRATCH` below) and never int
   - Build the default desk's IDF twice: once with `syncReporting` handed `contentsFor(QUANTITY_BY_ID.extremes, engaged)`, once with the union of the quantities answering every published standard's targets. Compute that union inline here, since `tolerance.js` does not exist yet.
   - Run each 20 times at design day and annual under `public/energyplus/energyplus.js`, one EnergyPlus per process.
   - Record the medians and grep `eplus.err` for "requested but not generated".
+  - Confirm every added variable name in `eplus.rdd` (constitution Gate 3), and record which of them the live solve's own `Output:*` set already requests.
 - [ ] T004 Record G1 in `specs/016-tolerance-bands/verify/README.md`: both medians at both run kinds and the ratio. **If the ratio exceeds 1.10 at either kind, stop.** Take research R1's fallback (contents widened only while a standard is chased), amend SC-004 in `specs/016-tolerance-bands/spec.md`, and amend T012 below before continuing.
 
 **Checkpoint**: G1 passed (or the fallback is recorded). The design in R1 stands.
@@ -89,6 +90,7 @@ Harness scripts go in the **scratch directory** (`$SCRATCH` below) and never int
   - hairline brackets at each edge, the passing stretch hatched, and `others` hatched lighter;
   - one line in words, for example "Passes {standard} {lower} to {upper} · closed above by {target}", with positions lettered through the control's own `format` and "to the stop" at a stop;
   - nothing drawn when `study.band` is undefined;
+  - an edge closed by a refusal letters the refusal's own sentence, and an edge closed by a failed run reads "the run did not finish here", neither worded as a target failing (FR-013);
   - no bar when `band.inert` is set, and the inert reason lettered instead (FR-012);
   - no bar when `band.band` is null with judged targets, and "no position of this lever passes every line alone" lettered instead.
 - [ ] T017 [P] [US1] Add `.band`, `.band-edge`, `.band-other` and `.band-line` styles to `index.html` beside the study card's, each with its `[hidden]` twin, using only existing tokens (hairline weight, the E-02 hatch vocabulary, no new hue).
@@ -96,7 +98,7 @@ Harness scripts go in the **scratch directory** (`$SCRATCH` below) and never int
 - [ ] T019 [US1] In `src/main.js` `renderChase`, build a `Tolerance` with `toleranceFor` from every entry of `studies` carrying a curve. Below the chase line, letter: the count of levers studied; on a passing desk the levers ranked least free first, each with its share of travel; inert levers listed apart with their reasons, never ranked; the one-line caveat "Each band holds every other lever where it stands."; and the method plus the full one-at-a-time argument in a `fold()`.
 - [ ] T020 [US1] In `src/main.js`, letter the two US1 absences in the block: no standard chased (bands need a chased standard, and how to chase one); chased but no study open (turning a study on gives a lever a band). Then make the chase click handler re-call `desk.setStudy` for every open study, so cards gain or lose their band with the chase.
 - [ ] T021 [US1] Coalesce `renderChase`'s tolerance block through one `requestAnimationFrame` flag in `src/main.js`, clearing the flag when `document.visibilityState !== 'visible'` so a background tab cannot freeze it (research R11). Call it from `onStudyUpdate` on every `'point'`.
-- [ ] T022 [US1] Drive US1 per quickstart "Driven page" steps 1 and 2. Record the result in `specs/016-tolerance-bands/verify/README.md`.
+- [ ] T022 [US1] Drive US1 per quickstart "Driven page" steps 1 and 2, including a six-study desk: time the live design-day solve with six studies open against none open (SC-005, FR-020), and confirm the two least and two most free levers can be named from the block alone (SC-001). Record the result in `specs/016-tolerance-bands/verify/README.md`.
 
 **Checkpoint**: US1 is usable on its own, and it is the MVP.
 
@@ -132,7 +134,7 @@ Harness scripts go in the **scratch directory** (`$SCRATCH` below) and never int
 **Independent Test**: watch a study go coarse to fine. Each bracket narrows and stays inside its coarse bracket, or the sheet states the finer pass found a stretch the coarse pass stepped over.
 
 - [ ] T027 [US3] In `src/console.js` `setStudy`, letter each edge's bracket (last passing and first non-passing position), mark a coarse band as coarse, and letter the `others` stretches separately (FR-007).
-- [ ] T028 [US3] In `src/tolerance.js` `bandFor`, accept the previous band for the same key and rest shape, and set a flag when the fine band's edge falls outside the coarse bracket. In `src/console.js`, letter that flag as "the finer pass found a stretch the coarse pass stepped over".
+- [ ] T028 [US3] In `src/tolerance.js` `bandFor`, on a fine curve, compute the edges a second time over the coarse-grid positions of the same curve, and set `steppedOver` where a fine edge lies outside that coarse bracket (research R3; no earlier band is kept). In `src/console.js`, letter `steppedOver` as "the finer pass found a stretch the coarse pass stepped over".
 - [ ] T029 [US3] Extend `$SCRATCH/g2-band.mjs` with a coarse (11) then fine (21) curve pair over the same function, asserting nesting and the stepped-over flag. Drive quickstart step 4.
 
 ---
@@ -155,7 +157,7 @@ Harness scripts go in the **scratch directory** (`$SCRATCH` below) and never int
 
 **Independent Test**: nudge a lever (bands dim, then recover). Switch the chase (bands re-read and the Runs counter stays still). Change station (bands withdrawn with the reason).
 
-- [ ] T033 [US5] In `src/main.js`, make the tolerance block count stale bands (`band.stale`) and say how many, and draw stale cards' bands with the card's existing stale class, adding no state of its own.
+- [ ] T033 [US5] In `src/main.js`, make the tolerance block count stale bands (`band.stale`) and say how many, and draw stale cards' bands with the card's existing stale class, adding no state of its own. When every band is stale, letter the block from the most recently landed band, marked as describing the previous desk (data-model `RestoringMove.failing`).
 - [ ] T034 [US5] In `src/main.js` `attachClimate`, set the transient climate reason ("Bands left with the studies when the climate changed"), declared once with `withinBudget`. Clear it in `onStudyUpdate` on the next landed point.
 - [ ] T035 [US5] In `src/main.js`, confirm the priced re-mint path (`redrawStudiesForQuantity({ queue: false })`) re-attaches `study.band` through `bandOf`, and that `studyRun`'s Stop and "Set studies aside" leave a band marked `incomplete`.
 - [ ] T036 [US5] Drive quickstart step 6. Record the Runs counter before and after switching the chase between Passivhaus and EnerPHit (SC-004: no change).
@@ -171,7 +173,7 @@ Harness scripts go in the **scratch directory** (`$SCRATCH` below) and never int
   - With three studies open, assert `encodeState(...)` and `shapeKey` are byte-identical across chasing every standard and none.
   - Assert `applyModel` applied three times is byte-identical.
   - Record the result in `specs/016-tolerance-bands/verify/README.md`.
-- [ ] T041 Drive quickstart step 8 at 390 px wide: every band line, the block, the caveat and the absences are readable with no hover and no sideways scroll.
+- [ ] T041 Drive quickstart step 8 at 390 px wide: every band line, the block, the caveat and the absences are readable with no hover and no sideways scroll. Then read every band and block string declared in `src/tolerance.js` and `src/main.js` against FR-021: none presents a position or the named lever as recommended, best or optimal; the lever is "the smallest single move measured to restore" and nothing more.
 - [ ] T042 [P] Add a "Tolerance bands (src/tolerance.js)" section to `docs/design-notes.md`: R1's finding that study runs carried one quantity, G1's measured cost, the bracket rule, the share-of-travel ranking, and why bands sit on the cards and the chase line.
 - [ ] T043 [P] Add one line for tolerance bands under "Other subsystems" in `CLAUDE.md`, pointing at the design-notes section.
 - [ ] T044 Run `npm run build` and confirm the production build succeeds. This is the rehearsal the repository has in place of a type checker.

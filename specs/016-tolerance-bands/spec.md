@@ -137,7 +137,7 @@ A reader has bands on the sheet and keeps working: they nudge a lever, change th
 - **A list-valued or non-numeric lever** (a selector, a profile, an hourly pattern, a calendar). It has no ordered travel to bound, cannot carry a study, and is out of scope.
 - **Several targets close the same edge at nearly the same position.** The edge names the first target that fails when moving outward. Others that fail within the same measured bracket are named with it, not hidden.
 - **A survey is running at the same time.** Bands add no runs of their own, so they take nothing from the survey's share of the pool.
-- **A shared link.** A link reproduces the desk but not the studies or the chase, which are how the desk is being read. A reader who opens it, chases the same standard and studies the same levers gets the same bands.
+- **A shared link.** A link reproduces the desk and its open studies, but not the chase, which is how the desk is being read. A reader who opens it and chases the same standard gets the same bands.
 
 ## Requirements *(mandatory)*
 
@@ -157,11 +157,11 @@ A reader has bands on the sheet and keeps working: they nudge a lever, change th
 
 - **FR-008**: On a desk that passes every target in force, the sheet MUST let the reader see, for every banded lever, how much of its travel lies inside its band, so the levers with the most and least freedom can be told apart at a glance.
 - **FR-009**: On a desk that fails at least one target in force, the sheet MUST name the failing targets and the single studied lever whose smallest measured move brings every target in force back to passing, with the position it has to reach. Where no studied lever can do so within its range, the sheet MUST say so in words, MUST say that only the studied levers were asked, and for each failing target MUST name the studied levers that could clear that target alone.
-- **FR-010**: The sheet MUST state, wherever bands are shown, that each band holds every other lever at its current setting, and that moving two levers within their own bands at once is not guaranteed to pass.
+- **FR-010**: The sheet MUST state in view, wherever bands are shown, that each band holds every other lever at its current setting, and that moving two levers within their own bands at once is not guaranteed to pass. A one-line form of this caveat MUST stay out of any fold.
 - **FR-011**: Targets in force that the current run cannot read MUST be listed as not judged by the bands, each with the reason and what would fix it. Bands MUST then be described as measured against the remaining targets only. A target with no published line MUST be listed as carrying none and take no part in any band.
 - **FR-012**: The bands MUST state how many levers were asked, so the set is never read as the whole desk. A studied lever that cannot move any line of the chased standard MUST be stated as such, never drawn as a band running to both stops. A lever with no study MUST NOT be presented as free or as not breaking a target.
 - **FR-013**: A sampled position the desk would refuse MUST be shown as a refusal with its reason, and a sampled position whose run failed MUST be shown as a gap. Neither may be counted as a target failing or as a pass.
-- **FR-014**: Band readings, verdicts, absences and refusals MUST be visible without hovering or opening a fold. Method, the one-at-a-time caveat in full, and citations for each target MAY sit in a fold, as long as the one-line form of the caveat stays in view.
+- **FR-014**: Band readings, verdicts, absences and refusals MUST be visible without hovering or opening a fold. Method, the full argument behind FR-010's caveat, and citations for each target MAY sit in a fold.
 - **FR-015**: Everything a band shows MUST be readable at the narrowest supported width without sideways scrolling, and MUST state pass and fail in words as well as by colour.
 - **FR-016**: Every band value MUST be lettered in the unit system the reader has chosen and MUST re-letter when they switch, without re-running anything. A band's width is a difference and MUST be lettered as one.
 
@@ -190,7 +190,7 @@ A reader has bands on the sheet and keeps working: they nudge a lever, change th
 - **SC-002**: For every band edge measured, setting the lever to the edge's last passing position passes every judged target, and setting it to the first failing position fails the target the edge names, with zero disagreements against the scoreboard. This is checked across at least ten desks that include a lever at its stop, a bypassed channel, a refused position and a failing desk.
 - **SC-003**: On a failing desk where a single studied lever can restore compliance, setting the named lever to the named position passes every judged target in 100% of checked desks.
 - **SC-004**: Turning bands on (by chasing a standard), switching the chased standard, and stopping the chase each add zero engine runs, verified by run count.
-- **SC-005**: A lever's band appears on the sheet as soon as its study's coarse pass has landed, with no wait beyond the study itself, and the live solve of the desk is never held behind it.
+- **SC-005**: A lever's band is drawn in the same screen update as the study point that completes its coarse pass, verified by watching the card. The live solve's design-day time with six studies open stays within the time measured with none open.
 - **SC-006**: No band ever names a target the run could not read as passed. This is verified across every target that needs a whole year, with the desk solving design days only.
 - **SC-007**: Switching between SI and IP re-letters every band value with no engine run, and switching back restores every figure character for character.
 
@@ -202,6 +202,6 @@ A reader has bands on the sheet and keeps working: they nudge a lever, change th
 - **Bands are a reading, not a setting.** Like the chase and the studies they follow from, bands are how the desk is being read, not what it is. They are not stored on the desk, in the link or in a kept scheme.
 - **No runs of their own.** Bands are read off the studies' runs. No new kind of simulation and no new output request is needed, provided a study's runs keep every reading the chased standard's lines need, not only the one reading its curve draws.
 - **Run kind follows the desk.** Bands are judged at whatever run kind the studies ran at (design days or a year). Targets the run kind cannot read are listed as not judged (FR-011), not silently dropped.
-- **Priced levers** (plant efficiency, energy prices) are banded only against targets that read a priced quantity, priced from runs already completed, at no engine cost. Against every other target they are listed as unable to move it.
+- **Priced levers** (plant efficiency, energy prices) are banded only against targets that read a priced quantity, priced from runs already completed, at no engine cost. Against every other target they are listed as unable to move it. A band exists only where its study draws a curve: a priced lever whose study the sheet already refuses for its chosen reading (a price swept against demand, for example) gets no band either, even against a line it could move, until the reader picks a reading its study accepts.
 - **Non-numeric controls** (selectors, profiles, hourly patterns, calendars, date lists) cannot carry a study and are out of scope for this feature.
 - **Everything stays on the reader's machine**, as the rest of the sheet does. Bands read only the runs the studies made on the reader's own engine.
