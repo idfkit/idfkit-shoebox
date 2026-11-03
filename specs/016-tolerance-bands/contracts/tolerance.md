@@ -19,6 +19,7 @@ export function bandQuantities(studyQuantity, engagedChannels); // Quantity[]
 /** One lever's band under one chased standard. Pure. */
 export function bandFor({
   key, control, stance, curve, preset, coarse, stale,
+  priced, // boolean: key is in PRICED_KEYS, so `inert` can be read off `Quantity.movedBy` (R12)
   says, // (target) => string: targetBlock's sentence, injected so the module stays page-free
 }); // Band
 
@@ -58,6 +59,8 @@ export function readingForTarget(preset, target); // Reading
   - one line in words: the chased standard, the band's edges, and what closed each edge;
   - nothing at all when `band` is undefined (no chase).
 - A `Band` with `judged.length === 0` draws no bar and letters its shared not-judged reason.
+- A `Band` with `inert` set draws no bar and letters `inert` (research R12). It is never drawn as a band from stop to stop.
+- A `Band` with `band === null` and judged targets letters that no position of this lever passes every line alone.
 
 ## What does not change
 

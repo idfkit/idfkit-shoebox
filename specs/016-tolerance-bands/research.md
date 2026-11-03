@@ -139,3 +139,22 @@ If no target of the chased standard is judged on a curve, that study gets no ban
 ## R11. Performance of the read
 
 **Decision.** A band is recomputed on each study `'point'` update: at most 21 points × at most 11 targets of `meets()` per study, which is trivial. The tolerance block is coalesced through one `requestAnimationFrame` flag. It must check `document.visibilityState` before trusting a stale-looking figure, as noted for `renderSurveySoon`; the flag is cleared outside the callback when the tab is hidden, so the block does not freeze in a background tab.
+
+## R12. A lever that cannot move any line
+
+**Finding.** With the wider contents of R1, every study's points carry the chased standard's readings, including readings the swept lever has no way to move. A study of `gasPrice` reads the same TEDI at every position, so every position passes or every position fails. If it passes, `bandFor` would build a band from stop to stop. That reads as "complete freedom" when the truth is "this lever does not touch this line", and FR-012 forbids drawing it that way.
+
+**Decision.** `Band.inert` is set, with its reason, before any segment is built. It is set in either of two ways:
+
+1. **Declared, for priced levers.** The key is in `PRICED_KEYS`, and for every judged target `!readingForTarget(preset, target).quantity.movedBy.has(key)`. Reason: *"{lever} reaches only the bill, and none of {standard}'s lines is read from it."* This is the same declaration `refusesPairing` already trusts. It is checked against the real bill by the reach harness, so it is not inferred from a flat line.
+2. **Measured, for every other lever.** For every judged target, the reading is exactly equal across every solved, non-refused position, with at least two such positions. Reason: *"{lever} did not move any of {standard}'s lines across its travel."* The test is exact equality, not a tolerance. This follows the pull's rule (`direction` is `'none'` only where the effect is exactly zero), and it relies on the same fact: the engine is repeatable on one input. A coarse curve that is flat but incomplete stays undecided until the curve is complete, so it is never declared inert off a partial sweep.
+
+**How it is shown.** An inert band draws no bar. Its card letters the reason, and the tolerance block lists inert levers separately from the ranked ones. They are counted among the levers asked, never ranked as most free, and never offered as a restoring move.
+
+**Partial reach is not inert.** A lever that moves some judged lines and not others is banded normally. The lines it cannot move simply pass or fail at every position, and the edges are closed by the lines that do move.
+
+**Alternatives.**
+
+- *A noise tolerance on "flat".* Rejected, because there is no noise to tolerate. A tolerance would also call a lever with a genuinely tiny effect inert, which is a claim the measurement does not support.
+- *Leaving priced levers to the measured test.* Rejected. It would pass on the same evidence, but it would hide the reason ("reaches only the bill") behind a measurement, when a declaration already says it.
+

@@ -57,8 +57,9 @@ Harness scripts go in the **scratch directory** (`$SCRATCH` below) and never int
 - [ ] T007 Add `bandQuantities(studyQuantity, engagedChannels)` to `src/tolerance.js`. It returns the study's quantity plus each `BAND_QUANTITIES` entry whose `needs.channels` are all in `engagedChannels`, deduplicated, in declaration order (research R1, channel preconditions).
 - [ ] T008 Add the frozen classes `Verdict`, `Edge`, `Band`, `RestoringMove` and `Tolerance` to `src/tolerance.js`, with every validation in [data-model.md](./data-model.md) asserted in the constructors.
 - [ ] T009 Add the point classifier to `src/tolerance.js`. It turns a curve point into a `Verdict` (`pass` / `fail` / `refused` / `gap` / `unsolved`) against a list of judged targets, using `readingForTarget(...).valueOf(point.readings)` and `Target.meets`, with failing targets ordered worst ratio first (research R3, R5).
-- [ ] T010 Add `bandFor({ key, control, stance, curve, preset, coarse, stale, says })` to `src/tolerance.js`:
+- [ ] T010 Add `bandFor({ key, control, stance, curve, preset, coarse, stale, priced, says })` to `src/tolerance.js`:
   - Decide judged and unjudged targets (research R6, with `says` injected).
+  - Decide `inert` before building segments (research R12): declared for a priced key no judged target's quantity lists in `movedBy`; measured as exactly equal readings for every judged target across a complete curve.
   - Classify every position, build the segments, choose the band containing the stance or the nearest one (with `tie`), build the edges as brackets or stops, and compute `share`, `move`, `others` and `incomplete` (research R3, R4).
 - [ ] T011 Add `toleranceFor({ preset, bands, climateReason })` to `src/tolerance.js`:
   - `passing`, read off the stance verdicts of current bands.
@@ -71,7 +72,7 @@ Harness scripts go in the **scratch directory** (`$SCRATCH` below) and never int
   - `BAND_QUANTITIES` covers every such target.
   - The band contents answer each study quantity's contents across the channel sets.
   - `meets(limit) === true && meets(limit + ε) === false` for every limited target.
-- [ ] T014 Write the G2 harness at `$SCRATCH/g2-band.mjs`. It imports the real `src/tolerance.js` and feeds `bandFor` and `toleranceFor` hand-built curves for every case listed in quickstart G2 (passing mid-travel, to a stop, pass/fail/pass, failing stance, equidistant tie, refused and gap neighbours, single passing point, two targets failing at one point, unsolved positions), asserting each expected field and the data-model validations.
+- [ ] T014 Write the G2 harness at `$SCRATCH/g2-band.mjs`. It imports the real `src/tolerance.js` and feeds `bandFor` and `toleranceFor` hand-built curves for every case listed in quickstart G2 (passing mid-travel, to a stop, pass/fail/pass, failing stance, equidistant tie, refused and gap neighbours, single passing point, two targets failing at one point, unsolved positions, inert declared, inert measured, every position failing), asserting each expected field and the data-model validations.
 - [ ] T015 Run G5 at `$SCRATCH/g5-invariants.mjs`: import `src/tolerance.js` under Node, then break each invariant once in a scratch copy of the declarations and confirm each throw names its declaration. Record G2 and G5 in `specs/016-tolerance-bands/verify/README.md`.
 
 **Checkpoint**: bands are computable and proved off hand-built curves, and every study run carries what a band needs.
@@ -87,10 +88,12 @@ Harness scripts go in the **scratch directory** (`$SCRATCH` below) and never int
 - [ ] T016 [P] [US1] In `src/console.js` `setStudy`, draw an optional `study.band` on the card's position axis:
   - hairline brackets at each edge, the passing stretch hatched, and `others` hatched lighter;
   - one line in words, for example "Passes {standard} {lower} to {upper} · closed above by {target}", with positions lettered through the control's own `format` and "to the stop" at a stop;
-  - nothing drawn when `study.band` is undefined.
+  - nothing drawn when `study.band` is undefined;
+  - no bar when `band.inert` is set, and the inert reason lettered instead (FR-012);
+  - no bar when `band.band` is null with judged targets, and "no position of this lever passes every line alone" lettered instead.
 - [ ] T017 [P] [US1] Add `.band`, `.band-edge`, `.band-other` and `.band-line` styles to `index.html` beside the study card's, each with its `[hidden]` twin, using only existing tokens (hairline weight, the E-02 hatch vocabulary, no new hue).
-- [ ] T018 [US1] In `src/main.js`, add a `bandOf(key, study)` helper. It returns `bandFor(...)` for the chased preset, or `undefined` when nothing is chased, injecting `says = (target) => targetBlock(target).says`, `stale` from the card's state and `coarse` from the study. Attach it as `study.band` at every `desk.setStudy` call site (`onStudyUpdate`, `enqueueStudy`'s waiting path, and the re-letter path).
-- [ ] T019 [US1] In `src/main.js` `renderChase`, build a `Tolerance` with `toleranceFor` from every entry of `studies` carrying a curve. Below the chase line, letter: the count of levers studied; on a passing desk the levers ranked least free first, each with its share of travel; the one-line caveat "Each band holds every other lever where it stands."; and the method plus the full one-at-a-time argument in a `fold()`.
+- [ ] T018 [US1] In `src/main.js`, add a `bandOf(key, study)` helper. It returns `bandFor(...)` for the chased preset, or `undefined` when nothing is chased, injecting `says = (target) => targetBlock(target).says` and `priced = PRICED_KEYS.has(key)`, `stale` from the card's state and `coarse` from the study. Attach it as `study.band` at every `desk.setStudy` call site (`onStudyUpdate`, `enqueueStudy`'s waiting path, and the re-letter path).
+- [ ] T019 [US1] In `src/main.js` `renderChase`, build a `Tolerance` with `toleranceFor` from every entry of `studies` carrying a curve. Below the chase line, letter: the count of levers studied; on a passing desk the levers ranked least free first, each with its share of travel; inert levers listed apart with their reasons, never ranked; the one-line caveat "Each band holds every other lever where it stands."; and the method plus the full one-at-a-time argument in a `fold()`.
 - [ ] T020 [US1] In `src/main.js`, letter the two US1 absences in the block: no standard chased (bands need a chased standard, and how to chase one); chased but no study open (turning a study on gives a lever a band). Then make the chase click handler re-call `desk.setStudy` for every open study, so cards gain or lose their band with the chase.
 - [ ] T021 [US1] Coalesce `renderChase`'s tolerance block through one `requestAnimationFrame` flag in `src/main.js`, clearing the flag when `document.visibilityState !== 'visible'` so a background tab cannot freeze it (research R11). Call it from `onStudyUpdate` on every `'point'`.
 - [ ] T022 [US1] Drive US1 per quickstart "Driven page" steps 1 and 2. Record the result in `specs/016-tolerance-bands/verify/README.md`.

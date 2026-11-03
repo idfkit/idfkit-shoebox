@@ -37,6 +37,9 @@ A Node harness feeds `bandFor` hand-built curves. No engine is needed. Cases:
 - **Single passing point:** `share === 0`, bracketed on both sides.
 - **Two targets failing at one position:** both named, worst ratio first.
 - **Unsolved positions:** `incomplete`, and an edge next to one reads unknown.
+- **Inert, declared:** a priced key against targets whose quantities' `movedBy` lacks it gives `inert` set, `band === null`, and no `share` or `move`.
+- **Inert, measured:** identical readings at every solved position give `inert`. The same curve with one unsolved position is not inert, and one value differing in the last bit is not inert either.
+- **Every position fails:** `band === null` with judged targets and `inert === null` constructs without throwing (the data-model validation that used to reject it).
 
 Then assert the data-model validations hold for every case.
 

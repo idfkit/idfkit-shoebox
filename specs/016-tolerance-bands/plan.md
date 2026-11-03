@@ -77,7 +77,7 @@ Workflow gates:
 ```text
 specs/016-tolerance-bands/
 ├── plan.md              # This file
-├── research.md          # Phase 0: eleven decisions
+├── research.md          # Phase 0: twelve decisions
 ├── data-model.md        # Phase 1: Verdict, Edge, Band, RestoringMove, Tolerance
 ├── quickstart.md        # Phase 1: gates G1–G5 and the driven-page checks
 ├── contracts/
@@ -121,6 +121,7 @@ Complete. See [research.md](./research.md). No NEEDS CLARIFICATION remains. The 
 - **R3. Edges are brackets** between landed positions on the study's own grid. Coarse nests in fine, and a nearest-segment tie is stated.
 - **R4. "Smallest move"** is a share of the lever's travel, the same argument as the chase's ratio ranking.
 - **R6. Not judged** uses the scoreboard's own `targetBlock` sentence.
+- **R12. An inert lever is not a free one.** A studied lever that cannot move any judged line is declared inert (from `movedBy` for priced levers, from an exactly flat curve otherwise) and is never drawn as a band from stop to stop.
 - **R7. Two surfaces, no new drawing:** the band on each study card, and the block under the chase line.
 
 ## Phase 1: Design and Contracts

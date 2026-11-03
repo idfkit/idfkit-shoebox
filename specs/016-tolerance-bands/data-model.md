@@ -67,12 +67,15 @@ The tolerance band for one studied lever, under one chased standard.
 | `move` | `{ to, by, share } \| null` | when `!contains`: the nearest passing position, the signed move, and its share of travel |
 | `others` | `{ from, to }[]` | the passing segments other than `band` (FR-007) |
 | `incomplete` | boolean | some positions are `unsolved` (still landing, or stopped) |
+| `inert` | string \| null | why this lever cannot move any judged target, or null (research R12) |
 | `coarse` | boolean | taken from the study |
 | `stale` | boolean | taken from the study's card state |
 
 **Validation (asserted in the constructor):**
 
-- `judged.length === 0` iff `band === null` and `verdicts` carry no `pass` or `fail`.
+- `judged.length === 0` implies `band === null`, `inert === null`, and no verdict is `pass` or `fail`.
+- `band === null && judged.length > 0 && inert === null` implies no verdict is `pass`. Every solved position fails: a lever that cannot restore compliance alone, which is US2 scenario 3 and a legitimate state, not an error.
+- `inert !== null` implies `band === null`, `share === null` and `move === null`. An inert lever is never drawn as a band running to both stops (FR-012).
 - `contains` iff `band.lower.inside <= stance <= band.upper.inside`.
 - `contains` implies `move === null`; `!contains && band` implies `move !== null`.
 - `share === (band.upper.inside − band.lower.inside) / (max − min)` when `band`.
@@ -85,7 +88,7 @@ Read across every `Band` of the chased standard on a failing desk.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `failing` | `Target[]` | the targets the desk currently fails, read off the stance point of any current band |
-| `lever` | `Band \| null` | the band whose `move.share` is smallest; null when none can restore |
+| `lever` | `Band \| null` | the non-inert band whose `move.share` is smallest; null when none can restore |
 | `alone` | `Map<Target, string[]>` | per failing target, the studied keys whose curve has a position clearing *that* target alone (US2 scenario 3) |
 | `asked` | number | how many levers were studied |
 | `tied` | string[] | keys sharing the smallest share, when more than one (stated, not chosen silently) |
@@ -99,7 +102,8 @@ What `renderChase` letters under the chase line.
 | `preset` | `Preset \| null` | the chased standard |
 | `bands` | `Band[]` | one per studied lever, in study order |
 | `passing` | boolean \| null | whether the stance passes every judged target; null when nothing is judged |
-| `ranked` | `Band[]` | on a passing desk, the bands ordered by `share` ascending (least free first) |
+| `ranked` | `Band[]` | on a passing desk, the non-inert bands ordered by `share` ascending (least free first) |
+| `inert` | `Band[]` | the bands with `inert` set, listed apart with their reasons; counted in `asked`, never ranked |
 | `restore` | `RestoringMove \| null` | on a failing desk |
 | `absence` | string \| null | why there are no bands: no chase, no study, a standard with no line, nothing judged, or the climate changed |
 | `stale` | number | how many bands are stale |
