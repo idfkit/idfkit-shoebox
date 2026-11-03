@@ -434,6 +434,15 @@ class Ruled extends Control {
     return (v - this.min) / (this.max - this.min);
   }
 
+  /**
+   * The inverse of `fraction`, brought onto the step grid. A study card reads
+   * the pointer through this, so a click on the curve sets a value the slider
+   * itself could have been dragged to.
+   */
+  valueAt(f) {
+    return onFace(this, this.min + f * (this.max - this.min));
+  }
+
   /** What a reader typing in the margin means, or null if it is not a number. */
   parse(text) {
     return readQuantity(this, text);
