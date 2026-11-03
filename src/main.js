@@ -1035,6 +1035,27 @@ function plateIndexAt(clientX, clientY, options = {}) {
     });
   });
 
+  // On the duration curve the cursor also follows a hovering mouse, so the
+  // dashed line reads the curves wherever the pointer stands; a press still
+  // sets it, which is the only way a touch screen has. One redraw per frame,
+  // and the live region is left alone: it says where a deliberate press or
+  // key landed, and a pointer sweeping the plate would flood it.
+  let hoverFrame = 0;
+  let hoverAt = null;
+  host.addEventListener('pointermove', (event) => {
+    if (plateDrag || event.pointerType !== 'mouse' || !plateField?.cursor) return;
+    const at = plateIndexAt(event.clientX, event.clientY);
+    if (at == null || at === plateField.current) return;
+    hoverAt = at;
+    if (hoverFrame) return;
+    hoverFrame = requestAnimationFrame(() => {
+      hoverFrame = 0;
+      if (!plateField?.cursor || hoverAt === plateField.current) return;
+      durationCursor = hoverAt;
+      renderTrace();
+    });
+  });
+
   const release = (event) => {
     if (!plateDrag || event.pointerId !== plateDrag.pointerId) return;
     const { at, moved, frame } = plateDrag;
