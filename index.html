@@ -1529,6 +1529,26 @@
         color: var(--ink-ghost);
       }
       .chase-ghost { font-family: var(--mono); }
+      /* Tolerance bands (feature 016). The block is the chase line's sibling
+         and reads in its voice; the eyebrow names the standard it is against,
+         and the caveat stays in view at the chase's own weight. */
+      .tolerance { margin-top: 6px; }
+      .tolerance .tol-head { margin-right: 4px; }
+      .tolerance .tol-caveat { color: var(--ink-2); }
+      /* On a study card: the band on the curve's own position axis. Graphite,
+         hairline, no hue; a met line gets no mark, so the bar is ink rather
+         than a tint, and the far side of each bracket is a ghost tick because
+         the edge lies somewhere between the two runs. */
+      .study-card .band-bar { stroke: var(--ink); stroke-width: 2; }
+      .study-card .band-edge { stroke: var(--ink); stroke-width: 1; }
+      .study-card .band-beyond { stroke: var(--ink-ghost); stroke-width: 1; }
+      .study-card .band-other { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 2 2; }
+      .study-band {
+        margin: 2px 0 0;
+        font: 400 12px/1.5 var(--sans);
+        color: var(--ink-3);
+      }
+      .study-band[hidden] { display: none; }
 
       .finding em { font-style: normal; color: var(--ink); }
       .finding .q {
@@ -5955,6 +5975,11 @@
                gesture, and carries a ghost of where the margin stood when you
                took hold. Armed from the board's own Chase marker. -->
           <p class="chase" id="chase" hidden></p>
+          <!-- Tolerance bands (feature 016): every studied lever read against
+               the chased standard. How far each can move before a line fails,
+               or, on a failing desk, the smallest single move that restores
+               every line. Read off the studies' own runs; no run of its own. -->
+          <p class="chase tolerance" id="tolerance" hidden></p>
 
           <section class="schedule">
             <p class="eyebrow">Results schedule<span class="base" id="baseline-note"></span></p>

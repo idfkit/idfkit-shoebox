@@ -21,6 +21,24 @@ import { BUDGETS, withinBudget } from './copy.js';
 // figure changed precision on one surface and not the other.
 import { flowPhrase, flowWord, watts } from './readings.js';
 import { letter, system } from './units.js';
+// Nothing from `tolerance.js`, deliberately: `report-sheet.js` imports `fold`
+// from here and is the entry that must stand when `main.js` does not, and
+// `tolerance.js` pulls `schemes.js`, `study.js`, `survey.js`, `tm59.js` and
+// `model.js` into its graph along with four load-time invariants of its own. A
+// throw in any of them would take the Report button down with the sheet. The
+// one sentence a card needs from it arrives with the band (`setBand`).
+
+/**
+ * A move along one face, as the card and the tolerance block both letter it:
+ * the signed span, and the share of the lever's travel it covers.
+ *
+ * A span is a difference, so it goes through `spanKind` at the face's flat
+ * precision, never `quantityKind` — five degrees of room would read `41 °F`.
+ */
+export function moveWords(move, control) {
+  const span = letter(control.spanKind, Math.abs(move.by), { digits: control.digits, unit: control.unit });
+  return { span: `${move.by > 0 ? '+' : '−'}${span}`, share: `${Math.round(move.share * 100)} % of travel` };
+}
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -176,6 +194,11 @@ export function mountConsole({
   // which owns four and can carry four curves at once.
   const rows = new Map();
   const cards = new Map(); // parameter key -> { node, kind, study, syncTick }
+  // The tolerance band each study card carries under the chased standard, kept
+  // apart from the card so a chase toggle redraws the band and not the card:
+  // the card's identity guard is what keeps a drag cheap, and a band is a
+  // re-reading of the same curve rather than a new study.
+  const bandsShown = new Map(); // parameter key -> { band, standard }
   const studyButtons = new Map(); // parameter key -> that scale's Study button
   // And how each one says its sweep, held as a thunk rather than a string.
   // The label letters the control's own range, so it has to be rebuilt on a
@@ -2394,7 +2417,132 @@ export function mountConsole({
     }
 
     card.append(root);
-    return { node: card, kind: 'card', study, syncTick };
+    return { node: card, kind: 'card', study, syncTick, root, x, plot };
+  }
+
+  /* ── the tolerance band on a study card (feature 016) ───────────────── */
+
+  /**
+   * One edge in words: the last position that passed, and what stopped it.
+   *
+   * Never a value between two runs. The bracket is lettered as the pair it is,
+   * because a band edge reads as a hard limit and a designer will set a lever
+   * right at it (US3). A refusal and a failed run close an edge too, and say so
+   * in their own words rather than as a line failing (FR-013).
+   */
+  function edgeWords(edge, control) {
+    const at = control.format(edge.inside);
+    if (edge.stop) return `${at} (the stop)`;
+    const beyond = control.format(edge.outside);
+    const closed = edge.closedBy;
+    if (closed.kind === 'unsolved') return `${at} (unknown beyond until ${beyond} lands)`;
+    if (closed.kind === 'refused') return `${at} (${beyond} is refused: ${closed.reason})`;
+    // Not a line failing: nothing is known beyond here, and it says why.
+    if (closed.kind === 'gap') return `${at} (not read beyond: at ${beyond} ${closed.reason})`;
+    return `${at} (${closed.failing.map((target) => target.label).join(' and ')} fails at ${beyond})`;
+  }
+
+  /** The band in one or two sentences, every figure in the system showing. */
+  function bandWords({ band, standard, noneAlone }, control) {
+    if (band.inert) return [band.inert];
+    if (!band.judged.length) {
+      const why = [...new Set(band.unjudged.map((line) => line.says))].join('; ');
+      return [`No line of ${standard} can be read off this curve: ${why}.`];
+    }
+    const lines = band.judged.length + band.unjudged.filter((line) => line.target.limit != null).length;
+    const of = band.judged.length < lines ? ` (${band.judged.length} of ${lines} lines)` : '';
+    if (!band.band) return [`${noneAlone}${of ? ` Judged on ${band.judged.length} of ${lines} lines.` : ''}`];
+    const said = [];
+    const { lower, upper } = band.band;
+    const state = [band.coarse ? 'coarse' : null, band.incomplete ? 'still landing' : null].filter(Boolean);
+    const tail = state.length ? ` (${state.join(', ')})` : '';
+    // Where the setting is judged by the desk's own run rather than a sample,
+    // because it sits between two of the sweep's positions.
+    const here = band.verdicts.find((verdict) => verdict.value === band.stance && verdict.solved);
+    if (band.contains) {
+      said.push(`Passes ${standard}${of} from ${edgeWords(lower, control)} to ${edgeWords(upper, control)}${tail}.`);
+    } else {
+      const { span, share } = moveWords(band.move, control);
+      // "Fails here" only over a run that failed here. Outside the band is not
+      // the same as failing: the setting may sit between two runs, or on one
+      // that was refused, did not finish or has not landed, and none of those
+      // is a line failing (FR-013).
+      const verdict =
+        here?.kind === 'fail' ? `Fails ${standard}${of} here.` : `${standard}${of} is not judged at this setting.`;
+      said.push(
+        `${verdict} Passes from ${edgeWords(lower, control)} to ${edgeWords(upper, control)}${tail}: ` +
+          `move ${span} (${share}).`,
+      );
+      if (band.tie) said.push('The stretch on the other side is exactly as near.');
+    }
+    if (here?.byDesk) said.push('This setting, between two of the sweep’s positions, is judged by the desk’s own run.');
+    // The stretch runs over positions that carried no figure for a line
+    // (`bracket` in tolerance.js), and says which, in view: they are not passes.
+    if (band.unread.length) {
+      const values = band.unread.map((verdict) => control.format(verdict.value));
+      const at = values.length < 2 ? values[0] : `${values.slice(0, -1).join(', ')} and ${values.at(-1)}`;
+      const why = [...new Set(band.unread.map((verdict) => verdict.reason))].join('; ');
+      said.push(`Not read at ${at}: ${why}.`);
+    }
+    for (const other of band.others) {
+      said.push(`Also passes from ${control.format(other.from)} to ${control.format(other.to)}, with a position between that does not pass.`);
+    }
+    if (band.steppedOver) said.push('The finer pass found a stretch the coarse pass stepped over.');
+    return said;
+  }
+
+  /** Draw (or take down) the band on one card, in place. */
+  function drawBand(key) {
+    const made = cards.get(key);
+    if (!made || made.kind !== 'card') return;
+    made.node.querySelector('.study-band')?.remove();
+    made.root?.querySelector('.band')?.remove();
+    const entry = bandsShown.get(key);
+    if (!entry) return;
+    const { control } = controlFor(key);
+    const { band } = entry;
+
+    // The bar sits on the curve's own position axis, so it lines up with the
+    // stretch of curve it describes. Graphite only: a met line gets no mark
+    // (the board's rule), and `--redline` is spent once, on the block's named
+    // move, not on every card.
+    if (band.band && made.root && made.x) {
+      const g = svg('g', { class: 'band' });
+      // Between the plot's foot and the min/max lettering under it (baseline
+      // 58, cap height about 5.5): at the plot's old foot of 42 this sat 5
+      // below it, and kept there after the plot moved down to 46 its edge
+      // ticks ran into the lettering.
+      const yBar = made.plot.bottom + 3;
+      const { lower, upper } = band.band;
+      const x0 = made.x(lower.inside);
+      const x1 = made.x(upper.inside);
+      g.append(svg('line', { x1: x0, y1: yBar, x2: x1, y2: yBar, class: 'band-bar' }));
+      for (const edge of [lower, upper]) {
+        const ex = made.x(edge.inside);
+        g.append(svg('line', { x1: ex, y1: yBar - 2.5, x2: ex, y2: yBar + 2.5, class: 'band-edge' }));
+        // The bracket's far side, where the first non-passing run sits: a
+        // ghost tick, because the edge lies somewhere between the two.
+        if (!edge.stop) {
+          const ox = made.x(edge.outside);
+          g.append(svg('line', { x1: ox, y1: yBar - 1.5, x2: ox, y2: yBar + 1.5, class: 'band-beyond' }));
+        }
+      }
+      // A position inside the stretch that carried no figure: the same ghost
+      // tick as the far side of an edge, because it too is a run that does not
+      // speak for the stretch, and the text under the card names it.
+      for (const verdict of band.unread) {
+        const ux = made.x(verdict.value);
+        g.append(svg('line', { x1: ux, y1: yBar - 1.5, x2: ux, y2: yBar + 1.5, class: 'band-beyond' }));
+      }
+      for (const other of band.others) {
+        g.append(svg('line', { x1: made.x(other.from), y1: yBar, x2: made.x(other.to), y2: yBar, class: 'band-other' }));
+      }
+      made.root.append(g);
+    }
+
+    const text = bandWords(entry, control);
+    const p = el('p', 'study-band', text.join(' '));
+    made.node.append(p);
   }
 
   /* ── meters ──────────────────────────────────────────────────────────── */
@@ -2745,7 +2893,10 @@ export function mountConsole({
       const before = heldFocus ? have.node.getBoundingClientRect().top : null;
       have?.node.remove();
       cards.delete(key);
-      if (!study) return;
+      if (!study) {
+        bandsShown.delete(key);
+        return;
+      }
       const row = rows.get(key);
       // A throw, not a skip: a card registered but hung nowhere would be a
       // sweep that reports "Study drawn" over a console showing nothing.
@@ -2754,6 +2905,7 @@ export function mountConsole({
       made.node.classList.toggle('stale', stale);
       row.after(made.node);
       cards.set(key, made);
+      drawBand(key);
       const nextDetails = made.node.querySelector('.study-quantity');
       if (wasOpen && nextDetails) nextDetails.open = true;
       if (heldFocus) {
@@ -2831,6 +2983,19 @@ export function mountConsole({
     studyCount: () => cards.size,
 
     /**
+     * The tolerance band under one study card, or null to take it down
+     * (feature 016). `entry` is `{ band, standard, noneAlone }`: the `Band`
+     * from `tolerance.js`, the chased standard's name to letter it against, and
+     * `SAYS.noneAlone`, handed in rather than imported (see the head of this
+     * module for why nothing here imports `tolerance.js`).
+     */
+    setBand(key, entry) {
+      if (entry) bandsShown.set(key, entry);
+      else bandsShown.delete(key);
+      drawBand(key);
+    },
+
+    /**
      * The study context a whole-console refresh would otherwise take away.
      *
      * A weather attach rebuilds every study card because none of the outgoing
@@ -2896,6 +3061,7 @@ export function mountConsole({
     clearStudies() {
       for (const { node } of cards.values()) node.remove();
       cards.clear();
+      bandsShown.clear();
     },
   };
 

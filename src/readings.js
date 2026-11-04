@@ -659,9 +659,16 @@ export function readPeaks(eso, floorArea) {
       else if (w < 0) cool = cool == null ? -w : Math.max(cool, -w);
     }
   }
+  // A run that carried the series and never once heated measured a peak
+  // heating load of zero; it is not a run with no answer. Read as missing, a
+  // wall insulated past the point where the zone needs heating at all fell out
+  // of every judgement of the Passivhaus load line, on the board and in a
+  // tolerance band alike, which lettered the stretch where the line is met
+  // most comfortably as "this run carried no Peak heating load". Missing is
+  // only the series itself being absent, above.
   return {
-    peakHeat: heat == null ? null : heat / floorArea,
-    peakCool: cool == null ? null : cool / floorArea,
+    peakHeat: (heat ?? 0) / floorArea,
+    peakCool: (cool ?? 0) / floorArea,
   };
 }
 
