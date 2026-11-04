@@ -79,8 +79,9 @@ if (releaseLine(energyPlusVersion) !== releaseLine(ENERGYPLUS_VERSION)) {
  * declares and served as the standard's build wrote it. `index.html` links the
  * stylesheets with `vite-ignore`, so the build leaves them alone; this plugin
  * is what puts the vendored tree beside the bundle and what serves the host's
- * files (the favicon set, the manifest, the social image) at the root, where
- * the pasted `head.html` names them. Nothing here rewrites a vendored byte.
+ * files (the favicon set, the manifest, the social image) beside `index.html`,
+ * where the pasted `head.html` names them by a relative path, so that a channel
+ * built under `--base` serves its own. Nothing here rewrites a vendored byte.
  */
 const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 const identityDir = resolve(projectRoot, 'identity');

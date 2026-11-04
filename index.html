@@ -23,12 +23,20 @@
     <link rel="stylesheet" href="identity/hosts/shoebox.idfkit.com/lockup.css" vite-ignore />
     <!-- The favicon set, both theme colours and the social image: the
          standard's identity/hosts/shoebox.idfkit.com/head.html, pasted here
-         line for line. vite.config.js serves the files it names at the root. -->
+         line for line except for the prefix of the four favicon-set paths.
+         vite.config.js writes those files beside index.html. The standard
+         writes them as `/favicon.svg`, which a release at the root resolves,
+         but `/dev/` and a preview at `/<n>/` are built with `--base` and Vite
+         leaves these hrefs as written, so a root-absolute path sent every
+         channel to the release's files, and to a 404 before the first tagged
+         release carried them. Relative, each channel resolves its own copy,
+         as the stylesheets above do. The social image stays absolute: a card
+         names the published site. -->
     <!-- idfkit identity identity-2026.4: the favicon set, both theme colours and the social image of https://shoebox.idfkit.com. Paths are relative to the host's root; the identity-adopt skill rewrites the prefix where a host serves this directory elsewhere. -->
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <link rel="manifest" href="manifest.webmanifest">
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#060a14">
     <meta property="og:image" content="https://shoebox.idfkit.com/og.png">
