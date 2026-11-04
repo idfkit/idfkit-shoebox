@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The link records whether the model console is open.** An open console
+  adds `desk=open` to the address and to Share, so a link copied with it open
+  arrives open. A closed console adds nothing, so existing links are unchanged.
+  Kept schemes do not store it.
+
 ### Changed
 
 - **The study and survey reading "Cost" is now "Utility cost"**, as is the
