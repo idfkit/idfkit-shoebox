@@ -7,8 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The link records whether the model console is open.** An open console
+  adds `desk=open` to the address and to Share, so a link copied with it open
+  arrives open. A closed console adds nothing, so existing links are unchanged.
+  Kept schemes do not store it.
+
 ### Changed
 
+- **The study and survey reading "Cost" is now "Utility cost"**, as is the
+  kept-scheme column, so that it is not read as a construction cost. The link
+  token `cost` is unchanged.
 - **The sheet carries the idfkit lockup**, with the property name Shoebox, at the
   head of the title block, so that the page shows the same mark as every other
   idfkit host.
@@ -22,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   favicon set, the social image, the seven family links and the ownership line
   come from the standard, and the README opens with the shared header. The
   check workflow `check-identity.yml` holds the page to the tag it declares.
+
+### Fixed
+
+- **Landmark tooltips and slider descriptions now follow the unit system.**
+  They were lettered once, when the faces were built, so a sheet opened in IP
+  described the console's bands in SI, and a sheet switched back to SI
+  described its dimension sliders in feet.
+- **The airtightness arithmetic line is lettered in SI in both systems.** In IP
+  its area and volume converted while the density stayed in kg/m³, so redoing
+  the division gave 35.3 times the coefficient it explains.
 
 ## [0.5.0] - 2026-10-23
 

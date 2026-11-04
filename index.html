@@ -3451,23 +3451,26 @@
         color: var(--ink);
         white-space: nowrap;
       }
-      /* Which desk the curve was swept against; the card's one long string. */
-      .study-desk {
-        flex: 1;
-        min-width: 0;
-        font: 400 9px/1.3 var(--mono);
-        color: var(--ink-note);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .study-head .link { font-size: 9px; flex: none; }
+      .study-head .link { font-size: 9px; flex: none; margin-left: auto; }
+      /* The SVG is as wide as the face above it and the plot fills it, so the
+         ends of the curve sit at the face's own stops. Overflow is visible so
+         the end strokes and a marker at a stop are not half clipped. */
       .study-card svg {
         display: block;
         width: 100%;
         height: auto;
+        overflow: visible;
+      }
+      .study-card svg.study-probe { cursor: crosshair; }
+      /* The card closes on a hairline, so the next control reads as the next
+         control rather than as more of this one's study. */
+      .study-card {
+        padding-bottom: 6px;
+        margin-bottom: 8px;
+        border-bottom: 1px solid var(--rule-soft);
       }
       .study-wait {
+        margin-left: auto;
         font: 400 10px/1.3 var(--mono);
         font-variant-numeric: tabular-nums;
         color: var(--ink-3);
@@ -3655,6 +3658,18 @@
         background: var(--ink-ghost);
       }
       .face-ghost[hidden] { display: none; }
+      /* Where the pointer stands on this control's study curve: the markup
+         pen at no weight, the sibling of the marker drawn on the curve. */
+      .face-probe {
+        position: absolute;
+        bottom: 1px;
+        width: 1px;
+        height: 13px;
+        margin-left: -0.5px;
+        background: var(--redline);
+        opacity: 0.45;
+      }
+      .face-probe[hidden] { display: none; }
       .face input {
         position: absolute;
         inset: -2px 0;
@@ -3716,8 +3731,7 @@
         /* One line whatever it says, with the whole reading on the title.
            A band name long enough to wrap would relayout the strip's column
            mid-drag, and so would a line that vanished at a zero stop, so the
-           height is held and the words are clipped — the same arrangement
-           `.study-desk` uses for its one long string. */
+           height is held and the words are clipped. */
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;

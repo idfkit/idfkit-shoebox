@@ -20,7 +20,7 @@ import { BUDGETS, withinBudget } from './copy.js';
 // definition: a second copy here would be the first thing to drift the day a
 // figure changed precision on one surface and not the other.
 import { flowPhrase, flowWord, watts } from './readings.js';
-import { letter } from './units.js';
+import { letter, system } from './units.js';
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -186,6 +186,11 @@ export function mountConsole({
   // differently: a scale passes `control.label`, one wall of a plan key passes
   // `labelFor(side.key)`, and only the closure still knows which.
   const studySweeps = new Map(); // parameter key -> () => its aria-label
+  // parameter key -> (value | null) => void: stands the probe tick on that
+  // control's face where the pointer is over its study curve, or takes it
+  // away. Scales only; a plan key's four walls are bars on a plan with no
+  // face to stand it on.
+  const probes = new Map();
   // parameter key -> that wall's Survey button, on the plan keys only. A
   // survey is cut along two controls, so an offer under every one of the
   // ninety sweepable faces would be ninety more tab stops asking half a
@@ -652,7 +657,7 @@ export function mountConsole({
    * So the marks are unlettered and the reading below letters them, one at a
    * time, as the tick is dragged past. Sweeping a face reads out its whole key.
    */
-  function buildMarks(control) {
+  function buildMarks(control, input) {
     if (!control.landmarks.length) return null;
     const rule = el('div', 'face-marks');
     const marks = control.landmarks.map((mark) => {
@@ -661,10 +666,26 @@ export function mountConsole({
       const pip = el('i', mark.exact ? 'face-mark point' : 'face-mark');
       pip.style.left = `${from * 100}%`;
       if (!mark.exact) pip.style.width = `${(to - from) * 100}%`;
-      pip.title = mark.caption(control);
       rule.append(pip);
       return { mark, pip };
     });
+    // The whole key also goes on the input rather than on the face, because the
+    // input is what a screen reader lands on and the face is a drawing it never
+    // reaches.
+    //
+    // Both letter the bands in the face's own units, so they are captioned from
+    // `sync` and keyed on the system, not written once at build time. Written
+    // once, they stood in whichever system the console was mounted in: the
+    // console mounts before the remembered system is set, so a sheet booted in
+    // IP said "Dwelling · 2.40 m to 2.70 m" over a face reading 7.9 ft, on all
+    // 64 marks. The key keeps a drag from re-lettering them on every frame.
+    let captionedIn = null;
+    const caption = () => {
+      if (captionedIn === system()) return;
+      captionedIn = system();
+      for (const { mark, pip } of marks) pip.title = mark.caption(control);
+      input.setAttribute('aria-description', control.landmarkSummary());
+    };
     return {
       rule,
       // Which band the reading stands in is a tone, not a hue: the one you are
@@ -678,6 +699,7 @@ export function mountConsole({
       // engine's own zero declared as a landmark, so the face drew that mark
       // at full graphite over a reading the desk had deliberately left blank.
       sync(v) {
+        caption();
         const here = control.landmarkAt(v);
         for (const { mark, pip } of marks) pip.classList.toggle('here', mark === here);
       },
@@ -715,6 +737,14 @@ export function mountConsole({
     const ruling = el('i', 'face-rule');
     const ghostTick = el('i', 'face-ghost');
     const tick = el('i', 'face-tick');
+    // Where the pointer stands on this control's study curve, so the curve and
+    // the face read as one axis under the hand.
+    const probeTick = el('i', 'face-probe');
+    probeTick.hidden = true;
+    probes.set(control.key, (v) => {
+      probeTick.hidden = v == null;
+      if (v != null) probeTick.style.left = `${clamp(control.fraction(v), 0, 1) * 100}%`;
+    });
     const input = document.createElement('input');
     Object.assign(input, {
       type: 'range',
@@ -724,16 +754,11 @@ export function mountConsole({
       step: control.step,
     });
     input.setAttribute('aria-label', control.label);
-    face.append(ruling, ghostTick, tick, input);
+    face.append(ruling, ghostTick, probeTick, tick, input);
 
     row.append(head, face);
-    const marks = buildMarks(control);
-    // The whole key, on the input rather than on the face, because the input is
-    // what a screen reader lands on and the face is a drawing it never reaches.
-    if (marks) {
-      input.setAttribute('aria-description', control.landmarkSummary());
-      row.append(marks.rule);
-    }
+    const marks = buildMarks(control, input);
+    if (marks) row.append(marks.rule);
     const standing = marks ? el('p', 'ctl-standing') : null;
     if (standing) row.append(standing);
     // What the model was actually given for this setting, where the applier
@@ -776,8 +801,7 @@ export function mountConsole({
         // One line, always, clipped with its whole text on the title. A
         // reading that grew to two lines as it was dragged past a long band
         // name would relayout the strip's column under the reader's hand,
-        // which is the same failure blanking the finding used to cause on the
-        // sheet. `.study-desk` clips its one long string for the same reason.
+        // which is the same failure blanking the finding used to cause on the sheet.
         standing.textContent = said ?? '';
         standing.title = said ?? '';
         standing.classList.toggle('between', !control.landmarkAt(v));
@@ -2098,11 +2122,6 @@ export function mountConsole({
     const card = el('div', 'study-card');
     const head = el('div', 'study-head');
     head.append(el('span', 'study-tag', 'Study'), ...studySubject(key));
-    // Which desk this curve was swept against, the way the bill names what it
-    // is pinned to. Everything else about the card assumes that desk.
-    const desk = el('span', 'study-desk', `of ${study.label}`);
-    desk.title = `Swept with the rest of the desk at ${study.label}`;
-    head.append(desk);
     // A curve still landing counts its samples where Clear will stand once it
     // is done: clearing a card the scheduler is mid-way through redrawing
     // would be a race dressed as a button.
@@ -2173,7 +2192,7 @@ export function mountConsole({
     const multiple = quantity.series.length > 1;
     const readingOf = (point) => point.reading ?? point[quantity.id];
     const series = quantity.series.map((line) => {
-      // One lettering, asked for twice: the end label in the gutter names its
+      // One lettering, asked for twice: the reading beside the marker names its
       // line where a quantity draws more than one, and the aria description
       // names it in the sentence around it. Written out twice they were a
       // copy with a difference, which is how a declared `format` gets taught
@@ -2189,13 +2208,17 @@ export function mountConsole({
         },
         pen: line.pen ? `var(${line.pen})` : 'var(--ink)',
         format,
-        tick: (value, point) => (multiple ? `${line.label} ${format(value, point)}` : format(value, point)),
+        label: line.label,
         said: line.label.toLowerCase(),
       };
     });
-    // The right gutter holds the curves' end labels: six mono characters of
-    // "−18.7°" in one mode, "TEDI 142" in the other, which needs the wider cut.
-    const plot = { x: 2, w: W - 90, top: 6, bottom: 42 };
+    // The plot spans the whole width, because the SVG is exactly as wide as
+    // the face above it: a position on the curve stands directly under the
+    // same position on the slider. The band above `top` holds the reading
+    // lettered beside the marker, which replaced the end labels a right-hand
+    // gutter used to hold, and which shortened the curve's axis against the
+    // face's so that neither tick stood under the other.
+    const plot = { x: 0, w: W, top: 13, bottom: 46 };
 
     const vals = series.flatMap((s) => study.curve.map(s.sel).filter((v) => v != null));
     if (!vals.length) {
@@ -2273,36 +2296,9 @@ export function mountConsole({
     };
     for (const s of series) draw(s.sel, s.pen);
 
-    // The curves' right-hand ends lettered directly in the gutter, the plate's
-    // own move, settled top to bottom against a minimum gap when they converge.
-    const labels = [];
-    for (const s of series) {
-      const found = study.curve.filter((p) => s.sel(p) != null);
-      if (!found.length) continue;
-      const point = found[found.length - 1];
-      const v = s.sel(point);
-      labels.push({
-        text: s.tick(v, point),
-        pen: s.pen,
-        y: clamp(y(v) + 2.5, plot.top + 5, plot.bottom),
-      });
-    }
-    labels.sort((a, b) => a.y - b.y);
-    for (const [i, l] of labels.entries()) {
-      if (i > 0) l.y = Math.max(l.y, labels[i - 1].y + 9);
-    }
-    for (const l of labels) {
-      const t = svg('text', {
-        x: plot.x + plot.w + 5, y: l.y, fill: l.pen,
-        'font-family': 'var(--mono)', 'font-size': 7.5,
-      });
-      t.textContent = l.text;
-      root.append(t);
-    }
-
     const foot = (text, fx, anchor, pen = 'var(--ink-note)') => {
       const t = svg('text', {
-        x: fx, y: 56, 'text-anchor': anchor, fill: pen,
+        x: fx, y: 58, 'text-anchor': anchor, fill: pen,
         'font-family': 'var(--mono)', 'font-size': 7.5,
       });
       t.textContent = text;
@@ -2311,16 +2307,91 @@ export function mountConsole({
     foot(control.format(control.min), plot.x, 'start');
     foot(control.format(control.max), plot.x + plot.w, 'end');
 
+    // The curve read at any position on the step grid. Between two solved
+    // samples the reading is interpolated and lettered with `≈`; across a gap
+    // (a failed or refused run) there is no reading, and the em dash says so.
+    const solved = study.curve.filter((point) => point && !point.refused);
+    const readAt = (s, v) => {
+      let prev = null;
+      for (const point of study.curve) {
+        const here = point && !point.refused ? s.sel(point) : null;
+        // Within a millionth of a step is the sample itself: both sides are on
+        // the step grid, but only one of them went through `toFixed`.
+        if (point && Math.abs(point.value - v) < control.step * 1e-6) return here == null ? null : { value: here, point, exact: true };
+        if (point && point.value > v) {
+          if (here == null || prev == null) return null;
+          const f = (v - prev.point.value) / (point.value - prev.point.value);
+          return { value: prev.value + f * (here - prev.value), point, exact: false };
+        }
+        prev = here == null ? null : { value: here, point };
+      }
+      return null;
+    };
+
     const tick = svg('line', {
       y1: plot.top - 2, y2: plot.bottom + 2, stroke: 'var(--redline)', 'stroke-width': 1,
     });
-    root.append(tick);
+    const marker = svg('line', {
+      y1: plot.top - 2, y2: plot.bottom + 2, stroke: 'var(--ink-3)', 'stroke-width': 1,
+      'stroke-dasharray': '2 2', visibility: 'hidden',
+    });
+    const reading = svg('text', { y: 8, 'font-family': 'var(--mono)', 'font-size': 7.5 });
+    root.append(marker, tick, reading);
+
+    // Letter the curve's reading at `v` beside the line standing there: the
+    // slider's own position at rest, the pointer's while it hovers.
+    const letterAt = (v) => {
+      const at = x(v);
+      const right = at > W * 0.6;
+      reading.setAttribute('x', (right ? at - 4 : at + 4).toFixed(2));
+      reading.setAttribute('text-anchor', right ? 'end' : 'start');
+      reading.replaceChildren(
+        ...series.map((s, i) => {
+          const found = readAt(s, v);
+          const span = svg('tspan', { fill: found ? s.pen : 'var(--ink-ghost)' });
+          if (i) span.setAttribute('dx', 6);
+          const figure = found ? `${found.exact ? '' : '≈ '}${s.format(found.value, found.point)}` : '—';
+          span.textContent = multiple ? `${s.label} ${figure}` : figure;
+          return span;
+        }),
+      );
+    };
+
+    let hovering = null;
     const syncTick = () => {
       const tx = x(params[key]).toFixed(2);
       tick.setAttribute('x1', tx);
       tick.setAttribute('x2', tx);
+      if (hovering == null) letterAt(params[key]);
     };
     syncTick();
+
+    // Hover stands a marker on the curve and a probe on the face above; a
+    // click sets the control there. Both read the pointer onto the step grid,
+    // so what is lettered is what a click would set.
+    const pointed = (event) => {
+      const box = root.getBoundingClientRect();
+      return control.valueAt(clamp((event.clientX - box.left) / box.width, 0, 1));
+    };
+    if (solved.length) {
+      root.classList.add('study-probe');
+      root.addEventListener('pointermove', (event) => {
+        hovering = pointed(event);
+        const mx = x(hovering).toFixed(2);
+        marker.setAttribute('x1', mx);
+        marker.setAttribute('x2', mx);
+        marker.setAttribute('visibility', 'visible');
+        letterAt(hovering);
+        probes.get(key)?.(hovering);
+      });
+      root.addEventListener('pointerleave', () => {
+        hovering = null;
+        marker.setAttribute('visibility', 'hidden');
+        probes.get(key)?.(null);
+        syncTick();
+      });
+      root.addEventListener('click', (event) => onChange(key, pointed(event), true));
+    }
 
     card.append(root);
     return { node: card, kind: 'card', study, syncTick };
@@ -2657,7 +2728,7 @@ export function mountConsole({
       // rebuilding, which is what keeps a drag cheap.
       //
       // `relettering` is the one caller that has to get past it. A card's
-      // heading, its desk line, its quantity's unit and its axis ends are all
+      // heading, its quantity's unit and its axis ends are all
       // lettered when the card is built, so on a units switch the study object
       // is unchanged and every figure on the card is wrong — and re-issuing it
       // from outside could never help, because it arrives here and takes this
