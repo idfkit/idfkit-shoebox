@@ -20,7 +20,7 @@ import { BUDGETS, withinBudget } from './copy.js';
 // definition: a second copy here would be the first thing to drift the day a
 // figure changed precision on one surface and not the other.
 import { flowPhrase, flowWord, watts } from './readings.js';
-import { letter } from './units.js';
+import { letter, system } from './units.js';
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -657,7 +657,7 @@ export function mountConsole({
    * So the marks are unlettered and the reading below letters them, one at a
    * time, as the tick is dragged past. Sweeping a face reads out its whole key.
    */
-  function buildMarks(control) {
+  function buildMarks(control, input) {
     if (!control.landmarks.length) return null;
     const rule = el('div', 'face-marks');
     const marks = control.landmarks.map((mark) => {
@@ -666,10 +666,26 @@ export function mountConsole({
       const pip = el('i', mark.exact ? 'face-mark point' : 'face-mark');
       pip.style.left = `${from * 100}%`;
       if (!mark.exact) pip.style.width = `${(to - from) * 100}%`;
-      pip.title = mark.caption(control);
       rule.append(pip);
       return { mark, pip };
     });
+    // The whole key also goes on the input rather than on the face, because the
+    // input is what a screen reader lands on and the face is a drawing it never
+    // reaches.
+    //
+    // Both letter the bands in the face's own units, so they are captioned from
+    // `sync` and keyed on the system, not written once at build time. Written
+    // once, they stood in whichever system the console was mounted in: the
+    // console mounts before the remembered system is set, so a sheet booted in
+    // IP said "Dwelling · 2.40 m to 2.70 m" over a face reading 7.9 ft, on all
+    // 64 marks. The key keeps a drag from re-lettering them on every frame.
+    let captionedIn = null;
+    const caption = () => {
+      if (captionedIn === system()) return;
+      captionedIn = system();
+      for (const { mark, pip } of marks) pip.title = mark.caption(control);
+      input.setAttribute('aria-description', control.landmarkSummary());
+    };
     return {
       rule,
       // Which band the reading stands in is a tone, not a hue: the one you are
@@ -683,6 +699,7 @@ export function mountConsole({
       // engine's own zero declared as a landmark, so the face drew that mark
       // at full graphite over a reading the desk had deliberately left blank.
       sync(v) {
+        caption();
         const here = control.landmarkAt(v);
         for (const { mark, pip } of marks) pip.classList.toggle('here', mark === here);
       },
@@ -740,13 +757,8 @@ export function mountConsole({
     face.append(ruling, ghostTick, probeTick, tick, input);
 
     row.append(head, face);
-    const marks = buildMarks(control);
-    // The whole key, on the input rather than on the face, because the input is
-    // what a screen reader lands on and the face is a drawing it never reaches.
-    if (marks) {
-      input.setAttribute('aria-description', control.landmarkSummary());
-      row.append(marks.rule);
-    }
+    const marks = buildMarks(control, input);
+    if (marks) row.append(marks.rule);
     const standing = marks ? el('p', 'ctl-standing') : null;
     if (standing) row.append(standing);
     // What the model was actually given for this setting, where the applier

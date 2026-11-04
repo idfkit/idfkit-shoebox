@@ -2734,16 +2734,28 @@ function buildSliders() {
         pip.className = mark.exact ? 'dim-mark point' : 'dim-mark';
         pip.style.left = `calc(4.5px + ${from} * (100% - 9px))`;
         if (!mark.exact) pip.style.width = `calc(${to - from} * (100% - 9px))`;
-        pip.title = mark.caption(control);
         rule.append(pip);
         marks.push({ mark, pip });
       }
       standing = document.createElement('p');
       standing.className = 'dim-standing';
-      input.setAttribute('aria-description', control.landmarkSummary());
     }
 
+    // The marks' titles and the input's description letter the bands in the
+    // face's units, so they are captioned on each `show` and keyed on the
+    // system, as the console's faces are. Written once at build time they
+    // stayed in the system the sheet was built in: booted in IP and switched
+    // to SI, the height slider went on describing "7.9 ft to 8.9 ft".
+    let captionedIn = null;
+    const caption = () => {
+      if (!marks.length || captionedIn === system()) return;
+      captionedIn = system();
+      for (const { mark, pip } of marks) pip.title = mark.caption(control);
+      input.setAttribute('aria-description', control.landmarkSummary());
+    };
+
     const show = () => {
+      caption();
       const v = params[key];
       value.show();
       const said = control.standing(v);
@@ -2953,16 +2965,16 @@ function derivedLines() {
     const b = leakageBuildUp(model, params.envLeak);
     lines.set(
       'envLeak',
-      // The envelope area and the zone volume are the reader's own geometry and
-      // letter where they are working. The rest of the line does not: the
-      // coefficient is the field the engine is actually given, in the units the
-      // IDF holds it in, and the density, the reference pressure and the
-      // exponent are the blower-door convention's own constants. This line
-      // exists so the reader can redo the arithmetic against the model, and a
-      // converted coefficient would be arithmetic about a field that is not
-      // there.
-      `${b.coefficient.toFixed(3)} kg/s at 1 Pa over ${letter(KINDS.area, b.area, { digits: 1, ipDigits: 0 })} of envelope\n` +
-        `${b.ach} ACH · ${letter(KINDS.volume, b.volume, { digits: 1, ipDigits: 0 })} / 3600 · ${b.density} kg/m³ / ${b.deltaP}^${b.exponent}`,
+      // SI in both systems, every term. The coefficient is the field the engine
+      // is actually given, in the units the IDF holds it in, and the density,
+      // the reference pressure and the exponent are the blower-door
+      // convention's own constants. This line exists so the reader can redo the
+      // arithmetic against the model. The area and the volume used to convert
+      // with the sheet, which put ft³ beside kg/m³ and made the division come
+      // out 35.3 times the coefficient printed above it, so they stay in the
+      // units the arithmetic is done in.
+      `${b.coefficient.toFixed(3)} kg/s at 1 Pa over ${b.area.toFixed(1)} m² of envelope\n` +
+        `${b.ach} ACH · ${b.volume.toFixed(1)} m³ / 3600 · ${b.density} kg/m³ / ${b.deltaP}^${b.exponent}`,
     );
   }
   return lines;
