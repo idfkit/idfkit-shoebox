@@ -1036,6 +1036,27 @@ function plateIndexAt(clientX, clientY, options = {}) {
     });
   });
 
+  // On the duration curve the cursor also follows a hovering mouse, so the
+  // dashed line reads the curves wherever the pointer stands; a press still
+  // sets it, which is the only way a touch screen has. One redraw per frame,
+  // and the live region is left alone: it says where a deliberate press or
+  // key landed, and a pointer sweeping the plate would flood it.
+  let hoverFrame = 0;
+  let hoverAt = null;
+  host.addEventListener('pointermove', (event) => {
+    if (plateDrag || event.pointerType !== 'mouse' || !plateField?.cursor) return;
+    const at = plateIndexAt(event.clientX, event.clientY);
+    if (at == null || at === plateField.current) return;
+    hoverAt = at;
+    if (hoverFrame) return;
+    hoverFrame = requestAnimationFrame(() => {
+      hoverFrame = 0;
+      if (!plateField?.cursor || hoverAt === plateField.current) return;
+      durationCursor = hoverAt;
+      renderTrace();
+    });
+  });
+
   const release = (event) => {
     if (!plateDrag || event.pointerId !== plateDrag.pointerId) return;
     const { at, moved, frame } = plateDrag;
@@ -2910,16 +2931,28 @@ function buildSliders() {
         pip.className = mark.exact ? 'dim-mark point' : 'dim-mark';
         pip.style.left = `calc(4.5px + ${from} * (100% - 9px))`;
         if (!mark.exact) pip.style.width = `calc(${to - from} * (100% - 9px))`;
-        pip.title = mark.caption(control);
         rule.append(pip);
         marks.push({ mark, pip });
       }
       standing = document.createElement('p');
       standing.className = 'dim-standing';
-      input.setAttribute('aria-description', control.landmarkSummary());
     }
 
+    // The marks' titles and the input's description letter the bands in the
+    // face's units, so they are captioned on each `show` and keyed on the
+    // system, as the console's faces are. Written once at build time they
+    // stayed in the system the sheet was built in: booted in IP and switched
+    // to SI, the height slider went on describing "7.9 ft to 8.9 ft".
+    let captionedIn = null;
+    const caption = () => {
+      if (!marks.length || captionedIn === system()) return;
+      captionedIn = system();
+      for (const { mark, pip } of marks) pip.title = mark.caption(control);
+      input.setAttribute('aria-description', control.landmarkSummary());
+    };
+
     const show = () => {
+      caption();
       const v = params[key];
       value.show();
       const said = control.standing(v);
@@ -3129,16 +3162,16 @@ function derivedLines() {
     const b = leakageBuildUp(model, params.envLeak);
     lines.set(
       'envLeak',
-      // The envelope area and the zone volume are the reader's own geometry and
-      // letter where they are working. The rest of the line does not: the
-      // coefficient is the field the engine is actually given, in the units the
-      // IDF holds it in, and the density, the reference pressure and the
-      // exponent are the blower-door convention's own constants. This line
-      // exists so the reader can redo the arithmetic against the model, and a
-      // converted coefficient would be arithmetic about a field that is not
-      // there.
-      `${b.coefficient.toFixed(3)} kg/s at 1 Pa over ${letter(KINDS.area, b.area, { digits: 1, ipDigits: 0 })} of envelope\n` +
-        `${b.ach} ACH · ${letter(KINDS.volume, b.volume, { digits: 1, ipDigits: 0 })} / 3600 · ${b.density} kg/m³ / ${b.deltaP}^${b.exponent}`,
+      // SI in both systems, every term. The coefficient is the field the engine
+      // is actually given, in the units the IDF holds it in, and the density,
+      // the reference pressure and the exponent are the blower-door
+      // convention's own constants. This line exists so the reader can redo the
+      // arithmetic against the model. The area and the volume used to convert
+      // with the sheet, which put ft³ beside kg/m³ and made the division come
+      // out 35.3 times the coefficient printed above it, so they stay in the
+      // units the arithmetic is done in.
+      `${b.coefficient.toFixed(3)} kg/s at 1 Pa over ${b.area.toFixed(1)} m² of envelope\n` +
+        `${b.ach} ACH · ${b.volume.toFixed(1)} m³ / 3600 · ${b.density} kg/m³ / ${b.deltaP}^${b.exponent}`,
     );
   }
   return lines;
@@ -4216,11 +4249,27 @@ setSystem(rememberedUnits() ?? firstVisitUnits());
 syncUnits();
 onSystemChange(reletterSheet);
 
-function openDesk(open) {
+/** Whether the console is open, read off the one place that holds it. */
+function deskIsOpen() {
+  return document.body.classList.contains('desk-open');
+}
+
+/**
+ * Open or close the console.
+ *
+ * `noted: false` is the boot honouring a link's `desk=open`: the general
+ * notes fill a square only from something the reader did, and arriving on a
+ * link that was already open is not opening the desk.
+ */
+function openDesk(open, { noted = true } = {}) {
   document.body.classList.toggle('desk-open', open);
   deskButton.setAttribute('aria-expanded', String(open));
   $('desk-count').textContent = open ? 'Close the desk' : 'Every control on the desk';
-  if (open) tour?.note('desk');
+  if (open && noted) tour?.note('desk');
+  // The address carries whether the console is open, so a link copied with
+  // it open arrives open. Before the boot decode this is a no-op, by
+  // `updatePermalink`'s own guard.
+  updatePermalink();
   // The patch note's subject moves with the desk: the first patch button when
   // the console is open, the button that opens it when it is not.
   tour?.syncGuide();
@@ -4229,7 +4278,7 @@ function openDesk(open) {
   resizeTimer = setTimeout(renderTrace, 60);
 }
 
-deskButton.addEventListener('click', () => openDesk(!document.body.classList.contains('desk-open')));
+deskButton.addEventListener('click', () => openDesk(!deskIsOpen()));
 $('desk-revert').addEventListener('click', () => revert());
 $('desk-close').addEventListener('click', () => {
   openDesk(false);
@@ -5493,13 +5542,15 @@ let linkAttachPending = false;
  * one per surface, and they disagreed under solo: the address bar carried the
  * pre-solo patch state while the bundle's manifest carried the solo map.
  */
-const schemeHash = (p = params, { view = viewSetting } = {}) =>
+const schemeHash = (p = params, { view = viewSetting, desk = deskIsOpen() } = {}) =>
   encodeState({
     params: p,
     // The plate's view rides the address bar and Share, and never the shelf:
     // a kept scheme is what was simulated, and the view is how it is being
-    // looked at (FR-024). `saveScheme` passes `view: null`.
+    // looked at (FR-024). `saveScheme` passes `view: null`. Whether the
+    // console is open is the same kind of claim and takes the same route.
     view,
+    desk,
     bypass: patching(),
     station: stationToken(),
     file: fileToken(),
@@ -6397,7 +6448,7 @@ function saveScheme() {
     // The scheme is stored exactly as the address bar carries it, `patching()`
     // and all, so a scheme kept under solo reproduces the soloed building —
     // the one place the raw patch bay and what actually reaches the IDF differ.
-    hash: schemeHash(params, { view: null }) || 'v1',
+    hash: schemeHash(params, { view: null, desk: false }) || 'v1',
     savedAt: Date.now(),
     station: $('t-location').textContent,
     // Beside the place, never instead of it. A DSY1 and a TMYx for the same
@@ -6483,11 +6534,16 @@ function restoreScheme(scheme) {
     statusEl.textContent = state.file
       ? `Restoring ${scheme.name}, which was solved against another weather file — reloading to ask for it…`
       : `Restoring ${scheme.name}, which names another station — reloading to fetch its weather…`;
-    // The shelf never stores the view, so the reload would boot at the time
-    // series; the view being looked at goes onto the address with it, last,
-    // where `encodeState` puts it (FR-024).
+    // The shelf never stores the view or the console, so the reload would boot
+    // at the time series with the console shut; both go onto the address with
+    // it, last, where `encodeState` puts them (FR-024). The restore is pressed
+    // on the console, so it is open here, but asked rather than assumed.
     const pv = encodeView(viewSetting);
-    history.replaceState(null, '', `#${scheme.hash}${pv ? `&pv=${pv}` : ''}`);
+    history.replaceState(
+      null,
+      '',
+      `#${scheme.hash}${pv ? `&pv=${pv}` : ''}${deskIsOpen() ? '&desk=open' : ''}`,
+    );
     location.reload();
     return;
   }
@@ -7788,7 +7844,7 @@ const SHELF_COLUMNS = Object.freeze([
   // the first would keep settling the second by accident. It is also the one
   // column here a design-day run can fill.
   { label: 'Peak heat', field: 'peakHeat', unit: 'W/m²', kind: 'fluxDensity', digits: 1 },
-  { label: 'Cost', field: 'cost', unit: '', kind: 'currency', fmt: (v, m) => `${group(v, 0)} ${m.currency ?? ''}`.trim() },
+  { label: 'Utility cost', field: 'cost', unit: '', kind: 'currency', fmt: (v, m) => `${group(v, 0)} ${m.currency ?? ''}`.trim() },
   { label: 'Carbon', field: 'carbon', unit: 'kgCO₂e', kind: 'carbonMass', fmt: (v) => group(v, 0) },
 ]);
 
@@ -8087,10 +8143,12 @@ if (location.hash.length > 1) {
 booted = true;
 
 buildSliders();
-// The desk starts closed. The static markup already is the closed state --
-// no `desk-open` on the body, the button reading "Every control on the desk"
-// with `aria-expanded="false"` -- so arrival needs no call at all, and the
-// sheet keeps its full width until the reader asks for the controls.
+// The desk starts closed unless the link says it was open. The static markup
+// already is the closed state -- no `desk-open` on the body, the button
+// reading "Every control on the desk" with `aria-expanded="false"` -- so a
+// plain arrival needs no call at all, and the sheet keeps its full width until
+// the reader asks for the controls.
+if (linked?.desk) openDesk(true, { noted: false });
 applyGeometry(); // also sets SURFACES, draws the axonometric and letters the Timestep cell
 const facts = modelFacts(model);
 $('t-project').textContent = facts.project;

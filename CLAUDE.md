@@ -259,9 +259,11 @@ geometry earlier ones wrote).
 - **Permalink** (`permalink.js`): delta-encoded against versioned defaults. Changing a
   default, renaming a key or narrowing a range means bumping `LINK_VERSION`, freezing
   `DEFAULTS_BY_VERSION` and writing a `MIGRATIONS` step. Links are refused whole.
-  Reserved keys (`in`, `out`, `stn`, `win`, `at`, `sty`, `sv`, `wf`, `wfd`, `pv`) are read in
-  `decodeState` above `readValue`. Only `*`, `.`, `-`, `_` survive `URLSearchParams`
-  unescaped. The bar encodes `patching()`; one builder, `schemeHash`.
+  Reserved keys (`in`, `out`, `stn`, `win`, `at`, `sty`, `sv`, `wf`, `wfd`, `pv`, `desk`) are
+  read in `decodeState` above `readValue`. Only `*`, `.`, `-`, `_` survive `URLSearchParams`
+  unescaped. The bar encodes `patching()`; one builder, `schemeHash`. `pv` and
+  `desk=open` (the console, absent when closed) ride the bar and Share but never a
+  kept scheme; `openDesk` rewrites the bar.
 - **Register** (`schemes.js`): a standard is an overlay, a kept scheme a replacement
   stored as its permalink. `UNTOUCHABLE` channels are asserted at load. Nothing is
   remembered: `conformance()` is recomputed on every apply. `Spec` vs `Target`;

@@ -579,7 +579,7 @@ export const QUANTITIES = Object.freeze([
     read: (landed) => finite(landed.bill?.wholeYear ? landed.bill.intensity('metered') : null),
   }),
   new Quantity({
-    id: 'cost', label: 'Cost', unit: 'local currency', quantityKind: 'currency', digits: 1, needs: BILL,
+    id: 'cost', label: 'Utility cost', unit: 'local currency', quantityKind: 'currency', digits: 1, needs: BILL,
     meterScope: 'all',
     priced: 'cost',
     // `metered × costRate`, where `assume` in `rates.js` puts the two prices
@@ -592,7 +592,7 @@ export const QUANTITIES = Object.freeze([
     series: [
       new QuantitySeries({
         id: 'cost',
-        label: 'Cost',
+        label: 'Utility cost',
         select: (reading) => reading?.value,
         format: (value, reading) => reading.currency.format(value, Math.abs(value) < 100 ? 2 : 0),
       }),
