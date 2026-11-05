@@ -33,6 +33,7 @@ Four constraints from the constitution shape everything below.
 - Q: Must a translator be able to contribute without writing code or using GitHub? → A: No. Contributions arrive as pull requests that edit translation files in this repository; a hosted or no-code translation route is out of scope.
 - Q: Is a language offered to readers while some strings are still English? → A: Yes, from 90% coverage. The sheet states the coverage beside the chooser, in that language, with a link to the contributor's guide; the remaining strings read in English, marked as untranslated.
 - Q: Where on GitHub does the translation contributor's guide live? → A: A short root `CONTRIBUTING.md` that GitHub surfaces to every contributor, linking to the full step-by-step guide at `docs/translating.md`.
+- Q: Does a new language start with a GitHub issue or go straight to a pull request? → A: A new language starts with a "Start a language" issue form naming the language and its two speakers; corrections to an existing language go straight to a pull request.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -56,7 +57,7 @@ A building engineer in France opens the sheet. It opens in French because their 
 
 ### User Story 2 - Contribute a language by pull request (Priority: P1)
 
-A Brazilian engineer who has used the sheet for a year wants their students to have it in Portuguese. They follow a link on the sheet to a contributor's guide, fork the repository, and start a Portuguese translation file beside the English one. Each string in the English file carries its budget, the figures it must keep and a note on what it means. They run the sheet locally in Portuguese, then open a pull request. The checks tell them exactly which strings dropped a figure or overran a budget, in words, before a person reviews anything. They touch no file but their language's.
+A Brazilian engineer who has used the sheet for a year wants their students to have it in Portuguese. They follow a link on the sheet to a contributor's guide, open a "Start a language" issue naming a colleague who will review, fork the repository, and start a Portuguese translation file beside the English one. Each string in the English file carries its budget, the figures it must keep and a note on what it means. They run the sheet locally in Portuguese, then open a pull request. The checks tell them exactly which strings dropped a figure or overran a budget, in words, before a person reviews anything. They touch no file but their language's.
 
 **Why this priority**: it is the "by the community" half of the request. Without it the first story depends on the maintainers translating, which is the situation the feature exists to end.
 
@@ -65,11 +66,12 @@ A Brazilian engineer who has used the sheet for a year wants their students to h
 **Acceptance Scenarios**:
 
 1. **Given** a contributor who can use git and run the sheet locally, **When** they follow the sheet's link to contribute, **Then** they reach a guide that takes them from a fork to an open pull request for a new or existing language.
-2. **Given** a string to translate, **When** the contributor reads it in the source file, **Then** they see the English source, where on the sheet it appears, the word budget it must fit, which figures and names it must keep, and any translator's note the maintainers wrote for it.
-3. **Given** a translation in progress, **When** the contributor runs the sheet locally, **Then** they can letter it in their unpublished language, including one below the publication threshold.
-4. **Given** a pull request carrying a translation, **When** a string drops, adds or changes a figure or a placeholder, carries markup the source does not, or overruns its budget, **Then** the check fails with the string named and the rule stated, and the same check can be run locally before pushing.
-5. **Given** a new or changed language, **When** the contributor adds it, **Then** they edit only that language's translation files; no code file needs to change to add a language.
-6. **Given** an existing language, **When** a contributor improves one string, **Then** the pull request changes that one string and nothing else.
+2. **Given** a language nobody has started, **When** a contributor wants to start it, **Then** the guide sends them first to a "Start a language" issue form that asks for the language and two speakers, and the issue shows whether that language is already under way.
+3. **Given** a string to translate, **When** the contributor reads it in the source file, **Then** they see the English source, where on the sheet it appears, the word budget it must fit, which figures and names it must keep, and any translator's note the maintainers wrote for it.
+4. **Given** a translation in progress, **When** the contributor runs the sheet locally, **Then** they can letter it in their unpublished language, including one below the publication threshold.
+5. **Given** a pull request carrying a translation, **When** a string drops, adds or changes a figure or a placeholder, carries markup the source does not, or overruns its budget, **Then** the check fails with the string named and the rule stated, and the same check can be run locally before pushing.
+6. **Given** a new or changed language, **When** the contributor adds it, **Then** they edit only that language's translation files; no code file needs to change to add a language.
+7. **Given** an existing language, **When** a contributor improves one string, **Then** the pull request changes that one string and nothing else.
 
 ---
 
@@ -137,6 +139,7 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 - **Units**: a unit symbol (W/m²K, °F, kBtu/h) is the same in every language. A unit spelled as a word (`h`, `person`) MAY be translated.
 - **Kept schemes and links made before this feature**: they open to the same desk; a kept scheme's name stays as the reader typed it.
 - **Markup in a translation**: a translation carries text only, plus exactly the inline emphasis its source carries. Anything else is refused at submission, so a contribution cannot inject content into the page.
+- **A language started twice**: a second "Start a language" issue for a language already under way is pointed to the first, so its speakers join one effort.
 - **A language withdrawn**: if a published language falls below the threshold and is withdrawn, a reader who chose it sees English and is told, in English and in that language, why.
 - **The contributor's guide and the station picker**: station names are from their source and are not translated; the guide itself is in English and MAY be translated like the sheet.
 
@@ -173,6 +176,7 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 **Contributing**
 
 - **FR-018**: Contributions MUST arrive as pull requests to this repository. Each language MUST live in its own translation files, kept apart from the code, so that adding or improving a language changes only that language's files. A no-code or hosted translation route is out of scope.
+- **FR-018a**: A new language MUST start from a "Start a language" issue form that records the language and two speakers before translation begins, so that no language is translated twice in parallel or without a reviewer. Corrections to an existing language MUST NOT need an issue.
 - **FR-019**: The English source file MUST carry, beside each string, where it appears on the sheet, its budget, the figures and names it must keep, and any translator's note, so a contributor needs no other document to translate it.
 - **FR-020**: A contributor MUST be able to letter the sheet in their unpublished language when running it locally, whatever its coverage, without it reaching other readers.
 - **FR-021**: Every pull request touching a translation MUST be checked automatically against FR-012, FR-013, FR-015 and FR-016, and each failure MUST name the string, the language and the rule broken, in words. The same check MUST be runnable locally.
