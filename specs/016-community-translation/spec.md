@@ -36,6 +36,7 @@ Four constraints from the constitution shape everything below.
 - Q: Does a new language start with a GitHub issue or go straight to a pull request? → A: A new language starts with a "Start a language" issue form naming the language and its two speakers; corrections to an existing language go straight to a pull request.
 - Q: May a contributor start from a machine translation? → A: Yes, with no disclosure rule. Accountability sits with the translators instead: while their language is showing, the sheet credits them in view as "translation by @handle", so it is their reputation on the line, not the maintainers'.
 - Q: Should the general notes gain a step that teaches the language chooser? → A: No. The existing notes are translated and no step is added; a language choice is lettering, like the unit system (which has no step either), not a modelling feature, so constitution gate 6 does not require one and the storage key stays `shoebox-general-notes-v7`.
+- Q: Which conditions beyond 90% coverage must a language meet before it is offered to readers? → A: All four: at least 90% coverage; every refusal, absence reason, blocking reason and verdict current; at least two listed reviewers; and a left-to-right script.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -121,7 +122,7 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 
 **Acceptance Scenarios**:
 
-1. **Given** a new language, **When** it has not reached the publication threshold, **Then** it is not offered to readers, though contributors can still preview it.
+1. **Given** a new language, **When** it does not meet every publication condition of FR-025, **Then** it is not offered to readers, though contributors can still preview it.
 2. **Given** a translated string, **When** it has been written by one contributor and not yet approved by a second, **Then** it is not published.
 3. **Given** a published language, **When** a reader looks for who translated it, **Then** the sheet names its translators beside the chooser, without opening anything, as "translation by @handle", each handle linking to that person's GitHub profile.
 
@@ -142,7 +143,7 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 - **Kept schemes and links made before this feature**: they open to the same desk; a kept scheme's name stays as the reader typed it.
 - **Markup in a translation**: a translation carries text only, plus exactly the inline emphasis its source carries. Anything else is refused at submission, so a contribution cannot inject content into the page.
 - **A language started twice**: a second "Start a language" issue for a language already under way is pointed to the first, so its speakers join one effort.
-- **A language withdrawn**: if a published language falls below the threshold and is withdrawn, a reader who chose it sees English and is told, in English and in that language, why.
+- **A language withdrawn**: if a published language stops meeting a publication condition and is withdrawn, a reader who chose it sees English and is told, in English and in that language, why.
 - **The contributor's guide and the station picker**: station names are from their source and are not translated; the guide itself is in English and MAY be translated like the sheet.
 
 ## Requirements *(mandatory)*
@@ -188,8 +189,8 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 **Publishing**
 
 - **FR-024**: A translated string MUST be approved by a speaker of that language other than its translator before it is published.
-- **FR-025**: The publication threshold is 90% coverage: the share of translatable strings that have a current, approved translation. A language MUST reach it before it is offered to readers, and MUST be withdrawn, with a stated reason, if it falls below it. While a published language is below 100%, the sheet MUST state its coverage beside the chooser, in that language, with the link to the contributor's guide of FR-023.
-- **FR-026**: A maintainer MUST be able to decide whether to publish a language from the checks, the review state and the coverage alone, without reading the language.
+- **FR-025**: A language is published, and offered to readers, only while all four of these hold: (1) coverage, the share of translatable strings that have a current, approved translation, is at least 90%; (2) every refusal, absence reason, blocking reason and verdict in it is current; (3) its language file lists at least two reviewers; (4) it is written left to right. A language that stops meeting any of them MUST be withdrawn, with the unmet condition stated as the reason. While a published language is below 100%, the sheet MUST state its coverage beside the chooser, in that language, with the link to the contributor's guide of FR-023.
+- **FR-026**: A maintainer MUST be able to decide whether to publish a language from the checks, the review state and the four conditions of FR-025 alone, without reading the language.
 - **FR-027**: While a language other than English is showing, the sheet MUST credit its translators in view, beside the chooser and never in a fold, as "translation by @handle" with each GitHub handle linking to that person's profile. Every author of a current translation in that language MUST be credited; contributing a translation is consenting to be credited for it. The credit MUST make plain that the translation is its translators' work, not the maintainers'.
 - **FR-027a**: A translation MAY start from machine output. No disclosure is required; the translator credited under FR-027 answers for every string, and the second speaker of FR-024 reviews it as they would any other.
 - **FR-028**: Every language MUST be published with the site, and choosing one MUST request nothing beyond the site's own files.
