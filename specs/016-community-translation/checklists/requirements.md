@@ -31,6 +31,6 @@
 
 ## Notes
 
-- Two clarifications are open: FR-017 (is a partly translated language offered to readers, and from what coverage) and FR-018 (where contributors translate). Both change scope; resolve before `/speckit-plan`.
+- One clarification is open: FR-017 (is a partly translated language offered to readers, and from what coverage). Resolve before `/speckit-plan`.
+- FR-018 resolved 2026-11-05: contributions are pull requests editing translation files; no no-code route.
 - The spec names the IDF, the link, copy budgets and the 390 px width. These are the project's own product terms, used the same way in specs 010 to 015, not implementation choices.
-- No technology is named for the contribution route; FR-018's question offers a hosted service or pull requests as the two readings.

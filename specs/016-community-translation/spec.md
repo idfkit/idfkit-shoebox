@@ -17,7 +17,7 @@ The maintainers cannot translate the sheet themselves, and a machine translation
 It has two halves, and both are in scope:
 
 1. **A reader can read the sheet in their language.** One choice re-letters every word the sheet says, the way feature 010 re-letters every figure.
-2. **A reader can contribute a language.** Someone who is not a developer can add a language, or improve one, and see their work on the sheet before it is published, without the maintainers translating or checking the language themselves.
+2. **A reader can contribute a language.** Someone comfortable with a pull request can add a language, or improve one, by editing translation files in this repository, and see their work on the sheet before it is published, without the maintainers translating or checking the language themselves. A no-code route for translators who do not use GitHub is not required.
 
 Four constraints from the constitution shape everything below.
 
@@ -25,6 +25,12 @@ Four constraints from the constitution shape everything below.
 - **A translation may change the words, never the claims** (Principles III and IV). A figure, a citation, a verdict and a reason stated in English are the same figure, citation, verdict and reason in every language. A translator cannot introduce a number, drop one, or move a refusal into a fold.
 - **The page makes no request it does not make today** (Principle I). Every language is published with the site. Choosing one fetches only the site's own files.
 - **Every reading is readable at 390 px and the copy budgets hold** (Principle VII and `CLAUDE.md`'s copy budgets). Languages whose words run longer than English, or which do not separate words with spaces, are held to the same glance.
+
+## Clarifications
+
+### Session 2026-11-05
+
+- Q: Must a translator be able to contribute without writing code or using GitHub? → A: No. Contributions arrive as pull requests that edit translation files in this repository; a hosted or no-code translation route is out of scope.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -46,21 +52,22 @@ A building engineer in France opens the sheet. It opens in French because their 
 
 ---
 
-### User Story 2 - Contribute a language without writing code (Priority: P1)
+### User Story 2 - Contribute a language by pull request (Priority: P1)
 
-A Brazilian engineer who has used the sheet for a year wants their students to have it in Portuguese. They follow a link on the sheet to a contributor's guide, translate strings one at a time with the English source, its budget and a note on what it means beside each one, and see the Portuguese sheet before anyone publishes it. They never open a code file. When they submit, the checks tell them exactly which strings dropped a figure or overran a budget, in words, before a person reviews anything.
+A Brazilian engineer who has used the sheet for a year wants their students to have it in Portuguese. They follow a link on the sheet to a contributor's guide, fork the repository, and start a Portuguese translation file beside the English one. Each string in the English file carries its budget, the figures it must keep and a note on what it means. They run the sheet locally in Portuguese, then open a pull request. The checks tell them exactly which strings dropped a figure or overran a budget, in words, before a person reviews anything. They touch no file but their language's.
 
 **Why this priority**: it is the "by the community" half of the request. Without it the first story depends on the maintainers translating, which is the situation the feature exists to end.
 
-**Independent Test**: a person who has not contributed before, with no development setup, starts a new language from the sheet's link, translates a portion, previews it, and submits it. Time it, and confirm each automated check names the offending string and the rule it broke.
+**Independent Test**: a person who has not contributed before follows the guide from the sheet's link, starts a new language, translates a portion, previews it locally, and opens a pull request. Time it, and confirm each automated check names the offending string and the rule it broke, and that the pull request changes only that language's files.
 
 **Acceptance Scenarios**:
 
-1. **Given** a contributor with no development tools, **When** they follow the sheet's link to contribute, **Then** they reach a guide and a way to translate that needs only a browser and an account on the contribution service.
-2. **Given** a string to translate, **When** the contributor views it, **Then** they see the English source, where on the sheet it appears, the word budget it must fit, which figures and names it must keep, and any translator's note the maintainers wrote for it.
-3. **Given** a translation in progress, **When** the contributor wants to see it, **Then** they can open the sheet lettered with their unpublished work, without it reaching other readers.
-4. **Given** a submitted translation, **When** a string drops, adds or changes a figure or a placeholder, carries markup the source does not, or overruns its budget, **Then** it is refused with the string named and the rule stated, and the rest of the submission is unaffected.
-5. **Given** an existing language, **When** a contributor suggests a better wording for one string, **Then** they can propose it without re-submitting the language.
+1. **Given** a contributor who can use git and run the sheet locally, **When** they follow the sheet's link to contribute, **Then** they reach a guide that takes them from a fork to an open pull request for a new or existing language.
+2. **Given** a string to translate, **When** the contributor reads it in the source file, **Then** they see the English source, where on the sheet it appears, the word budget it must fit, which figures and names it must keep, and any translator's note the maintainers wrote for it.
+3. **Given** a translation in progress, **When** the contributor runs the sheet locally, **Then** they can letter it in their unpublished language, including one below the publication threshold.
+4. **Given** a pull request carrying a translation, **When** a string drops, adds or changes a figure or a placeholder, carries markup the source does not, or overruns its budget, **Then** the check fails with the string named and the rule stated, and the same check can be run locally before pushing.
+5. **Given** a new or changed language, **When** the contributor adds it, **Then** they edit only that language's translation files; no code file needs to change to add a language.
+6. **Given** an existing language, **When** a contributor improves one string, **Then** the pull request changes that one string and nothing else.
 
 ---
 
@@ -163,11 +170,11 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 
 **Contributing**
 
-- **FR-018**: A contributor MUST be able to add a language or improve one using only a browser, without a development setup and without editing code files. [NEEDS CLARIFICATION: Where do contributors translate: a hosted open-source translation service that proposes changes to this repository, or by editing translation files directly in pull requests on GitHub?]
-- **FR-019**: Every translatable string MUST carry to the contributor: its English source, where it appears on the sheet, its budget, the figures and names it must keep, and any translator's note.
-- **FR-020**: A contributor MUST be able to see their unpublished translation on the sheet before it is published, without it reaching other readers.
-- **FR-021**: Every submission MUST be checked automatically against FR-012, FR-013, FR-015 and FR-016, and each failure MUST name the string, the language and the rule broken, in words.
-- **FR-022**: When English strings change, contributors to every language MUST be able to see which strings changed and what changed.
+- **FR-018**: Contributions MUST arrive as pull requests to this repository. Each language MUST live in its own translation files, kept apart from the code, so that adding or improving a language changes only that language's files. A no-code or hosted translation route is out of scope.
+- **FR-019**: The English source file MUST carry, beside each string, where it appears on the sheet, its budget, the figures and names it must keep, and any translator's note, so a contributor needs no other document to translate it.
+- **FR-020**: A contributor MUST be able to letter the sheet in their unpublished language when running it locally, whatever its coverage, without it reaching other readers.
+- **FR-021**: Every pull request touching a translation MUST be checked automatically against FR-012, FR-013, FR-015 and FR-016, and each failure MUST name the string, the language and the rule broken, in words. The same check MUST be runnable locally.
+- **FR-022**: When English strings change, contributors to every language MUST be able to list which strings in their language are missing or outdated, and see the English change behind each.
 - **FR-023**: The sheet MUST link to the contributor's guide from where the language is chosen, and from any language that is not fully translated.
 
 **Publishing**
@@ -199,7 +206,7 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 
 - **SC-001**: With one language fully translated, a walk of the whole sheet at four desk positions finds no English word outside the exceptions of FR-005, and the IDF and the link are byte-identical to the English sheet at every position.
 - **SC-002**: Switching language re-letters the whole sheet in under 200 ms at the default desk, with no run started.
-- **SC-003**: A first-time contributor with no development tools goes from the sheet's link to a preview of their first ten translated strings in under 15 minutes.
+- **SC-003**: A first-time contributor who can already use git goes from the sheet's link to a local preview of their first ten translated strings in under 30 minutes, following only the contributor's guide.
 - **SC-004**: 100% of submissions that drop or add a figure, carry foreign markup or overrun a budget are refused by the automated checks before a person reviews them.
 - **SC-005**: Within one publication of an English string changing, it reads in English in every language and no reader sees its outdated translation.
 - **SC-006**: At 390 px, no translated string in any published language clips or pushes a reading off its row.
@@ -212,8 +219,9 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 - The first release supports left-to-right languages only. A right-to-left language is accepted for translation but not offered to readers until the sheet's drawings and layout can be mirrored; that work is a separate feature.
 - The language and the unit system are independent choices. A French reader may letter in IP and an American reader in French; neither choice sets the other.
 - Translators are trusted to translate, not to state facts. Review by a second speaker covers meaning; the automated checks cover figures, markup and budgets.
-- The same contribution route serves new languages and corrections to existing ones.
-- Pull request previews today run only for branches in this repository, not for forks. Previewing a contributor's work (FR-020) therefore cannot rely on the existing preview channel without change.
+- Contributors can use git, fork the repository and run the sheet locally. Translators who cannot are served by finding a contributor who can, not by a separate tool.
+- The same contribution route, a pull request, serves new languages and corrections to existing ones.
+- Pull request previews today run only for branches in this repository, not for forks, so a contributor previews locally (FR-020). A maintainer MAY push a contributor's branch into the repository to get a published preview for a second speaker to review.
 - Contributors are credited by name only with their consent; nothing else about them is published.
 - The station index, design-day names, weather file contents and published rate tables are data from their sources, not copy, and are out of scope.
 - `docs/design-notes.md`, `CLAUDE.md`, the README and code comments stay in English.
