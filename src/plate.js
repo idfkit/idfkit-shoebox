@@ -648,7 +648,7 @@ function drawDatums(root, datums, y, right) {
 function awaiting(root, inner) {
   const t = svg('text', {
     x: PAD.l + inner.w / 2, y: PAD.t + inner.h / 2 + 4, 'text-anchor': 'middle',
-    fill: 'var(--ink-ghost)', 'font-family': 'var(--cond)', 'font-size': 11,
+    fill: 'var(--ink-note)', 'font-family': 'var(--cond)', 'font-size': 11,
     'letter-spacing': '0.16em',
   });
   t.textContent = 'AWAITING RUN';

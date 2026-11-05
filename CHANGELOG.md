@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The study and survey reading "Cost" is now "Utility cost"**, as is the
   kept-scheme column, so that it is not read as a construction cost. The link
   token `cost` is unchanged.
+- **The sheet carries the idfkit lockup**, with the property name Shoebox, at the
+  head of the title block, so that the page shows the same mark as every other
+  idfkit host.
+- **The sheet wears the idfkit identity**, at `identity-2026.5`. The standard's
+  derivation is vendored under `identity/` and served as its build wrote it;
+  every colour, typeface and easing on the page now reads from it, and the
+  drafting sheet's own names (`--board`, `--sheet`, `--redline`, `--cold`,
+  `--warm`) survive as aliases of the standard's roles. Inter sets the prose
+  and JetBrains Mono the figures; the condensed label face, which the standard
+  has no counterpart for, is set in the mono face with tighter tracking. The
+  favicon set, the social image, the seven family links and the ownership line
+  come from the standard, and the README opens with the shared header. The
+  check workflow `check-identity.yml` holds the page to the tag it declares.
 
 ### Fixed
 

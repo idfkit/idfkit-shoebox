@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { basename, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import { energyPlusVersion, wasmFile } from '@idfkit/engine-assets';
 import { revision } from './scripts/revision.mjs';
@@ -71,7 +74,61 @@ if (releaseLine(energyPlusVersion) !== releaseLine(ENERGYPLUS_VERSION)) {
   );
 }
 
+/**
+ * The idfkit identity, vendored under `identity/` at the tag `package.json`
+ * declares and served as the standard's build wrote it. `index.html` links the
+ * stylesheets with `vite-ignore`, so the build leaves them alone; this plugin
+ * is what puts the vendored tree beside the bundle and what serves the host's
+ * files (the favicon set, the manifest, the social image) beside `index.html`,
+ * where the pasted `head.html` names them by a relative path, so that a channel
+ * built under `--base` serves its own. Nothing here rewrites a vendored byte.
+ */
+const projectRoot = fileURLToPath(new URL('.', import.meta.url));
+const identityDir = resolve(projectRoot, 'identity');
+const hostDir = join(identityDir, 'hosts', 'shoebox.idfkit.com');
+const hostTypes = {
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.png': 'image/png',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+};
+const walk = (dir) =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return walk(path);
+    return entry.name.startsWith('.') ? [] : [path];
+  });
+/** The host's files that live at the root: everything but the fragment the page carries. */
+const rootFiles = () => walk(hostDir).filter((file) => basename(file) !== 'head.html');
+
+const identity = () => ({
+  name: 'idfkit-identity',
+  configureServer(server) {
+    server.middlewares.use((req, res, next) => {
+      const name = (req.url ?? '').split('?')[0].slice(1);
+      const file = name && !name.includes('/') ? rootFiles().find((f) => basename(f) === name) : undefined;
+      if (!file) return next();
+      const ext = name.slice(name.lastIndexOf('.'));
+      res.setHeader('Content-Type', hostTypes[ext] ?? 'application/octet-stream');
+      res.end(readFileSync(file));
+    });
+  },
+  generateBundle() {
+    for (const file of walk(identityDir)) {
+      this.emitFile({
+        type: 'asset',
+        fileName: relative(projectRoot, file).split(sep).join('/'),
+        source: readFileSync(file),
+      });
+    }
+    for (const file of rootFiles()) {
+      this.emitFile({ type: 'asset', fileName: basename(file), source: readFileSync(file) });
+    }
+  },
+});
+
 export default defineConfig({
+  plugins: [identity()],
   define: {
     __SHEET_REVISION__: JSON.stringify(sheetRevision),
     __IDFKIT_VERSION__: JSON.stringify(toolkitVersion),
