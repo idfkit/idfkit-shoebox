@@ -31,6 +31,7 @@ Four constraints from the constitution shape everything below.
 ### Session 2026-11-05
 
 - Q: Must a translator be able to contribute without writing code or using GitHub? → A: No. Contributions arrive as pull requests that edit translation files in this repository; a hosted or no-code translation route is out of scope.
+- Q: Is a language offered to readers while some strings are still English? → A: Yes, from 90% coverage. The sheet states the coverage beside the chooser, in that language, with a link to the contributor's guide; the remaining strings read in English, marked as untranslated.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -166,7 +167,7 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 - **FR-014**: A refusal, an absence reason, a blocking reason or a verdict MUST stay in view in every language; no language may move one into a fold or drop it.
 - **FR-015**: Every translated string MUST fit the copy budget its English source is held to, measured in a way fit for that language (FR-016), and MUST fit its place at 390 px without clipping.
 - **FR-016**: Languages that do not separate words with spaces MUST be held to an equivalent length budget rather than exempted from it.
-- **FR-017**: A string with no current translation, including one whose English source changed after it was translated, MUST be lettered in English and marked as untranslated. An outdated translation MUST NOT be shown. [NEEDS CLARIFICATION: Is a language offered to readers while some strings are still English (with coverage stated, e.g. from 90% translated), or only when every string is translated?]
+- **FR-017**: A string with no current translation, including one whose English source changed after it was translated, MUST be lettered in English and marked as untranslated. An outdated translation MUST NOT be shown. A language MAY be offered while some strings are still English, under FR-025.
 
 **Contributing**
 
@@ -180,7 +181,7 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 **Publishing**
 
 - **FR-024**: A translated string MUST be approved by a speaker of that language other than its translator before it is published.
-- **FR-025**: A language MUST reach the publication threshold before it is offered to readers, and MUST be withdrawn, with a stated reason, if it falls below it.
+- **FR-025**: The publication threshold is 90% coverage: the share of translatable strings that have a current, approved translation. A language MUST reach it before it is offered to readers, and MUST be withdrawn, with a stated reason, if it falls below it. While a published language is below 100%, the sheet MUST state its coverage beside the chooser, in that language, with the link to the contributor's guide of FR-023.
 - **FR-026**: A maintainer MUST be able to decide whether to publish a language from the checks, the review state and the coverage alone, without reading the language.
 - **FR-027**: The sheet MUST credit each language's contributors, by the name each contributor chose, or not at all if they chose not to be named.
 - **FR-028**: Every language MUST be published with the site, and choosing one MUST request nothing beyond the site's own files.

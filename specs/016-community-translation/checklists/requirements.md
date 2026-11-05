@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,6 +31,6 @@
 
 ## Notes
 
-- One clarification is open: FR-017 (is a partly translated language offered to readers, and from what coverage). Resolve before `/speckit-plan`.
+- FR-017 / FR-025 resolved 2026-11-05: a language is offered from 90% coverage, with the coverage and a guide link stated beside the chooser.
 - FR-018 resolved 2026-11-05: contributions are pull requests editing translation files; no no-code route.
 - The spec names the IDF, the link, copy budgets and the 390 px width. These are the project's own product terms, used the same way in specs 010 to 015, not implementation choices.
