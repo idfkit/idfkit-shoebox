@@ -32,6 +32,7 @@ Four constraints from the constitution shape everything below.
 
 - Q: Must a translator be able to contribute without writing code or using GitHub? → A: No. Contributions arrive as pull requests that edit translation files in this repository; a hosted or no-code translation route is out of scope.
 - Q: Is a language offered to readers while some strings are still English? → A: Yes, from 90% coverage. The sheet states the coverage beside the chooser, in that language, with a link to the contributor's guide; the remaining strings read in English, marked as untranslated.
+- Q: Where on GitHub does the translation contributor's guide live? → A: A short root `CONTRIBUTING.md` that GitHub surfaces to every contributor, linking to the full step-by-step guide at `docs/translating.md`.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -176,7 +177,7 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 - **FR-020**: A contributor MUST be able to letter the sheet in their unpublished language when running it locally, whatever its coverage, without it reaching other readers.
 - **FR-021**: Every pull request touching a translation MUST be checked automatically against FR-012, FR-013, FR-015 and FR-016, and each failure MUST name the string, the language and the rule broken, in words. The same check MUST be runnable locally.
 - **FR-022**: When English strings change, contributors to every language MUST be able to list which strings in their language are missing or outdated, and see the English change behind each.
-- **FR-023**: The sheet MUST link to the contributor's guide from where the language is chosen, and from any language that is not fully translated.
+- **FR-023**: The contributor's guide MUST live at `docs/translating.md`, and a root `CONTRIBUTING.md` MUST link to it so GitHub shows the way to translators opening an issue or a pull request. The sheet MUST link to the guide from where the language is chosen, and from any language that is not fully translated.
 
 **Publishing**
 
