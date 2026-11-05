@@ -34,6 +34,7 @@ Four constraints from the constitution shape everything below.
 - Q: Is a language offered to readers while some strings are still English? → A: Yes, from 90% coverage. The sheet states the coverage beside the chooser, in that language, with a link to the contributor's guide; the remaining strings read in English, marked as untranslated.
 - Q: Where on GitHub does the translation contributor's guide live? → A: A short root `CONTRIBUTING.md` that GitHub surfaces to every contributor, linking to the full step-by-step guide at `docs/translating.md`.
 - Q: Does a new language start with a GitHub issue or go straight to a pull request? → A: A new language starts with a "Start a language" issue form naming the language and its two speakers; corrections to an existing language go straight to a pull request.
+- Q: May a contributor start from a machine translation? → A: Yes, with no disclosure rule. Accountability sits with the translators instead: while their language is showing, the sheet credits them in view as "translation by @handle", so it is their reputation on the line, not the maintainers'.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -111,7 +112,7 @@ The engineer in France reloads tomorrow and the sheet opens in French. They send
 
 ### User Story 5 - A language is published with care (Priority: P3)
 
-A maintainer who reads no Polish is asked to publish a Polish translation. They can see that every automated check passes, that a second Polish speaker has reviewed it, and which strings are still in English. They publish it without reading a word of Polish, and the contributors are credited on the sheet.
+A maintainer who reads no Polish is asked to publish a Polish translation. They can see that every automated check passes, that a second Polish speaker has reviewed it, and which strings are still in English. They publish it without reading a word of Polish, and the translators are credited on the sheet, in view, by their GitHub handles.
 
 **Why this priority**: it protects the readers from a translation nobody checked, and the contributors from having their work go unacknowledged. It depends on story 2.
 
@@ -121,7 +122,7 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 
 1. **Given** a new language, **When** it has not reached the publication threshold, **Then** it is not offered to readers, though contributors can still preview it.
 2. **Given** a translated string, **When** it has been written by one contributor and not yet approved by a second, **Then** it is not published.
-3. **Given** a published language, **When** a reader looks for who translated it, **Then** the sheet names its contributors, as they asked to be named.
+3. **Given** a published language, **When** a reader looks for who translated it, **Then** the sheet names its translators beside the chooser, without opening anything, as "translation by @handle", each handle linking to that person's GitHub profile.
 
 ---
 
@@ -188,7 +189,8 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 - **FR-024**: A translated string MUST be approved by a speaker of that language other than its translator before it is published.
 - **FR-025**: The publication threshold is 90% coverage: the share of translatable strings that have a current, approved translation. A language MUST reach it before it is offered to readers, and MUST be withdrawn, with a stated reason, if it falls below it. While a published language is below 100%, the sheet MUST state its coverage beside the chooser, in that language, with the link to the contributor's guide of FR-023.
 - **FR-026**: A maintainer MUST be able to decide whether to publish a language from the checks, the review state and the coverage alone, without reading the language.
-- **FR-027**: The sheet MUST credit each language's contributors, by the name each contributor chose, or not at all if they chose not to be named.
+- **FR-027**: While a language other than English is showing, the sheet MUST credit its translators in view, beside the chooser and never in a fold, as "translation by @handle" with each GitHub handle linking to that person's profile. Every author of a current translation in that language MUST be credited; contributing a translation is consenting to be credited for it. The credit MUST make plain that the translation is its translators' work, not the maintainers'.
+- **FR-027a**: A translation MAY start from machine output. No disclosure is required; the translator credited under FR-027 answers for every string, and the second speaker of FR-024 reviews it as they would any other.
 - **FR-028**: Every language MUST be published with the site, and choosing one MUST request nothing beyond the site's own files.
 
 **Constraints carried from the constitution**
@@ -204,7 +206,7 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 - **Language**: a language the sheet can be lettered in. Has its own name, its writing direction, how its figures and dates are written, its plural rules, how its length budget is measured, its coverage, whether it is published, and its contributors.
 - **Translatable string**: one piece of English copy the sheet writes. Has a stable identity, its English source, where it appears, its budget, the figures, placeholders and names it must keep, and an optional translator's note.
 - **Translation**: one string in one language. Has its text, the English source it was made from (so a change to the source makes it outdated), its translator, and its review state.
-- **Contributor**: a person who translates or reviews. Has the name they wish to be credited by, or none, and the languages they work in.
+- **Contributor**: a person who translates or reviews. Identified by their GitHub handle, which is how the sheet credits them, and the languages they work in.
 
 ## Success Criteria *(mandatory)*
 
@@ -228,6 +230,6 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 - Contributors can use git, fork the repository and run the sheet locally. Translators who cannot are served by finding a contributor who can, not by a separate tool.
 - The same contribution route, a pull request, serves new languages and corrections to existing ones.
 - Pull request previews today run only for branches in this repository, not for forks, so a contributor previews locally (FR-020). A maintainer MAY push a contributor's branch into the repository to get a published preview for a second speaker to review.
-- Contributors are credited by name only with their consent; nothing else about them is published.
+- Translators are credited by their GitHub handle only; nothing else about them is published. A translator who no longer wants to be credited withdraws their translations, which then read in English until someone else translates them.
 - The station index, design-day names, weather file contents and published rate tables are data from their sources, not copy, and are out of scope.
 - `docs/design-notes.md`, `CLAUDE.md`, the README and code comments stay in English.

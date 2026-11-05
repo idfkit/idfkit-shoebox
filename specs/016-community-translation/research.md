@@ -128,7 +128,7 @@ Budgets bind translations in the checker (an error, so it cannot reach `main`) a
 
 ## R13. Coverage, publication and credit, computed at build
 
-**Decision.** A Vite plugin reads every language file at build and writes a virtual module, `virtual:l10n-manifest`, holding for each language its endonym, measure, coverage (current entries over catalogue entries), contributors and whether it is published (coverage at least 90%, FR-025). Nothing derived is committed: Excalidraw commits its `percentages.json` and every translation pull request then touches it *(inference from [i18n.ts](https://github.com/excalidraw/excalidraw/blob/master/packages/excalidraw/i18n.ts))*. Everything merged to `main` has passed R4, so every current entry is approved. A published language that falls below 90% after an English change is withdrawn by the next build, and a reader who had chosen it is told so (spec edge case). Contributors are listed in the language file by the name each chose and shown in the About fold (FR-027), using all-contributors' "translation" convention for the README ([emoji key](https://allcontributors.org/reference/emoji-key/)).
+**Decision.** A Vite plugin reads every language file at build and writes a virtual module, `virtual:l10n-manifest`, holding for each language its endonym, measure, coverage (current entries over catalogue entries), translators and whether it is published (coverage at least 90%, FR-025). Nothing derived is committed: Excalidraw commits its `percentages.json` and every translation pull request then touches it *(inference from [i18n.ts](https://github.com/excalidraw/excalidraw/blob/master/packages/excalidraw/i18n.ts))*. Everything merged to `main` has passed R4, so every current entry is approved. A published language that falls below 90% after an English change is withdrawn by the next build, and a reader who had chosen it is told so (spec edge case). Translators are listed in the language file by GitHub handle and credited **in view**, beside the chooser, as "translation by @handle" whenever their language is showing (FR-027). The credit is the accountability mechanism: machine drafts are allowed without disclosure (FR-027a), and the named translators answer for the result, not the maintainers. The README also lists them with all-contributors' "translation" convention ([emoji key](https://allcontributors.org/reference/emoji-key/)).
 
 **Additional rule.** A language is published only when, beyond 90% overall, **every refusal, absence reason, blocking reason and verdict** is current. Those are the strings FR-014 says must never leave view, and an English refusal in a French sheet is the one place a mixed sheet costs a reader the reason they need.
 
@@ -162,7 +162,7 @@ The feature ships in four steps, each mergeable on its own, with the chooser hid
 
 1. **Infrastructure**: `message.js`, `render.js`, `src/l10n/index.js`, `units.js` gains a language, extraction, checker, pseudo-locale, workflow, CODEOWNERS. English renders byte-for-byte as before.
 2. **Extraction, module by module**: declarations first (cheap, about 1,100 strings), then `index.html`, then render code (`main.js` last). Each module's pull request ends with no unaccented text from that module in `qps`.
-3. **The chooser and the contributor's guide** (`CONTRIBUTING-l10n.md`), once `qps` shows nothing unaccented at four desk positions.
+3. **The chooser and the contributor's guide** (`docs/translating.md`, linked from a root `CONTRIBUTING.md`), once `qps` shows nothing unaccented at four desk positions.
 4. **The first language**, by a contributor outside the maintainers (SC-008).
 
 ## R19. Practices adopted from hosted platforms, without the platform
@@ -175,4 +175,4 @@ The feature ships in four steps, each mergeable on its own, with the chooser hid
 | Translation memory | `l10n:status --suggest` lists existing translations of identical English in that language |
 | Glossary / term base | `glossary` in each language file, consistency is a warning |
 | String freeze before release | English changes merged no later than seven days before a `v*` tag; `main` → `/dev/` stays open |
-| "Do not rely solely on machine translation" ([Python devguide](https://devguide.python.org/documentation/translations/translating/)) | Stated in the guide; review by a second speaker is the guard |
+| "Do not rely solely on machine translation" ([Python devguide](https://devguide.python.org/documentation/translations/translating/)) | Machine drafts allowed without disclosure (FR-027a); the translators are credited in view by handle and answer for the result, and a second speaker reviews it |

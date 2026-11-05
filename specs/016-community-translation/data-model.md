@@ -36,7 +36,7 @@ The generated, committed list of every `Message`, sorted by `id`, one entry per 
 | `direction` | `"ltr"` | Only `ltr` accepted while right-to-left is deferred; an `rtl` file is checked but never published. |
 | `measure` | `{ kind: "words" }` \| `{ kind: "graphemes", perWord: number }` | How budgets are counted (R6). |
 | `reviewers` | GitHub login[] | At least two before the language may be published (R4). |
-| `contributors` | `{ name: string, github?: string }[]` | Credited by the name each chose; absent means not credited (FR-027). |
+| `translators` | GitHub handle[] | Everyone who authored a current entry. Credited in view as "translation by @handle" (FR-027). The checker requires every pull request author who adds or changes `text` to be listed. |
 | `glossary` | `{ [english term]: string }` | Preferred terms; inconsistency is a warning. |
 
 **Derived at build** (`virtual:l10n-manifest`, never committed): `coverage` = current translatable entries ÷ translatable catalogue entries; `staysCurrent` = every `stays` entry current; `published` = `coverage ≥ 0.90 ∧ staysCurrent ∧ reviewers.length ≥ 2 ∧ direction = "ltr"`.

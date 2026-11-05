@@ -56,7 +56,7 @@ Written only by `npm run l10n:extract`. A pull request whose committed file diff
     "direction": "ltr",
     "measure": { "kind": "words" },
     "reviewers": ["alice-fr", "bruno-fr"],
-    "contributors": [{ "name": "Alice Martin", "github": "alice-fr" }, { "name": "Bruno L." }],
+    "translators": ["alice-fr", "bruno-fr"],
     "glossary": { "setpoint": "consigne", "design day": "jour de dimensionnement" }
   },
   "control.wallR.note": {

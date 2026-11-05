@@ -72,7 +72,7 @@ Open a pull request from a fork with one such defect. **Expect**: the `l10n` wor
 
 1. Build with `xx-test` at 89% coverage, then 91%, then 91% with one `stays` entry outdated, then with one reviewer. **Expect**: published only at 91% with all `stays` current and two reviewers; `virtual:l10n-manifest` says why otherwise.
 2. On a test pull request changing `xx-test.json`, approve as the author, then as a listed reviewer. **Expect**: `l10n / second speaker` fails, then passes.
-3. **Expect**: the About fold credits contributors by their chosen names.
+3. **Expect**: beside the chooser, in view at 390 px, "translation by @handle, …" names every translator in the language file, each a link to their GitHub profile. A pull request whose author changes a `text` without being in `translators` fails the `credit` rule.
 
 ## 9. No new requests (FR-028, Principle I)
 

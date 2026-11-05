@@ -37,7 +37,7 @@ Decisions and their alternatives are in [research.md](./research.md) (R1 to R19)
 
 **Constraints**: the language reaches no IDF object, no link, no kept scheme and no run (FR-004); no translated string reaches `innerHTML` (FR-013); every figure, placeholder and name survives translation (FR-012); refusals, absence reasons and verdicts stay in view (FR-014); copy budgets hold in every language, by words or by graphemes (FR-015, FR-016); the feedback report body stays English because `triage-apply.cjs` parses it (FR-011).
 
-**Scale/Scope**: about 4,000 reader-visible literals across 30 modules and ~1,580 words of static `index.html` text to bring under the catalogue; ~120 reader-facing thrown errors to convert to `Refusal`; 32 plural ternaries; 22 hard-coded number-locale sites; 4 `innerHTML` sites; 1 new directory (`src/l10n/`), ~12 new `src/say/` tables, 4 new scripts, 1 workflow, 1 CODEOWNERS file, 1 contributor's guide. 0 languages at merge: the first is the community's (SC-008).
+**Scale/Scope**: about 4,000 reader-visible literals across 30 modules and ~1,580 words of static `index.html` text to bring under the catalogue; ~120 reader-facing thrown errors to convert to `Refusal`; 32 plural ternaries; 22 hard-coded number-locale sites; 4 `innerHTML` sites; 1 new directory (`src/l10n/`), ~12 new `src/say/` tables, 4 new scripts, 1 workflow, 1 CODEOWNERS file, 1 contributor's guide (`docs/translating.md`) and a root `CONTRIBUTING.md`, 1 "Start a language" issue form. 0 languages at merge: the first is the community's (SC-008).
 
 ## Constitution Check
 
@@ -109,8 +109,10 @@ scripts/
 vite.config.js            # virtual:l10n-manifest plugin (R13); qps only in dev
 .github/
 ├── CODEOWNERS            # NEW. src/l10n/locales/<tag>.json @idfkit/l10n-<tag>
+├── ISSUE_TEMPLATE/start-a-language.yml  # NEW. Language, two speakers' handles (FR-018a)
 └── workflows/l10n.yml    # NEW. check + build + dist artifact, + second-speaker status
-CONTRIBUTING-l10n.md      # NEW. The contributor's guide (FR-023)
+CONTRIBUTING.md           # NEW. Short; links to docs/translating.md (FR-023)
+docs/translating.md       # NEW. The contributor's guide: start-a-language issue, fork, fill, check, preview, PR, review, credit
 .interface-design/system.md  # chooser, EN mark, coverage line
 CLAUDE.md, docs/design-notes.md  # the l10n subsystem, its invariants
 ```

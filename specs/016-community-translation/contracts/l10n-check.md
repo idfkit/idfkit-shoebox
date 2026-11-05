@@ -43,6 +43,7 @@ summary fr  1,204 of 1,318 current (91.4%) · 3 outdated · 111 missing · stays
 | `quote` | A translation is given for a `quote` id. |
 | `from` | `from` has never been an English text of that id (checked against the git history of `en.json`, so the workflow checks out with full history; catches a hand-edited `from`). |
 | `header` | `$language` missing, `direction` not `ltr`/`rtl`, `measure` malformed, `endonym` empty. |
+| `credit` | The pull request author changes a `text` and is not in that language's `translators` (FR-027). |
 | `scope` | A pull request changes a language file together with source code or with another language's file. Maintainer pull requests labelled `l10n-carry` (from `l10n:carry`) are exempt. |
 | `catalogue` | `src/l10n/en.json` differs from `l10n:extract`'s output. |
 | `unknown-id` | Source code calls `say()` or `data-say` with an id the catalogue lacks (FR-033). |
