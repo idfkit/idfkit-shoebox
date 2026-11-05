@@ -35,6 +35,7 @@ Four constraints from the constitution shape everything below.
 - Q: Where on GitHub does the translation contributor's guide live? → A: A short root `CONTRIBUTING.md` that GitHub surfaces to every contributor, linking to the full step-by-step guide at `docs/translating.md`.
 - Q: Does a new language start with a GitHub issue or go straight to a pull request? → A: A new language starts with a "Start a language" issue form naming the language and its two speakers; corrections to an existing language go straight to a pull request.
 - Q: May a contributor start from a machine translation? → A: Yes, with no disclosure rule. Accountability sits with the translators instead: while their language is showing, the sheet credits them in view as "translation by @handle", so it is their reputation on the line, not the maintainers'.
+- Q: Should the general notes gain a step that teaches the language chooser? → A: No. The existing notes are translated and no step is added; a language choice is lettering, like the unit system (which has no step either), not a modelling feature, so constitution gate 6 does not require one and the storage key stays `shoebox-general-notes-v7`.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -198,7 +199,7 @@ A maintainer who reads no Polish is asked to publish a Polish translation. They 
 - **FR-029**: The feature MUST add no run-time dependency beyond those the constitution permits. Contribution and build tooling is exempt.
 - **FR-030**: Nothing about a language MAY be explained only on hover, and colour MUST NOT be the only mark of an untranslated string.
 - **FR-031**: The chooser and the untranslated mark MUST follow the design system.
-- **FR-032**: The general notes MUST be translatable like the rest of the sheet. If a step is added to teach the chooser, the notes, their call sites and the storage key MUST be updated as the constitution requires.
+- **FR-032**: The general notes MUST be translatable like the rest of the sheet, with their meaning unchanged. No step is added to teach the chooser: a language choice is lettering, not a modelling feature, as the unit system is, so the storage key stays `shoebox-general-notes-v7`. The plan MUST record this reading of constitution gate 6.
 - **FR-033**: Every new piece of English copy added to the sheet after this feature MUST be translatable; a string that cannot be offered to translators MUST fail the build.
 
 ### Key Entities
