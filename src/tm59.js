@@ -993,8 +993,21 @@ export function comfortLine(trm, dayOfYear = null) {
  * lower band at 1.49, so 1.5 rounds up. `Math.round` is half-up for positive
  * numbers and is therefore correct; a round-half-to-even helper would return 2
  * for both 1.5 and 2.5 and would be wrong on the first.
+ *
+ * **The half is tested with a tolerance.** ∆T is a difference of two binary
+ * floating-point numbers, and a difference whose exact decimal value is a half
+ * can arrive just below it: the Category II line at Trm = 10.1 °C is held as
+ * 25.133000000000003, so an operative temperature of 25.633 gives a ∆T of
+ * 0.49999999999999645 and `Math.round` returns 0 for an hour the rule counts.
+ * Over running means from 10 °C to 30 °C in steps of 0.1 K, both categories,
+ * with the operative temperature exactly half a degree above the line to the
+ * millikelvin, the bare rounding drops the boundary hour for 127 of the 402
+ * threshold values. Adding `DT_TOLERANCE_K` before rounding moves only values
+ * within 1e-9 K of a half, which no simulated temperature distinguishes, and
+ * moves them to the side TM59's wording places them on.
  */
-export const roundDT = (dt) => Math.round(dt);
+export const DT_TOLERANCE_K = 1e-9;
+export const roundDT = (dt) => Math.round(dt + DT_TOLERANCE_K);
 
 /* ══ the shared readers ══════════════════════════════════════════════════ */
 
@@ -1046,6 +1059,9 @@ export const ABSENCE = Object.freeze({
   // nowhere left to look. Nothing on the Run strip can fix a file that has not
   // got those months in it; another file can.
   fileSeason: 'attach a file reaching 1 May to 30 September',
+  // TM59's hours are local time and the stamps are standard time; without the
+  // status series the two cannot be told apart (see `localClock`).
+  clock: 'solve again — this run carries no hourly daylight saving status',
 });
 for (const [key, text] of Object.entries(ABSENCE)) withinBudget(BUDGETS.ABSENCE, `ABSENCE.${key}`, text);
 
@@ -1144,6 +1160,82 @@ export function operativeSeries(eso) {
   const points = hourly(eso, exactly(OPERATIVE));
   if (!points.length) return { points: null, runs: null, absence: ABSENCE.operative };
   return { points, runs: weatherRuns(points, eso.environments ?? []), absence: null };
+}
+
+/* ══ the local clock ═════════════════════════════════════════════════════ */
+
+/** The series that says which clock each stamp's schedules were on. */
+const DAYLIGHT = 'Site Daylight Saving Time Status';
+
+/**
+ * The hourly daylight saving status series, or the reason there is none.
+ *
+ * Same shape and discipline as `occupancySeries`: the series or the sentence.
+ */
+export function daylightSeries(eso) {
+  const points = hourly(eso, exactly(DAYLIGHT));
+  if (!points.length) return { points: null, absence: ABSENCE.clock };
+  return { points, absence: null };
+}
+
+/**
+ * The local day and hour each stamp of a run stands for.
+ *
+ * TM59:2026 §3.7.1 states every time in local UK time, and EnergyPlus stamps
+ * every `Output:Variable` row in **standard** time while the schedules follow
+ * the daylight saving clock. Measured on EnergyPlus 26.1 with
+ * `RunPeriodControl:DaylightSavingTime` in force: a schedule written as 0 until
+ * 09:00 and 1 after it reads 1 on the stamp ending at hour 9, which is
+ * 08:00 to 09:00 standard and 09:00 to 10:00 local. So the hour-ending stamp
+ * `h` with status `s` is the local hour starting at `h − 1 + s`, and under
+ * daylight saving the stamp ending at hour 24 is the first hour of the next
+ * local day.
+ *
+ * The status is read per stamp rather than assumed per day or per calendar,
+ * so a period declared by the weather file, one declared by the model and a
+ * transition inside the period are all answered by the same arithmetic. Where
+ * the clock goes forward, the local hour it skips is recorded in `gaps` so a
+ * reader can tell a skipped hour from a missing one. Where it goes back, two
+ * stamps share a local hour and both are returned.
+ *
+ * @param {object[]} points  hourly points of one series, with `timestamp`
+ * @param {object[]} status  the daylight saving status, aligned with `points`
+ * @param {{start: number, end: number}[]} runs  the weather-file runs
+ * @returns {{day: number[], hour: number[], gaps: Set<number>}}
+ *   `day` and `hour` are indexed like `points` (day of the year, local start
+ *   hour 0 to 23); `gaps` holds skipped local hours as `day * 24 + hour`
+ */
+export function localClock(points, status, runs) {
+  const day = new Array(points.length);
+  const hour = new Array(points.length);
+  const gaps = new Set();
+  for (const run of runs) {
+    let previous = null;
+    for (let i = run.start; i <= run.end; i += 1) {
+      const t = points[i].timestamp;
+      const s = status[i].value;
+      if (s !== 0 && s !== 1) {
+        throw new Error(
+          `localClock: the daylight saving status reads ${s} for ${t.hour}:00 on ${t.day} ` +
+            `${MONTHS[t.month - 1]}, which is neither 0 nor 1, so the local hour of that stamp is unknown`,
+        );
+      }
+      let n = dayNumber(t);
+      let h = t.hour - 1 + s;
+      if (h >= 24) {
+        n += 1;
+        h -= 24;
+      }
+      day[i] = n;
+      hour[i] = h;
+      const absolute = n * 24 + h;
+      // A spring transition moves the clock on by an hour between two
+      // consecutive stamps: the local hour between them was never lived.
+      if (previous !== null && absolute - previous === 2) gaps.add(previous + 1);
+      previous = absolute;
+    }
+  }
+  return { day, hour, gaps };
 }
 
 /* ══ how much of the period a run reached ════════════════════════════════ */
@@ -1393,12 +1485,15 @@ export function readCriterionA(eso, trm, category, floor) {
   // Gains in rather than sent to fetch a year it would then read nothing over.
   const occupancy = occupancySeries(eso);
   if (occupancy.absence) return absent(occupancy.absence);
+  const daylight = daylightSeries(eso);
+  if (daylight.absence) return absent(daylight.absence);
   // And the line after both of them, for the same reason in the same order.
   if (!adaptive.mean) return absent(adaptive.absence);
   if (!series.runs.length) return absent(ABSENCE.weather);
 
   const { points } = series;
   const occ = alignedWith(points, occupancy.points, 'occupancy schedule');
+  const status = alignedWith(points, daylight.points, 'daylight saving status');
   const coverage = coverageOf(points, series.runs);
   // The one absence a partial period earns. Everything between one day and 153
   // is a reading with its coverage lettered beside it (rule 5); only a run that
@@ -1419,22 +1514,24 @@ export function readCriterionA(eso, trm, category, floor) {
   let clampedLow = 0;
   let clampedHigh = 0;
 
+  // Days are local days (`localClock`): under daylight saving the stamp ending
+  // at hour 24 is the first hour of the next day, so it is read against the
+  // next day's line and belongs to the period by the next day's date.
+  const clock = localClock(points, status, series.runs);
+
   for (const run of series.runs) {
     // The day cache is reset at every environment boundary, not only when the
     // date changes: two run periods of one year carry different days under the
     // same month and day only by accident, but a design day and a run period
     // can carry the same date outright, and a cache carried across the join
     // would read the second environment's first day against the first's line.
-    let lastMonth = 0;
     let lastDay = 0;
     let inSeason = false;
     let tmax = 0;
     for (let i = run.start; i <= run.end; i += 1) {
-      const t = points[i].timestamp;
-      if (t.month !== lastMonth || t.day !== lastDay) {
-        lastMonth = t.month;
-        lastDay = t.day;
-        const n = dayNumber(t);
+      const n = clock.day[i];
+      if (n !== lastDay) {
+        lastDay = n;
         inSeason = n >= SEASON_FIRST && n <= SEASON_LAST;
         if (inSeason) {
           const mean = adaptive.mean.at(n);
@@ -1529,9 +1626,12 @@ export function readCriterionB(eso, category) {
 
   const series = operativeSeries(eso);
   if (series.absence) return absent(series.absence);
+  const daylight = daylightSeries(eso);
+  if (daylight.absence) return absent(daylight.absence);
   if (!series.runs.length) return absent(ABSENCE.weather);
 
   const { points } = series;
+  const status = alignedWith(points, daylight.points, 'daylight saving status');
   const coverage = coverageOf(points, series.runs);
   if (!coverage.days) return absent(ABSENCE.season);
 
@@ -1547,65 +1647,60 @@ export function readCriterionB(eso, category) {
   // three readers is deliberately not done: an optimisation nobody needs is a
   // second thing to keep correct.
   //
-  // One index **per environment**, keyed by day of the year inside it, so a
-  // night can only ever be assembled out of hours the *same* environment held.
-  // A January and a July handed to the engine as two run periods must not lend
-  // each other a morning, and a design day cannot lend one at all —
-  // `weatherRuns` has already taken those out. A single index shared across
-  // the environments read as though it kept that rule and did not: it is keyed
-  // by day of the year alone, so the join between two run periods is invisible
-  // to it. Nothing on this desk can reach the difference today, because
-  // `applyRun` writes one run period per *unbroken* group of months and two
-  // groups are therefore never a day apart — but a guarantee stated in a
-  // comment and enforced nowhere is the shape of thing this file exists to
-  // turn into structure.
+  // One index **per environment**, so a night can only ever be assembled out
+  // of hours the *same* environment held. A January and a July handed to the
+  // engine as two run periods must not lend each other a morning, and a design
+  // day cannot lend one at all — `weatherRuns` has already taken those out. A
+  // single index shared across the environments read as though it kept that
+  // rule and did not: it is keyed by the hour of the year alone, so the join
+  // between two run periods is invisible to it. Nothing on this desk can reach
+  // the difference today, because `applyRun` writes one run period per
+  // *unbroken* group of months and two groups are therefore never a day apart
+  // — but a guarantee stated in a comment and enforced nowhere is the shape of
+  // thing this file exists to turn into structure.
+  //
+  // The index is keyed by **local** hour, `day * 24 + hour`, from `localClock`.
+  // EnergyPlus stamps an hourly record with the hour it *ends*, 1 to 24 —
+  // verified against a run's own `.eso`, whose first record of the year is
+  // `2,1, 1, 1, 0, 1, 0.00,60.00,Sunday` and whose last of that day is hour
+  // 24 — and in standard time. So without daylight saving the nine hours of
+  // sleep from 23:00 are stamp 24 of the opening date and stamps 1 to 8 of the
+  // morning after, and with it they are stamps 23 and 24 and stamps 1 to 7.
+  // Read off the stamps alone, the window lands an hour late whenever daylight
+  // saving is in force, which is a plausible reading of a different nine hours.
+  const clock = localClock(points, status, series.runs);
   const byRun = [];
   for (const run of series.runs) {
-    const byDay = new Map();
-    byRun.push(byDay);
-    let lastMonth = 0;
-    let lastDay = 0;
-    let hours = null;
+    const byHour = new Map();
+    byRun.push(byHour);
     for (let i = run.start; i <= run.end; i += 1) {
-      const t = points[i].timestamp;
-      if (t.month !== lastMonth || t.day !== lastDay) {
-        lastMonth = t.month;
-        lastDay = t.day;
-        const n = dayNumber(t);
-        hours = byDay.get(n);
-        if (!hours) {
-          hours = new Map();
-          byDay.set(n, hours);
-        }
-      }
-      // EnergyPlus stamps an hourly record with the hour it *ends*, 1 to 24 —
-      // verified against a run's own `.eso`, whose first record of the year is
-      // `2,1, 1, 1, 0, 1, 0.00,60.00,Sunday` and whose last of that day is
-      // hour 24. So the nine hours of sleep from 23:00 are hour 24 of the
-      // opening date and hours 1 to 8 of the morning after. Read as 0 to 23
-      // the whole window lands an hour early, which is a plausible reading of
-      // a different nine hours.
-      hours.set(t.hour, points[i].value);
+      const key = clock.day[i] * 24 + clock.hour[i];
+      // Where the clock goes back, two stamps share a local hour and the
+      // night holds both of them: the occupant sleeps through ten hours.
+      const values = byHour.get(key);
+      if (values) values.push(points[i].value);
+      else byHour.set(key, [points[i].value]);
     }
   }
 
   let nights = 0;
   let counted = 0;
-  for (const byDay of byRun) {
+  for (const byHour of byRun) {
     for (let n = SEASON_FIRST; n <= SEASON_LAST; n += 1) {
-      const evening = byDay.get(n);
-      const morning = byDay.get(n + 1);
-      if (!evening || !morning) continue;
-      let sum = evening.get(24);
-      if (sum === undefined) continue;
+      let sum = 0;
+      let held = 0;
       let complete = true;
-      for (let hour = 1; hour <= 8; hour += 1) {
-        const value = morning.get(hour);
-        if (value === undefined) {
+      // 23:00 on the opening date to 08:00 the morning after: local hours
+      // 23 of day n and 0 to 7 of day n + 1.
+      for (let key = n * 24 + 23; key < (n + 1) * 24 + 8; key += 1) {
+        const values = byHour.get(key);
+        if (values) {
+          for (const value of values) sum += value;
+          held += values.length;
+        } else if (!clock.gaps.has(key)) {
           complete = false;
           break;
         }
-        sum += value;
       }
       // A partial night is not a night, and it is counted in neither term. A
       // run stopping at midnight on 30 September holds all 153 days of the
@@ -1614,10 +1709,11 @@ export function readCriterionB(eso, category) {
       // 08:00, and dropping it from the numerator while keeping it in the
       // denominator would credit the building with a night it was never asked
       // about. `Coverage.tail` is what says on the sheet whether the last one
-      // landed.
-      if (!complete) continue;
+      // landed. An hour the clock skipped going forward is not missing: that
+      // night is eight hours long.
+      if (!complete || !held) continue;
       nights += 1;
-      if (sum / 9 > category.nightLimit) counted += 1;
+      if (sum / held > category.nightLimit) counted += 1;
     }
   }
 
@@ -1667,28 +1763,24 @@ export function readCriterionC(eso, floor) {
   if (series.absence) return absent(series.absence);
   const occupancy = occupancySeries(eso);
   if (occupancy.absence) return absent(occupancy.absence);
+  const daylight = daylightSeries(eso);
+  if (daylight.absence) return absent(daylight.absence);
   if (!series.runs.length) return absent(ABSENCE.weather);
 
   const { points } = series;
   const occ = alignedWith(points, occupancy.points, 'occupancy schedule');
+  const status = alignedWith(points, daylight.points, 'daylight saving status');
   const coverage = coverageOf(points, series.runs);
   if (!coverage.days) return absent(ABSENCE.season);
 
+  // The period is 1 May to 30 September in local days, as for criterion a.
+  const clock = localClock(points, status, series.runs);
   let counted = 0;
   let over = 0;
   for (const run of series.runs) {
-    let lastMonth = 0;
-    let lastDay = 0;
-    let inSeason = false;
     for (let i = run.start; i <= run.end; i += 1) {
-      const t = points[i].timestamp;
-      if (t.month !== lastMonth || t.day !== lastDay) {
-        lastMonth = t.month;
-        lastDay = t.day;
-        const n = dayNumber(t);
-        inSeason = n >= SEASON_FIRST && n <= SEASON_LAST;
-      }
-      if (!inSeason) continue;
+      const n = clock.day[i];
+      if (n < SEASON_FIRST || n > SEASON_LAST) continue;
       if (!occupied(occ[i].value, floor)) continue;
       over += 1;
       // Strictly above, by the criterion's own word: "shall not exceed 26 °C".

@@ -35,6 +35,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **TM59 criterion b reads the right nine hours under daylight saving.**
+  EnergyPlus stamps hourly output in standard time while schedules follow the
+  daylight saving clock, so with daylight saving observed the window read was
+  00:00 to 09:00 local instead of 23:00 to 08:00. Every TM59 reading now places
+  each stamp on the local clock from the hourly `Site Daylight Saving Time
+  Status` series, which the sheet and the TM59 study quantities now request.
+  Criteria a and c attribute each hour to its local day the same way, so the
+  first hour of 1 May is in the period, the first hour of 1 October is not, and
+  each hour is read against its own day's comfort line. Runs without daylight
+  saving read exactly as before.
+- **TM59 criterion a counts an hour whose ∆T is exactly 0.5 K.** The rounding
+  now carries a 1e-9 K tolerance, so a difference that is a half in decimal but
+  is held just below it in binary floating point rounds up as TM59 requires.
+  Without it, an operative temperature half a degree above the line was
+  dropped for 127 of the 402 thresholds between running means of 10 °C and
+  30 °C.
 - **Landmark tooltips and slider descriptions now follow the unit system.**
   They were lettered once, when the faces were built, so a sheet opened in IP
   described the console's bands in SI, and a sheet switched back to SI
