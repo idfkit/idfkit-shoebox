@@ -474,6 +474,10 @@ const ZONE_AIR = request('Zone Mean Air Temperature');
 const OUTDOOR_AIR = request('Site Outdoor Air Drybulb Temperature');
 const OPERATIVE = request('Zone Operative Temperature');
 const OCCUPANCY = request('Schedule Value', 'Hourly', 'Occupancy');
+// TM59's hours are local time and the stamps are standard time, so every TM59
+// reading needs the hourly daylight saving status to place them (tm59.js,
+// `localClock`).
+const DAYLIGHT = request('Site Daylight Saving Time Status');
 const SYSTEM_TRANSFER = request('Zone Air Heat Balance System Air Transfer Rate');
 const meterFor = (id) => {
   const use = END_USES.find((candidate) => candidate.id === id);
@@ -493,12 +497,12 @@ const DEMAND = new RunContents({
 const BILL = new RunContents({ variables: [ZONE_AIR], annual: true });
 const PEAKS = new RunContents({ variables: [ZONE_AIR, SYSTEM_TRANSFER], channels: ['system'] });
 const TM59_AB = new RunContents({
-  variables: [ZONE_AIR, OPERATIVE, OCCUPANCY],
+  variables: [ZONE_AIR, OPERATIVE, OCCUPANCY, DAYLIGHT],
   annual: true,
   channels: ['gains'],
   season: true,
 });
-const TM59_B = new RunContents({ variables: [ZONE_AIR, OPERATIVE], annual: true, season: true });
+const TM59_B = new RunContents({ variables: [ZONE_AIR, OPERATIVE, DAYLIGHT], annual: true, season: true });
 
 const finite = (value) => (Number.isFinite(value) ? value : null);
 const fieldFrom = (reader, field) => (landed, options) =>
