@@ -173,7 +173,7 @@ once more on the finished change.
 - [X] T047 [P] Add to `CHANGELOG.md` under Unreleased: Added — orientation studies, orientation survey axes and the pull entry; Changed — links are `v2`, and a `v1` link carrying `northAxis=360` opens at 0.
 - [X] T048 [P] Record the compass ticks, the seam point and the "wraps" caption on a study card and a ground in `.interface-design/system.md` (constitution workflow gate 8).
 - [ ] T049 Record the gate 2 measurement from T004 and T014 (whether a `v1` link at 360 changes IDF bytes, and by what) in `docs/design-notes.md` under the new section.
-- [ ] T050 Confirm `grep -n 'study\|sweep\|bearing' src/tour.js` finds no `NOTES` step that teaches what can be studied, so neither `NOTES` nor `shoebox-general-notes-v7` changes (research R12), and say so in the commit message.
+- [X] T050 Confirm `grep -n 'study\|sweep\|bearing' src/tour.js` finds no `NOTES` step that teaches what can be studied, so neither `NOTES` nor `shoebox-general-notes-v7` changes (research R12), and say so in the commit message.
 - [ ] T051 Re-run `.harness/gate1-turns.mjs` through `.harness/gate7-load.mjs` on the finished change, run `npm run build`, and drive the page once at 390 px wide: the study card's caption, extremes line and refusals are in view and the ticks thin to the cardinals (constitution VII).
 
 ---

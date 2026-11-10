@@ -852,7 +852,9 @@ engaged and a year attached the reading is `readDemand` instead — TEDI and
 CEDI off the meters through `meterTotal`, each sample divided by its own floor
 area. The
 readers live in `src/readings.js`, DOM-free, so the harness calls the real
-ones.
+ones. North axis is the one control studied round a circle rather than
+between two stops, at 8 then 16 positions with a drawn seam at north; see "A
+face with no ends".
 
 **The sheet reads the same pair for the desk it is standing on.** A curve with
 no point on it the reader can check against the run in front of them is a
@@ -1132,10 +1134,11 @@ round-trip of every key and refusal of every malformed input class.
   default, renaming a key, or narrowing a range means bumping `LINK_VERSION`,
   freezing the outgoing defaults into `DEFAULTS_BY_VERSION`, and writing one
   `MIGRATIONS` step — the IDF version-transition arrangement, in miniature.
-  `MIGRATIONS` is still empty: the calendar renamed the run period's
-  `beginMonth` / `endMonth` pair to `months` and took the free pass the Grounds
-  channel took, because there were no links in the wild to carry forward. That
-  pass expires the moment one is shared.
+  `MIGRATIONS` stayed empty for a long time: the calendar renamed the run
+  period's `beginMonth` / `endMonth` pair to `months` and took the free pass the
+  Grounds channel took, because there were no links in the wild to carry
+  forward. Its first step is `v1`, written when North axis's range was narrowed
+  to `[0, 360)` and the link went to `v2`; see "A face with no ends".
 - **Links are refused whole, never half-loaded.** `decodeState` validates every
   pair through the control declarations before returning anything, and a
   station that cannot be fetched at boot refuses the entire link back to
@@ -1987,6 +1990,9 @@ measured wherever it happens to sit, which is also why a survey asked for six
 positions legitimately holds seven and a fine ground is 12 × 12 rather than
 11 × 11.
 
+An axis along North axis takes neither count: it is cut at the study's own 8
+then 16 and closes on itself in the cell walk; see "A face with no ends".
+
 Measured in the browser, which is the only place this can be measured: sweep
 Glazing S as an ordinary study, then cut a ground along Glazing S against wall
 resistance. **144 positions cost 132 engine runs.** The twelve that cost
@@ -2617,6 +2623,212 @@ the Node harness (214 assertions) rather than on the page. Everything else —
 the line, the band, the label, the relief, the chase, the absences, the
 coincident-contour suppression, gaps, IP/SI round-tripping and 390 px — was
 driven in Chromium.
+
+### A face with no ends (feature 016)
+
+North axis is studied, surveyed and pulled round the whole turn. The model
+needed nothing for it: `turn()` already puts the orientation into the vertices.
+What refused the rose was one gate and, behind the gate, a codebase in which
+every sweep path assumed a face with two stops — a sample grid spaced between
+them, a card ruled from one to the other, a lattice whose last column is an
+edge, a pull that steps up where there is room and down where there is not, and
+a link that admitted both ends. Handed `min = 0, max = 360` and nothing else,
+each of them would have sampled north twice, minted two cache identities for
+one building and drawn a cliff at the right edge of a curve that has none.
+
+**The wrap is declared once, on one control, and `refusesSweep` stays the one
+rule.** `refusesSweep` asks for a finite `min`, `max` and `step`, and `Bearing`
+carried none. Giving the class a range was the obvious move and the wrong one:
+there are two Bearings, and "Bearing from site" is a neighbour's bearing with no
+note, so the load assertion that every sweepable control has one would have
+thrown, and the pull and the axis chooser would have offered a building nobody
+drew. So a typed `Wrap` (`src/controls.js`) is passed to North axis alone. A
+Bearing holding one exposes `min = 0`, `max = 360` (the period, not a position),
+`step = 1` and `wraps = true`; a Bearing without one is the class it always
+was, and is refused with the sentence it always got. `study.js` asserts at load
+that a `Wrap` is declared on `northAxis` and nowhere else. A carve-out in
+`refusesSweep` naming the key was the other route, and is a second rule wearing
+the first one's name.
+
+The face's members — `fraction`, `valueAt`, `figure`, `parse`, `unitNow`,
+`spanKind` — are the instance's own, assigned in the constructor, rather than
+methods on the class. Half the sweep code decides whether a control has a face
+at all by asking `typeof control.fraction === 'function'`, and on the prototype
+that question would answer yes for the neighbour's bearing too. It has to be
+answered by the wrap and nowhere else. The same question had a quiet victim in
+`describe.js`, which tested for `fraction` *before* it tested for a bearing:
+once North axis had a `fraction`, the paragraph's shortest-way-round distance
+would have been skipped without a sound. The bearing branch now comes first.
+
+**Eight then sixteen, on whole degrees.** Eleven then twenty-one round a circle
+would put north at both ends and land on 18° steps with no compass name, so the
+counts are asked of the control — `studyCounts` in `study.js`, `gridCounts` in
+`survey.js` — and are 8/16 for a wrapping one. 360/16 is 22.5, which the rose
+cannot set: it writes whole degrees through `Math.round`, and `format` letters
+22.5 as `23° NNE`, a building the reader can turn to that is not the one that
+was run. Positions are therefore snapped to the control's own step as every
+sweep snaps, and `Math.round` takes the halves up, so the sixteen are 0, 23, 45,
+68, 90, 113, 135, 158, 180, 203, 225, 248, 270, 293, 315 and 338, alternating
+23° and 22°. Every one is a position the rose can stand on, and every one is
+named by the sixteen-point table in `format`, because `round(v / 22.5)` lands
+on its own index for each. The coarse eight are multiples of 45 and untouched
+by the snap. Nesting is arithmetic about a step, so a refined step could break
+it without anything else failing; `study.js` asserts it at load for whatever
+`Wrap` is declared — every coarse position is a fine one, and no two fine ones
+snap together. A survey axis along North axis uses the same 8/16, so every
+orientation a study measured is a cache hit for a survey row, which is a
+stronger sharing than the linear 6/11 inside 11/21.
+
+A whole turn spaces its positions by `i / n`, an arc by `i / (n - 1)`
+(`Wrap.positions`). The difference is the point: a whole turn has no second end
+to sample, and an arc from 300° to 60° has two ends that are different
+buildings. The stance goes in verbatim and is deduplicated by the short way
+round rather than by subtraction, since 359.9995 and 0 are a thousandth of a
+degree apart and a linear tolerance would keep both.
+
+**`sampleOrder` on a circle is north, south, then the stance.** The linear order
+draws both ends first so the curve's silhouette stands after a few points; on a
+whole turn the last point is 338°, one step from north, and drawing it second
+shows nothing. North and the point opposite it do the silhouette's job. Then
+the stance, the likeliest cache hit, found the short way round — by subtraction
+a desk at 350° is nearest 338° rather than north. Then bisection by index,
+which is the circle's own order because the points are sorted clockwise.
+Whether the points are a whole turn is the caller's to say: an arc from 0° to
+90° starts at north too and cannot be told from one by its points.
+
+**The seam point is drawn and never sampled.** The study card stays straight:
+`fraction` places 0 at the left and 360 at the right, and `studyCard` in
+`console.js` adds one drawn vertex at 360 carrying the reading measured at 0.
+It is built from the curve's own north point and is never put on
+`study.curve`, so no cache, count, extreme or progress figure ever sees it; if
+north is a gap or a refusal there is no seam, and the closure breaks exactly as
+a gap breaks any segment. Under that one rule the closing segment is a segment
+like any other, the tick's reading between 338° and north interpolates with no
+special case, and a click at the right edge comes back through `valueAt` as 0 —
+the building at north, not a second building at 360. Repeating north as a real
+sample at both ends was the alternative, and is a second cache identity for one
+building. The foot letters `0° N` at the left, `N, again` at the right and
+"The whole turn; wraps at north." between them; the eight principal points are
+ticked and, on the index sheet, only the cardinals lettered. A polar plot was
+considered and is a second card geometry with its own tick, click and gap rules,
+unreadable at 390 px for a reading whose range is small against its value.
+
+**The ground closes in the cell walk, not in the data.** Every consumer of the
+lattice walked cells as `ix < nx - 1` and took neighbours as `ix ± 1`, and
+duplicating a column at 360 would have needed `Coverage`, the measured and
+passing sums, the spot schedule and the keyboard cursor each to learn not to
+count the ghost: five guards against one double count. Instead `Axis` in
+`survey.js` carries `closed` (true for a whole turn), `cells` (`count` when
+closed, `count - 1` otherwise), `next(ix)` (`(ix + 1) % count` when closed),
+`shift(ix, d)` (wrapped when closed, simply off the end otherwise) and
+`offset(v)` (the clockwise distance from the extent's start). The lattice
+stays `nx × ny` and holds north once, so `Coverage` counts each orientation
+once with no guard and its sum assertion holds. `latticeOf` records whether
+each axis closes, and `walkOf` refuses a lattice that does not say, because one
+walked as open would lose the cell between the last bearing and north with
+nothing looking wrong. The contours, `surfaceAt`, `blockOf` and `passingGround`
+take their far corners through the walk, so a line reaching `x = count` re-enters
+at `x = 0` at the same height and a published isoline closes across north.
+`meshOf` emits one aliased vertex column at `count`, geometry only, reading
+column 0's value and flag, so the relief closes without a second north counted
+anywhere; `relief.js` divides its scale by `cells`, not by the vertex columns
+less one. The descent and the free exchange step across north as across any
+other bearing, so the hollow at 350° and the one at 10° are one hollow.
+
+A narrowed extent is an *open* wrapping axis: `from > to` is an arc clockwise
+through north, and `inside` and `standingAt` measure clockwise from the
+extent's start, because min and max would turn a 300°-to-60° arc inside out. `0_360` is the
+whole turn, the only place 360 is admissible, as an extent's end and never as a
+value; the same bearing at both ends is refused as no extent. One defect was
+waiting before any of that: `Axis.indexOf` compared on `step / 1000`, read off a
+control with no step, and every comparison against `NaN` is false, so a
+densify found none of its coarse points on the fine axis and re-ran the whole
+coarse pass with nothing on the page to say so. The axis now reads its step
+once and throws without one.
+
+**The survey's pass is held as `'coarse'` or `'fine'`, not as a count.**
+`surveyGrid` and `surveyPass` used to hold `COARSE_GRID` or `FINE_GRID`, one
+number for both axes. Along an orientation axis that number would have spaced
+it at six positions with no compass name, and a flip, which swaps the axes,
+would have carried the wrong count across. Each axis asks `gridCounts` of its
+own control through `passCount`, so a ground of North axis against glazing is
+8 × 6 coarse and 16 × 11 fine. The same mistake sat in `drawGround`, which
+thinned its spot figures at `count > 7` and so read an orientation axis's
+eight coarse positions as a dense fine pass on a ground that had only just been
+cut. Dense is now asked of the axis: `count >= gridCounts(control).fine`.
+
+**The turn is read back off the document.** `turnOf(facts)` in `model.js` is
+the bearing of the wall the plan calls south, less 180°, normalised to
+`[0, 360)` with the top folded back to nought (at no turn the difference comes
+out a few ULPs below zero, and `% 360` of that is 359.99999999999994, a fair
+bearing and a false turn). It finds the wall by its plan `side`, which is the
+name `turn()` leaves where it was, and never by the compass word its bearing
+letters as: asked by compass, "the wall facing south" is a different wall on
+either side of 45° and the turn read off it would jump by 90° there.
+`buildSample` returns the turn beside `writeIdf` when the sweep turns the
+building, the scheduler carries it on the cached sample so a cache hit places
+its point where its run measured, and the card places the point at the
+measured turn. If it differs from the asked bearing by more than 0.01° — wider
+than float residue in sixteen-digit vertices, so a building turned somewhere
+else — `scheduler.js` throws a `TurnMismatch` before the run, and the position
+lands as a failure carrying "the document turned to X, not Y". It is drawn at
+neither. Survey rows sweeping North axis go through `buildSample` and get the
+same check.
+
+**The link went to `v2`, and `MIGRATIONS` has its first step.** `refuses`
+admitted a bearing in `[0, 360]`, closed, so `#v1&northAxis=360` decoded as a
+desk of its own: its own shape key, its own cache entry, and a study's closing
+point standing as a second identity for the building at 0. Narrowing the range
+is what the permalink rules say costs a version. A wrapping bearing is now
+refused at or beyond 360 with "is outside its 0–360 range; a full turn is 0",
+shortened from sixteen words to fifteen to fit `STANDING`.
+`DEFAULTS_BY_VERSION.v2` is the same table as `v1`, since no default moved, and
+`MIGRATIONS.v1` drops a `northAxis` pair whose `Number(raw) === 360` — dropped
+rather than rewritten to 0, because 0 is the default and an omitted key already
+means it, and asked numerically so `360.0` and `3.6e2` are carried too.
+Anything else passes through, so a `v1` link at 400 is still refused by
+`readValue` with the sentence it always got. Mapping 360 to 0 in `readValue`
+was the shortcut, and it is a silent wrap in the decoder. Fractions were not
+narrowed; `northAxis=12.5` decodes under both versions, and a study keeps such
+a stance verbatim among its points.
+
+**The pull turns 18° clockwise.** `pullProbes` steps every control by a
+twentieth of its face, which on 360° is 18°. The spec first asked for "one fine
+step", 22.5°, which is not whole and is not the measure the pull applies to
+anything else, so FR-015 was amended in planning to "one twentieth of a turn,
+18°, clockwise". Always clockwise because a turn has no top to be pushed back
+from: 350° steps to 8°, not back to 332°. The effect divides by the signed short
+arc, `Wrap.signed(from, to)`, not `to - from`, which from 350° to 8° is −342
+and would have shrunk the effect nineteenfold and flipped its sign without a
+sound. A `PullEntry` reads `wraps` off the declaration, carries `room = null`
+and `turned` instead, and does not ask the `room === 0 ⇔ atStop` invariant;
+it letters "Turned 18° clockwise." where a ruled entry letters its room, and
+its effect is per degree *clockwise*, since a bearing has no increasing
+direction until one is named.
+
+**Gate 2: what a `v1` link at 360 actually wrote.** The migration rests on the
+claim that 360 was the building at 0, so it was measured before anything
+changed, at `d1e1f0d` / `615b0ad`, rather than assumed. The default desk at
+`northAxis` 360 and at 0 wrote the same object list, and the IDFs differed in
+**64 vertex fields**, every one by float residue: at most 1.866e-15 m, of the
+kind `0.0` against `±1.776e-15` and `15.24` against `15.239999999999998`.
+`turn()` takes its `!degrees` shortcut only at 0, and at 360 it evaluates the
+sine and cosine of 2π, which are not exactly 0 and 1. So the link's bytes
+change under the migration while its building does not: after it, the `v1`
+link at 360 writes the 0 desk's bytes exactly. No gesture or kept scheme can
+have minted such a link, since the rose writes `% 360`. The other ten links of
+the pre-feature corpus — the default, `northAxis` 90 and 12.5, two studies, two
+surveys, and the two documented links from the CHANGELOG and the README —
+decode to the same `params` and write the same IDF as before.
+
+**Gate 1: the sixteen positions on two desks.** On the default desk and on one
+glazed on a single wall with overhangs, fins, a rooflight and a context slab,
+`turnOf` read the asked bearing back exactly at all sixteen positions, three
+applies were byte-identical each time, and all 32 runs were clean. The gate's
+"requested but not generated" check does fail, and not because of this feature:
+`VARIABLES_MONTHLY` in `model.js` (line 635) still requests the two
+`Other Equipment` variables, which nothing on these desks generates. That is a
+stale request that predates 016 and is left for its own change.
 
 ### Feedback reports and triage (src/report.js, src/report-sheet.js, .github/workflows/triage.yml)
 
