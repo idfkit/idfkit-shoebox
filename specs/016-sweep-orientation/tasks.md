@@ -106,7 +106,7 @@ with the rose turned there by hand (quickstart gates 1, 3 and 4).
 - [X] T026 [US1] In `studyCard` (`src/console.js`), on a wrapping control: ticks at the eight principal points, lettered all eight, and the four cardinals only at the index sheet (390 px); `0° N` at the left foot and `N, again` at the right; the caption `The whole turn; wraps at north.` within `STRIP_LINE`; `readAt` bracketing through the seam point so a desk at 350° is marked where it stands; and a click at the right edge mapped through `valueAt` to 0 (research R5, FR-008).
 - [X] T027 [US1] In `studyCard` (`src/console.js`), place each point at its measured `turn` (T020), and on a wrapping study letter one extremes line in view, outside any fold, within `BLOCK`: `Lowest 135° SE · highest 315° NW` from the plotted points' own figures, `best`/`worst` only where the reading declares `better`, and `lowest at N positions` with no bearing chosen on a tie (research R13, FR-009).
 - [X] T028 [US1] Register every new always-visible string from T024–T027 against its budget in `src/copy.js` (FR-016), and confirm the offer's label is replayed in IP and SI by `studySweeps`.
-- [ ] T029 [US1] Drive the page (quickstart gate 4): study North axis against cooling demand; turn the rose by hand to 135°, 338° and 0° and compare against the curve (SC-003); set 350 and check the redline; read the extremes line; switch to IP and diff every bearing figure character for character (SC-006); bypass Fabric and repeat; force a failure at 180 with a harness hook in `buildSample` and check the gap and its reason; turn the rose mid-study and check cancellation follows `restShapeKey` as for any study.
+- [X] T029 [US1] Drive the page (quickstart gate 4): study North axis against cooling demand; turn the rose by hand to 135°, 338° and 0° and compare against the curve (SC-003); set 350 and check the redline; read the extremes line; switch to IP and diff every bearing figure character for character (SC-006); bypass Fabric and repeat; force a failure at 180 with a harness hook in `buildSample` and check the gap and its reason; turn the rose mid-study and check cancellation follows `restShapeKey` as for any study.
 
 **Checkpoint**: an orientation study runs end to end on the page. See the delivery
 note: the survey chooser and the pull now list North axis too, and must not ship
@@ -140,7 +140,7 @@ runs through north, and the `sv` link reopens the same ground (quickstart gate 5
 - [X] T038 [US2] In `src/main.js`, make `groundFrame` (`:10766`) read a wrapping axis by `offset`, make the keyboard cursor (`:11463`) wrap on a closed axis, ask the dense threshold (`:11105`) of `gridCounts(control).fine` rather than `count > 7`, and make `amountOn` (`:12027`) letter a wrapping axis's difference as a signed short arc through `spanKind` (research R7, R9, R11).
 - [X] T039 [US2] Teach `decodeSurvey` in `src/permalink.js` the wrapping extent rule: ends in `[0, 360]`, `from ≠ to`, `0_360` a whole turn, `from > to` crossing north; keep the order of checks (unknown names, pairings, extents) (data-model "Link").
 - [X] T040 [US2] Write `.harness/gate5-survey.mjs` (quickstart gate 5) on the DOM-free survey modules and run it over three stances (even glazing, south-only 0.6, south-only with an overhang) cut against south glazing ratio: every `contoursOf` polyline reaching x = `count` continues from x = 0 at the same y; `meshOf`'s column at `count` equals column 0; every published isoline closes across north (SC-004); `Coverage.wanted` is 8 × 6 then 16 × 11 with `measured + gaps` never above it; a 300→60 cut runs through north with a stance at 10 inside; each `sv` round-trips.
-- [ ] T041 [US2] Drive the page: cut North axis against south glazing ratio, read the axis lettering and the "wraps" statement, check the relief closes, reopen the `sv` link in a fresh page and confirm the same ground (US2 acceptance 1–4), and confirm studied orientations are cache hits for the survey row.
+- [X] T041 [US2] Drive the page: cut North axis against south glazing ratio, read the axis lettering and the "wraps" statement, check the relief closes, reopen the `sv` link in a fresh page and confirm the same ground (US2 acceptance 1–4), and confirm studied orientations are cache hits for the survey row.
 
 **Checkpoint**: a ground along the orientation is cut with no seam at north.
 
@@ -157,7 +157,7 @@ its stop" (quickstart gate 6).
 
 - [X] T042 [US3] In `src/pull.js` (`:210`–`:220`), step a wrapping control to `wrap.norm(here + 18)`, always clockwise, and divide its effect by `+18` (`wrap.signed`) rather than `to − from` (research R8).
 - [X] T043 [US3] Give `PullEntry` in `src/pull.js` a `wraps` field: `room` is `null`, the `room === 0 ⇔ atStop` invariant is not asked, and `roomSaid` (`:115`) letters `Turned 18° clockwise.` (within `ABSENCE`); confirm the pull row in `src/main.js:12405` letters it with `perUnit` "per degree clockwise" from `spanUnitNow`.
-- [ ] T044 [US3] Write `.harness/gate6-pull.mjs` (quickstart gate 6) and run it, then run the pull on the page and check North axis is ranked beside the ruled controls in both unit systems.
+- [X] T044 [US3] Write `.harness/gate6-pull.mjs` (quickstart gate 6) and run it, then run the pull on the page and check North axis is ranked beside the ruled controls in both unit systems.
 
 **Checkpoint**: all three surfaces accept North axis by one rule.
 
@@ -174,7 +174,7 @@ once more on the finished change.
 - [X] T048 [P] Record the compass ticks, the seam point and the "wraps" caption on a study card and a ground in `.interface-design/system.md` (constitution workflow gate 8).
 - [X] T049 Record the gate 2 measurement from T004 and T014 (whether a `v1` link at 360 changes IDF bytes, and by what) in `docs/design-notes.md` under the new section.
 - [X] T050 Confirm `grep -n 'study\|sweep\|bearing' src/tour.js` finds no `NOTES` step that teaches what can be studied, so neither `NOTES` nor `shoebox-general-notes-v7` changes (research R12), and say so in the commit message.
-- [ ] T051 Re-run `.harness/gate1-turns.mjs` through `.harness/gate7-load.mjs` on the finished change, run `npm run build`, and drive the page once at 390 px wide: the study card's caption, extremes line and refusals are in view and the ticks thin to the cardinals (constitution VII).
+- [X] T051 Re-run `.harness/gate1-turns.mjs` through `.harness/gate7-load.mjs` on the finished change, run `npm run build`, and drive the page once at 390 px wide: the study card's caption, extremes line and refusals are in view and the ticks thin to the cardinals (constitution VII).
 
 ---
 
