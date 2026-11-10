@@ -244,6 +244,53 @@ const band = (opts) => bandFor({ key: 'shgc', control: shgc, preset: ENERPHIT, s
   ok('on-grid: the sample, not the desk run, speaks', onGrid.verdicts.every((v) => !v.byDesk) && onGrid.contains);
 }
 
+/* ── code review (xhigh/max) fixes ── */
+{
+  // A re-price rebuilds a stored study around the lever's current value, so a
+  // setting that sat between two runs becomes a grid position with no run.
+  const swept = 0.4;
+  const stance = 0.415;
+  const old = curveOf(shgc, swept, SWEEP_SAMPLES, (v) => point(v, bag(10 + v, 0)));
+  const relaid = samplePoints(shgc, stance, SWEEP_SAMPLES);
+  const curve = old.curve.filter((p) => relaid.some((v) => Math.abs(v - p.value) < 1e-9));
+  const figure = (target) => (target.id === 'heating' ? 12 : 0);
+  const b = band({ stance, swept: stance, curve, positions: relaid, atSetting: figure });
+  const here = b.verdicts.find((v) => v.value === b.stance);
+  ok('re-priced: the desk run judges an unlanded on-grid setting', here?.kind === 'pass' && here.byDesk, here?.kind);
+  ok('re-priced: contains the setting, no move, not still landing', b.contains && b.move === null && !b.incomplete);
+  const without = band({ stance, swept: stance, curve, positions: relaid });
+  ok('re-priced without a desk run: the setting is unlanded, still landing', without.incomplete);
+}
+{
+  // Stepped over: never after a Study press (no coarse pass), never off the desk's run.
+  const stance = 0.4;
+  const coarseGrid = samplePoints(shgc, stance, COARSE_SAMPLES);
+  const fine = samplePoints(shgc, stance, SWEEP_SAMPLES);
+  const sliver = fine.find((v) => v > stance && !coarseGrid.some((g) => Math.abs(g - v) < 1e-9));
+  const curve = fine.map((v) => point(v, bag(Math.abs(v - sliver) < 1e-9 ? 30 : 10 + v, 0)));
+  ok('stepped over: not after a Study press', band({ stance, curve, positions: fine, afterCoarse: false }).steppedOver === false);
+  ok('stepped over: still after a coarse pass', band({ stance, curve, positions: fine, afterCoarse: true }).steppedOver === true);
+  const allFail = fine.map((v) => point(v, bag(30 + v, 0)));
+  const desk = band({ stance: 0.455, swept: stance, curve: allFail, positions: fine, atSetting: (t) => (t.id === 'heating' ? 12 : 0) });
+  ok('stepped over: a stretch found only by the desk run is not the finer pass', desk.band && desk.steppedOver === false);
+}
+{
+  // Inert, measured, on one judged line of three: said of the line judged.
+  const stance = 0.4;
+  const { positions, curve } = curveOf(shgc, stance, SWEEP_SAMPLES, (v) => point(v, { peakHeat: 5 }));
+  const b = bandFor({ key: 'shgc', control: shgc, preset: PH, says, stance, curve, positions });
+  ok('inert on part of the standard says how much it judged', /the one line of Passivhaus/.test(b.inert ?? ''), b.inert);
+}
+{
+  // Still landing with no pass yet: the block knows it is landing.
+  const stance = 0.2;
+  const all = samplePoints(shgc, stance, SWEEP_SAMPLES);
+  const landed = [all[0], stance, all.at(-1)];
+  const b = band({ stance, curve: landed.map((v) => point(v, bag(40, 0))), positions: all });
+  const t = toleranceFor({ preset: ENERPHIT, bands: [b] });
+  ok('landing: no band yet, incomplete, and the block says landing', !b.band && b.incomplete && t.landing === true);
+}
+
 /* ── the block: ranked, restore, tie, alone, stale, absences ── */
 {
   const mk = (key, control, stance, fn, extra = {}) => {

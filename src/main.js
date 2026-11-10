@@ -157,6 +157,7 @@ import {
   readExtremes,
   readOverheat,
   readPeaks,
+  servedDirections,
   resolvePin,
   runCalendar,
   stampText,
@@ -1540,6 +1541,16 @@ function billFrom(run) {
 function reprice(key = null) {
   if (!lastRun) return;
   bill = billFrom(lastRun);
+  // The one reading on the register a price moves, taken again off the bill
+  // just re-priced. Left as the solve read it, the board judged EUI at the old
+  // plant, and so did every band judging its setting by the desk's own run
+  // (`atSetting`), between samples re-priced at the new one: `shapeKey` drops
+  // priced keys, so nothing told the band the run's price was out of date. A
+  // fresh stamp makes `showStudy` rebuild any band that read it.
+  if (lastOutcome) {
+    lastOutcome = { ...lastOutcome, eui: bill?.wholeYear ? bill.intensity('metered') : null };
+    if (outcomeOf) outcomeOf = Object.freeze({ ...outcomeOf });
+  }
   repriceStudies();
   repriceSurvey(key);
   renderBill();
@@ -2158,6 +2169,9 @@ function clearReadings() {
   // touches none of it, because nothing here runs at the top of a solve.
   lastOutcome = null;
   outcomeOf = null;
+  // And any band that judged its setting by that run: the card kept the desk's
+  // verdict while the block, re-reading on every paint, had already dropped it.
+  if (chased && bandDrawn.size) refreshBands();
   // The instant goes with them: it is an index into a run that is no longer
   // on the sheet. The pin itself survives — it is a calendar stamp and a
   // request, not a reading, so the next solve is asked for the same hour.
@@ -2268,6 +2282,10 @@ function bandFacts(job) {
     positions: job.points,
     landed: bandSeq,
     epoch: job.climateEpoch,
+    // Whether a coarse curve of this lever stood on the card before this
+    // sweep, the only case in which "the finer pass found a stretch the coarse
+    // pass stepped over" describes something the reader saw.
+    afterCoarse: Boolean(job.afterCoarse),
   };
 }
 
@@ -2285,7 +2303,13 @@ function bandFacts(job) {
  */
 function bandCurve(study) {
   const curve = study?.curve ?? [];
-  return study?.fromCache ? curve.filter((point) => point.sample || point.refused) : curve;
+  // Except where the run did land and failed: a failure is never cached, so a
+  // rebuild meets it as a miss, and dropped with the misses it turned a failed
+  // run inside a passing stretch into a position "still landing" that nothing
+  // would ever land, and the same runs read as a different band after a
+  // re-price. `redrawStudiesForQuantity` carries those positions in `failedAt`.
+  const failed = new Set(study?.failedAt ?? []);
+  return study?.fromCache ? curve.filter((point) => point.sample || point.refused || failed.has(point.value)) : curve;
 }
 
 /**
@@ -2334,6 +2358,7 @@ function bandOf(key, study, stale) {
     swept: study.stance,
     curve: bandCurve(study),
     positions: study.positions,
+    afterCoarse: Boolean(study.afterCoarse),
     preset,
     coarse: Boolean(study.coarse),
     stale,
@@ -2377,18 +2402,19 @@ function showStudy(key, study, { stale = false } = {}) {
     // is a curve landed under this one. With the last card gone there is no
     // band left to have been withdrawn either, and the block says how to get one.
     if (band || !bandDrawn.size) bandsWithdrawnByClimate = false;
+    // Only when a band was rebuilt: `syncStudies` calls this per drag frame,
+    // and a repaint for an unchanged roster rebuilt every band and the whole
+    // block sixty times a second for the same words. The chase and the climate
+    // reach the block through `renderChase` and `refreshBands`.
+    renderToleranceSoon();
   }
-  renderToleranceSoon();
 }
 
 /** Every open card's band again, after the chase or the climate moved. No run. */
 function refreshBands() {
   const drawn = [...bandDrawn];
   bandDrawn.clear();
-  for (const [key, study] of studies) {
-    if (studyScheduler?.has(key)) continue;
-    showStudy(key, study, { stale: study.restShape !== restShapeKey(key) });
-  }
+  syncStudies();
   // A sweep still landing is the scheduler's to draw (see `syncStudies`), so
   // the loop above leaves its card alone — and left alone, its band went on
   // standing against the standard just left, or against none at all after the
@@ -6135,7 +6161,7 @@ function readTm59(eso, snapshot, patched, epw) {
  * re-letters on every gesture, and re-reading 8,760 points to do it would make
  * a drag stutter for a figure that cannot have changed.
  */
-function readOutcome(eso, snapshot, patched, epw) {
+function readOutcome(eso, snapshot, patched, epw, serves) {
   const overheat = new Map();
   for (const above of OVERHEAT_THRESHOLDS) overheat.set(above, readOverheat(eso, above));
   // Gross floor, not the plate: a criterion is per square metre of building,
@@ -6147,7 +6173,7 @@ function readOutcome(eso, snapshot, patched, epw) {
   return {
     eui: bill?.wholeYear ? bill.intensity('metered') : null,
     ...(readDemand(eso, floorArea) ?? {}),
-    ...(readPeaks(eso, floorArea) ?? {}),
+    ...(readPeaks(eso, floorArea, serves) ?? {}),
     ...(readExtremes(eso) ?? {}),
     overheat,
     tm59: readTm59(eso, snapshot, patched, epw),
@@ -7733,6 +7759,18 @@ const TOLERANCE_METHOD =
 function renderTolerance() {
   const host = $('tolerance');
   if (!host) return;
+  // The block is rebuilt whole, and the method fold's summary is focusable: a
+  // keyboard reader standing on it lost their place to `<body>` on the next
+  // landed point. Put focus back on the rebuilt summary.
+  const refocus = host.contains(document.activeElement) && document.activeElement.matches('summary');
+  try {
+    paintTolerance(host);
+  } finally {
+    if (refocus) host.querySelector('details.fold > summary')?.focus();
+  }
+}
+
+function paintTolerance(host) {
   const preset = chased ? PRESET_BY_ID[chased] : null;
   host.textContent = '';
   host.hidden = !preset;
@@ -7744,17 +7782,27 @@ function renderTolerance() {
   // landing with a band on the card and "Turn on a study" beside the chase.
   const bands = [];
   let outlived = 0;
+  // Cards that are on but have no run behind them yet (waiting for auto-solve,
+  // or refused with their own reason on the card). Dropped silently, the block
+  // told the reader to "turn on a study" beside a study that was on, and
+  // counted only the levers that had landed as the ones studied.
+  let unrun = 0;
   for (const [key, { study }] of bandDrawn) {
-    if (study.epoch !== climateEpoch) {
-      if (ranOn(study)) outlived += 1;
+    if (study.epoch !== climateEpoch && ranOn(study)) {
+      outlived += 1;
       continue;
     }
     const band = bandOf(key, study, study.restShape !== restShapeKey(key));
     if (band) bands.push(band);
+    else unrun += 1;
   }
   const withdrawn = outlived || (bandsWithdrawnByClimate && bandDrawn.size);
   const climateReason = !bands.length && withdrawn ? TOLERANCE_SAYS.climate : null;
-  const block = toleranceFor({ preset, bands, climateReason });
+  const block = toleranceFor({
+    preset,
+    bands,
+    climateReason: climateReason ?? (!bands.length && unrun ? TOLERANCE_SAYS.noRun : null),
+  });
   const label = (band) => band.label;
   const say = (...parts) => host.append(...parts, ' ');
 
@@ -7764,7 +7812,7 @@ function renderTolerance() {
     return;
   }
   const asked = `${block.asked} lever${block.asked === 1 ? '' : 's'} studied`;
-  say(`${asked}.`);
+  say(unrun ? `${asked}; ${unrun} more on with no run yet.` : `${asked}.`);
   if (block.stale) {
     host.append(
       elem(
@@ -7794,14 +7842,18 @@ function renderTolerance() {
       const { control } = controlFor(band.key);
       const { span, share } = moveWords(band.move, control);
       say(
-        'Smallest single move measured to restore every line: ',
+        `Smallest single move measured ${block.landing ? 'so far ' : ''}to restore every line: `,
         mark(`${label(band)} to ${control.format(band.move.to)}`, true),
-        ` (${span}, ${share}).`,
+        ` (${span}, ${share}${band.incomplete ? ', still landing' : ''}).`,
       );
       if (restore.tied.length) {
         const others = restore.tied.filter((key) => key !== band.key).map((key) => labelFor(key));
         say(`${listed(others)} ${others.length === 1 ? 'is' : 'are'} exactly as near.`);
       }
+    } else if (block.landing) {
+      // The positions that might restore it have not all run, so "none" would
+      // be a verdict on runs nobody has made.
+      say('No studied lever restores every line on the runs landed so far; still landing.');
     } else {
       say(`No studied lever restores every line alone; only the ${block.asked} studied were asked.`);
       for (const [target, keys] of restore.alone) {
@@ -8325,6 +8377,9 @@ async function solve() {
   // an annual run must not change whether this run counts as mechanically
   // cooled, or at which pressure its psychrometric chart is drawn.
   const documentFacts = readDocumentFacts(model);
+  // And which directions the thermostat serves, for the same reason: the peak
+  // loads tell a load of zero from a direction never served by it.
+  const serves = servedDirections(model);
   // Taken before the await with the document, so the refusals name the block
   // this run was written under.
   const blocked = new Map(
@@ -8566,11 +8621,14 @@ async function solve() {
   // off the ESO whenever a card is re-lettered. The register re-letters on
   // every gesture, and walking 8,760 points to answer a question that cannot
   // have changed would put a stutter in every drag.
-  lastOutcome = readOutcome(eso, snapshot, patched, capture.epw);
+  lastOutcome = readOutcome(eso, snapshot, patched, capture.epw, serves);
   outcomeOf = outcomeStamp;
-  // A band whose lever stands between two of its sweep's positions is judged
-  // there by this run (`atSetting` in `bandOf`), so every band is read again.
-  if (chased && bandDrawn.size) refreshBands();
+  // A band whose lever stands where its sweep holds no run is judged there by
+  // this run (`atSetting` in `bandOf`), so every band is read again — but only
+  // when the run is of the desk as it stands. During a drag the solve lands
+  // for a shape the hand has already left, `bandOf` would not use it, and
+  // re-reading every band on each 50 ms landing rebuilt them all for nothing.
+  if (chased && bandDrawn.size && outcomeStamp.shape === shapeKey(params)) refreshBands();
   syncPin();
   renderBill();
   renderRegister();
@@ -9156,7 +9214,10 @@ function buildSample(job, value) {
     // Each sample's intensity divides by that sample's own floor, which the
     // swept key may itself be moving — the same live read the bill takes.
     const floorArea = geometryFacts(model).grossFloor;
-    return { idf: writeIdf(model), epw: job.epw, floorArea, carried: job.carried, value };
+    // Which directions this sample's thermostat serves, off its own document,
+    // so a peak load can tell zero from never served (`readPeaks`).
+    const serves = servedDirections(model);
+    return { idf: writeIdf(model), epw: job.epw, floorArea, serves, carried: job.carried, value };
   } finally {
     applyModel(model, params, patching());
     setAnnual(model, annual());
@@ -9237,9 +9298,13 @@ studyScheduler = createStudyScheduler({
   },
   // Every position of a priced sweep shares one run, so it is priced here, at
   // its own value, rather than read at whichever price the cache entry holds.
-  // A job sweeping only shaping keys takes the cache's readings untouched.
-  priceAt: (job, value, sample) =>
-    sweepsPriced(job) ? pricedReadings(sample.readings, sample.meterBasis, pricingAt(job, value)) : sample.readings,
+  // A job sweeping only shaping keys is priced here too, at the desk's own
+  // priced settings: `deskKey` drops priced keys, so its sample may have been
+  // built by a survey row standing at another heat-pump COP or gas price, and
+  // taken untouched it read that row's energy use intensity. Every sample now
+  // carries the bill's meters for the bands, so a wall-resistance study opened
+  // beside a COP survey judged LETI's EUI line at whichever row ran first.
+  priceAt: (job, value, sample) => pricedReadings(sample.readings, sample.meterBasis, pricingAt(job, value)),
   runSample: async ({ idf, epw }) => {
     const result = await studyPool.run({ idf, epw });
     // The counter counts engine runs, so cache hits — honestly — do not turn it.
@@ -9478,6 +9543,9 @@ function jobForStudy(key, { origin = 'refresh', n = SWEEP_SAMPLES, openingBasis 
   // and the band read them, found no annual figure, and called every line
   // unjudged — measured on the driven page (T022).
   job.climateEpoch = climateEpoch;
+  // A full sweep laid over a coarse curve the card is showing: the densify, or
+  // a Study press over a coarse card. Read by `bandFacts`.
+  job.afterCoarse = n !== COARSE_SAMPLES && Boolean(studies.get(key)?.coarse);
   return job;
 }
 
@@ -9552,8 +9620,14 @@ function redrawStudiesForQuantity({ queue = true, requeueLifted = false } = {}) 
       restShape: job.restShape,
       ...bandFacts(job),
       // A point with no run behind it here is a cache miss, not a failed run;
-      // the band reads it as unlanded (`bandCurve`).
+      // the band reads it as unlanded (`bandCurve`), except at the positions
+      // whose run is known to have failed on this same desk under this climate.
       fromCache: true,
+      failedAt: prior.restShape === job.restShape && prior.epoch === climateEpoch ? failedPositions(prior) : [],
+      // The redraw re-lays the grid around where the lever stands now, so the
+      // job it builds was never preceded by anything; the card's history is the
+      // prior study's.
+      afterCoarse: Boolean(prior.afterCoarse),
     };
     studies.set(key, study);
     showStudy(key, study, { stale: false });
@@ -9668,6 +9742,12 @@ const partialStudy = (job) => ({
   // when it landed, so an all-stale block can read the newest.
   ...bandFacts(job),
 });
+
+/** Where a study's runs landed and failed, as a rebuild from the cache cannot tell. */
+function failedPositions(study) {
+  if (study.fromCache) return study.failedAt ?? [];
+  return (study.curve ?? []).filter((point) => point && !point.sample && !point.refused).map((point) => point.value);
+}
 
 /** The stored card back on the console after a cancel or a failure. */
 function restoreStudyCard(key) {
@@ -12588,7 +12668,12 @@ function readPull() {
   const reading = pullReadingFor(survey.readings[0].id);
   const stance = { ...params };
   const patch = patching();
-  const { needed, carried } = surveyContents(survey);
+  // At the desk the probes run at, not the survey's stance. The band contents
+  // name the channels a desk has in, and `syncReporting` throws for a named
+  // channel the sample has out: built at the cut, a ground cut with System in
+  // and then walked along a setpoint axis until System was blocked threw in
+  // every probe, and the pull ranked nothing.
+  const { needed, carried } = sweepContents(survey.quantities, stance, patch, Boolean(epwText));
   const { probes, inert } = pullProbes(stance, patch, {
     quantity: reading.quantity,
     engaged: engagedChannels(stance, patch),

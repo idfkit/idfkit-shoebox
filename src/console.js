@@ -20,7 +20,7 @@ import { BUDGETS, withinBudget } from './copy.js';
 // definition: a second copy here would be the first thing to drift the day a
 // figure changed precision on one surface and not the other.
 import { flowPhrase, flowWord, watts } from './readings.js';
-import { letter, system } from './units.js';
+import { figureIn, letter, system } from './units.js';
 // Nothing from `tolerance.js`, deliberately: `report-sheet.js` imports `fold`
 // from here and is the entry that must stand when `main.js` does not, and
 // `tolerance.js` pulls `schemes.js`, `study.js`, `survey.js`, `tm59.js` and
@@ -32,12 +32,20 @@ import { letter, system } from './units.js';
  * A move along one face, as the card and the tolerance block both letter it:
  * the signed span, and the share of the lever's travel it covers.
  *
- * A span is a difference, so it goes through `spanKind` at the face's flat
- * precision, never `quantityKind` — five degrees of room would read `41 °F`.
+ * A span is a difference, so it goes through `spanKind`, never `quantityKind`
+ * (five degrees of room would read `41 °F`), at a flat two decimals in IP and
+ * with the span's own unit after it, the way the pull letters a control's room
+ * (`PullEntry.roomSaid`). Through `letter` it took the kind's default IP
+ * precision, so half a kelvin of room read `1 Δ°F` and a one-step move on a
+ * width read `0.0 ft`, and a resistance span wore the `R-` prefix of a
+ * position. A share under half a per cent is said as under one rather than
+ * rounded to a move of nothing.
  */
 export function moveWords(move, control) {
-  const span = letter(control.spanKind, Math.abs(move.by), { digits: control.digits, unit: control.unit });
-  return { span: `${move.by > 0 ? '+' : '−'}${span}`, share: `${Math.round(move.share * 100)} % of travel` };
+  const figure = figureIn(control.spanKind, Math.abs(move.by), { digits: control.digits, ipDigits: 2 });
+  const unit = control.spanUnitNow;
+  const share = move.share > 0 && move.share < 0.005 ? 'under 1 %' : `${Math.round(move.share * 100)} %`;
+  return { span: `${move.by > 0 ? '+' : '−'}${figure}${unit ? ` ${unit}` : ''}`, share: `${share} of travel` };
 }
 
 /**
@@ -2439,7 +2447,9 @@ export function mountConsole({
     if (closed.kind === 'refused') return `${at} (${beyond} is refused: ${closed.reason})`;
     // Not a line failing: nothing is known beyond here, and it says why.
     if (closed.kind === 'gap') return `${at} (not read beyond: at ${beyond} ${closed.reason})`;
-    return `${at} (${closed.failing.map((target) => target.label).join(' and ')} fails at ${beyond})`;
+    const names = closed.failing.map((target) => target.label);
+    const who = names.length < 2 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+    return `${at} (${who} ${names.length < 2 ? 'fails' : 'fail'} at ${beyond})`;
   }
 
   /** The band in one or two sentences, every figure in the system showing. */
@@ -2451,6 +2461,9 @@ export function mountConsole({
     }
     const lines = band.judged.length + band.unjudged.filter((line) => line.target.limit != null).length;
     const of = band.judged.length < lines ? ` (${band.judged.length} of ${lines} lines)` : '';
+    // A curve still landing has not run the positions that might pass, so its
+    // having none yet is not the verdict `noneAlone` states.
+    if (!band.band && band.incomplete) return [`No position landed so far passes every line of ${standard}${of}; still landing.`];
     if (!band.band) return [`${noneAlone}${of ? ` Judged on ${band.judged.length} of ${lines} lines.` : ''}`];
     const said = [];
     const { lower, upper } = band.band;
@@ -2459,7 +2472,16 @@ export function mountConsole({
     // Where the setting is judged by the desk's own run rather than a sample,
     // because it sits between two of the sweep's positions.
     const here = band.verdicts.find((verdict) => verdict.value === band.stance && verdict.solved);
-    if (band.contains) {
+    if (band.contains && !here) {
+      // Inside a passing stretch but with no run at the setting itself: between
+      // two runs with no desk run to judge it, or on a run that did not finish.
+      // The stretch is measured; the setting is not, and nothing between two
+      // runs is claimed.
+      said.push(
+        `${standard}${of} is not judged at this setting, which lies inside a stretch that passes from ` +
+          `${edgeWords(lower, control)} to ${edgeWords(upper, control)}${tail}.`,
+      );
+    } else if (band.contains) {
       said.push(`Passes ${standard}${of} from ${edgeWords(lower, control)} to ${edgeWords(upper, control)}${tail}.`);
     } else {
       const { span, share } = moveWords(band.move, control);

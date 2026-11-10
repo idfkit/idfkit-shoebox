@@ -11,9 +11,9 @@
  *     applier, and this proves it rather than assuming it);
  *   - the live solve's reporting is untouched: the wider contents reach the
  *     engine through `bandQuantities`, whose one caller in `main.js` is
- *     `sweepContents`, reached by a study (`jobForStudy`) and by the survey and
- *     the pull (`surveyContents`), so the live solve's `'sheet'` profile never
- *     sees them;
+ *     `sweepContents`, reached by a study (`jobForStudy`), the survey
+ *     (`surveyContents`) and the pull (`readPull`), so the live solve's
+ *     `'sheet'` profile never sees them;
  *   - `encodeState` takes no chase and no band, so neither can reach a link.
  *
  * Run: node specs/016-tolerance-bands/verify/g4-no-leak.mjs
@@ -56,7 +56,9 @@ ok('bandQuantities has one caller in main.js, sweepContents', calls.length === 1
 // the pull through surveyContents. Never by the live solve.
 const sweepCalls = [...main.matchAll(/(?<!function )sweepContents\(/g)].map((m) => m.index);
 const sweepCallers = [...new Set(sweepCalls.map((at) => [...main.slice(0, at).matchAll(/\nfunction (\w+)\(/g)].at(-1)?.[1] ?? '?'))].sort();
-ok('sweepContents is called by jobForStudy and surveyContents only', sweepCallers.join() === 'jobForStudy,surveyContents', sweepCallers.join());
+// readPull builds its probes' contents at the desk the probes run at, not the
+// survey's stance, because the band contents name that desk's channels.
+ok('sweepContents is called by the sweeps only (jobForStudy, readPull, surveyContents)', sweepCallers.join() === 'jobForStudy,readPull,surveyContents', sweepCallers.join());
 
 // The codec's whole input surface. A chase or a band would have to be one of
 // these to reach a link, and none of them is.

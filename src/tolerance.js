@@ -119,6 +119,11 @@ export const SAYS = Object.freeze({
     'the tolerance absence with no study open',
     'Turn on a study under a control to give that lever a band.',
   ),
+  noRun: withinBudget(
+    BUDGETS.STANDING,
+    'the tolerance absence with studies on and no run behind any',
+    'The studies are on, but none has landed a run yet.',
+  ),
   climate: withinBudget(
     BUDGETS.STANDING,
     'the tolerance absence after a climate change',
@@ -357,15 +362,26 @@ function bracket(verdicts, stance, control) {
  * to tolerate, and a tolerance would call a lever with a small real effect
  * inert. A curve still landing is never declared inert.
  */
-function inertness({ key, label, preset, lines, verdicts, priced }) {
+function inertness({ key, label, preset, lines, verdicts, priced, unjudged = [] }) {
+  // Said of the lines these runs judge, and only of all of the standard's when
+  // that is what they are. A lever flat on the one line a design day can read
+  // (a cooling setpoint against Passivhaus's peak heating load) was lettered as
+  // moving none of Passivhaus's lines, two of which it drives and neither of
+  // which a design day can answer.
+  const partial = unjudged.some((line) => line.target.limit != null);
+  const these = !partial
+    ? `${preset.name}'s lines`
+    : lines.length === 1
+      ? `the one line of ${preset.name} these runs judge`
+      : `the ${lines.length} lines of ${preset.name} these runs judge`;
   if (priced && lines.every(({ reading }) => !reading.quantity.movedBy.has(key))) {
-    return `${label} reaches only the bill, and none of ${preset.name}'s lines is read from it.`;
+    return `${label} reaches only the bill, and none of ${these} is read from it.`;
   }
   if (verdicts.some((v) => v.kind === 'unsolved')) return null;
   const solved = verdicts.filter((v) => v.solved);
   if (solved.length < 2) return null;
   const flat = lines.every(({ target }) => solved.every((v) => v.values.get(target) === solved[0].values.get(target)));
-  return flat ? `${label} did not move any of ${preset.name}'s lines across its travel.` : null;
+  return flat ? `${label} did not move ${partial ? these : `any of ${these}`} across its travel.` : null;
 }
 
 /**
@@ -399,6 +415,7 @@ export function bandFor({
   landed = 0,
   says,
   atSetting = null,
+  afterCoarse = true,
 }) {
   if (!preset) throw new Error(`the band of ${key} was asked for with no standard chased`);
   if (!Number.isFinite(stance)) throw new Error(`the band of ${key} has no stance to measure from`);
@@ -434,29 +451,36 @@ export function bandFor({
   const judged = Object.freeze(lines.map(({ target }) => target));
 
   const positionsRead = lines.length ? order.map((value) => judge(byValue(value), value, lines)) : [];
-  const incomplete = order.some((value) => !byValue(value));
-  // A setting between two of the sweep's positions has no sample of its own,
-  // and judged off the sweep alone it read "not judged at this setting" with a
-  // move of one step's fraction to the nearest run, on a desk whose own solve
-  // the chase line was judging a few centimetres above. That solve is a run at
-  // exactly this setting, under the same climate and the same everything else,
-  // so where it carries every judged line it stands in the band as one more
-  // measured position. Never on the grid (a sample is already there), and
-  // never in part: a line the desk's run cannot read leaves the setting
-  // unjudged as before.
-  const deskAt = !order.some((value) => near(value, stance, control.step)) && lines.length && atSetting
-    ? lines.map(({ target }) => atSetting(target))
-    : null;
-  if (deskAt?.every(Number.isFinite)) {
-    const desk = measured(here, lines, (line) => deskAt[lines.indexOf(line)], { byDesk: true });
-    positionsRead.splice(positionsRead.filter((verdict) => verdict.value < here).length, 0, desk);
+  // A setting with no landed sample of its own read "not judged at this
+  // setting" with a move of a step's fraction to the nearest run, on a desk
+  // whose own solve the chase line was judging a few centimetres above. That
+  // solve is a run at exactly this setting, under the same climate and the
+  // same everything else, so where it carries every judged line it stands in
+  // the band as the measured position there, never in part: a line the desk's
+  // run cannot read leaves the setting unjudged as before. Asked wherever the
+  // sweep holds no sample at the setting, not only off its grid: a re-price
+  // rebuilds a stored study around the lever's current value
+  // (`redrawStudiesForQuantity`, which queues nothing), so a setting that was
+  // between two runs becomes a position of the grid with no run behind it,
+  // and asked only off the grid it went back to "not judged" for good. A
+  // sample that did land there (passed, failed, refused or gap) is what speaks.
+  const onGrid = order.some((value) => near(value, stance, control.step));
+  const figures = !(onGrid && byValue(here)) && lines.length && atSetting ? lines.map(({ target }) => atSetting(target)) : null;
+  const deskJudged = Boolean(figures?.every(Number.isFinite));
+  if (deskJudged) {
+    const desk = measured(here, lines, (line) => figures[lines.indexOf(line)], { byDesk: true });
+    if (onGrid) positionsRead[order.indexOf(here)] = desk;
+    else positionsRead.splice(positionsRead.filter((verdict) => verdict.value < here).length, 0, desk);
   }
+  // Still landing: a position the sweep will visit with no run behind it yet,
+  // other than the setting when the desk's own run has judged it there.
+  const incomplete = order.some((value) => !byValue(value) && !(deskJudged && value === here));
   const verdicts = Object.freeze(positionsRead);
   // Inertness is a claim of exact flatness across the sweep, so it is asked of
   // the sweep's own samples only: the desk's run is read by another reader,
   // and a last-digit difference between the two would call a flat lever live.
   const inert = lines.length
-    ? inertness({ key, label, preset, lines, verdicts: verdicts.filter((verdict) => !verdict.byDesk), priced })
+    ? inertness({ key, label, preset, lines, verdicts: verdicts.filter((verdict) => !verdict.byDesk), priced, unjudged })
     : null;
 
   const base = { key, label, stance: here, judged, unjudged: Object.freeze(unjudged), verdicts, coarse, stale, incomplete, landed };
@@ -505,7 +529,15 @@ export function bandFor({
     share,
     move,
     others: Object.freeze(others),
-    steppedOver: !coarse && !incomplete ? steppedOver({ verdicts, read, here, swept, control }) : false,
+    // Only a fine curve that followed a coarse one the reader saw, and read off
+    // the sweep's own runs: the desk's run is no part of either pass, and
+    // counted it turned a stretch found only by the desk into one "the finer
+    // pass found". A Study press sweeps the fine grid at once, so it has no
+    // coarse pass to have stepped over anything.
+    steppedOver:
+      !coarse && !incomplete && afterCoarse
+        ? steppedOver({ verdicts: verdicts.filter((verdict) => !verdict.byDesk), here, swept, control })
+        : false,
   });
 }
 
@@ -522,7 +554,8 @@ export function bandFor({
  * so it is the grid the coarse pass actually ran; the bracket is still chosen
  * around `here`, where the lever stands now, as the fine band's was.
  */
-function steppedOver({ verdicts, read, here, swept, control }) {
+function steppedOver({ verdicts, here, swept, control }) {
+  const read = bracket(verdicts, here, control);
   const grid = samplePoints(control, swept, COARSE_SAMPLES);
   const coarse = verdicts.filter((verdict) => grid.some((value) => near(value, verdict.value, control.step)));
   const thin = bracket(coarse, here, control);
@@ -564,7 +597,7 @@ export class RestoringMove {
 
 /** The block under the chase line. */
 export class Tolerance {
-  constructor({ preset, bands = [], passing = null, ranked = [], inert = [], restore = null, absence = null, stale = 0, unjudged = [] }) {
+  constructor({ preset, bands = [], passing = null, ranked = [], inert = [], restore = null, absence = null, stale = 0, unjudged = [], landing = false }) {
     if (!preset && !absence) throw new Error('a tolerance block with nothing chased must say so');
     this.preset = preset;
     this.bands = Object.freeze([...bands]);
@@ -575,6 +608,10 @@ export class Tolerance {
     this.absence = absence;
     this.stale = stale;
     this.unjudged = Object.freeze([...unjudged]);
+    // Whether a band read here is off a sweep still landing: a "no lever
+    // restores" said over a curve whose passing stretch has not run yet is a
+    // verdict on positions nobody has measured.
+    this.landing = landing;
     this.asked = this.bands.length;
     Object.freeze(this);
   }
@@ -617,10 +654,11 @@ export function toleranceFor({ preset, bands, climateReason = null }) {
   const inert = bands.filter((band) => band.inert);
   const live = source.filter((band) => !band.inert);
   const unjudged = [...new Map(bands.flatMap((band) => band.unjudged).map((line) => [line.target, line])).values()];
+  const landing = live.some((band) => band.incomplete);
 
   if (passing !== false) {
     const ranked = live.filter((band) => band.band && band.contains).sort((a, b) => a.share - b.share);
-    return new Tolerance({ preset, bands, passing, ranked, inert, stale, unjudged });
+    return new Tolerance({ preset, bands, passing, ranked, inert, stale, unjudged, landing });
   }
 
   // Equal within a billionth of the travel, far below any lever's one step
@@ -650,7 +688,7 @@ export function toleranceFor({ preset, bands, climateReason = null }) {
     asked: bands.length,
     tied: tied.length > 1 ? tied : [],
   });
-  return new Tolerance({ preset, bands, passing, inert, restore, stale, unjudged });
+  return new Tolerance({ preset, bands, passing, inert, restore, stale, unjudged, landing });
 }
 
 /* ══ load-time invariants ══════════════════════════════════════════════════ */
