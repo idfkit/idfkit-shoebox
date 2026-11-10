@@ -168,11 +168,11 @@ its stop" (quickstart gate 6).
 **Purpose**: Record the decisions where the repository keeps them, and run every gate
 once more on the finished change.
 
-- [ ] T045 [P] Add a section "A face with no ends" to `docs/design-notes.md` (the `Wrap`, 8/16 on whole degrees, the seam point drawn not sampled, the cell walk, `turnOf`, link `v2` and the 360 migration, the pull's 18°), and update the studies, E-02 and permalink sections to point to it.
+- [X] T045 [P] Add a section "A face with no ends" to `docs/design-notes.md` (the `Wrap`, 8/16 on whole degrees, the seam point drawn not sampled, the cell walk, `turnOf`, link `v2` and the 360 migration, the pull's 18°), and update the studies, E-02 and permalink sections to point to it.
 - [X] T046 [P] Update `CLAUDE.md`: the Controls bullets (`Wrap` on North axis only; `refusesSweep` stays the one rule), the permalink line (`v2`, `MIGRATIONS.v1`), and the E-02 line (a wrapping axis walks cells through `next`; 8/16 along it).
 - [X] T047 [P] Add to `CHANGELOG.md` under Unreleased: Added — orientation studies, orientation survey axes and the pull entry; Changed — links are `v2`, and a `v1` link carrying `northAxis=360` opens at 0.
 - [X] T048 [P] Record the compass ticks, the seam point and the "wraps" caption on a study card and a ground in `.interface-design/system.md` (constitution workflow gate 8).
-- [ ] T049 Record the gate 2 measurement from T004 and T014 (whether a `v1` link at 360 changes IDF bytes, and by what) in `docs/design-notes.md` under the new section.
+- [X] T049 Record the gate 2 measurement from T004 and T014 (whether a `v1` link at 360 changes IDF bytes, and by what) in `docs/design-notes.md` under the new section.
 - [X] T050 Confirm `grep -n 'study\|sweep\|bearing' src/tour.js` finds no `NOTES` step that teaches what can be studied, so neither `NOTES` nor `shoebox-general-notes-v7` changes (research R12), and say so in the commit message.
 - [ ] T051 Re-run `.harness/gate1-turns.mjs` through `.harness/gate7-load.mjs` on the finished change, run `npm run build`, and drive the page once at 390 px wide: the study card's caption, extremes line and refusals are in view and the ticks thin to the cardinals (constitution VII).
 

@@ -1990,15 +1990,15 @@ measured wherever it happens to sit, which is also why a survey asked for six
 positions legitimately holds seven and a fine ground is 12 × 12 rather than
 11 × 11.
 
-An axis along North axis takes neither count: it is cut at the study's own 8
-then 16 and closes on itself in the cell walk; see "A face with no ends".
-
 Measured in the browser, which is the only place this can be measured: sweep
 Glazing S as an ordinary study, then cut a ground along Glazing S against wall
 resistance. **144 positions cost 132 engine runs.** The twelve that cost
 nothing are exactly the survey's own stance row — every position of the swept
 axis at the stance value of the other, answered from the study's cache. Under
 5 → 9 the same test spent 94 of 100.
+
+An axis along North axis takes neither count: it is cut at the study's own 8
+then 16 and closes on itself in the cell walk; see "A face with no ends".
 
 **Three states, told apart three ways, and the third is drawn by absence.**
 Measured is a tick with its figure; inferred is a hairline contour carrying its
