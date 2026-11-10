@@ -621,6 +621,12 @@ const VARIABLES_HOURLY = [
   // one and is not used.
   'Site Outdoor Air Humidity Ratio',
   'Zone Mean Air Humidity Ratio',
+  // The clock the stamps above are written in. EnergyPlus stamps every
+  // `Output:Variable` row in standard time while schedules follow the daylight
+  // saving clock, and the ESO timestamps the engine package parses do not
+  // carry the indicator, so TM59's local hours can only be placed by reading
+  // this series beside the operative temperature (see `localClock` in tm59.js).
+  'Site Daylight Saving Time Status',
 ];
 
 const VARIABLES_DAILY = ['Site Daylight Saving Time Status', 'Site Day Type Index'];

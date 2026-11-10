@@ -8,76 +8,120 @@
          draws has a different author every time somebody moves a slider, and
          nothing on this page claims otherwise. -->
     <meta name="author" content="Samuel Letellier-Duchesne" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
+    <!-- The idfkit identity at the tag package.json declares, vendored under
+         identity/ and served as the standard's build wrote it. The tokens, the
+         self-hosted typefaces, the easings and the forced-colours rule come
+         before the sheet's own stylesheet, which reads every colour, family
+         and easing through their properties and declares none. The hrefs are
+         relative so that a channel published under a prefix resolves its own
+         copy; `vite-ignore` keeps the build from rewriting the vendored files,
+         which vite.config.js copies into the bundle unchanged. -->
+    <link rel="stylesheet" href="identity/css/tokens.css" vite-ignore />
+    <link rel="stylesheet" href="identity/css/fonts.css" vite-ignore />
+    <link rel="stylesheet" href="identity/css/motion.css" vite-ignore />
+    <link rel="stylesheet" href="identity/css/forced-colors.css" vite-ignore />
+    <link rel="stylesheet" href="identity/hosts/shoebox.idfkit.com/lockup.css" vite-ignore />
+    <!-- The favicon set, both theme colours and the social image: the
+         standard's identity/hosts/shoebox.idfkit.com/head.html, pasted here
+         line for line except for the prefix of the four favicon-set paths.
+         vite.config.js writes those files beside index.html. The standard
+         writes them as `/favicon.svg`, which a release at the root resolves,
+         but `/dev/` and a preview at `/<n>/` are built with `--base` and Vite
+         leaves these hrefs as written, so a root-absolute path sent every
+         channel to the release's files, and to a 404 before the first tagged
+         release carried them. Relative, each channel resolves its own copy,
+         as the stylesheets above do. The social image stays absolute: a card
+         names the published site. -->
+    <!-- idfkit identity identity-2026.5: the favicon set, both theme colours and the social image of https://shoebox.idfkit.com. Paths are relative to the host's root; the identity-adopt skill rewrites the prefix where a host serves this directory elsewhere. -->
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#060a14">
+    <meta property="og:image" content="https://shoebox.idfkit.com/og.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://shoebox.idfkit.com/og.png">
     <style>
       /*
         A drawing sheet, not a dashboard.
         Surfaces: board -> sheet -> inset. One hue, three whisper-quiet steps.
-        Depth: hairline rules only. No shadows — paper does not float.
+        Depth: hairline rules only. No shadows: paper does not float.
         Colour: graphite builds structure; the redline pen is the only accent,
         spent on the live run and on the measured curve. The cold/warm pair is
-        not decoration — it encodes degrees Celsius.
+        not decoration: it encodes degrees Celsius.
+
+        Every value is the idfkit identity's, at the tag package.json declares,
+        read from identity/css/tokens.css and identity/css/fonts.css. The sheet
+        keeps its own vocabulary (board, sheet, vellum, redline, cold, warm) as
+        aliases of the standard's roles: a rule reads the name the sheet was
+        designed in, and the standard decides what it resolves to. No colour,
+        family or easing is written here; a rule at an alpha is mixed from a
+        role with color-mix() rather than written out.
       */
       :root {
-        color-scheme: light;
+        --board: var(--idfkit-color-surface-raised); /* the desk the sheet lies on */
+        --sheet: var(--idfkit-color-ground); /* bond paper */
+        --inset: var(--idfkit-color-surface-raised); /* an inset field: drop target, field notes */
+        --vellum: var(--idfkit-color-surface); /* the trace sheet the console is drawn on */
 
-        --board: #e6e2da; /* the desk the sheet lies on */
-        --sheet: #f6f3ec; /* bond paper */
-        --inset: #efebe2; /* an inset field: drop target, field notes */
+        --ink: var(--idfkit-color-ink); /* 2H graphite */
+        --ink-2: var(--idfkit-color-ink-muted); /* supporting text */
+        --ink-3: var(--idfkit-color-ink-label); /* metadata, labels */
+        --ink-ghost: var(--idfkit-color-primitive-slate-400); /* underlay, disabled, empty */
+        --ink-note: var(--idfkit-color-primitive-slate-500); /* notes, hints, counts: small type a reader needs */
 
-        --ink: #22252a; /* 2H graphite */
-        --ink-2: #4e535a; /* supporting text */
-        --ink-3: #7c828a; /* metadata, labels */
-        --ink-ghost: #a9aeb4; /* underlay, disabled, empty */
+        --rule: color-mix(in srgb, var(--ink) 14%, transparent); /* standard separation */
+        --rule-soft: color-mix(in srgb, var(--ink) 7%, transparent); /* within a group */
+        --rule-firm: color-mix(in srgb, var(--ink) 32%, transparent); /* emphasis, sheet edge */
+        --rule-focus: var(--idfkit-color-focus);
 
-        --rule: rgba(34, 37, 42, 0.14); /* standard separation */
-        --rule-soft: rgba(34, 37, 42, 0.07); /* within a group */
-        --rule-firm: rgba(34, 37, 42, 0.32); /* emphasis, sheet edge */
-        --rule-focus: rgba(166, 57, 43, 0.5);
+        --redline: var(--idfkit-color-accent); /* the markup pen */
+        --redline-wash: color-mix(in srgb, var(--redline) 10%, transparent);
 
-        --redline: #a6392b; /* the markup pen */
-        --redline-wash: rgba(166, 57, 43, 0.1);
+        /* The signed pair. Cold takes the deeper blue so that it stands apart
+           from the accent, which is the lighter one; warm takes the standard's
+           warning amber, the one warm hue it sets for lettering. */
+        --cold: var(--idfkit-color-primitive-blue-700); /* −15.5 °C, the winter design condition */
+        --warm: var(--idfkit-color-status-warning); /* 32 °C, the summer design condition */
 
-        --cold: #3d6478; /* −15.5 °C, the winter design condition */
-        --warm: #b4552a; /* 32 °C, the summer design condition */
-
-        --vellum: #f1ede4; /* the trace sheet the console is drawn on */
         --desk: 436px; /* the console at its narrowest: one column of strips */
         --card: 320px; /* the least width a strip column will take before the desk folds one away */
 
-        --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-        --cond: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", system-ui, sans-serif;
-        --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        --sans: var(--idfkit-font-text);
+        /* The condensed face has no counterpart in the standard: every label
+           it set takes the code face, tracked tighter (research R9). */
+        --cond: var(--idfkit-font-code);
+        --mono: var(--idfkit-font-code);
+
+        --ease: var(--idfkit-motion-ease-out-quart); /* the one curve every transition on the sheet takes */
 
         --r: 2px; /* drafting is sharp; nothing is rounded but the corners of a sheet */
       }
 
+      /* A photostat negative of the same sheet: chalk on graphite. The standard
+         turns its roles over under these same two guards, so only the aliases
+         whose role changes with the theme are restated: in the dark the desk is
+         the ground and the sheet lies raised on it. */
       @media (prefers-color-scheme: dark) {
-        :root {
-          /* A photostat negative of the same sheet: chalk on graphite. */
-          color-scheme: dark;
-          --board: #131518;
-          --sheet: #1b1e22;
-          --inset: #17191d;
-          --ink: #e6e2da;
-          --ink-2: #a9adb3;
-          --ink-3: #797f86;
-          --ink-ghost: #565b62;
-          --rule: rgba(230, 226, 218, 0.15);
-          --rule-soft: rgba(230, 226, 218, 0.08);
-          --rule-firm: rgba(230, 226, 218, 0.34);
-          --rule-focus: rgba(217, 106, 84, 0.55);
-          --redline: #d96a54;
-          --redline-wash: rgba(217, 106, 84, 0.14);
-          --cold: #6d9bb2;
-          --warm: #d08355;
-          --vellum: #191c20;
+        :root:not([data-theme="light"]) {
+          --board: var(--idfkit-color-ground);
+          --sheet: var(--idfkit-color-surface-raised);
+          --inset: var(--idfkit-color-ground);
+          --ink-ghost: var(--idfkit-color-primitive-slate-600);
+          --ink-note: var(--idfkit-color-primitive-slate-400);
+          --cold: var(--idfkit-color-primitive-blue-300);
         }
+      }
+      :root[data-theme="dark"] {
+        --board: var(--idfkit-color-ground);
+        --sheet: var(--idfkit-color-surface-raised);
+        --inset: var(--idfkit-color-ground);
+        --ink-ghost: var(--idfkit-color-primitive-slate-600);
+        --ink-note: var(--idfkit-color-primitive-slate-400);
+        --cold: var(--idfkit-color-primitive-blue-300);
       }
 
       * { box-sizing: border-box; }
@@ -106,15 +150,15 @@
       .eyebrow {
         font: 500 10.5px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.13em;
+        letter-spacing: 0.065em;
         color: var(--ink-3);
         margin: 0;
       }
 
       h1 {
-        font: 600 clamp(24px, 3.4vw, 34px)/1.05 var(--cond);
+        font: 500 clamp(24px, 3.4vw, 34px)/1.05 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.045em;
+        letter-spacing: 0.022em;
         margin: 10px 0 0;
       }
 
@@ -170,7 +214,7 @@
       .stamp span {
         font: 500 10px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.13em;
+        letter-spacing: 0.065em;
         color: var(--ink-3);
       }
       .stamp b {
@@ -248,14 +292,14 @@
       .note.here .note-mark { border-color: var(--redline); }
       .note-no {
         font: 400 10px/1 var(--mono);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         letter-spacing: 0.04em;
       }
       .note.here .note-no { color: var(--redline); }
       .note-title {
-        font: 600 12px/1 var(--cond);
+        font: 500 12px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink);
       }
       .note.done .note-title { color: var(--ink-3); }
@@ -341,8 +385,8 @@
         padding: 0 0 14px 20px;
         font: 400 11.5px/1 var(--mono);
         letter-spacing: 0.01em;
-        color: var(--ink-ghost);
-        transition: color 0.18s ease;
+        color: var(--ink-note);
+        transition: color 0.18s var(--ease);
       }
       .ledger li:last-child { padding-bottom: 0; }
       /* the tick column, drawn as one continuous hairline */
@@ -366,7 +410,7 @@
         border: 1px solid var(--ink-ghost);
         border-radius: 1px;
         background: transparent;
-        transition: all 0.18s ease;
+        transition: all 0.18s var(--ease);
       }
       .ledger li.done { color: var(--ink); }
       .ledger li.done::after { background: var(--ink); border-color: var(--ink); }
@@ -382,7 +426,7 @@
          in 600 ms are noise, so the ledger stands down and the live signal moves
          to the plate. It comes back for the annual run, which is slow enough to
          be worth watching. */
-      .ledger.quiet ol { opacity: 0.34; transition: opacity 0.2s ease; }
+      .ledger.quiet ol { opacity: 0.34; transition: opacity 0.2s var(--ease); }
       .ledger.quiet li.active::after { animation: none; }
 
       .ledger-foot {
@@ -394,7 +438,7 @@
       }
       .ledger-foot > div { display: flex; flex-direction: column; gap: 5px; }
       .ledger-foot b { font: 400 15px/1 var(--mono); color: var(--ink); }
-      .ledger-foot .sub { font: 400 10.5px/1 var(--mono); color: var(--ink-ghost); }
+      .ledger-foot .sub { font: 400 10.5px/1 var(--mono); color: var(--ink-note); }
 
       .field { padding: 26px 32px 30px; min-width: 0; border-left: 1px solid var(--rule); }
 
@@ -408,9 +452,9 @@
       }
 
       button {
-        font: 600 12px/1 var(--cond);
+        font: 500 12px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--sheet);
         background: var(--ink);
         border: 1px solid var(--ink);
@@ -419,7 +463,7 @@
         min-height: 46px;
         min-width: 168px;
         cursor: pointer;
-        transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+        transition: background 0.15s var(--ease), border-color 0.15s var(--ease), opacity 0.15s var(--ease);
       }
       button:hover:not(:disabled) { background: var(--redline); border-color: var(--redline); }
       button:active:not(:disabled) { opacity: 0.88; }
@@ -446,7 +490,7 @@
         border: 1px solid var(--rule);
         border-radius: var(--r);
         cursor: pointer;
-        transition: border-color 0.15s ease, opacity 0.15s ease;
+        transition: border-color 0.15s var(--ease), opacity 0.15s var(--ease);
       }
       .toggle:hover { border-color: var(--rule-firm); }
       .toggle input { position: absolute; width: 0; height: 0; opacity: 0; }
@@ -460,14 +504,14 @@
         height: 9px;
         border: 1px solid var(--ink-ghost);
         border-radius: 1px;
-        transition: background 0.15s ease, border-color 0.15s ease;
+        transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
       }
       .toggle:has(input:checked)::before { background: var(--redline); border-color: var(--redline); }
       .toggle:focus-within { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
       .toggle-main {
         font: 500 10.5px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.13em;
+        letter-spacing: 0.065em;
         color: var(--ink-2);
       }
       .toggle-sub { font-size: 11.5px; line-height: 1.35; color: var(--ink-3); }
@@ -536,7 +580,7 @@
         flex: 0 0 auto;
         padding: 3px 10px;
         font: 500 9px/11.5px var(--cond);
-        letter-spacing: 0.09em;
+        letter-spacing: 0.045em;
       }
       /* A thumb's target around a painted box far smaller than one. Every other
          segmented selector on the sheet is `flex: 1` and stretches to fill its
@@ -621,7 +665,7 @@
         border: 1px dashed var(--rule);
         border-radius: var(--r);
         cursor: pointer;
-        transition: border-color 0.15s ease;
+        transition: border-color 0.15s var(--ease);
       }
       /* Held above `button:hover:not(:disabled)`, which is one element more
          specific than a bare class and would otherwise repaint the field. */
@@ -633,7 +677,7 @@
       .site-main {
         font: 500 10.5px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.13em;
+        letter-spacing: 0.065em;
         color: var(--ink-2);
       }
       .site.picked .site-main {
@@ -682,7 +726,7 @@
         border-bottom: 1px solid var(--rule);
         border-radius: var(--r) var(--r) 0 0;
       }
-      .site-search::placeholder { color: var(--ink-ghost); }
+      .site-search::placeholder { color: var(--ink-note); }
       /* No focus ring on the search box: the panel only ever opens focused, so
          a ring would be lit the whole time it is visible and would say nothing.
          The caret is the indication. */
@@ -749,7 +793,7 @@
       .site-own-label {
         font: 500 9.5px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       /* An input receives content, so it is darker than what surrounds it — the
@@ -765,7 +809,7 @@
         border-radius: var(--r);
         padding: 4px;
         cursor: pointer;
-        transition: border-color 0.15s ease;
+        transition: border-color 0.15s var(--ease);
       }
       .site-file:hover { border-color: var(--rule-firm); }
       .site-file:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
@@ -774,7 +818,7 @@
       .site-file::file-selector-button {
         font: 500 9.5px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-2);
         background: var(--vellum);
         border: 1px solid var(--rule);
@@ -782,7 +826,7 @@
         padding: 7px 10px;
         margin-right: 10px;
         cursor: pointer;
-        transition: border-color 0.15s ease, color 0.15s ease;
+        transition: border-color 0.15s var(--ease), color 0.15s var(--ease);
       }
       .site-file:hover::file-selector-button { border-color: var(--rule-firm); color: var(--redline); }
       .site-file:active::file-selector-button { background: var(--inset); }
@@ -792,7 +836,7 @@
       .site-own-kept {
         margin: 0;
         font: 400 10.5px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* What the browser is holding, and how to make it stop. Never folded: a
          reader has to be able to see that a file of theirs is being kept without
@@ -810,7 +854,7 @@
         padding: 8px 13px;
         border-top: 1px solid var(--rule);
         font: 400 10.5px/1.3 var(--mono);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
 
       .status {
@@ -849,7 +893,7 @@
       .report-item-label {
         font: 500 9.5px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       .report textarea {
@@ -891,7 +935,7 @@
         overflow-wrap: anywhere;
       }
       .report-item.removed .report-item-summary { color: var(--ink-ghost); }
-      .report-item-fixed { font: 400 10.5px/1.45 var(--sans); color: var(--ink-ghost); }
+      .report-item-fixed { font: 400 10.5px/1.45 var(--sans); color: var(--ink-note); }
       .report-files,
       .report-actions { display: flex; flex-wrap: wrap; align-items: start; gap: 10px 22px; }
       .report-file,
@@ -935,7 +979,7 @@
         height: 1px;
         background: var(--redline);
         opacity: 0;
-        transition: opacity 0.14s ease;
+        transition: opacity 0.14s var(--ease);
       }
       .plate.solving::after { opacity: 0.9; animation: sweep 0.85s ease-in-out infinite; }
       @keyframes sweep {
@@ -999,7 +1043,7 @@
         all: unset;
         font: 500 10px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.13em;
+        letter-spacing: 0.065em;
         color: var(--ink-3);
         cursor: pointer;
         border-bottom: 1px solid var(--rule);
@@ -1060,7 +1104,7 @@
       .dim label {
         font: 500 9.5px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       .dim .num-field {
@@ -1115,7 +1159,7 @@
         border: 0;
         border-radius: 1px;
         background: var(--ink);
-        transition: background 0.15s ease;
+        transition: background 0.15s var(--ease);
       }
       .dim input[type="range"]:hover::-webkit-slider-thumb,
       .dim input[type="range"]:active::-webkit-slider-thumb { background: var(--redline); }
@@ -1143,7 +1187,7 @@
       .quantities dt {
         font: 500 9.5px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       .quantities dd {
@@ -1169,7 +1213,7 @@
       }
 
       /* Results that describe a shape the model no longer has. */
-      .stale { opacity: 0.42; transition: opacity 0.2s ease; }
+      .stale { opacity: 0.42; transition: opacity 0.2s var(--ease); }
       .stale-note { color: var(--redline); }
       /* Two columns, the chart takes the height the model column sets for the
          row: it was a fixed 268px at the head of an 800px cell. Taken out of
@@ -1257,7 +1301,7 @@
         border: 1px solid var(--rule);
         border-radius: var(--r);
         cursor: pointer;
-        transition: border-color 0.15s ease;
+        transition: border-color 0.15s var(--ease);
       }
       .plate-view:hover { border-color: var(--rule-firm); }
       .plate-view:focus-visible { outline: 1px solid var(--rule-focus); outline-offset: 1px; }
@@ -1266,7 +1310,7 @@
       .plate-view-name {
         font: 500 9.5px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.12em;
+        letter-spacing: 0.06em;
         color: var(--ink-2);
       }
       .plate-view[aria-checked='true'] .plate-view-name { color: var(--redline); }
@@ -1285,7 +1329,7 @@
         margin-right: 2px;
         font: 500 9px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.12em;
+        letter-spacing: 0.06em;
         color: var(--ink-2);
       }
       .plate-options-head {
@@ -1293,7 +1337,7 @@
         margin-right: 4px;
         font: 500 9px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.12em;
+        letter-spacing: 0.06em;
         color: var(--ink-3);
       }
       .plate-toggle {
@@ -1327,7 +1371,7 @@
          results of the run, so only they dim. */
       .plate-views.stale { opacity: 1; }
       .plate-views.stale > .plate-readout,
-      .plate-views.stale > .plate-cite { opacity: 0.42; transition: opacity 0.2s ease; }
+      .plate-views.stale > .plate-cite { opacity: 0.42; transition: opacity 0.2s var(--ease); }
       .trace:focus-visible { outline: 1px solid var(--rule-focus); outline-offset: -4px; }
 
       /* ── the hour bar ───────────────────────────────────────────── */
@@ -1389,12 +1433,12 @@
         border: 1px solid var(--rule);
         border-radius: var(--r);
         cursor: pointer;
-        transition: border-color 0.15s ease;
+        transition: border-color 0.15s var(--ease);
       }
       .when-offer b {
         font: 500 9.5px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.12em;
+        letter-spacing: 0.06em;
         font-weight: 500;
         color: var(--ink-2);
       }
@@ -1411,7 +1455,7 @@
         font: 500 9px/1 var(--cond);
         font-style: normal;
         text-transform: uppercase;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.05em;
         color: var(--ink-3);
       }
       .when .when-offer:hover:not(:disabled) { background: var(--inset); border-color: var(--rule-firm); }
@@ -1466,7 +1510,7 @@
         margin: 0;
         max-width: 62ch;
         font: 400 10.5px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
 
       /* The plate takes a gesture, so it says so under the pointer. `pan-y`
@@ -1489,7 +1533,7 @@
       figcaption .fig {
         font: 500 10.5px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.13em;
+        letter-spacing: 0.065em;
         color: var(--ink-2);
         white-space: nowrap;
       }
@@ -1499,7 +1543,7 @@
       .finding {
         margin: 22px 0 0;
         font: 500 clamp(15px, 1.8vw, 19px)/1.5 var(--cond);
-        letter-spacing: 0.005em;
+        letter-spacing: 0.003em;
         color: var(--ink-2);
         max-width: 62ch;
       }
@@ -1526,7 +1570,7 @@
       .chase-ghost,
       .chase-part {
         font-style: normal;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .chase-ghost { font-family: var(--mono); }
       /* Tolerance bands (feature 016). The block is the chase line's sibling
@@ -1582,7 +1626,7 @@
       .register th {
         font: 500 10px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.13em;
+        letter-spacing: 0.065em;
         color: var(--ink-3);
         text-align: right;
         padding: 0 0 8px;
@@ -1656,7 +1700,7 @@
         text-transform: none;
         letter-spacing: 0;
         font: 400 10.5px/1 var(--mono);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         margin-left: 10px;
       }
       .schedule .base:empty,
@@ -1726,10 +1770,10 @@
         border-radius: var(--r);
         font: 500 10px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.12em;
+        letter-spacing: 0.06em;
         color: var(--ink-3);
         cursor: pointer;
-        transition: border-color 0.15s ease, color 0.15s ease;
+        transition: border-color 0.15s var(--ease), color 0.15s var(--ease);
       }
       .pin:hover { border-color: var(--rule-firm); color: var(--ink); }
       .pin:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
@@ -1738,7 +1782,7 @@
         height: 9px;
         border: 1px solid var(--ink-ghost);
         border-radius: 1px;
-        transition: background 0.15s ease, border-color 0.15s ease;
+        transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
       }
       .pin[aria-pressed="true"] { color: var(--ink); }
       .pin[aria-pressed="true"] .mark { background: var(--redline); border-color: var(--redline); }
@@ -1784,7 +1828,7 @@
         margin: 0;
         font: 500 9.5px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       .meterhead .qty {
@@ -1813,7 +1857,7 @@
         font: 400 10.5px/1.5 var(--mono);
         font-variant-numeric: tabular-nums;
       }
-      .buildup .op { color: var(--ink-ghost); }
+      .buildup .op { color: var(--ink-note); }
       .buildup .what { color: var(--ink-3); }
       .buildup .amount { color: var(--ink); text-align: right; white-space: nowrap; }
       .buildup .amount.void { color: var(--ink-ghost); }
@@ -1828,12 +1872,12 @@
         padding-top: 9px;
         border-top: 1px solid var(--rule-soft);
         font: 400 10px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .meterhead .cite b {
         font: 500 9px/1.45 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.09em;
+        letter-spacing: 0.045em;
         color: var(--ink-3);
         margin-right: 6px;
       }
@@ -1891,7 +1935,7 @@
       }
       .bar-item span { flex: 1; color: var(--ink-3); }
       .bar-item b { font-weight: 400; color: var(--ink); }
-      .bar-item em { font-style: normal; color: var(--ink-ghost); }
+      .bar-item em { font-style: normal; color: var(--ink-note); }
 
       /* ── the schedule below it ──────────────────────────────────── */
 
@@ -1910,7 +1954,7 @@
       .bill tr.sum td:first-child {
         font: 500 10px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.13em;
+        letter-spacing: 0.065em;
         color: var(--ink-2);
       }
       .bill tr.total td { border-top: 1px solid var(--rule-firm); }
@@ -1919,7 +1963,7 @@
         padding: 18px 0 4px;
         font: 500 10px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.13em;
+        letter-spacing: 0.065em;
         color: var(--ink-3);
       }
       .bill tr.section:first-child td { padding-top: 4px; }
@@ -1929,7 +1973,7 @@
         display: inline-block;
         margin-top: 3px;
         font: 400 10.5px/1.4 var(--mono);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* The one mark the redline makes down here: this row ranks differently
          under cost than under carbon, which is the argument the whole section
@@ -1955,7 +1999,7 @@
       .bill-refs:empty { display: none; }
       .bill-refs {
         font-size: 11px;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         border-top: 1px solid var(--rule-soft);
         padding-top: 12px;
       }
@@ -2038,7 +2082,7 @@
         max-width: 54ch;
         font: 400 10.5px/1.45 var(--sans);
         font-style: normal;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* The fold: every explanation that is not itself a reading, one press
          away under the thing it explains.
@@ -2068,7 +2112,7 @@
         max-width: 54ch;
         font: 400 10.5px/1.45 var(--sans);
         font-style: normal;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .fold > summary::-webkit-details-marker { display: none; }
       .fold > summary::before {
@@ -2094,7 +2138,7 @@
       .register #score td.delta.absent {
         font: 400 10.5px/1.45 var(--sans);
         text-align: left;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* The one mark on the whole board. A criterion that has been missed is
          a divergence, and this is the markup pen doing what it is for. */
@@ -2150,9 +2194,9 @@
         border-radius: var(--r);
       }
       .score-name {
-        font: 600 12px/1.2 var(--cond);
+        font: 500 12px/1.2 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.12em;
+        letter-spacing: 0.06em;
         color: var(--ink);
       }
       /* `min-width` and `min-height` are given back explicitly. The bare
@@ -2315,7 +2359,7 @@
         list-style: none;
         font: 500 10px/1.4 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       .presets > summary::-webkit-details-marker { display: none; }
@@ -2324,7 +2368,7 @@
         flex: none;
         width: 1ch;
         font-family: var(--mono);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .presets[open] > summary::before { content: "−"; }
       /* Closed, the register still reads — the folded strip's rule, applied to
@@ -2337,7 +2381,7 @@
         text-transform: none;
         letter-spacing: 0;
         font-style: normal;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .presets-state.met { color: var(--ink-2); }
       .presets[open] > summary .presets-state { display: none; }
@@ -2368,7 +2412,7 @@
         margin: 9px 0 0;
         max-width: 52ch;
         font: 400 10.5px/1.5 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       #presets {
         margin-top: 7px;
@@ -2385,7 +2429,7 @@
         list-style: none;
         font: 500 10.5px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.05em;
         color: var(--ink-2);
       }
       .preset > summary::-webkit-details-marker { display: none; }
@@ -2394,7 +2438,7 @@
         flex: none;
         width: 1ch;
         font-family: var(--mono);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .preset[open] > summary::before { content: "−"; }
       .preset > summary:hover { color: var(--ink); }
@@ -2425,7 +2469,7 @@
          at ghost weight is the whole of the distinction: it is this sheet
          talking, not a published document, and it should not borrow the
          authority of the line above it. */
-      .preset.parti .preset-cite { color: var(--ink-ghost); font-style: italic; }
+      .preset.parti .preset-cite { color: var(--ink-note); font-style: italic; }
       .preset-blurb {
         margin: 8px 0 0;
         max-width: 52ch;
@@ -2446,7 +2490,7 @@
         margin: 15px 0 0;
         font: 500 9.5px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
 
@@ -2486,7 +2530,7 @@
         margin-right: 8px;
         font: 500 9px/1.6 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       /* The unit rides on the reading's own folded label. */
@@ -2494,7 +2538,7 @@
       .preset tr.adrift td:first-child { color: var(--ink); }
       .preset td.asks { color: var(--ink-3); }
       .preset td.delta { color: var(--ink-3); }
-      .preset td.delta.absent { font-size: 10.5px; color: var(--ink-ghost); }
+      .preset td.delta.absent { font-size: 10.5px; color: var(--ink-note); }
       /* The one mark on the whole register. A criterion that has been missed
          is a divergence, and this is the markup pen doing what it is for. */
       .preset td.delta.over { color: var(--redline); }
@@ -2504,7 +2548,7 @@
         max-width: 50ch;
         font: 400 10.5px/1.45 var(--sans);
         font-style: normal;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
 
       /* The clause build-up is the longest thing on the console — Passivhaus
@@ -2527,7 +2571,7 @@
       .preset-fold > summary {
         font: 500 9.5px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
         cursor: pointer;
         list-style: none;
@@ -2561,7 +2605,7 @@
       .unjudged dd,
       .qualifications dd {
         font: 400 11px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .unjudged dd {
         margin: 2px 0 9px;
@@ -2631,7 +2675,7 @@
         border-radius: var(--r);
         font: 500 13px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.06em;
+        letter-spacing: 0.03em;
         color: var(--ink);
       }
       /* Inset on hover and focus rather than always: a field that is always
@@ -2649,7 +2693,7 @@
         margin-top: 5px;
         font: 400 10.5px/1.45 var(--mono);
         font-style: normal;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* The shelf runs to ten cells — four readings, each with its delta beside
          it — so the name column gives up the 40 % the schedules hand their
@@ -2682,7 +2726,7 @@
         display: block;
         font: 500 9.5px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.13em;
+        letter-spacing: 0.065em;
         color: var(--ink-3);
         margin-bottom: 6px;
       }
@@ -2735,7 +2779,7 @@
         display: block;
         font: 500 9.5px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.13em;
+        letter-spacing: 0.065em;
         color: var(--ink-3);
         margin-bottom: 6px;
       }
@@ -2770,7 +2814,7 @@
          currently is, the way an em dash states that a reading is absent, and
          an instruction in a cell would be the one imperative on a page of
          facts. */
-      .drawn .text-field::placeholder { color: var(--ink-ghost); opacity: 1; }
+      .drawn .text-field::placeholder { color: var(--ink-note); opacity: 1; }
 
       /* ── field notes ────────────────────────────────────────────── */
 
@@ -2780,7 +2824,7 @@
         cursor: pointer;
         font: 500 10.5px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.13em;
+        letter-spacing: 0.065em;
         color: var(--ink-3);
         list-style: none;
         display: flex;
@@ -2794,7 +2838,7 @@
         border-right: 1px solid currentColor;
         border-bottom: 1px solid currentColor;
         transform: rotate(-45deg) translate(-1px, 1px);
-        transition: transform 0.18s ease;
+        transition: transform 0.18s var(--ease);
       }
       .notes[open] summary::before { transform: rotate(45deg); }
       .notes summary:hover { color: var(--ink); }
@@ -2808,7 +2852,7 @@
         font: 400 11px/1.55 var(--mono);
         color: var(--ink-3);
       }
-      #log:empty::before { content: "No engine output yet."; color: var(--ink-ghost); }
+      #log:empty::before { content: "No engine output yet."; color: var(--ink-note); }
 
       /* ── colophon ───────────────────────────────────────────────── */
 
@@ -2841,12 +2885,12 @@
         margin: 0;
         font: 500 10.5px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.13em;
+        letter-spacing: 0.065em;
         color: var(--ink-3);
       }
       .disclosure-body h2 em {
         font-style: normal;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         letter-spacing: 0.08em;
       }
       /* The colophon is prose, so it takes the disclaimers' face and measure
@@ -2872,6 +2916,53 @@
         text-underline-offset: 2px;
       }
       .colophon a:hover { color: var(--ink-2); }
+
+      /* The imprint: the family links and the ownership line, the standard's
+         own fragments (identity/css/family-links.html, ownership.html) set as
+         the last course of the title block, in the block's label lettering.
+         Every host carries the same seven links and the same line; this sheet
+         marks itself with aria-current, which the forced-colours rule reads. */
+      /* The lockup is the standard's; only its size and its place are the sheet's. */
+      .sheet-lockup {
+        --idfkit-lockup-mark: 1.625rem;
+        display: block;
+        margin-bottom: var(--idfkit-space-3);
+      }
+      .imprint {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px 24px;
+        border-top: 1px solid var(--rule-soft);
+        padding: 12px 16px 14px;
+      }
+      .idfkit-family {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 14px;
+        margin: 0;
+        font: 500 9.5px/1 var(--cond);
+        text-transform: uppercase;
+        letter-spacing: 0.065em;
+      }
+      .idfkit-family a {
+        color: var(--ink-3);
+        text-decoration: none;
+      }
+      .idfkit-family a:hover { color: var(--ink); }
+      .idfkit-family a[aria-current="page"] {
+        color: var(--ink);
+        text-decoration: underline;
+        text-decoration-color: var(--rule-firm);
+        text-underline-offset: 3px;
+      }
+      .imprint .idfkit-ownership {
+        margin: 0;
+        font: 400 11px/1.35 var(--sans);
+        color: var(--ink-3);
+      }
+      .colophon .idfkit-ownership { color: var(--ink-2); }
 
       .disclosure-body pre {
         margin: 8px 0 0;
@@ -2899,7 +2990,7 @@
         margin: 0;
         font-size: 11px;
         line-height: 1.6;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .rev-source code { font: 400 10.5px/1 var(--mono); color: var(--ink-3); }
 
@@ -2929,7 +3020,7 @@
       .rev-no {
         font: 400 10px/1 var(--mono);
         letter-spacing: 0.04em;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .rev-version { font: 500 13px/1 var(--mono); color: var(--ink); }
       .rev.unreleased .rev-version { color: var(--redline); }
@@ -2948,7 +3039,7 @@
         margin: 0 0 9px;
         font: 500 9.5px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       .rev-items { margin: 0; padding: 0; list-style: none; display: grid; gap: 11px; }
@@ -2996,7 +3087,7 @@
         border: 1px solid var(--rule);
         border-radius: var(--r);
         cursor: pointer;
-        transition: border-color 0.15s ease;
+        transition: border-color 0.15s var(--ease);
       }
       .deskbtn:hover { border-color: var(--rule-firm); }
       .deskbtn:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: 2px; }
@@ -3049,9 +3140,9 @@
       .desk-head h2 {
         grid-column: 1;
         margin: 4px 0 0;
-        font: 600 17px/1.1 var(--cond);
+        font: 500 17px/1.1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.025em;
       }
       .desk-head .eyebrow { grid-column: 1; }
       .desk-actions {
@@ -3149,15 +3240,15 @@
       .strip-toggle:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: -2px; }
       .strip-no {
         font: 400 10px/1 var(--mono);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         letter-spacing: 0.04em;
       }
       .strip-name {
         flex: 1;
         min-width: 0;
-        font: 600 12px/1 var(--cond);
+        font: 500 12px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink);
       }
       /* The three cells the folded row adds, drawn only on the index sheet. */
@@ -3175,7 +3266,7 @@
         all: unset;
         font: 500 9px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
         border: 1px solid var(--rule);
         border-radius: var(--r);
@@ -3245,7 +3336,7 @@
       .ctl-head label, .ctl-label {
         font: 500 9.5px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       /* A reading that is also the way to set it (src/field.js). Every number
@@ -3283,7 +3374,7 @@
       .ctl-note {
         margin: 5px 0 0;
         font: 400 10.5px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* A control's note behind a marker in its head (`attachNote` in
          console.js): the marker follows the label on the head's own line, so
@@ -3348,8 +3439,8 @@
         all: unset;
         font: 500 9px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
-        color: var(--ink-ghost);
+        letter-spacing: 0.055em;
+        color: var(--ink-note);
         cursor: pointer;
         border-bottom: 1px solid transparent;
       }
@@ -3375,7 +3466,7 @@
       .study-tag {
         font: 500 9px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       /* Which of a plan key's four walls this curve is of — drawn only there,
@@ -3384,7 +3475,7 @@
       .study-side {
         font: 500 9px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink);
         white-space: nowrap;
       }
@@ -3445,7 +3536,7 @@
         min-width: 0;
         font: 500 9.5px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
       }
       .study-quantity-unit {
         flex: none;
@@ -3455,7 +3546,7 @@
       .study-quantity-presumes {
         margin: 0 0 5px;
         font: 400 10.5px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .study-quantity-choices {
         border: 0;
@@ -3501,13 +3592,13 @@
         flex: 1;
         font: 500 9px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.07em;
+        letter-spacing: 0.035em;
       }
       .study-quantity-selected {
         flex: none;
         font: 500 8px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       .study-quantity-selected::before {
@@ -3546,7 +3637,7 @@
         min-height: 32px;
         margin: 6px 0 0;
         font: 400 10px/1.4 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
 
       /* A ruled calibration face with a penciled tick. The range input is
@@ -3575,7 +3666,7 @@
         height: 13px;
         margin-left: -0.5px;
         background: var(--ink);
-        transition: background 0.15s ease;
+        transition: background 0.15s var(--ease);
       }
       .face-tick::after {
         content: "";
@@ -3663,7 +3754,7 @@
         min-height: 12px;
         font: 500 9px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.09em;
+        letter-spacing: 0.045em;
         color: var(--ink-3);
         /* One line whatever it says, with the whole reading on the title.
            A band name long enough to wrap would relayout the strip's column
@@ -3673,7 +3764,7 @@
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      .ctl-standing.between, .dim-standing.between { color: var(--ink-ghost); }
+      .ctl-standing.between, .dim-standing.between { color: var(--ink-note); }
 
       /* Exclusive states on one segmented rule. Never a dropdown: the desk
          has to be readable without opening anything. */
@@ -3714,11 +3805,11 @@
         padding: 5px 7px;
         font: 500 9px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.07em;
+        letter-spacing: 0.035em;
         color: var(--ink-3);
         cursor: pointer;
         border-right: 1px solid var(--rule-soft);
-        transition: background 0.14s ease, color 0.14s ease;
+        transition: background 0.14s var(--ease), color 0.14s var(--ease);
       }
       .segment:last-child { border-right: 0; }
       .segment:hover { color: var(--ink); }
@@ -3753,7 +3844,7 @@
       .plan-read { display: flex; flex-direction: column; gap: 2px; text-align: center; }
       .plan-read span {
         font: 500 9px/1 var(--cond);
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       /* The plan key's reading is an editable field; the boundary key's is a
@@ -3784,8 +3875,8 @@
         min-height: 10px;
         font: 500 8px/1.25 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--ink-ghost);
+        letter-spacing: 0.03em;
+        color: var(--ink-note);
       }
       /* A wall whose number reaches no object in the document — an overhang on
          a solid elevation. Dimmed here and on its own bar of the plan, which
@@ -3913,7 +4004,7 @@
       .pattern-at {
         font: 400 8.5px/1 var(--mono);
         font-variant-numeric: tabular-nums;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* The same 11px tabular mono every other reading on this desk is
          lettered in, and settable in place like all of them: `.num-field`
@@ -3965,11 +4056,11 @@
         padding: 6px 0;
         font: 500 8.5px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.02em;
         color: var(--ink-3);
         cursor: pointer;
         border-right: 1px solid var(--rule-soft);
-        transition: background 0.14s ease, color 0.14s ease;
+        transition: background 0.14s var(--ease), color 0.14s var(--ease);
       }
       .month:last-child { border-right: 0; }
       .strip-body .month:hover { background: transparent; color: var(--ink); }
@@ -4029,7 +4120,7 @@
       .day-when {
         font: 400 10px/1.3 var(--mono);
         font-variant-numeric: tabular-nums;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         white-space: nowrap;
       }
       /* Dropped whole by the run, so the engine will lose it without a word. */
@@ -4060,7 +4151,7 @@
         cursor: pointer;
         padding: 0 2px;
         font: 400 12px/1 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       /* The guard every unset button on this sheet carries: the one real
          `button:hover:not(:disabled)` rule is more specific than a bare class
@@ -4081,7 +4172,7 @@
         font: 400 10.5px/1.4 var(--mono);
         color: var(--ink);
       }
-      .day-field::placeholder { color: var(--ink-ghost); }
+      .day-field::placeholder { color: var(--ink-note); }
       .day-field:focus-visible { outline: 2px solid var(--rule-focus); outline-offset: -2px; }
       .day-put {
         all: unset;
@@ -4089,7 +4180,7 @@
         padding: 0 4px;
         font: 500 9px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
         border-bottom: 1px solid transparent;
       }
@@ -4119,8 +4210,8 @@
         cursor: pointer;
         font: 500 9px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
-        color: var(--ink-ghost);
+        letter-spacing: 0.055em;
+        color: var(--ink-note);
         border-bottom: 1px solid transparent;
       }
       .day-presets button.day-set:hover:not(:disabled) {
@@ -4148,7 +4239,7 @@
         flex: 1;
         font: 500 9.5px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       /* Marks the readings that are terms of the rail below. */
@@ -4156,8 +4247,8 @@
         font: 500 8.5px/1 var(--cond);
         font-style: normal;
         text-transform: uppercase;
-        letter-spacing: 0.11em;
-        color: var(--ink-ghost);
+        letter-spacing: 0.055em;
+        color: var(--ink-note);
         border: 1px solid var(--rule);
         border-radius: 1px;
         padding: 2px 3px;
@@ -4207,7 +4298,7 @@
       .meter-note {
         margin: 6px 0 0;
         font: 400 10.5px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
 
       /* ── what the engine made of a channel's declaration ───────────────
@@ -4229,7 +4320,7 @@
         flex: 1;
         font: 500 9.5px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       .readout-value {
@@ -4328,7 +4419,7 @@
         border-right: 1px solid var(--ink-ghost);
         border-bottom: 1px solid var(--ink-ghost);
         transform: rotate(-45deg) translate(-1px, 1px);
-        transition: transform 0.18s ease, border-color 0.15s ease;
+        transition: transform 0.18s var(--ease), border-color 0.15s var(--ease);
       }
       .strip.open .strip-chev { transform: rotate(45deg); }
       @media (prefers-reduced-motion: reduce) {
@@ -4425,7 +4516,7 @@
            the narrow desk is left exactly as it was. */
         max-width: 62ch;
         font: 400 10.5px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
       .rail-note.loose { color: var(--ink-3); }
 
@@ -4527,7 +4618,7 @@
           margin-right: 8px;
           font: 500 9px/1.6 var(--cond);
           text-transform: uppercase;
-          letter-spacing: 0.11em;
+          letter-spacing: 0.055em;
           color: var(--ink-3);
         }
         /* A label that carries a unit letters the unit in its own case.
@@ -4546,7 +4637,7 @@
           order: -1;
           margin-right: 8px;
           font: 500 9px/1.6 var(--cond);
-          letter-spacing: 0.04em;
+          letter-spacing: 0.02em;
           color: var(--ink-3);
         }
         .register td:first-child { margin-bottom: 6px; }
@@ -4704,7 +4795,7 @@
           min-width: 0;
           font: 500 9.5px/1.5 var(--cond);
           text-transform: uppercase;
-          letter-spacing: 0.11em;
+          letter-spacing: 0.055em;
           text-align: left;
           color: var(--ink-3);
           overflow-wrap: anywhere;
@@ -4899,7 +4990,7 @@
       .survey-extent b {
         font: 500 9.5px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       /* `.num-field` is `font: inherit` by design — it takes the lettering of
@@ -4917,7 +5008,7 @@
       }
       .survey-extent-rule {
         font: 400 10.5px/1.3 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
 
       /* Each picker is a title-block cell: one hairline round the caption, the
@@ -4942,7 +5033,7 @@
         max-width: 100%;
         border: 1px solid var(--rule);
         border-radius: var(--r);
-        transition: border-color 0.15s ease;
+        transition: border-color 0.15s var(--ease);
       }
       .survey-combo:hover,
       .survey-combo.open { border-color: var(--rule-firm); }
@@ -4980,14 +5071,14 @@
       .survey-pick-count {
         font: 500 9.5px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
       .survey-pick-head b { grid-column: 1; }
       .survey-pick-count {
         grid-column: 2 / 4;
         justify-self: end;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         text-align: right;
       }
 
@@ -5031,7 +5122,7 @@
         font: inherit;
         color: var(--ink);
       }
-      .survey-pick-field::placeholder { color: var(--ink-ghost); }
+      .survey-pick-field::placeholder { color: var(--ink-note); }
       .survey-pick-close {
         grid-column: 3;
         color: var(--redline);
@@ -5104,13 +5195,13 @@
       .survey-options-group b {
         font: 500 9px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         color: var(--ink-3);
       }
 
       .survey-options-group small {
         font: 400 10px/1.45 var(--sans);
-        color: var(--ink-ghost);
+        color: var(--ink-note);
       }
 
       .survey-option:hover { color: var(--redline); }
@@ -5119,7 +5210,7 @@
       .survey-option[disabled] { color: var(--ink-ghost); cursor: not-allowed; }
       .survey-option small {
         display: block;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         font-size: 10px;
         line-height: 1.4;
         /* A unit or a refusal, neither of which is a label: through the
@@ -5162,7 +5253,7 @@
         padding: 3px 5px;
         font: 400 11px/1.35 var(--mono);
         letter-spacing: 0;
-        color: var(--ink-ghost);
+        color: var(--ink-note);
         cursor: pointer;
         border-radius: var(--r);
       }
@@ -5260,7 +5351,7 @@
       .relief-lettering .relief-axis {
         font: 500 8.5px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         fill: var(--ink-3);
       }
       /* The unit on the height's name, set apart from the capitals round it:
@@ -5324,7 +5415,7 @@
       .ground .axis-label {
         font: 500 8.5px/1 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.055em;
         fill: var(--ink-3);
       }
       .ground .axis-stop {
@@ -5559,7 +5650,7 @@
         color: var(--ink-2);
         font: 500 9px/1.3 var(--cond);
         text-transform: uppercase;
-        letter-spacing: 0.07em;
+        letter-spacing: 0.035em;
         padding: 5px 8px;
         min-width: 0;
         min-height: 0;
@@ -5582,7 +5673,7 @@
       }
 
       .survey-coverage b { color: var(--ink); font-weight: 400; }
-      .survey-coverage .loose { color: var(--ink-ghost); }
+      .survey-coverage .loose { color: var(--ink-note); }
 
       /* The design under the reader, in the mono face every figure on this
          page is set in, because it is a reading and not a caption — it is what
@@ -5602,7 +5693,7 @@
       }
 
       /* Not a measurement: bare ground under the pointer, or no survey cut. */
-      .spot-readout.loose { color: var(--ink-ghost); }
+      .spot-readout.loose { color: var(--ink-note); }
 
       /* The complete record, shut by default. The summary states its count in
          view, so what is behind the fold is known without opening it — the
@@ -5673,8 +5764,9 @@
     <main class="sheet">
       <header class="head">
         <div>
-          <p class="eyebrow">Client-side building simulation</p>
-          <h1>EnergyPlus in the browser</h1>
+          <a class="idfkit-lockup sheet-lockup" href="https://idfkit.com" aria-label="idfkit Shoebox"></a>
+          <p class="eyebrow">Client-side building energy simulation</p>
+          <h1>Design Space Exploration</h1>
           <p class="lede">
             EnergyPlus, compiled to WebAssembly and running inside this tab.
             <b>The model, the solver and the results never leave your machine.</b>
@@ -6296,6 +6388,23 @@
         </details>
       </div>
 
+      <!-- The imprint. A title block closes with whose sheet it is: the seven
+           properties of the family, this one marked as the page the reader is
+           on, and the ownership line. Both are the standard's fragments,
+           carried verbatim. -->
+      <footer class="imprint">
+        <nav aria-label="idfkit" class="idfkit-family">
+          <a href="https://idfkit.com">idfkit</a>
+          <a href="https://developers.idfkit.com">Developers</a>
+          <a href="https://docs.idfkit.com">EnergyPlus docs</a>
+          <a href="https://app.idfkit.com">Envelop</a>
+          <a href="https://mcp.idfkit.com">MCP</a>
+          <a href="https://shoebox.idfkit.com" aria-current="page">Shoebox</a>
+          <a href="https://github.com/idfkit">GitHub</a>
+        </nav>
+        <p class="idfkit-ownership">An idfkit project.</p>
+      </footer>
+
       <details class="notes" id="notes">
         <summary>Engine console</summary>
         <pre id="log"></pre>
@@ -6337,6 +6446,7 @@
                current; the prose says only what is true in both directions. -->
           <article class="colophon">
             <h2>Colophon</h2>
+            <p class="idfkit-ownership">An idfkit project.</p>
             <p>
               Built by <a href="https://samuelduchesne.github.io" target="_blank" rel="noreferrer">Samuel Letellier-Duchesne</a>, who works on building energy simulation at
               <a href="https://www.introba.com" target="_blank" rel="noreferrer">Introba</a>

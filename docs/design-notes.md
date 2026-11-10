@@ -1433,6 +1433,16 @@ when they read "banker's rounding" and think it is the careful choice, returns 2
 for both 1.5 and 2.5 and is wrong on the first. `roundDT` exists as its own
 export so there is one place the argument is written down.
 
+**The half is tested with a tolerance of 1e-9 K.** dT is a difference of two
+binary floating-point numbers, and a difference that is exactly a half in
+decimal can be held just below it: the Category II line at a running mean of
+10.1 °C is 25.133000000000003, so 25.633 °C gives a dT of 0.49999999999999645
+and `Math.round` returns 0. Measured over running means of 10 °C to 30 °C in
+steps of 0.1 K, both categories, with the operative temperature half a degree
+above the line to the millikelvin, the bare rounding dropped the boundary hour
+for 127 of the 402 thresholds. `roundDT` adds `DT_TOLERANCE_K` before rounding,
+which moves nothing a simulation can distinguish and drops none of the 402.
+
 **Design days are outside the period, by date and by intent.** A summer design
 day falls inside 1 May to 30 September on the calendar, the desk ships two of
 them, and they exist to be more extreme than any day of the year they precede.
@@ -1525,6 +1535,29 @@ file's own local standard time, unshifted, and that is stated rather than
 corrected: TM59 section 3.7.1 says its times are British Summer Time, and every
 TMYx file tested declares `HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0`, so there is no
 rule in the file to shift by and a shift would be an invention.
+
+**The readers place every stamp on the local clock, because the output is in
+standard time.** Where a file does declare a rule and the Run strip observes
+it, EnergyPlus moves the schedules and not the stamps. Measured on EnergyPlus
+26.1 with daylight saving in force: a schedule written as 0 until 09:00 and 1
+after it reads 1 on the stamp ending at hour 9, which is 08:00 to 09:00
+standard time and 09:00 to 10:00 local. Criterion b's window was written as
+stamp 24 and stamps 1 to 8, which is 23:00 to 08:00 only on the standard clock;
+under daylight saving it read 00:00 to 09:00 local, a full hour late on every
+night. The ESO timestamps `@idfkit/engine` parses carry no daylight saving flag
+(the ESO line does, the parsed `Timestamp` drops it), so the sheet and the TM59
+study contents request `Site Daylight Saving Time Status` hourly and
+`localClock` in `tm59.js` maps each stamp ending at hour `h` with status `s` to
+the local hour starting at `h - 1 + s`, the next day when that reaches 24. The
+status is read per stamp rather than per day, so a transition inside the period
+is answered by the same arithmetic: a skipped local hour is recorded as a gap
+rather than a missing hour, and a repeated one is read twice. Criteria a and c
+read occupancy at the same stamp and so already agreed with the schedules; they
+now take the local day too, which puts the first local hour of 1 May inside the
+period, the first local hour of 1 October outside it, and reads each hour
+against its own day's comfort line. Without daylight saving every status is 0
+and every reading is unchanged. A run without the status series reads as an
+absence (`ABSENCE.clock`) rather than assuming either clock.
 
 ### The `Pattern` control kind (channel 10)
 

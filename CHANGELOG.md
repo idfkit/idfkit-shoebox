@@ -19,9 +19,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The study and survey reading "Cost" is now "Utility cost"**, as is the
   kept-scheme column, so that it is not read as a construction cost. The link
   token `cost` is unchanged.
+- **The sheet carries the idfkit lockup**, with the property name Shoebox, at the
+  head of the title block, so that the page shows the same mark as every other
+  idfkit host.
+- **The sheet wears the idfkit identity**, at `identity-2026.5`. The standard's
+  derivation is vendored under `identity/` and served as its build wrote it;
+  every colour, typeface and easing on the page now reads from it, and the
+  drafting sheet's own names (`--board`, `--sheet`, `--redline`, `--cold`,
+  `--warm`) survive as aliases of the standard's roles. Inter sets the prose
+  and JetBrains Mono the figures; the condensed label face, which the standard
+  has no counterpart for, is set in the mono face with tighter tracking. The
+  favicon set, the social image, the seven family links and the ownership line
+  come from the standard, and the README opens with the shared header. The
+  check workflow `check-identity.yml` holds the page to the tag it declares.
 
 ### Fixed
 
+- **TM59 criterion b reads the right nine hours under daylight saving.**
+  EnergyPlus stamps hourly output in standard time while schedules follow the
+  daylight saving clock, so with daylight saving observed the window read was
+  00:00 to 09:00 local instead of 23:00 to 08:00. Every TM59 reading now places
+  each stamp on the local clock from the hourly `Site Daylight Saving Time
+  Status` series, which the sheet and the TM59 study quantities now request.
+  Criteria a and c attribute each hour to its local day the same way, so the
+  first hour of 1 May is in the period, the first hour of 1 October is not, and
+  each hour is read against its own day's comfort line. Runs without daylight
+  saving read exactly as before.
+- **TM59 criterion a counts an hour whose ∆T is exactly 0.5 K.** The rounding
+  now carries a 1e-9 K tolerance, so a difference that is a half in decimal but
+  is held just below it in binary floating point rounds up as TM59 requires.
+  Without it, an operative temperature half a degree above the line was
+  dropped for 127 of the 402 thresholds between running means of 10 °C and
+  30 °C.
 - **Landmark tooltips and slider descriptions now follow the unit system.**
   They were lettered once, when the faces were built, so a sheet opened in IP
   described the console's bands in SI, and a sheet switched back to SI

@@ -1,4 +1,18 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/idfkit/idfkit-brand/identity-2026.5/marks/mark-on-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/idfkit/idfkit-brand/identity-2026.5/marks/mark-on-light.svg">
+    <img alt="idfkit" width="72" src="https://raw.githubusercontent.com/idfkit/idfkit-brand/identity-2026.5/marks/tile.png">
+  </picture>
+</p>
+
 # idfkit-shoebox
+
+EnergyPlus in the browser: a client-side shoebox model on a drafting sheet.
+
+[idfkit](https://idfkit.com) · [Developers](https://developers.idfkit.com) · [EnergyPlus docs](https://docs.idfkit.com) · [Envelop](https://app.idfkit.com) · [MCP](https://mcp.idfkit.com) · [Shoebox](https://shoebox.idfkit.com) · [GitHub](https://github.com/idfkit)
+
+[![check](https://github.com/idfkit/idfkit-shoebox/actions/workflows/check.yml/badge.svg)](https://github.com/idfkit/idfkit-shoebox/actions/workflows/check.yml) [![License](https://img.shields.io/github/license/idfkit/idfkit-shoebox)](LICENSE)
 
 Live at **[shoebox.idfkit.com](https://shoebox.idfkit.com)**, which carries the
 last tagged release. The current `main` is at
@@ -6,9 +20,18 @@ last tagged release. The current `main` is at
 
 The smallest possible showcase of EnergyPlus running in the browser via
 `@idfkit/engine` and `@idfkit/engine-assets`. One page, no button needed: it
-runs the stock `1ZoneUncontrolled.idf` example (EnergyPlus 26.1.0) as a
-design-day simulation entirely client-side, re-solving as you drag the sliders,
-in about 50 ms a time. Pick a weather location to switch to an annual run.
+runs a model derived from the `1ZoneUncontrolled.idf` example (EnergyPlus
+26.1.0) as a design-day simulation entirely client-side, re-solving as you drag
+the sliders. Pick a weather location, or attach a weather file, to switch to an
+annual run.
+
+The default model is not the stock example as shipped. `src/model.js` keeps the
+stock 15.24 × 15.24 × 4.572 m zone and drops its matched pair of
+`OtherEquipment` loads; `src/controls.js` declares 144 parameters across 18
+channels. At their defaults the south wall carries a 20 % window under a 0.6 m
+overhang, the solar distribution is `FullExterior`, and eight channels start
+bypassed: Context, Skylights, Blinds, Air, Gains, Daylight, System and Grounds.
+The stock example's exterior lighting sits behind the Grounds channel.
 
 The page is laid out as a drawing sheet rather than a dashboard, because the
 audience is architects. It plots zone mean air temperature against outdoor
@@ -44,11 +67,13 @@ short-lived OIDC token, trades it for the deploy role, and runs
 
 **Only a `v*` tag publishes the site itself.** Everything else is published one
 directory in, into the same bucket and through the same distribution: every push
-to `main` goes to `shoebox.idfkit.com/dev/`, and every open pull request to
-`shoebox.idfkit.com/<number>/`. The address then says what the title block's
-revision cell says — a release at the root, a `+sha` build under `/dev/` — and a
-release is nothing more than the artefact that has been sitting under `/dev/`
-since it was merged, moved to the root. To cut one:
+to `main` goes to `shoebox.idfkit.com/dev/`, and every open pull request goes to
+`shoebox.idfkit.com/<number>/` through `.github/workflows/preview.yml`, which
+also removes the preview when the pull request closes. The address then says
+what the title block's revision cell says — a release at the root, a `+sha`
+build under `/dev/`. A `v*` tag runs `deploy.yml` on the tagged commit as a
+fresh build: `npm ci`, then `npm run build -- --base=/`, published to the root.
+To cut one:
 
 ```bash
 npm version patch      # or minor / major, which tags as well as bumps
@@ -72,14 +97,15 @@ bakes the base into every asset URL at build time:
 npm run build -- --base=/dev/ && SHOEBOX_PREFIX=dev npm run deploy
 ```
 
-After the first `cdk deploy`, set the repository variable
+After the first `cdk deploy`, set the repository secret
 `AWS_DEPLOY_ROLE_ARN` to the stack's `DeployRoleArn` output, which is what the
 workflow assumes. The role trusts one repository — its `main`, its `v*` tags,
 and pull requests raised within it — so a pull request from a fork cannot reach
 the bucket.
 
 Three things about this arrangement are load-bearing, and each cost real
-measurement to find:
+measurement to find. The figures below were recorded on 2026-08-14 (commit
+d0f372a); the two file sizes were re-measured on 2026-11-06.
 
 - **CloudFront compresses only between 1 KB and 10 MB**, and only for content
   types on its own list. The engine binary (28.40 MiB) and the schema
@@ -103,29 +129,44 @@ and would leave the weather picker dead.
 
 ## Files
 
-- `src/model.js`: authors the model with `@idfkit/core` and reads it back
-- `src/main.js`: loads the engine and schema, runs the model, reads the ESO, and
-  draws the axonometric, the trace and the results schedule
-- `src/weather.js`: the site picker's data layer over `@idfkit/weather`
+- `src/controls.js`: declares every control and groups them into channels;
+  `DEFAULT_PARAMETERS` is derived from it
+- `src/model.js`: authors the model with `@idfkit/core`; `applyModel` writes the
+  whole desk into it, one applier per channel, and the readers take it back out
+- `src/main.js`: loads the engine and schema, owns the parameters, schedules
+  solves and draws the sheet
+- `src/console.js`: draws the model console from the same declaration
+- `src/plate.js`, `src/views.js`: the plate and its views of one run
+- `src/readings.js`: reads results off a finished run
+- `src/weather.js`, `src/epw.js`, `src/source.js`: the site picker over
+  `@idfkit/weather`, the EPW reader for an attached file, and the typed record
+  of what the desk is solving against
+- `src/permalink.js`: the scheme as a URL fragment
+- `src/scheduler.js`, `src/study.js`, `src/pool.js`: parameter studies and the
+  engine pool they run on
+- the remaining modules of `src/` (40 in all) are listed by role in `CLAUDE.md`
 - `index.html`: the sheet — tokens, run ledger, plate, schedule, title block
 - `scripts/copy-schemas.mjs`: stages the schema bundle into `public/schemas/`
 - `scripts/stage-weather.mjs`: stages the station index into `public/weather/`
 - `scripts/deploy.mjs`: compresses `dist/` and publishes it to the bucket
+- `scripts/write-models.mjs`: writes the generated model at several desk
+  positions, for a run outside the browser
 - `infra/`: the CDK app for `shoebox.idfkit.com`, installed separately
 
 ## Picking a weather location
 
-The picker replaces the old drop-an-EPW target. It searches the
-climate.onebuilding.org TMYx index through
+The picker searches the climate.onebuilding.org TMYx index through
 [`@idfkit/weather`](https://www.npmjs.com/package/@idfkit/weather), downloads the
 station's archive, unpacks the EPW in the browser, and hands the text straight to
-`ep.run({ idf, epw })` — the same path a dropped file took, with no server in it.
+`ep.run({ idf, epw })`, with no server in it. A weather file of your own can be
+attached instead: an EPW, a DDY beside it, or the ZIP they came in. It is read
+in the page and never uploaded.
 
 Three things about that index are worth knowing:
 
 - It is 1.7 MB gzipped and inflates to 69,638 records, so it is fetched lazily,
   on the first keystroke in the picker, and kept for the session.
-- Those records cover 17,292 distinct sites, because onebuilding publishes each
+- Those records cover 17,330 distinct sites, because onebuilding publishes each
   one as a bare `_TMYx` plus up to four explicit 15-year windows. These are not
   duplicates and they disagree — Boston-Logan's five run from 2,840 to 3,083
   HDD18, a 9% spread — so the picker groups them under the site and asks which
@@ -140,9 +181,9 @@ Three things about that index are worth knowing:
 Choosing a station swaps the whole climate, not just the 8,760 hours. The
 archive holds a DDY beside the EPW, so `fetchWeatherFiles` returns both from the
 one request, and the model takes its `Site:Location` and its two
-`SizingPeriod:DesignDay` objects from that DDY: the 99% heating drybulb and the
-1% cooling drybulb at mean coincident wetbulb, which is the pair the stock
-Denver file uses and the pair the plate draws as datum lines.
+`SizingPeriod:DesignDay` objects from that DDY: by preference the 99% heating
+drybulb and the 1% cooling drybulb at mean coincident wetbulb, which is the pair
+the stock Denver file uses and the pair the plate draws as datum lines.
 
 Leaving Denver's in place was not merely untidy. EnergyPlus simulated them
 inside every annual run, which is why the schedule showed a Denver winter design
@@ -157,18 +198,24 @@ and it said so:
               more than 10% from Standard Barometric Pressure=100893.
 ```
 
-With the DDY in, Montreal's design days run at Montreal's pressure and those
-three warnings are gone. The winter column moves from 21 December to 21 January
+Measured on 2026-08-13 (commit 1c3a4fb): with the DDY in, Montreal's design
+days run at Montreal's pressure and those three warnings are gone. The winter column moves from 21 December to 21 January
 and its datum from −15.5 °C to −19.5 °C, both read back off the model rather
 than off the index, so the drawing and the engine cannot disagree about where
 the building is.
 
-A station whose archive carries no DDY, or whose DDY names neither of the two
-days, is refused whole: the picker hands the field back and says why, and no EPW
-is attached. There is deliberately no fallback. Keeping the previous city's
-design days under the new city's name is the exact mismatch this path exists to
-remove, and a sheet that did it quietly would be wrong in the one way nobody
-would catch.
+Where a station does not publish that pair, `designConditionsFrom` in
+`src/model.js` takes the first readable day from an ordered list: for heating,
+the 99% day and then the 99.6% day; for cooling, the 1% day on a mean
+coincident wetbulb, wetbulb, dewpoint or enthalpy basis, in that order. Monthly
+design days are never taken. A station whose archive carries no DDY, or whose
+DDY publishes none of those days in readable form, is refused whole: the picker
+hands the field back and says why, and no EPW is attached. There is deliberately
+no fallback to the previous city's design days. Keeping them under the new
+city's name is the exact mismatch this path exists to remove, and a sheet that
+did it quietly would be wrong in the one way nobody would catch. A weather file
+attached from disk without a DDY is accepted, and the desk then has no design
+days.
 
 ### The proxy
 
@@ -241,34 +288,39 @@ axonometric projects the surface vertices, the plate's datum lines come from the
 
 ### What the run reports
 
-One deliberate departure from the stock example: its thirty-odd per-surface
-conduction series are gone. They cost nothing to compute and a great deal to
-report — each is requested with key `*`, so it expands to one series per
-surface, and together they took the ESO from 15 series to 173.
+One deliberate departure from the stock example: its per-surface series are
+not requested. They cost nothing to compute and a great deal to report — each is
+requested with key `*`, so it expands to one series per surface. Run as shipped
+with EnergyPlus 26.1.0 against the Golden, Colorado TMY3 file, the stock
+example's ESO lists 169 report-variable series, 144 of them per surface. The
+default desk's design-day run lists 15. `syncReporting` in `src/model.js`
+requests only what the sheet reads, gated by channel, so engaging a channel adds
+the series it needs.
 
-That is not a rounding error. Measured on the annual run, interleaved A/B inside
-a single page session so engine warm-up cannot confound it:
+That is not a rounding error. Measured on 2026-08-13 (commit 58914ef) on the
+annual run of the model as it then stood, interleaved A/B inside a single page
+session so engine warm-up cannot confound it:
 
 | Output requested | Annual run | After EnergyPlus stops simulating |
 | --- | --- | --- |
 | Stock, 173 series | 2,984 ms | 2,117 ms |
 | Zone and site only, 15 series | 681 ms | 178 ms |
 
-Nearly three quarters of the original run happened after the simulation
-finished, almost all of it inside the engine parsing the ESO and handing it back
-across the worker boundary. Drawing the chart is about 15 ms of it.
+In that measurement, nearly three quarters of the original run happened after
+the simulation finished, almost all of it inside the engine parsing the ESO and
+handing it back across the worker boundary. Drawing the chart was about 15 ms of
+it.
 
 Output requests do not touch the physics — they only decide what is written
-down — so every zone-level and site-level series the stock example asks for is
-still here, and the results are unchanged. The sheet itself reads two of them.
+down.
 
 ## Reshaping the zone
 
-The five sliders call `setParameters(doc, ...)`, which rewrites the vertex groups
-on the six surfaces in place rather than rebuilding
-the document, so the run-period switch and the output requests keep their state.
-The window and its overhang are the two objects that come and go as their
-sliders cross zero, and one routine adds, reshapes and removes them both.
+Every change on the desk calls `applyModel(doc, params, bypass)` in
+`src/model.js`, which rewrites the vertex groups on the six surfaces in place
+rather than rebuilding the document, so the run-period switch and the output
+requests keep their state. Windows and shades are objects that come and go as
+their sliders cross zero; the appliers add, reshape and remove them.
 The axonometric and the quantities panel update on every frame of the drag; the
 floor area, exposed envelope, volume and envelope-to-volume ratio are summed off
 the surfaces with Newell's method, so they need no simulation and follow
@@ -277,38 +329,38 @@ the exposed envelope, since counting it would flatter the compactness.
 
 ## Solving as you drag
 
-A warm design day solves in about 50 ms, start of the run to the chart on
-screen. That is well inside a drag, so the sheet solves itself: auto-solve is on
-by default and there is nothing to press.
+A warm design day solves well inside the length of a drag, so the sheet solves
+itself: auto-solve is on by default and there is nothing to press.
 
 Runs are serialised — `@idfkit/engine` rejects a second `run()` while one is in
-flight — so every solve goes through one scheduler, and it is latest-wins.
-Whatever the sliders are showing when the engine comes free is what gets solved;
-the shapes the drag passed through on the way are skipped, not queued. Flicking
-a slider across its whole track fires 150 input events and two runs.
+flight — so every solve of the desk goes through one loop (`pump()` in
+`src/main.js`), and it is latest-wins. Whatever the sliders are showing when the
+engine comes free is what gets solved; the shapes the drag passed through on the
+way are skipped, not queued. Parameter studies run separately, on a pool of up
+to six engine instances (`src/pool.js`).
 
 The two run types are far enough apart to need different cadences, so the
 cadence is the only thing that changes between them:
 
-| | solve time | fires |
-| --- | --- | --- |
-| Design day, 48 h | ~50 ms | continuously, during the drag |
-| Weather file, 8,760 h | ~0.7 s | once, on release |
+| | fires |
+| --- | --- |
+| Design day, 48 h | continuously, during the drag |
+| Weather file, 8,760 h | once, on release |
 
-Because a result now arrives roughly every 50 ms, replacing the numbers in place
-would be a strobe and would tell you nothing. So the sheet holds on to the shape
+Because results now arrive continuously during a drag, replacing the numbers in
+place would be a strobe and would tell you nothing. So the sheet holds on to the shape
 you took hold of: the zone curve you started from stays on the plate as a ghost
 labelled `WAS`, and the schedule prints the change beside each value. Only the
 change — a shift too small to move the printed number prints nothing, which is
 why the outdoor rows stay blank. The design days are fixed, so they never move.
 
 The baseline is captured per gesture, not per run. During a slow drag the
-previous run is 50 ms old and nearly identical, so differencing against it would
+previous run is moments old and nearly identical, so differencing against it would
 report nothing; differencing against where you took hold is the reading you
 want. It survives a gesture that crosses several sliders.
 
-At this cadence the run ledger is scenery — five phases that flick past inside
-600 ms — so it stands down to a dimmed list and the live signal moves to a pen
+At this cadence the run ledger is scenery — five phases that flick past faster
+than they can be read — so it stands down to a dimmed list and the live signal moves to a pen
 travelling the top edge of the plate. The annual run is slow enough to be worth
 watching, so it gets the ledger and the ticking wall clock back.
 
@@ -323,21 +375,28 @@ goes to 0.71 — the geometry, the drawing and the physics move together.
 
 ## South glazing
 
-`1ZoneUncontrolled.idf` has no fenestration, so the window is this demo's
-addition: a `WindowMaterial:SimpleGlazingSystem` (U 1.8, SHGC 0.4, VT 0.6) and a
-`FenestrationSurface:Detailed` on `Zn001:Wall001`. `north_axis` is 0, so the
+`1ZoneUncontrolled.idf` has no fenestration, so windows are this demo's
+addition: each of the four walls takes a `FenestrationSurface:Detailed` at its
+own ratio (`wwrN`, `wwrE`, `wwrS`, `wwrW`), glazed either with a
+`WindowMaterial:SimpleGlazingSystem` (by default U 1.8, SHGC 0.4, VT 0.6) or
+with a layered assembly of panes and gas gaps. By default only `Zn001:Wall001`
+is glazed. `north_axis` is 0 by default, so the
 wall at y = 0 is the one facing south — and the axonometric is projected from
 the south-east for exactly that reason, since a drawing of a building with a
 south window has to be able to see it.
 
-The WWR slider scales both window dimensions by √wwr about the centre of the
-wall rather than stretching a ribbon across it, which keeps the opening in
-proportion and guarantees a reveal on all four sides at any ratio. At 0 the
+With the default `Punched` aperture, the WWR slider scales both window
+dimensions by √wwr rather than stretching a ribbon across the wall, which keeps
+the opening in proportion and guarantees a reveal on all four sides at any
+ratio; `Ribbon` and `Full height` spend the same area as a band or a full-height
+slot (`sizeOpening` in `src/aperture.js`). The ratio is the rough opening, with
+any frame counted inside it. At 0 the
 window object is removed from the document entirely, which reproduces the stock
 unglazed example exactly — verified: identical 3.8 °C swing, 0.25 damping and
 29.8 °C mean as before the window existed.
 
-Solar gain through the south wall is the whole point, and it shows:
+Solar gain through the south wall is the whole point, and it shows (summer
+design day, no overhang):
 
 | South WWR | Zone mean | Zone swing | Damping |
 | --------- | --------- | ---------- | ------- |
@@ -350,9 +409,11 @@ interpolation, and `writeIdf(doc)` produces the text handed to the engine.
 
 ## The overhang
 
-A shelf over the south window, sized by one slider: how far it reaches out.
+A shelf over each window, sized by one slider per wall (`ohN`, `ohE`, `ohS`,
+`ohW`): how far it reaches out. By default only the south wall has one, at
+0.6 m.
 
-It is authored as a `Shading:Zone:Detailed` on `Zn001:Wall001` rather than as
+It is authored as a `Shading:Zone:Detailed` on the wall it shades rather than as
 `Shading:Overhang`, which would say the same thing in four numbers. Only a
 detailed surface carries coordinates, and the drawing reads the shelf's geometry
 back off the model exactly the way it reads the walls. The shelf spans the width
@@ -371,15 +432,16 @@ what was simulated.
 which there is no exterior shadowing at all except from window and door reveals.
 An overhang under that setting is drawn on the sheet and ignored by the engine,
 and it measures exactly that way: the zone mean sits at 31.8 °C whether the
-shelf projects 0.3 m or 3 m. The model now asks for `FullExterior`, which
+shelf projects 0.3 m or 3 m. The model now asks for `FullExterior` by default
+(the Site channel's solar distribution control), which
 computes the shadow the shelf actually casts.
 
 Beam solar that does get in is still laid on the floor exactly as before, and
 the box is convex, so its walls cannot shade each other. With no shelf standing
 the two settings therefore agree: the WWR table above was re-measured under
 `FullExterior` and every row is unchanged, including the unglazed case that
-reproduces the stock example. Interleaved A/B in one session, a design day
-solves in 0.08 s either way, so the shadow calculation costs nothing you can
+reproduces the stock example. Measured on 2026-08-13 (commit 1c3a4fb) with
+interleaved A/B in one page session, a design day solved in 0.08 s either way, so the shadow calculation costs nothing you can
 feel on a drag.
 
 ### What it buys
@@ -408,7 +470,9 @@ seasons come from the year instead.
 ## Serving the schema bundle
 
 `@idfkit/schemas` needs its `data/` directory served; `predev`/`prebuild` copy it
-to `public/schemas/`, and the page reads it with `httpSource('/schemas/')`.
+to `public/schemas/`, and the page reads it with `httpSource` from
+`@idfkit/core`, at `${import.meta.env.BASE_URL}schemas/`, so a build under
+`/dev/` or a pull-request preview reads its own copy.
 
 Up to `@idfkit/schemas@0.0.1` that call could not be made from this demo, so the
 page carried its own `BundleSource`: `httpSource` resolved against an absolute
