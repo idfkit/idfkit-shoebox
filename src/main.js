@@ -797,6 +797,14 @@ let plateNote = null;
 // step replaces the setting an earlier one set, and one frame draws the latest
 // (FR-018c).
 let previewFrame = 0;
+// Whether the module has run to its foot. The units toggle is live markup
+// wired long before the boot's first `await`, and `reletterSheet` reaches
+// state declared after it: pressed while the schema or the engine was still
+// loading, it threw "Cannot access 'surveyFrame' before initialization" (and,
+// that one hoisted, the next one along). So a switch during the boot is owed
+// and paid once at the foot, where everything it reaches exists.
+let sheetBuilt = false;
+let reletterOwed = false;
 // The carpet's "change" toggle: honoured only while a ghost stands, and reset
 // when it clears (FR-020c).
 let carpetChange = false;
@@ -3897,6 +3905,10 @@ const shelfStore = (() => {
  * for a change that cannot have moved it.
  */
 function reletterSheet() {
+  if (!sheetBuilt) {
+    reletterOwed = true;
+    return;
+  }
   desk?.reletter();
   // The sheet's own five sliders keep their own copies of the faces.
   for (const redraw of Object.values(syncSlider)) redraw();
@@ -11094,17 +11106,22 @@ function drawGround(sv, lattice, lines) {
       root.append(word);
     }
     if (along === 'x') {
+      // A bearing axis letters its two stops on the second course, beside its
+      // name, as the study card does: on the first, `N, again` is 38 units of
+      // type end-anchored at the frame's edge and NW stands 33 units in from
+      // it, so the two printed over one another (measured on the page, 016).
+      const stopsAt = GROUND_PAD.top + frame.h + (marks.length ? 30 : 16);
       const text = svg('text', {
         class: 'axis-stop',
         x: GROUND_PAD.left,
-        y: GROUND_PAD.top + frame.h + 16,
+        y: stopsAt,
         'text-anchor': 'start',
       });
       text.textContent = stopOf(axis, lo);
       const text2 = svg('text', {
         class: 'axis-stop',
         x: GROUND_PAD.left + frame.w,
-        y: GROUND_PAD.top + frame.h + 16,
+        y: stopsAt,
         'text-anchor': 'end',
       });
       text2.textContent = hiSaid;
@@ -13366,3 +13383,8 @@ provide('runFiles', () => ({
   ownWeather: Boolean(lastBundle?.ownWeather),
   build: (withSignature) => runBundle({ ...lastBundle, author: withSignature ? signature : null }),
 }));
+
+// The foot of the module: everything `reletterSheet` reaches now exists, so a
+// units switch pressed during the boot is paid here (see `sheetBuilt`).
+sheetBuilt = true;
+if (reletterOwed) reletterSheet();

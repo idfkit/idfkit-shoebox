@@ -2542,7 +2542,11 @@ export function mountConsole({
         probes.get(key)?.(null);
         syncTick();
       });
-      root.addEventListener('click', (event) => onChange(key, pointed(event), true));
+      // The value the hover lettered, when there is one: a pointermove carries
+      // a fractional clientX and a click an integer one, so read off the click
+      // the last pixel of a 399-px axis is 359° while the hover above it has
+      // been lettering north again — and a click must set what was lettered.
+      root.addEventListener('click', (event) => onChange(key, hovering ?? pointed(event), true));
     }
 
     card.append(root);
