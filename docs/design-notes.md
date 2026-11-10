@@ -775,6 +775,19 @@ Things that cost real debugging:
   the baseline — as do the stock file's other demonstration loads: the matched
   ±352 W `OtherEquipment` test pair and the `.mtr`-only meters are gone
   entirely, since nothing read either.
+- **The pair outlived itself in the reporting.** Its two Monthly
+  `Output:Variable`s (`Other Equipment Total Heating Energy` and the `Zone`
+  one) stayed in `syncReporting`'s `'sheet'` profile after the objects went,
+  so every run, the default desk included, ended its error file with "The
+  following Report Variables were requested but not generated". The engine's
+  own closing line still says "0 Warning", so it is invisible there; the
+  title block's count, which parses the entries, lettered it as the default
+  desk's one warning (`0 / 1`, now `0 / 0`). Feature 016's Gate 1 harness
+  (`.harness/gate1-turns.mjs`) found exactly these two on all 32 runs (default
+  and busy desk, 16 orientations each) and nothing else. Nothing in `src/` read
+  either series, so they were removed with the constant that held them. An
+  output request is a claim that the model contains the thing; delete the
+  object and its requests together.
 - **Per-m² is only drawn on a whole year.** Every published benchmark is annual,
   and 0.3 kgCO₂e/m² over two design days has no use but to be mistaken for one.
   A weather file is not by itself a year: the Run strip's calendar can leave
@@ -3195,9 +3208,9 @@ never span environments.
 
 **Findings on the way.**
 
-- `main` already warns that the two monthly Other Equipment series were
-  requested but not generated. The reporting harness checks only that none of
-  this feature's four names joins that list.
+- `main` already warned that the two monthly Other Equipment series were
+  requested but not generated (since removed; see "The bill"). The reporting
+  harness checks only that none of this feature's four names joins that list.
 - `main.js` already declares a `setCursor` (the site picker's); the duration
   cursor's setter is `setDurationCursor`. A duplicate declaration in a module
   is a load-time `SyntaxError` that leaves the page blank.
