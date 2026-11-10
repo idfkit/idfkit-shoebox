@@ -3660,6 +3660,12 @@ desk = mountConsole({
   host: deskPanel,
   params,
   bypass,
+  // Which way improves a reading, from the survey's own declaration, so an
+  // orientation card says best and worst only where somebody said which is
+  // which. Passed in rather than imported by the console, which loads before
+  // this module through the report sheet and must not inherit the survey's
+  // load-time assertions.
+  betterOf: (id) => READING_BY_ID[id]?.better ?? null,
   onChange(key, value, done = false) {
     // A console control genuinely turned is the same "take hold of
     // something" note the sheet's sliders file. Priced keys are excluded —

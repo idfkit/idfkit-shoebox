@@ -2548,7 +2548,7 @@ export function mountConsole({
     card.append(root);
     if (wraps) {
       const said = extremesSaid(study.curve, series, { control, placeOf });
-      if (said) card.append(el('p', 'study-opening-basis study-extremes', said));
+      if (said) card.append(el('p', 'study-extremes', said));
     }
     return { node: card, kind: 'card', study, syncTick };
   }

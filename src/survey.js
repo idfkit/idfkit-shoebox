@@ -482,7 +482,8 @@ export function compassMarks(axis) {
     if (at !== null) out.push(Object.freeze({ at, bearing: k * 45, text }));
   });
   if (axis.closed) out.push(Object.freeze({ at: axis.cells, bearing: 0, text: 'N, again' }));
-  return out;
+  // In the order they stand along the axis: an arc from 300° starts at NW.
+  return out.sort((a, b) => a.at - b.at);
 }
 
 /**
@@ -1385,15 +1386,22 @@ export function surfaceAt(lattice, ix, iy) {
  */
 export function blockOf(lattice, { depth = 0.18 } = {}) {
   const { values, mask, nx, ny } = lattice;
+  const { cellsX, cellsY, colX, rowY } = walkOf(lattice);
   const extent = extentOf(lattice);
   const span = extent && extent.hi > extent.lo ? extent.hi - extent.lo : 1;
   const base = (extent ? extent.lo : 0) - depth * span;
-  const at = (ix, iy) => ix + iy * nx;
+  // A drawn corner to the reading behind it: on a whole turn the corner at
+  // `count` is north again, and reads north's column.
+  const at = (ix, iy) => colX(ix) + rowY(iy) * nx;
+  // The silhouette test does *not* wrap. The card is the circle cut open at
+  // north, so its two ends are cut faces like any other edge of the block,
+  // and both stand the same profile, which is the drawing saying they are one
+  // section. Wrapping it would leave the ends open and the block hollow.
   const filled = (cx, cy) =>
     cx >= 0 &&
     cy >= 0 &&
-    cx < nx - 1 &&
-    cy < ny - 1 &&
+    cx < cellsX &&
+    cy < cellsY &&
     mask[at(cx, cy)] &&
     mask[at(cx + 1, cy)] &&
     mask[at(cx, cy + 1)] &&
@@ -1424,8 +1432,8 @@ export function blockOf(lattice, { depth = 0.18 } = {}) {
     // side of the block from a silhouette into the vertical scale.
     edges.push({ ax, ay, za, bx, by, zb });
   };
-  for (let cy = 0; cy < ny - 1; cy += 1) {
-    for (let cx = 0; cx < nx - 1; cx += 1) {
+  for (let cy = 0; cy < cellsY; cy += 1) {
+    for (let cx = 0; cx < cellsX; cx += 1) {
       if (!filled(cx, cy)) continue;
       if (!filled(cx, cy - 1)) edge(cx, cy, cx + 1, cy);
       if (!filled(cx, cy + 1)) edge(cx + 1, cy + 1, cx, cy + 1);
@@ -1436,8 +1444,8 @@ export function blockOf(lattice, { depth = 0.18 } = {}) {
 
   /* ── the base ────────────────────────────────────────────────────────── */
   const baseStart = indices.length;
-  for (let cy = 0; cy < ny - 1; cy += 1) {
-    for (let cx = 0; cx < nx - 1; cx += 1) {
+  for (let cy = 0; cy < cellsY; cy += 1) {
+    for (let cx = 0; cx < cellsX; cx += 1) {
       if (!filled(cx, cy)) continue;
       const a = push(cx, cy, base);
       const b = push(cx + 1, cy, base);
@@ -1642,9 +1650,17 @@ export function freeExchange(survey, stance, reading = survey.readings[0]) {
   // dash because the reader has no way to see it. A third of the extent is
   // where a nine-position axis (a quarter) clears and a five-position one (a
   // half) does not, which is the distinction that actually matters.
-  const spans = (axis, at) =>
-    (axis.positions[at + 1] - axis.positions[at - 1]) / (axis.positions[axis.count - 1] - axis.positions[0]);
-  if (ix < 1 || iy < 1 || ix >= survey.x.count - 1 || iy >= survey.y.count - 1) {
+  //
+  // Distances are taken through `Axis.gap`, forward along the axis, and the
+  // neighbours through `Axis.shift`: on a whole turn north's neighbours are
+  // the last bearing and the first, a whole turn has no edge to stand on, and
+  // its extent is the turn. On a linear axis both are the subtraction and the
+  // `± 1` they always were.
+  const x = survey.x;
+  const y = survey.y;
+  const spans = (axis, at) => axis.gap(axis.shift(at, -1), axis.shift(at, 1)) / axis.reach;
+  const edged = (axis, at) => !axis.closed && (at < 1 || at >= axis.count - 1);
+  if (edged(x, ix) || edged(y, iy)) {
     return {
       refusal:
         'The stance is on the edge of the ground, so there is no measured neighbour on one side to take a ' +
@@ -1661,7 +1677,7 @@ export function freeExchange(survey, stance, reading = survey.readings[0]) {
     };
   }
   const value = (dx, dy) => {
-    const spot = survey.spotAt(ix + dx, iy + dy);
+    const spot = survey.spotAt(x.shift(ix, dx), y.shift(iy, dy));
     return spot ? reading.valueOf(spot.readings) : null;
   };
   const grid = [];
@@ -1682,8 +1698,8 @@ export function freeExchange(survey, stance, reading = survey.readings[0]) {
   const [sw, s, se, w, c, e, nw, n, ne] = grid;
   // Step sizes in the controls' own units, which is what makes the answer a
   // sentence about the building rather than about the lattice.
-  const hx = survey.x.positions[ix + 1] - survey.x.positions[ix - 1];
-  const hy = survey.y.positions[iy + 1] - survey.y.positions[iy - 1];
+  const hx = x.gap(x.shift(ix, -1), x.shift(ix, 1));
+  const hy = y.gap(y.shift(iy, -1), y.shift(iy, 1));
   const fx = (e - w) / hx;
   const fy = (n - s) / hy;
   const scale = Math.max(Math.abs(fx), Math.abs(fy));
@@ -1701,7 +1717,7 @@ export function freeExchange(survey, stance, reading = survey.readings[0]) {
   }
   // One step of X along the axis, and the step of Y that holds the reading
   // still: df = fx·dx + fy·dy = 0.
-  const dx = survey.x.positions[ix + 1] - survey.x.positions[ix];
+  const dx = x.gap(ix, x.shift(ix, 1));
   const dy = (-fx / fy) * dx;
   // What the reading actually does over that step, which is the second-order
   // term the linear answer drops. Curvatures by the standard five- and
@@ -1725,7 +1741,7 @@ export function freeExchange(survey, stance, reading = survey.readings[0]) {
   // across an axis that runs 0.2 to 10 — an exchange nobody can make, stated
   // to three figures. So the step is required to land on the ground it was
   // read off.
-  const reach = survey.y.positions[survey.y.count - 1] - survey.y.positions[0];
+  const reach = y.reach;
   if (Math.abs(dy) > Math.abs(reach)) {
     return {
       refusal:
@@ -1771,12 +1787,16 @@ export function fallStep(survey, from, { visited = null, reading = survey.readin
   const base = reading.valueOf(here.readings);
   if (base === null) return { stopped: 'The position the desk is standing on carries no reading.' };
 
+  // Neighbours through `Axis.shift`, so on a whole turn the descent can step
+  // across north as it steps across any other bearing: the hollow at 350° and
+  // the one at 10° are one hollow.
+  const near = (dx, dy) => survey.spotAt(survey.x.shift(from.ix, dx), survey.y.shift(from.iy, dy));
   let best = null;
   let bestValue = base;
   for (let dy = -1; dy <= 1; dy += 1) {
     for (let dx = -1; dx <= 1; dx += 1) {
       if (!dx && !dy) continue;
-      const spot = survey.spotAt(from.ix + dx, from.iy + dy);
+      const spot = near(dx, dy);
       if (!spot) continue;
       if (visited?.has(pointKey(spot.ix, spot.iy))) continue;
       const value = reading.valueOf(spot.readings);
@@ -1794,7 +1814,7 @@ export function fallStep(survey, from, { visited = null, reading = survey.readin
     for (let dy = -1; dy <= 1; dy += 1) {
       for (let dx = -1; dx <= 1; dx += 1) {
         if (!dx && !dy) continue;
-        if (survey.spotAt(from.ix + dx, from.iy + dy)) measuredNeighbours.push(1);
+        if (near(dx, dy)) measuredNeighbours.push(1);
       }
     }
     if (!measuredNeighbours.length) {
@@ -1864,6 +1884,13 @@ export function refineOrder(survey, { reading = survey.readings[0], stance }) {
   });
   const { nx, ny } = latticeOf(survey, reading);
   const diagonal = Math.hypot(nx, ny) || 1;
+  const { x, y } = survey;
+  // How many positions apart two indices stand, the short way round on a
+  // whole turn: 0 and 7 of eight bearings are neighbours, not opposite ends.
+  const apart = (axis, a, b) => {
+    const d = Math.abs(a - b);
+    return axis.closed ? Math.min(d, axis.count - d) : a - b;
+  };
 
   const wanted = [];
   for (let iy = 0; iy < ny; iy += 1) {
@@ -1877,8 +1904,8 @@ export function refineOrder(survey, { reading = survey.readings[0], stance }) {
       let near = 0;
       for (let dy = -1; dy <= 1; dy += 1) {
         for (let dx = -1; dx <= 1; dx += 1) {
-          const a = survey.spotAt(ix + dx, iy + dy);
-          const b = survey.spotAt(ix - dx, iy - dy);
+          const a = survey.spotAt(x.shift(ix, dx), y.shift(iy, dy));
+          const b = survey.spotAt(x.shift(ix, -dx), y.shift(iy, -dy));
           if (a) near += 1;
           if (!a || !b || (!dx && !dy)) continue;
           grids.forEach(({ entry, span }, at) => {
@@ -1898,7 +1925,7 @@ export function refineOrder(survey, { reading = survey.readings[0], stance }) {
         slopes.length > 1 && slopes[0] * slopes[1] < 0
           ? Math.min(Math.abs(slopes[0]), Math.abs(slopes[1]))
           : 0;
-      const distance = stance ? Math.hypot(ix - stance.ix, iy - stance.iy) / diagonal : 0.5;
+      const distance = stance ? Math.hypot(apart(x, ix, stance.ix), apart(y, iy, stance.iy)) / diagonal : 0.5;
       // A position with no measured neighbour at all cannot be scored on
       // steepness and would otherwise sort last for ever, which on a ground
       // whose coarse pass failed would leave the whole survey unmeasured. The
@@ -2471,7 +2498,8 @@ export function thresholdsAt(set, level) {
  * module draws nothing.
  */
 export function passingGround(lattice, threshold) {
-  const { values, mask, nx, ny } = lattice;
+  const { values, mask, nx } = lattice;
+  const { cellsX, cellsY, nextX, nextY } = walkOf(lattice);
   const level = threshold.limit;
   const at = (ix, iy) => values[ix + iy * nx];
   const has = (ix, iy) => mask[ix + iy * nx] === 1;
@@ -2490,13 +2518,18 @@ export function passingGround(lattice, threshold) {
   }
 
   const cells = [];
-  for (let iy = 0; iy < ny - 1; iy += 1) {
-    for (let ix = 0; ix < nx - 1; ix += 1) {
-      if (!has(ix, iy) || !has(ix + 1, iy) || !has(ix, iy + 1) || !has(ix + 1, iy + 1)) continue;
+  for (let iy = 0; iy < cellsY; iy += 1) {
+    for (let ix = 0; ix < cellsX; ix += 1) {
+      // Walked exactly as `contoursOf` walks it, far corners through the walk
+      // and coordinates at `ix + 1`, so on a whole turn the band closes across
+      // north with its own boundary.
+      const jx = nextX(ix);
+      const jy = nextY(iy);
+      if (!has(ix, iy) || !has(jx, iy) || !has(ix, jy) || !has(jx, jy)) continue;
       const bl = at(ix, iy);
-      const br = at(ix + 1, iy);
-      const tr = at(ix + 1, iy + 1);
-      const tl = at(ix, iy + 1);
+      const br = at(jx, iy);
+      const tr = at(jx, jy);
+      const tl = at(ix, jy);
       // Corner positions and values anticlockwise from the bottom left, the
       // ordering the 16-case table is written against.
       const corners = [[ix, iy], [ix + 1, iy], [ix + 1, iy + 1], [ix, iy + 1]];
