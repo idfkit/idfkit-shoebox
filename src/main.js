@@ -58,6 +58,7 @@ import {
   sampleOrder,
 } from './study.js';
 import {
+  compassMarks,
   gridCounts,
   READINGS as SURVEY_READINGS,
   READING_BY_ID,
@@ -10528,7 +10529,17 @@ function extentField(which) {
     // thrown from `axisFor` a moment later, because the box is where the reader
     // can see what they did. The old value comes back, as it does for anything
     // else the field cannot hold.
-    if (!(next.to > next.from)) {
+    // A turn has no lower figure: 300° to 60° runs clockwise through north, and
+    // `0` to `360` is the whole turn. What it cannot be is the same bearing at
+    // both ends, which is no extent at all, whichever way round it is written.
+    if (control.wraps) {
+      const whole = next.from === 0 && next.to === 360;
+      if (!whole && control.wrap.norm(next.from) === control.wrap.norm(next.to)) {
+        surveySay(withinBudget(BUDGETS.STANDING, 'a wrapping extent', 'The same bearing at both ends is no extent.'));
+        renderSurveyChoose();
+        return;
+      }
+    } else if (!(next.to > next.from)) {
       surveySay(
         `An extent runs from a lower figure to a higher one, and ${formatValue(key, next.from)} to ` +
           `${formatValue(key, next.to)} does not.`,
@@ -10816,10 +10827,13 @@ const GROUND_PAD = { left: 44, right: 12, top: 14, bottom: 42 };
 function groundFrame(sv) {
   const w = GROUND_SIZE - GROUND_PAD.left - GROUND_PAD.right;
   const h = GROUND_SIZE - GROUND_PAD.top - GROUND_PAD.bottom;
-  const px = (ix) => GROUND_PAD.left + (sv.x.count === 1 ? w / 2 : (ix / (sv.x.count - 1)) * w);
+  // Over cells, not positions less one: on a whole turn the last cell closes
+  // onto north, so the plan runs 0 to `count` with north again at the far
+  // edge. On every other axis `cells` is `count - 1`, as it always was.
+  const px = (ix) => GROUND_PAD.left + (sv.x.count === 1 ? w / 2 : (ix / sv.x.cells) * w);
   // Y grows up the page, as it does on a survey drawing and as it does not in
   // SVG, so the axis is flipped exactly once, here.
-  const py = (iy) => GROUND_PAD.top + h - (sv.y.count === 1 ? h / 2 : (iy / (sv.y.count - 1)) * h);
+  const py = (iy) => GROUND_PAD.top + h - (sv.y.count === 1 ? h / 2 : (iy / sv.y.cells) * h);
   return { w, h, px, py };
 }
 
@@ -11052,11 +11066,33 @@ function drawGround(sv, lattice, lines) {
     // defect `stopOf` was fixed for, surviving one label along because the two
     // halves of one arrangement were written in two places.
     const unit = axis.control.unitNow;
-    return unit ? `${labelFor(axis.key)} · ${unit}` : labelFor(axis.key);
+    // A whole turn says it wraps where its name is, because its far stop is
+    // the same bearing as its near one and nothing else on the plan says so.
+    const named = axis.closed ? `${labelFor(axis.key)} · wraps` : labelFor(axis.key);
+    return unit ? `${named} · ${unit}` : named;
   };
   for (const [axis, along] of [[sv.x, 'x'], [sv.y, 'y']]) {
     const lo = axis.positions[0];
     const hi = axis.positions[axis.positions.length - 1];
+    // The far stop of a whole turn is north again, not the last bearing
+    // measured: the plan runs one cell past it, onto north.
+    const marks = compassMarks(axis);
+    const hiSaid = axis.closed ? marks.at(-1).text : stopOf(axis, hi);
+    // The principal points between the two stops, as a short tick and the
+    // compass word alone: the stops carry the degrees, and eight full
+    // bearings do not fit along 264 px.
+    for (const mark of marks) {
+      if (mark.at <= 0.25 || mark.at >= axis.cells - 0.25) continue;
+      const tick = along === 'x'
+        ? { x1: frame.px(mark.at), x2: frame.px(mark.at), y1: GROUND_PAD.top + frame.h, y2: GROUND_PAD.top + frame.h + 4 }
+        : { x1: GROUND_PAD.left - 4, x2: GROUND_PAD.left, y1: frame.py(mark.at), y2: frame.py(mark.at) };
+      root.append(svg('line', { class: 'axis', ...tick }));
+      const word = svg('text', along === 'x'
+        ? { class: 'axis-stop', x: frame.px(mark.at), y: GROUND_PAD.top + frame.h + 16, 'text-anchor': 'middle' }
+        : { class: 'axis-stop', x: GROUND_PAD.left - 5, y: frame.py(mark.at) + 3, 'text-anchor': 'end' });
+      word.textContent = mark.text;
+      root.append(word);
+    }
     if (along === 'x') {
       const text = svg('text', {
         class: 'axis-stop',
@@ -11071,7 +11107,7 @@ function drawGround(sv, lattice, lines) {
         y: GROUND_PAD.top + frame.h + 16,
         'text-anchor': 'end',
       });
-      text2.textContent = stopOf(axis, hi);
+      text2.textContent = hiSaid;
       const label = svg('text', {
         class: 'axis-label',
         x: GROUND_PAD.left + frame.w / 2,
@@ -11094,7 +11130,7 @@ function drawGround(sv, lattice, lines) {
         y: GROUND_PAD.top + 8,
         'text-anchor': 'end',
       });
-      text2.textContent = stopOf(axis, hi);
+      text2.textContent = hiSaid;
       const label = svg('text', {
         class: 'axis-label',
         x: 11,
@@ -11523,8 +11559,10 @@ function drawGround(sv, lattice, lines) {
       const here = sv.positionOf(params);
       const at = groundCursor ?? here ?? { ix: 0, iy: 0 };
       groundCursor = {
-        ix: Math.min(sv.x.count - 1, Math.max(0, at.ix + step[0])),
-        iy: Math.min(sv.y.count - 1, Math.max(0, at.iy + step[1])),
+        // Round a whole turn the cursor walks past north and on, as the rose
+        // does; along any other axis it stops at the end, as it always did.
+        ix: sv.x.closed ? sv.x.shift(at.ix, step[0]) : Math.min(sv.x.count - 1, Math.max(0, at.ix + step[0])),
+        iy: sv.y.closed ? sv.y.shift(at.iy, step[1]) : Math.min(sv.y.count - 1, Math.max(0, at.iy + step[1])),
       };
       renderSurvey();
       $('survey-ground').querySelector('svg')?.focus({ preventScroll: true });
@@ -12082,6 +12120,16 @@ function renderCoverage(sv) {
  * rather than as a number with a trailing space where a unit was expected.
  */
 function amountOn(axis, value) {
+  // A turn is a difference along a face with no ends, so it says which way
+  // round it went: the same 18° is two different buildings clockwise and
+  // anticlockwise from the stance, and a bare `18°` would leave the reader to
+  // guess. Through the span kind, which carries no offset (an angle has none
+  // in either system, but the rule is the kind's to apply, not this line's).
+  if (axis.wraps) {
+    const way = value < 0 ? 'anticlockwise' : 'clockwise';
+    return `${letter(axis.control.spanKind, Math.abs(value), { digits: 0 })} ${way}`;
+  }
+  value = Math.abs(value);
   // The declaration's `digits` rather than `format` itself, because an amount
   // of exactly zero is not the control's `zero` label — and `letter` gives that
   // while converting the figure and its unit together. Composed from
@@ -12218,8 +12266,8 @@ function renderSurveyFinding(sv) {
     parts.push(exchange.refusal);
   } else {
     parts.push(
-      `Along the level line at the stance, ${amountOn(sv.x, Math.abs(exchange.dx))} of ` +
-        `${phraseFor(sv.x.key)} buys ${amountOn(sv.y, Math.abs(exchange.dy))} of ` +
+      `Along the level line at the stance, ${amountOn(sv.x, exchange.dx)} of ` +
+        `${phraseFor(sv.x.key)} buys ${amountOn(sv.y, exchange.dy)} of ` +
         `${phraseFor(sv.y.key)}, holding ${sv.readings[0].label.toLowerCase()} to within ` +
         `${within(exchange.tolerance, sv.readings[0])}.`,
     );
@@ -12777,8 +12825,11 @@ function drawRelief(sv, lines = null) {
     })),
     stance,
     axes: {
-      x: { label: labelFor(sv.x.key), from: stopOf(sv.x, sv.x.positions[0]), to: stopOf(sv.x, sv.x.positions.at(-1)) },
-      y: { label: labelFor(sv.y.key), from: stopOf(sv.y, sv.y.positions[0]), to: stopOf(sv.y, sv.y.positions.at(-1)) },
+      // A wrapping axis hands the relief its compass marks, and a whole turn
+      // its closure, so the far stop is lettered north again rather than as
+      // the last bearing measured; `letterAxes` throws without them.
+      x: { label: labelFor(sv.x.key), from: stopOf(sv.x, sv.x.positions[0]), to: stopOf(sv.x, sv.x.positions.at(-1)), wraps: sv.x.wraps, closed: sv.x.closed, marks: compassMarks(sv.x) },
+      y: { label: labelFor(sv.y.key), from: stopOf(sv.y, sv.y.positions[0]), to: stopOf(sv.y, sv.y.positions.at(-1)), wraps: sv.y.wraps, closed: sv.y.closed, marks: compassMarks(sv.y) },
       // The reading the block stands up, which is the drawing's third axis and
       // had no word on it anywhere. Its figures are the levels the cut is
       // ruled at, lettered exactly as the plan letters its contours, and the
