@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The default desk runs with no warnings.** The sheet still requested two
+  monthly Other Equipment series after the stock example's `OtherEquipment`
+  pair was removed, so every run counted one warning too many, "requested but not
+  generated". The requests are gone, and the title block now reads `0 / 0`.
 - **TM59 criterion b reads the right nine hours under daylight saving.**
   EnergyPlus stamps hourly output in standard time while schedules follow the
   daylight saving clock, so with daylight saving observed the window read was

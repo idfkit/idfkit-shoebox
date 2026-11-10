@@ -779,9 +779,10 @@ Things that cost real debugging:
   `Output:Variable`s (`Other Equipment Total Heating Energy` and the `Zone`
   one) stayed in `syncReporting`'s `'sheet'` profile after the objects went,
   so every run, the default desk included, ended its error file with "The
-  following Report Variables were requested but not generated". The engine
-  still reports "0 Warning" in its closing line, so the summary count does not
-  catch it; only a grep of `eplusout.err` does. Feature 016's Gate 1 harness
+  following Report Variables were requested but not generated". The engine's
+  own closing line still says "0 Warning", so it is invisible there; the
+  title block's count, which parses the entries, lettered it as the default
+  desk's one warning (`0 / 1`, now `0 / 0`). Feature 016's Gate 1 harness
   (`.harness/gate1-turns.mjs`) found exactly these two on all 32 runs (default
   and busy desk, 16 orientations each) and nothing else. Nothing in `src/` read
   either series, so they were removed with the constant that held them. An

@@ -28,10 +28,10 @@ import { RunContents } from './contents.js';
  * Opened up, and stripped of its demonstration loads. The stock file carries a
  * matched +352 W / −352 W `OtherEquipment` pair -- a test article whose halves
  * cancel exactly, so it buys nothing and fails quietly the day an edit touches
- * one half; it is gone, and so are the two Monthly series that reported it --
- * and 5.25 kW of astronomical-clock grounds lighting, which now
- * lives behind the Grounds strip instead of silently in the baseline. Every
- * load in this document is one somebody engaged.
+ * one half -- and 5.25 kW of astronomical-clock grounds lighting, which now
+ * lives behind the Grounds strip instead of silently in the baseline. The pair
+ * is gone, and so are the two Monthly series that reported it. Every load in
+ * this document is one somebody engaged.
  *
  * The geometry is still the point of the exercise: the plan loop in
  * `boxSurfaces` generates the four walls, and every consumer of this model --
