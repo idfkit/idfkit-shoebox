@@ -110,7 +110,7 @@ A reader running the pull to find which controls move a reading the most sees No
 
 **Ranking it (P3)**
 
-- **FR-015**: The pull MUST rank North axis by the same measure as every other control, turning the building one fine step clockwise, and the entry MUST say so.
+- **FR-015**: The pull MUST rank North axis by the same measure as every other control, a twentieth of its face (18°), turning the building clockwise, and the entry MUST say so. *(Amended in planning, research R8: "one fine step" was 22.5°, which is not a whole bearing and is not the measure the pull applies to any other control.)*
 
 **Everywhere**
 
