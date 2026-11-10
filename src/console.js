@@ -20,7 +20,7 @@ import { BUDGETS, withinBudget } from './copy.js';
 // definition: a second copy here would be the first thing to drift the day a
 // figure changed precision on one surface and not the other.
 import { flowPhrase, flowWord, watts } from './readings.js';
-import { letter, system } from './units.js';
+import { letter, letteredIn, system } from './units.js';
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -2572,7 +2572,12 @@ export function mountConsole({
    * rose would letter it, so every figure is one the sheet prints with the
    * rose turned there. Two positions whose readings letter identically cannot
    * be told apart on the sheet, so a tie is said as a count with no bearing
-   * chosen. The seam point is not a position and is never counted.
+   * chosen — and "identically" is asked in both systems, a tie in either
+   * being a tie: asked only in the system showing, whole °F merged positions
+   * one-decimal °C kept apart, and the line named a bearing in SI and only a
+   * count in IP (measured on the page, 016). The same finding is lettered in
+   * both, which is all a units switch may change. The seam point is not a
+   * position and is never counted.
    *
    * Composed, so it is held to the 25-word BLOCK budget by measurement rather
    * than a throw (see `src/copy.js`): a single series runs to 9 words, two to
@@ -2583,21 +2588,23 @@ export function mountConsole({
     for (const s of series) {
       const found = curve.filter((point) => point && !point.refused && s.sel(point) != null);
       if (found.length < 2) continue;
-      const lettered = found.map((point) => ({ point, said: s.format(s.sel(point), point) }));
+      // Each reading lettered in both systems, once, so every comparison
+      // below asks both without switching the page.
+      const both = (v, point) => ['si', 'ip'].map((sys) => letteredIn(sys, () => s.format(v, point)));
+      const lettered = found.map((point) => ({ point, said: both(s.sel(point), point) }));
       const values = found.map((point) => s.sel(point));
       const lo = Math.min(...values);
       const hi = Math.max(...values);
+      const alike = (a, b) => a[0] === b[0] || a[1] === b[1];
       const at = (v) => {
-        const word = s.format(v, found[values.indexOf(v)]);
-        const here = lettered.filter((entry) => entry.said === word);
+        const word = both(v, found[values.indexOf(v)]);
+        const here = lettered.filter((entry) => alike(entry.said, word));
         return here.length === 1
           ? control.format(placeOf(here[0].point))
           : `at ${here.length} positions`;
       };
       const prefix = series.length > 1 ? `${s.label}: ` : '';
-      const loSaid = s.format(lo, found[values.indexOf(lo)]);
-      const hiSaid = s.format(hi, found[values.indexOf(hi)]);
-      if (loSaid === hiSaid) {
+      if (alike(both(lo, found[values.indexOf(lo)]), both(hi, found[values.indexOf(hi)]))) {
         clauses.push(`${prefix}the same at all ${found.length} positions`);
         continue;
       }

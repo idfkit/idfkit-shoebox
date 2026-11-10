@@ -795,8 +795,8 @@ export function createRelief(host, { onLost = null } = {}) {
     // belongs to rather than beside the corner they share.
     //
     // A wrapping axis letters its principal points along the edge as well,
-    // and says it wraps on its name. On a whole turn the far stop is north
-    // again rather than the last bearing measured: the card is the circle cut
+    // and a whole turn says it wraps on its name. On a whole turn the far stop
+    // is north again rather than the last bearing measured: the card is the circle cut
     // open at north, and a reader following the edge to its end has to be
     // told they are back where they began. Its name stands further out, since
     // the south point is lettered at the middle of the edge where a linear
@@ -814,7 +814,10 @@ export function createRelief(host, { onLost = null } = {}) {
         if (mark.at > 0.5 && mark.at < n - 0.5) label(clear(at(mark.at)), mark.text, 'relief-stop');
       }
       const name = label(clear(nameAt, axis.wraps ? 40 : 26), axis.label, 'relief-axis');
-      if (axis.wraps) {
+      // `closed`, not `wraps`, as the plan's `axisTitle` asks: an arc from
+      // 300° to 60° passes through north but has two ends, and the plan
+      // beside this drawing letters it plain "North axis".
+      if (axis.closed) {
         const word = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
         word.setAttribute('class', 'relief-unit');
         word.textContent = ' wraps';
