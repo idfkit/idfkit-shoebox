@@ -507,6 +507,11 @@ const TM59_B = new RunContents({ variables: [ZONE_AIR, OPERATIVE, DAYLIGHT], ann
 const finite = (value) => (Number.isFinite(value) ? value : null);
 const fieldFrom = (reader, field) => (landed, options) =>
   finite(reader(landed.eso, options?.built?.floorArea)?.[field]);
+// A peak load also needs to know which directions the sample's thermostat
+// served (`servedDirections`, read off the sample's own document in
+// `buildSample`), so it is not one more `fieldFrom`.
+const peakFrom = (field) => (landed, options) =>
+  finite(readPeaks(landed.eso, options?.built?.floorArea, options?.built?.serves)?.[field]);
 const criterionValue = (reading) => finite(reading?.value);
 const completeBillTotal = (bill, field) => {
   if (!bill?.lines.length || bill.lines.some((line) => !Number.isFinite(line[field]))) return null;
@@ -625,11 +630,11 @@ export const QUANTITIES = Object.freeze([
     // in W/ft². Two kinds for one SI string is the whole reason the roster
     // carries both.
     id: 'peakHeat', label: 'Peak heating load', unit: 'W/m²', quantityKind: 'fluxDensity', digits: 1, needs: PEAKS, pen: '--warm',
-    read: fieldFrom(readPeaks, 'peakHeat'),
+    read: peakFrom('peakHeat'),
   }),
   new Quantity({
     id: 'peakCool', label: 'Peak cooling load', unit: 'W/m²', quantityKind: 'fluxDensity', digits: 1, needs: PEAKS, pen: '--cold',
-    read: fieldFrom(readPeaks, 'peakCool'),
+    read: peakFrom('peakCool'),
   }),
   new Quantity({
     // The four by-category readings are declared as two pairs rather than

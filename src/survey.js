@@ -2150,6 +2150,35 @@ function matchedTargets(reading) {
   });
 }
 
+/**
+ * The one reading that answers this target, by the matcher above.
+ *
+ * Exported for the tolerance bands (feature 016), which judge a study's curve
+ * against every line of the chased standard and need the reading each line is
+ * read off. They ask here rather than looking `target.metric` up themselves,
+ * because the lookup is only half the rule: the two TM59 categories publish the
+ * same limit, so a second matcher that took the metric and skipped the
+ * qualifier would judge Category II figures against a Category I line and land
+ * at exactly the right height. One matcher, so the survey's lines and the bands
+ * cannot come to disagree about which reading a line belongs to.
+ */
+export function readingForTarget(preset, target) {
+  const reading = READING_BY_ID[target.metric];
+  if (!reading) {
+    throw new Error(
+      `"${preset.name} · ${target.label}" is read off "${target.metric}", and no reading on the roster ` +
+        'carries that id, so nothing a study measures can judge it',
+    );
+  }
+  if (!matchedTargets(reading).some((match) => match.preset === preset && match.target === target)) {
+    throw new Error(
+      `"${preset.name} · ${target.label}" names "${reading.label}" and the matcher does not pair them ` +
+        '(a published standard, the same kind, and the same qualifier), so that reading cannot judge it',
+    );
+  }
+  return reading;
+}
+
 /** Two limits are one line when they differ by less than this. */
 const coincidence = (limit) => Math.max(1, Math.abs(limit)) * 1e-9;
 

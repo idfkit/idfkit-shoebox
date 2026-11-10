@@ -853,6 +853,44 @@ drafting and by words.
   standing in a field of measured spot figures has one job and a character
   budget, and a measurement is the one thing it may not cover.
 
+### A tolerance band: a bracket on the lever's own axis
+
+A study card draws one reading along one control. Under a chased standard the
+same card also carries the stretch of that control where every one of the
+standard's lines passes (feature 016). It is drawn on the curve's own position
+axis, so it lines up with the stretch of curve it describes, and it is told
+apart from the curve by drafting, not by hue.
+
+| Mark | Drawn as |
+| --- | --- |
+| **The band** | a 2px `--ink` bar a few pixels under the axis, between the last passing positions |
+| **An edge** | a 1px `--ink` tick across the bar's end |
+| **The bracket's far side** | a 1px `--ink-ghost` tick at the first position that did not pass |
+| **Another passing stretch** | a 1px `--ink-3` dashed bar, never joined to the band |
+
+- **A bracket, never a point.** The edge lies somewhere between two runs and
+  the drawing says so with two ticks; the words under the card letter both
+  positions. Nothing between two runs is drawn as known.
+- **No mark for passing.** The board's rule holds: a met line gets no mark, so
+  the bar is graphite, not a tint. `--redline` is spent once, in the tolerance
+  block beside the chase line, on the named move that restores a failing desk,
+  because that is the one divergence the reader is being pointed at.
+- **The reason is in the words, not the mark.** An edge closed by a line
+  failing, by a refused position, by a failed run, or by a position not yet
+  landed is the same tick; the sentence under the card says which, in
+  parentheses after the position.
+- **An inert lever draws no bar.** A lever that cannot move any judged line
+  would otherwise draw stop to stop and read as complete freedom. It letters
+  why instead.
+- **Stale dims with its card.** The band takes the card's own `.stale`, never
+  a second dimming of its own.
+
+The block under the chase line is the chase line's sibling and reads in its
+voice: an eyebrow naming the standard, the count of levers studied, the
+ranking or the restoring move, what is not judged, and the one-line caveat
+in view ("Each band holds every other lever where it stands."), with the
+method one press down in a `fold()`.
+
 ### A block diagram, not a floating surface
 
 A relief drawn as a bare surface floats: nothing says which way is down, there

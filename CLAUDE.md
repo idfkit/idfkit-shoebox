@@ -244,7 +244,7 @@ geometry earlier ones wrote).
   that is not measured; two moves, sixty-word budget shared with the finding.
 - **General notes** (`tour.js`): markers fill only from real events via
   `tour?.note(...)`. **Any feature change that alters what a step teaches must update
-  `NOTES` and the call sites, and bump the storage key** (`shoebox-general-notes-v7`).
+  `NOTES` and the call sites, and bump the storage key** (`shoebox-general-notes-v8`).
 - **Units** (`units.js`): SI or IP is **lettering, never model**. Every value on
   `params` stays the SI number the document holds; a frozen `Kind` says how it
   converts and how precisely it reads, and conversion happens at the moment of
@@ -297,6 +297,19 @@ geometry earlier ones wrote).
 - **Layout:** the index sheet at `780px` wide or `600px` tall (`--index` flag read
   back by `console.js`); the register folds between 600 and 1000 px tall
   (`--fold`); schedules fold at `620px` with `data-head` and `keepTableSemantics`.
+- **Tolerance bands** (`tolerance.js`, feature 016): under a chased standard every
+  study also reads as a band, the stretch of its lever where every limited line
+  passes, bracketed by runs and never interpolated. **Bands add no runs**: a study
+  sample now carries every published standard's needs, channel-filtered
+  (`bandQuantities` in `jobForStudy`), so the chase never reaches a sample's
+  identity (measured +0 % to −10 %, budget +10 %). Every sweep (study, survey
+  row, pull probe) builds `carried` through `sweepContents`, because the sample
+  cache is shared: a narrow survey sample answering a study position read as a
+  gap. A gap inside a stretch is listed as unread, never an edge; a setting
+  between sweep positions is judged by the desk's own run. The job is stamped with
+  `climateEpoch` when made, not when its points land. Inert levers (declared off
+  `movedBy` for priced keys, exact flatness otherwise) draw no bar. Every study
+  card goes through `showStudy`. See "Tolerance bands" in the notes.
 - **E-02 survey:** rows are studies (a row fixes Y and sweeps X), so the sample cache
   is shared. Coarse 6, fine 11 (nests in the 11/21 study grid). A survey's rest shape
   omits both axes. Measured / inferred / unsurveyed are distinct, and unsurveyed is

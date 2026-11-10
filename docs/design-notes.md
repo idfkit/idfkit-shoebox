@@ -2618,6 +2618,136 @@ the line, the band, the label, the relief, the chase, the absences, the
 coincident-contour suppression, gaps, IP/SI round-tripping and 390 px — was
 driven in Chromium.
 
+### Tolerance bands (src/tolerance.js, feature 016)
+
+The survey asks what a lever does to a reading. An architect in early design
+usually holds the question the other way round: the targets come first, and
+what is open is how much room is left. A tolerance band answers it one lever
+at a time. Under a chased standard, every study also reads as the stretch of
+its lever where **every** limited line of that standard passes, with every
+other control where the desk stood. A block beside the chase line ranks the
+studied levers by how much of their travel is free, or, on a failing desk,
+names the single studied lever whose smallest move restores every line.
+
+**A study's runs did not carry what a band needs, and that was the finding the
+whole design turned on.** `jobForStudy` built a sample's contents from one
+quantity, the desk-wide `studyQuantity`, and `readPoint` reads only what the
+sample carried. A curve drawn for zone temperature held no demand, no peak load
+and no TM59 criterion. So every study sample now carries the union of what
+**any** published standard's limited lines are read off (`BAND_QUANTITIES`),
+filtered to the channels the desk has in (`bandQuantities`). The job's
+`needed` stays the study's own reading; only `carried` widens.
+
+- **All standards, not the chased one.** A sample's identity includes what it
+  carries. Contents that followed the chase would re-sweep every study each
+  time the reader chased another standard, a change in how the desk is *read*
+  starting runs. Carrying all of them keeps the chase a pure re-reading, as it
+  is for the board and for 012's isolines.
+- **Channel-filtered, because `channels` is a precondition.** `syncReporting`
+  throws for a named channel the sample has out, and the scheduler turns the
+  throw into a gap. Without the filter, Passivhaus's peak load (read off System)
+  would have turned every study on a free-running desk into twenty-one holes.
+- **Measured before it was built (G1).** Median engine time, 20 runs each, one
+  EnergyPlus per process, default contents against band contents:
+
+  | desk | run | default | band | ratio |
+  | --- | --- | --- | --- | --- |
+  | default desk | design day | 772 ms | 765 ms | 0.99 |
+  | default desk | year | 2,160 ms | 2,131 ms | 0.99 |
+  | every channel in | design day | 892 ms | 858 ms | 0.96 |
+  | every channel in | year | 5,202 ms | 4,691 ms | 0.90 |
+
+  Budget +10 %; the worst was −10 %, which is noise around zero: the four added
+  hourly zone variables and the Monthly meters are nothing beside the solve.
+  All four variable names confirmed in `eplus.rdd`, none "requested but not
+  generated".
+
+**An edge is a bracket, never a point.** The last position that passed every
+line and the first that did not, both run; nothing between them is claimed.
+`samplePoints` forces the stance into the positions, so a passing desk's band
+always contains the actual setting. The coarse grid is every second fine
+position, so a finished fine curve already contains its coarse one and the
+"finer pass found a stretch the coarse pass stepped over" check reads the band
+twice off one curve, keeping no earlier band.
+
+**"Smallest move" is a share of the lever's travel**, the chase's ratio argument
+again: 0.1 m²K/W and 0.1 of glazing ratio are not comparable, and 8 % of a
+lever's travel is the same claim on both.
+
+**An inert lever is not a free one.** With the wider contents a study of the gas
+price reads the same TEDI at every position, and a band built from it would run
+stop to stop and read as complete freedom. A priced key is declared inert off
+`Quantity.movedBy` (the declaration `refusesPairing` already trusts). Every other
+lever is inert only on **exact** equality across a **complete** curve, the pull's
+rule, since the engine is repeatable on one input and there is no noise to
+tolerate.
+
+Three things the harnesses caught:
+
+- **The climate was stamped when a point landed, not when the job was made.**
+  On the driven page, a design-day sweep still in flight when a year was
+  attached landed its points under the new climate, the band read them, found
+  no annual figure, and called every line unjudged. The job now carries
+  `climateEpoch` from `jobForStudy`.
+- **A tie compared floating-point distances exactly.** Two stretches the same
+  number of steps from the stance arrive a few ulps apart, so the upper one won
+  a tie the rule gives to the lower one, silently. Distances are now equal
+  within a thousandth of a step, `samplePoints`' own merge tolerance.
+- **The load invariants are layered, and that is fine.** Broken in a copy
+  (G5), an unmatched metric is refused first by `study.js` and a comparator
+  passing above its limit first by 012's pass-side probe in `survey.js`; the
+  band's own invariants are the second line behind each. Either way the load
+  fails naming the declaration.
+
+**Every sweep carries the band contents, not only a study, because the sample
+cache is shared.** Reported from the page: a study of wall resistance beside a
+survey of wall resistance and infiltration, the desk standing on the survey's
+infiltration-0 row, read "Passes from 6.57 to 6.57 … Also passes from 4.61 to
+4.61, kept apart … The finer pass found a stretch the coarse pass stepped
+over." The scheduler answers a job from any cached sample in the same bucket
+whose contents answer the job's `needed`, and a study needs only its own
+reading. The survey's samples were built carrying TEDI alone, so every study
+position the survey had run (every coarse one: the survey's fine 11 is the
+study's coarse 11) answered the study and carried no peak heating load, and
+only the study's own fine-only positions could be judged. `sweepContents` now
+builds every sweep's `carried` the same way (study, survey row, pull probe),
+so shared samples carry every line; the contents are the ones G1 measured.
+
+Two rules changed with it, because a gap can still happen (a run that does not
+finish):
+
+- **A gap inside a stretch is unread, not an edge.** A stretch runs from a pass
+  to a pass; gaps between are listed on it (`unread`), said in view and drawn as
+  ghost ticks. An edge is still only ever a measured pass. Ending stretches at
+  gaps lettered missing data as the limits of the design space.
+- **"Stepped over" only past a coarse position that failed.** Wider than the
+  coarse band past a coarse gap is the coarse pass not seeing, not missing.
+
+**A run that never heated measured a peak heating load of zero.** With the
+cache fixed, the same link still read "not read beyond: at 7.06 m²K/W this run
+carried no Peak heating load". Past about 7 m²K/W that zone never heats in the
+Boston year, and `readPeaks` returned null when no hour was positive, so the
+stretch where the Passivhaus load line is met most comfortably fell out of
+every judgement, the board's included. It now returns 0 whenever the series is
+present; null stays for the series being absent (System out).
+
+**A setting between two sweep positions is judged by the desk's own run.**
+Moving the studied lever moves no rest shape, so the curve is not re-swept and
+the setting may sit between two samples. The chase line's run is a run at
+exactly that setting, so where it is current (`outcomeOf` matches the shape and
+the climate epoch) and carries every judged line, `bandFor` takes it as one more
+measured position (`atSetting`, `Verdict.byDesk`), and the card says so. Before,
+the card read "not judged at this setting" and offered a move of a fraction of a
+step. Not for a priced lever, whose positions are priced off one shape, and not
+in the inertness test, which is exact equality and must not mix two readers.
+
+Driven on the built page with a synthetic London year, under a Passivhaus
+specification with U-factor raised to 2.5: heating reads 17.1 against 15, and
+the block names SHGC to 0.60 (+0.10, 12 % of travel) ahead of U-factor (−0.98,
+18 %) and ground reflectance (+0.39, 43 %). Switching the chase between
+standards moved the Runs counter by zero. SI to IP and back re-lettered every
+band character for character.
+
 ### Feedback reports and triage (src/report.js, src/report-sheet.js, .github/workflows/triage.yml)
 
 A reader reports from the sheet, and the report carries what they were looking

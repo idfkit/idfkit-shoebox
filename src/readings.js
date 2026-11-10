@@ -641,7 +641,8 @@ export function readOverheat(eso, above) {
  * plant from, so the same billed-environment rule `readExtremes` uses applies
  * and a bare design-day desk answers the question honestly.
  */
-export function readPeaks(eso, floorArea) {
+export function readPeaks(eso, floorArea, serves) {
+  if (!serves) throw new Error('readPeaks needs the directions the run’s thermostat serves (servedDirections)');
   if (!(floorArea > 0)) return null;
   const points = hourly(eso, /Zone Air Heat Balance System Air Transfer Rate/i);
   if (!points.length) return null;
@@ -659,9 +660,19 @@ export function readPeaks(eso, floorArea) {
       else if (w < 0) cool = cool == null ? -w : Math.max(cool, -w);
     }
   }
+  // A run that carried the series, could heat, and never once did measured a
+  // peak heating load of zero; it is not a run with no answer. Read as missing,
+  // a wall insulated past the point where the zone needs heating at all fell
+  // out of every judgement of the Passivhaus load line, on the board and in a
+  // tolerance band alike. But only where the thermostat serves that direction:
+  // under "Cool only" the zone cannot be heated, so no heating hour is not a
+  // load of zero, and read as one it passed the 10 W/m² line for a building
+  // nobody had sized a heater for. That stays missing, as the series' absence
+  // does above.
+  const peak = (watts, served) => (watts != null ? watts / floorArea : served ? 0 : null);
   return {
-    peakHeat: heat == null ? null : heat / floorArea,
-    peakCool: cool == null ? null : cool / floorArea,
+    peakHeat: peak(heat, serves.heat),
+    peakCool: peak(cool, serves.cool),
   };
 }
 
@@ -964,6 +975,21 @@ export class DocumentFacts {
     this.moistureSource = moistureSource;
     Object.freeze(this);
   }
+}
+
+/**
+ * Which directions the zone's thermostat can drive the ideal loads in, read
+ * off the document rather than `params`: a dual setpoint serves both, a single
+ * heating or cooling setpoint one, and no ideal loads or no thermostat neither.
+ * `readPeaks` takes it to tell a load of zero from a direction never served.
+ */
+export function servedDirections(doc) {
+  const served = holdsAny(doc, 'ZoneHVAC:IdealLoadsAirSystem') && holdsAny(doc, 'ZoneControl:Thermostat');
+  const dual = holdsAny(doc, 'ThermostatSetpoint:DualSetpoint');
+  return Object.freeze({
+    heat: served && (dual || holdsAny(doc, 'ThermostatSetpoint:SingleHeating')),
+    cool: served && (dual || holdsAny(doc, 'ThermostatSetpoint:SingleCooling')),
+  });
 }
 
 export function readDocumentFacts(doc) {
