@@ -2686,6 +2686,17 @@ buildings. The stance goes in verbatim and is deduplicated by the short way
 round rather than by subtraction, since 359.9995 and 0 are a thousandth of a
 degree apart and a linear tolerance would keep both.
 
+That spacing is also why an arc does not take a whole turn's counts. Eight then
+sixteen by `i / (n - 1)` are seven and fifteen intervals, which do not nest: on
+300° to 60° the coarse 317°, 334°, 351°, 9°, 26° and 43° are none of them fine
+positions, so a densify found six of every eight coarse spot heights nowhere on
+the fine axis, dropped them from the drawing and ran them again (FR-006). An
+arc is cut 8 then 15, fourteen intervals being twice seven, which nests by the
+arithmetic 6 nests in 11; `gridCounts(control, extent)` asks the extent, and
+`axisFor` and it share `wholeTurn` so they cannot disagree about which an
+extent is. Driven on the page, 300° to 60° against glazing went from 9 × 7 to
+15 × 12 with every coarse spot height carried across.
+
 **`sampleOrder` on a circle is north, south, then the stance.** The linear order
 draws both ends first so the curve's silhouette stands after a few points; on a
 whole turn the last point is 338°, one step from north, and drawing it second
@@ -2755,7 +2766,11 @@ own control through `passCount`, so a ground of North axis against glazing is
 8 × 6 coarse and 16 × 11 fine. The same mistake sat in `drawGround`, which
 thinned its spot figures at `count > 7` and so read an orientation axis's
 eight coarse positions as a dense fine pass on a ground that had only just been
-cut. Dense is now asked of the axis: `count >= gridCounts(control).fine`.
+cut. Dense is now asked of the axis as more positions than a coarse pass can
+hold, `count > gridCounts(control, axis).coarse + 1` (its count and the stance),
+which is `count > 7` again on a ruled face. Asked first as `count >=` the fine
+count, it stopped thinning a fine pass over a narrow ruled extent, whose
+positions dedupe to fewer than eleven.
 
 **The turn is read back off the document.** `turnOf(facts)` in `model.js` is
 the bearing of the wall the plan calls south, less 180°, normalised to
@@ -2765,14 +2780,21 @@ bearing and a false turn). It finds the wall by its plan `side`, which is the
 name `turn()` leaves where it was, and never by the compass word its bearing
 letters as: asked by compass, "the wall facing south" is a different wall on
 either side of 45° and the turn read off it would jump by 90° there.
-`buildSample` returns the turn beside `writeIdf` when the sweep turns the
-building, the scheduler carries it on the cached sample so a cache hit places
-its point where its run measured, and the card places the point at the
-measured turn. If it differs from the asked bearing by more than 0.01° — wider
+`buildSample` returns the turn beside `writeIdf` for every sample, and the
+scheduler keeps it in the cache entry, because a run is cached by its desk
+alone: the sample a study of glazing ran at the stance is the one a study of
+North axis is later handed for its own stance. As first written the turn was
+read only for a sweep that turned the building and `remember` dropped it, so
+every cache hit was placed at the bearing asked. Only a card on a face that
+wraps places a point by its turn. A linear card placed by it too, and since a
+shared stance run carries the building's bearing, a glazing curve's stance
+point stood at x(0). If it differs from the asked bearing by more than 0.01° — wider
 than float residue in sixteen-digit vertices, so a building turned somewhere
 else — `scheduler.js` throws a `TurnMismatch` before the run, and the position
 lands as a failure carrying "the document turned to X, not Y". It is drawn at
-neither. Survey rows sweeping North axis go through `buildSample` and get the
+neither, and the card letters the first such sentence in view under the curve,
+as it letters a refusal; the sentence was at first carried on the point and
+read by nothing. Survey rows sweeping North axis go through `buildSample` and get the
 same check.
 
 **The link went to `v2`, and `MIGRATIONS` has its first step.** `refuses`
@@ -2783,9 +2805,12 @@ is what the permalink rules say costs a version. A wrapping bearing is now
 refused at or beyond 360 with "is outside its 0–360 range; a full turn is 0",
 shortened from sixteen words to fifteen to fit `STANDING`.
 `DEFAULTS_BY_VERSION.v2` is the same table as `v1`, since no default moved, and
-`MIGRATIONS.v1` drops a `northAxis` pair whose `Number(raw) === 360` — dropped
-rather than rewritten to 0, because 0 is the default and an omitted key already
-means it, and asked numerically so `360.0` and `3.6e2` are carried too.
+`MIGRATIONS.v1` drops a `northAxis` pair that passes `readValue`'s own text
+gate (`NUMERAL`) and reads `Number(raw) === 360` — dropped rather than rewritten
+to 0, because 0 is the default and an omitted key already means it, and asked
+numerically so `360.0` is carried too. Asked of `Number` alone it also carried
+`0x168`, `3.6e2` and a `+`-escaped ` 360`, which `v1` had refused as "not a
+number", and opened them at north.
 Anything else passes through, so a `v1` link at 400 is still refused by
 `readValue` with the sentence it always got. Mapping 360 to 0 in `readValue`
 was the shortcut, and it is a silent wrap in the decoder. Fractions were not

@@ -314,9 +314,10 @@ geometry earlier ones wrote).
   hand-written WebGL2, orthographic, no exaggeration control, one hue. `cutAt` is
   where the ground was cut; `standingAt(desk)` is where the desk is.
   A wrapping axis walks cells through `next` (closed on a whole turn, open on an
-  arc; `from > to` crosses north, `0_360` is the whole turn), 8/16 along it via
-  `gridCounts`. The pass is held as `'coarse'`/`'fine'` and each axis asks its own
-  control for its count; the lattice holds north once. The pull steps a wrapping
+  arc; `from > to` crosses north, `0_360` is the whole turn), 8/16 round a whole
+  turn and 8/15 along an arc (both nest, FR-006) via `gridCounts(control, extent)`.
+  The pass is held as `'coarse'`/`'fine'` and each axis asks its own control and
+  extent for its count; the lattice holds north once. The pull steps a wrapping
   control 18° clockwise and divides by +18.
   A priced axis costs no runs (`Coverage.runs` counts them); spot heights keep
   their `basis` and `repriceSurvey` re-prices them on every priced commit, landing

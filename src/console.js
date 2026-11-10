@@ -2259,6 +2259,20 @@ export function mountConsole({
       );
     }
 
+    // Positions whose run was attempted and given up with a reason — today
+    // only a document that did not turn as it was asked to (the scheduler's
+    // turn check). They draw as a gap like any failed run, and a gap with a
+    // known cause says it in view, as a refusal does: the reason is the
+    // reading here. The first is lettered, since every one says the same kind
+    // of thing; 18 words with the scheduler's 11-word sentence, inside BLOCK.
+    const failed = study.curve.filter((point) => point?.failure);
+    if (failed.length) {
+      const total = study.progress?.total ?? study.curve.length;
+      card.append(
+        el('p', 'study-refused', `${failed.length} of ${total} positions were not measured: ${failed[0].failure}.`),
+      );
+    }
+
     const W = 320;
     // A face that wraps carries one more line under its axis: the principal
     // points stand on the first and the two ends and the caption on the
@@ -2310,12 +2324,14 @@ export function mountConsole({
     // north measured at 359.996° is drawn at the left end where it was asked,
     // not across the card at the right. A mismatch large enough to matter is
     // the scheduler's to refuse as a failed point; this only places.
+    //
+    // Only a face that wraps reads the turn. Every sample carries one, because
+    // a run is shared between the jobs that want the same desk (a study of
+    // glazing and a study of North axis both stand on the stance), so on a
+    // linear face `turn` is the building's bearing and not a position on this
+    // axis: placed by it, the stance of a glazing curve stood at x(0).
     const placeOf = (point) =>
-      point.turn == null
-        ? point.value
-        : wraps
-          ? point.value + control.wrap.signed(point.value, point.turn)
-          : point.turn;
+      wraps && point.turn != null ? point.value + control.wrap.signed(point.value, point.turn) : point.value;
     // The seam point (research R5): one more drawn vertex at 360 repeating the
     // reading measured at north, so the segment from the last position back
     // round to north is drawn like any other. Drawn only — it is never in
@@ -2599,8 +2615,13 @@ export function mountConsole({
       const at = (v) => {
         const word = both(v, found[values.indexOf(v)]);
         const here = lettered.filter((entry) => alike(entry.said, word));
+        // Put back onto the circle before it is lettered: `placeOf` stands
+        // north measured at 359.996° a few thousandths below 0, and
+        // `format`, which does not wrap, would letter that `-0° N` (and the
+        // same residue the other way `360° N`). Snapped to the step the face
+        // letters to, so no figure changes anywhere but at the fold.
         return here.length === 1
-          ? control.format(placeOf(here[0].point))
+          ? control.format(control.wrap.snap(placeOf(here[0].point)))
           : `at ${here.length} positions`;
       };
       const prefix = series.length > 1 ? `${s.label}: ` : '';

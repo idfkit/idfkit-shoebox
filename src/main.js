@@ -8835,6 +8835,9 @@ function repriceStudies() {
  * neither ever yields to the other while it is in overlay state.
  */
 function buildSample(job, value) {
+  // One desk for the overlay and for the turn it is checked against, so the
+  // two cannot be two answers to what this sample was asked to be.
+  const desk = deskAt(job, value);
   try {
     // `setAnnual` lives outside `applyModel`, so it is bracketed here both
     // ways: forgetting the restore half would leave the pump solving design
@@ -8842,7 +8845,7 @@ function buildSample(job, value) {
     setAnnual(model, job.annual);
     // Structured contents off the declaration, never a profile name inferred
     // from the selected id.
-    applyModel(model, deskAt(job, value), job.patch, {
+    applyModel(model, desk, job.patch, {
       reporting: job.carried,
     });
     // Each sample's intensity divides by that sample's own floor, which the
@@ -8854,8 +8857,14 @@ function buildSample(job, value) {
     // document was actually built at rather than the one it was asked for. The
     // scheduler compares the two; a document that did not turn as asked is a
     // failed position, never a point drawn at either bearing.
-    const asked = askedTurn(job, deskAt(job, value));
-    const turn = asked === null ? undefined : turnOf(facts);
+    //
+    // Read for every sample, not only for a sweep that turns the building: the
+    // run is cached by the desk alone, so the sample a study of glazing ran at
+    // the stance is the same sample a study of North axis is later handed for
+    // its own stance, and it has to carry the turn that sample was measured at
+    // (FR-010). Only the check is owed solely to a sweep that asked for one.
+    const asked = askedTurn(job, desk);
+    const turn = turnOf(facts);
     return { idf: writeIdf(model), epw: job.epw, floorArea, carried: job.carried, value, turn, asked };
   } finally {
     applyModel(model, params, patching());
@@ -9864,8 +9873,8 @@ function refineSurvey() {
   // never re-measured, so a densify now would fill the ground with holes.
   if (surveyWithdrawn(survey)) return;
   const refined = makeSurvey({
-    x: axisFor(survey.x.key, { from: survey.x.from, to: survey.x.to, count: passCount(survey.x.key, 'fine'), stance: survey.stance }),
-    y: axisFor(survey.y.key, { from: survey.y.from, to: survey.y.to, count: passCount(survey.y.key, 'fine'), stance: survey.stance }),
+    x: axisFor(survey.x.key, { from: survey.x.from, to: survey.x.to, count: passCount(survey.x.key, 'fine', survey.x), stance: survey.stance }),
+    y: axisFor(survey.y.key, { from: survey.y.from, to: survey.y.to, count: passCount(survey.y.key, 'fine', survey.y), stance: survey.stance }),
     readings: survey.readings,
     stance: survey.stance,
     patch: survey.patch,
@@ -9903,8 +9912,13 @@ function refineSurvey() {
   renderSurvey();
 }
 
-/** How many positions an axis along `key` takes on `pass`, asked of its control. */
-const passCount = (key, pass) => gridCounts(controlFor(key).control)[pass];
+/**
+ * How many positions an axis along `key` takes on `pass`, asked of its control
+ * and of the extent it is cut over: a whole turn and an arc of bearings take
+ * different fine counts, so that each nests its own coarse pass.
+ */
+const passCount = (key, pass, { from = null, to = null } = {}) =>
+  gridCounts(controlFor(key).control, { from, to })[pass];
 
 /**
  * Cut a fresh ground through the desk as it stands.
@@ -9934,8 +9948,8 @@ function openSurvey({ xKey, yKey, readingIds, extents = {}, pass = 'coarse' }) {
     return;
   }
   const cut = makeSurvey({
-    x: axisFor(xKey, { ...(extents[xKey] ?? {}), count: passCount(xKey, pass), stance }),
-    y: axisFor(yKey, { ...(extents[yKey] ?? {}), count: passCount(yKey, pass), stance }),
+    x: axisFor(xKey, { ...(extents[xKey] ?? {}), count: passCount(xKey, pass, extents[xKey]), stance }),
+    y: axisFor(yKey, { ...(extents[yKey] ?? {}), count: passCount(yKey, pass, extents[yKey]), stance }),
     readings,
     stance,
     patch,
@@ -11208,11 +11222,15 @@ function drawGround(sv, lattice, lines) {
   // which is the worst of the two collisions available: the spot heights are
   // the only figures on this drawing that mean anything, and a level lettered
   // over one hides a measurement behind an inference.
-  // Dense means a fine pass, asked of each axis's own control: `count > 7`
-  // read an orientation axis's eight coarse positions as dense and thinned the
-  // figures on a ground that had only just been cut.
-  const fineAlong = (axis) => axis.count >= gridCounts(axis.control).fine;
-  const dense = fineAlong(sv.x) || fineAlong(sv.y);
+  // Dense means more positions than a coarse pass can hold — its own count
+  // plus the stance forced in — asked of each axis's own control: `count > 7`
+  // was exactly that for a ruled face (six and the stance) and read an
+  // orientation axis's eight coarse positions as dense. Asked as "more than a
+  // coarse pass" rather than "a fine pass's count", because a fine pass over a
+  // narrow ruled extent dedupes to fewer positions than it asked for, and nine
+  // figures on 264 px still need thinning.
+  const denseAlong = (axis) => axis.count > gridCounts(axis.control, axis).coarse + 1;
+  const dense = denseAlong(sv.x) || denseAlong(sv.y);
   const figureAt = (spot) =>
     !dense || (spot.ix % 2 === 0 && spot.iy % 2 === 0) ? [px(spot.ix), py(spot.iy) - 5] : null;
   const lettered = sv

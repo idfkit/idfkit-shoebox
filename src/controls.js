@@ -713,9 +713,16 @@ export class Bearing extends Control {
           // face letters, so a reader retyping `135° SE` means 135. 360 is
           // read here as a number, not committed: as an extent's far end it
           // is the whole turn, and as a value `refuses` turns it away.
+          //
+          // Snapped to the step and rounded to its decimals, as `Ruled.parse`
+          // snaps every typed figure, so a box can only hold a bearing the face
+          // can stand on: `12.5` typed into an extent stood in the link as 12.5
+          // while the axis it cut began at 13. Not put onto the circle — that
+          // would read the whole turn's `360` as north — so the snap is the
+          // step's alone and 359.6 is 360, the far end of the turn.
           const m = /^\s*(\d+(?:\.\d+)?|\.\d+)\s*°?\s*(?:[NSEW]{1,3})?\s*$/i.exec(String(text));
           if (!m) return null;
-          const v = Number(m[1]);
+          const v = Number((Math.round(Number(m[1]) / wrap.step) * wrap.step).toFixed(decimalsOf(wrap.step)));
           return v >= 0 && v <= wrap.period ? v : null;
         },
         landmarkAt: () => null,

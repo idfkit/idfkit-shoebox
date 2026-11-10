@@ -45,6 +45,7 @@ import {
   refusesSweep,
   sampleOrder,
   samplePoints,
+  studyCounts,
 } from './study.js';
 import { deltaKindOf, figureIn, letter, suffixIn } from './units.js';
 
@@ -107,11 +108,31 @@ export const FINE_GRID = 11;
  * has one end, spaces its positions by `i / n` rather than `i / (n - 1)`, and
  * six points round a circle sit at 60° steps that the study's 22.5° grid never
  * lands on. Eight and sixteen are the study's own counts on a wrapping face
- * (`studyCounts`), so every orientation a study measured is a cache hit for a
- * survey row, and eight nests in sixteen exactly as six nests in eleven.
+ * (`studyCounts`), asked of it rather than restated, so every orientation a
+ * study measured is a cache hit for a survey row, and eight nests in sixteen
+ * exactly as six nests in eleven.
+ *
+ * Asked of the extent too, because a narrowed extent is an arc and an arc has
+ * two ends again. Spaced by `i / (n - 1)`, eight then sixteen are seven and
+ * fifteen intervals, which do not nest: on 300° to 60° the coarse 317°…43°
+ * are none of them fine positions, so a densify dropped six of every eight
+ * coarse spot heights and ran them again (FR-006). Fifteen is fourteen
+ * intervals, twice seven, which nests by the arithmetic six in eleven does.
  */
-export function gridCounts(control) {
-  return control.wraps ? { coarse: 8, fine: 16 } : { coarse: COARSE_GRID, fine: FINE_GRID };
+export function gridCounts(control, { from = null, to = null } = {}) {
+  if (!control.wraps) return { coarse: COARSE_GRID, fine: FINE_GRID };
+  const { coarse, fine } = studyCounts(control);
+  return wholeTurn(control, from, to) ? { coarse, fine } : { coarse, fine: 2 * coarse - 1 };
+}
+
+/**
+ * Whether an extent along a wrapping control is the whole turn: no extent at
+ * all, or 0 to 360 — the one place 360 is admissible, as an end. Anything else
+ * is an arc. One answer for `axisFor` and `gridCounts`, which must agree on
+ * which an extent is or an arc would be cut at a whole turn's counts.
+ */
+function wholeTurn(control, from, to) {
+  return (from ?? control.min) === 0 && (to ?? control.max) === control.wrap.period;
 }
 
 /* ══ which way is better ═════════════════════════════════════════════════ */
@@ -547,8 +568,7 @@ export function axisFor(key, { from = null, to = null, count = COARSE_GRID, stan
     // is admissible: as an extent's far end, never as a value. Any other end
     // is put onto the circle so that 360 can never mint a second identity for
     // north.
-    const whole = lo === 0 && hi === control.wrap.period;
-    if (!whole) {
+    if (!wholeTurn(control, lo, hi)) {
       ends = [control.wrap.norm(lo), control.wrap.norm(hi)];
       if (ends[0] === ends[1]) {
         throw new Error(`axisFor: ${key} runs ${lo} to ${hi}. The same bearing at both ends is no extent.`);

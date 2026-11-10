@@ -82,6 +82,14 @@ export const isSchemeFragment = (raw) => /^v\d+(&|$)/.test(raw);
 const DEFAULTS_BY_VERSION = Object.freeze({ v1: DEFAULT_PARAMETERS, v2: DEFAULT_PARAMETERS });
 
 /**
+ * A number as a link may spell it: digits, an optional sign and an optional
+ * decimal part, and nothing else `Number` would also read. One pattern for
+ * every place a link's text becomes a figure — a value, a survey extent and the
+ * `v1` migration — so the three cannot come to admit different spellings.
+ */
+const NUMERAL = /^-?\d+(\.\d+)?$/;
+
+/**
  * One step per version bump, `(pairs) => ({ to, pairs })`, rewriting old
  * vocabulary into the next version's under the version it lands on. The
  * structure existed from day one because retrofitting it after unversioned
@@ -99,14 +107,17 @@ const MIGRATIONS = Object.freeze({
   // the default and an omitted key already means it. Nothing is lost by the
   // drop: measured, the IDF a `v1` link at 360 wrote differs from the one at 0
   // only by float residue in the vertices, about 1.9e-15 m, so it was the same
-  // building all along. Asked as `Number(raw) === 360` so every spelling of a
-  // full turn (`360.0`, `3.6e2`) is carried, and nothing else is touched: an
+  // building all along. Asked through `readValue`'s own text gate and then as
+  // `Number(raw) === 360`, so every spelling of a full turn `v1` admitted
+  // (`360`, `360.0`) is carried and nothing `v1` refused is: `Number` alone
+  // reads `0x168`, `3.6e2` and a `+`-escaped ` 360` as a full turn too, and
+  // would have opened at north links `v1` turned away as "not a number". An
   // out-of-range `v1` value such as 400 passes through and is refused by
   // `readValue` with the sentence it always got.
   v1: (pairs) => {
     const kept = new URLSearchParams();
     for (const [key, raw] of pairs) {
-      if (key === 'northAxis' && Number(raw) === 360) continue;
+      if (key === 'northAxis' && NUMERAL.test(raw) && Number(raw) === 360) continue;
       kept.append(key, raw);
     }
     return { to: 'v2', pairs: kept };
@@ -419,7 +430,7 @@ function decodeSurvey(raw) {
       // The same text gate the numeric branch below uses, and for the same
       // reason: `Number('')` is 0 and `Number('0x18')` is 24, either of which
       // would load an extent the sharer never set.
-      if (!/^-?\d+(\.\d+)?$/.test(bound)) throw new Error(`"${bound}" is not a number in the extent of ${key}`);
+      if (!NUMERAL.test(bound)) throw new Error(`"${bound}" is not a number in the extent of ${key}`);
       return Number(bound);
     });
     if (control.wraps) {
@@ -433,7 +444,12 @@ function decodeSurvey(raw) {
       if (!inRange(from) || !inRange(to)) {
         throw new Error(`${key} runs ${control.min} to ${control.max}, and the survey asks for ${from} to ${to}`);
       }
-      if (from === to) {
+      // Compared on the circle, as `axisFor` compares them: `360_0` is north
+      // at both ends, and asked as `from === to` it passed here and threw
+      // from `axisFor` while the link was being restored, which is a link
+      // refused after it had been accepted rather than refused whole.
+      const whole = from === control.min && to === control.max;
+      if (!whole && control.wrap.norm(from) === control.wrap.norm(to)) {
         throw new Error(`the survey asks for ${key} from ${from} to ${to}, and the same bearing at both ends is no extent`);
       }
     } else if (from < control.min || to > control.max || !(to > from)) {
@@ -529,7 +545,7 @@ function readValue(key, raw) {
   // than a link's: `Number('')` is 0 and `Number('0x18')` is 24, and either
   // would load a value the sharer never set — a truncated `occFrom=` became a
   // building occupied from midnight before this check existed.
-  if (!/^-?\d+(\.\d+)?$/.test(raw)) throw new Error(`"${raw}" is not a number for ${key}`);
+  if (!NUMERAL.test(raw)) throw new Error(`"${raw}" is not a number for ${key}`);
   const value = Number(raw);
   // The admissible range is the control's own and is asked of the control. It
   // used to be restated here, which was tolerable while a link was the only

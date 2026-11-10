@@ -92,9 +92,11 @@ class TurnMismatch extends Error {}
  */
 function turnMismatch(built) {
   if (built?.turn === undefined || built.asked == null) return null;
-  const apart = Math.abs(((((built.turn - built.asked) % 360) + 540) % 360) - 180);
-  if (apart <= 0.01) return null;
   const bearing = controlFor('northAxis').control;
+  // The short way round, asked of the wrap rather than re-derived here, so the
+  // check and the card measure a turn by one rule.
+  const apart = Math.abs(bearing.wrap.signed(built.asked, built.turn));
+  if (apart <= 0.01) return null;
   return withinBudget(
     BUDGETS.ABSENCE,
     'a sample turned off its bearing',
@@ -255,6 +257,11 @@ export function createStudyScheduler({
       carried: sample.carried,
       readings: sample.readings,
       meterBasis: sample.meterBasis,
+      // Where the run's document turned, read off its vertices. A fact about
+      // the desk, which is what the bucket keys on, so any entry a lookup
+      // returns for that desk carries the right one; left out, a cache hit
+      // placed its point at the bearing asked rather than the one measured.
+      turn: sample.turn,
     });
     cache.set(identity.exact, entry);
     if (!compatible.has(identity.bucket)) compatible.set(identity.bucket, new Set());
