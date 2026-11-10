@@ -168,6 +168,14 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 export function mountConsole({
   host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear, onStudyQuantity, onPin,
   onSurvey,
+  // Which way improves a reading, by series id: 'lower', 'higher' or null.
+  // The survey declares it (`READING_BY_ID[id].better`, from its `SENSE`
+  // table) and the caller hands it in rather than this module importing the
+  // survey, because `report-sheet.js` loads this module before `main.js` and
+  // must not take the survey's load-time assertions with it. Absent, every
+  // reading is ungraded and the card says lowest and highest, which is true of
+  // every reading.
+  betterOf = () => null,
 }) {
   const strips = new Map(); // channel id -> { redraw(), meter, patch, solo }
   const faces = new Map(); // parameter key -> redraw for that control
@@ -2252,6 +2260,7 @@ export function mountConsole({
           ? line.format(value, readingOf(point))
           : quantity.say(value);
       return {
+        id: line.id,
         sel: (point) => {
           const value = line.select(readingOf(point));
           return Number.isFinite(value) ? value : null;
@@ -2319,7 +2328,9 @@ export function mountConsole({
     const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' });
     root.setAttribute(
       'aria-label',
-      `Study of ${labelFor(key)} from ${control.format(control.min)} to ${control.format(control.max)}: ` +
+      (wraps
+        ? `Study of ${labelFor(key)} over the whole turn, from ${control.format(control.min)} round to north again: `
+        : `Study of ${labelFor(key)} from ${control.format(control.min)} to ${control.format(control.max)}: `) +
         series
           .map((s) => {
             const found = study.curve.filter((point) => s.sel(point) != null);
@@ -2373,31 +2384,65 @@ export function mountConsole({
     };
     for (const s of series) draw(s.sel, s.pen);
 
-    const foot = (text, fx, anchor, pen = 'var(--ink-note)') => {
+    const foot = (text, fx, anchor, pen = 'var(--ink-note)', fy = 58) => {
       const t = svg('text', {
-        x: fx, y: 58, 'text-anchor': anchor, fill: pen,
+        x: fx, y: fy, 'text-anchor': anchor, fill: pen,
         'font-family': 'var(--mono)', 'font-size': 7.5,
       });
       t.textContent = text;
       root.append(t);
     };
-    foot(control.format(control.min), plot.x, 'start');
-    foot(control.format(control.max), plot.x + plot.w, 'end');
+    if (wraps) {
+      // Ticks at the eight principal points, each lettered as the rose letters
+      // a bearing there, so every figure on the axis is one the sheet would
+      // print with the rose turned to it. North stands at both ends and is
+      // lettered as the two ends below, not on this row. The index sheet is
+      // about 390 px across, where eight figures at a fortieth of the axis
+      // apart run into each other, so it letters the cardinals only; every
+      // tick is still drawn.
+      const cardinalsOnly = indexMode();
+      for (let a = control.min; a <= control.max; a += 45) {
+        const tx = x(a).toFixed(2);
+        const cardinal = a % 90 === 0;
+        root.append(
+          svg('line', {
+            x1: tx, y1: plot.bottom + 0.5, x2: tx, y2: plot.bottom + (cardinal ? 4 : 2.5),
+            stroke: 'var(--rule-firm)', 'stroke-width': 1, 'shape-rendering': 'crispEdges',
+          }),
+        );
+        if (a === control.min || a === control.max) continue;
+        if (cardinalsOnly && !cardinal) continue;
+        foot(control.format(a), Number(tx), 'middle');
+      }
+      // The two ends are one bearing, and the axis says so in words rather
+      // than by lettering `360° N` as though it were a second building.
+      foot(control.format(control.min), plot.x, 'start', 'var(--ink-note)', 69);
+      foot(WRAP_CAPTION, plot.x + plot.w / 2, 'middle', 'var(--ink-note)', 69);
+      foot(WRAP_AGAIN, plot.x + plot.w, 'end', 'var(--ink-note)', 69);
+    } else {
+      foot(control.format(control.min), plot.x, 'start');
+      foot(control.format(control.max), plot.x + plot.w, 'end');
+    }
 
     // The curve read at any position on the step grid. Between two solved
     // samples the reading is interpolated and lettered with `≈`; across a gap
     // (a failed or refused run) there is no reading, and the em dash says so.
     const solved = study.curve.filter((point) => point && !point.refused);
+    //
+    // It walks the drawn curve, seam point included, and brackets by where a
+    // point is drawn: so a desk at 350° interpolates between the last position
+    // and north again, and stands where it stands (FR-008). On a linear face
+    // the drawn curve is the curve and where it is drawn is its value.
     const readAt = (s, v) => {
       let prev = null;
-      for (const point of study.curve) {
+      for (const point of drawnCurve) {
         const here = point && !point.refused ? s.sel(point) : null;
         // Within a millionth of a step is the sample itself: both sides are on
         // the step grid, but only one of them went through `toFixed`.
         if (point && Math.abs(point.value - v) < control.step * 1e-6) return here == null ? null : { value: here, point, exact: true };
-        if (point && point.value > v) {
+        if (point && placeOf(point) > v) {
           if (here == null || prev == null) return null;
-          const f = (v - prev.point.value) / (point.value - prev.point.value);
+          const f = (v - placeOf(prev.point)) / (placeOf(point) - placeOf(prev.point));
           return { value: prev.value + f * (here - prev.value), point, exact: false };
         }
         prev = here == null ? null : { value: here, point };
@@ -2417,8 +2462,7 @@ export function mountConsole({
 
     // Letter the curve's reading at `v` beside the line standing there: the
     // slider's own position at rest, the pointer's while it hovers.
-    const letterAt = (v) => {
-      const at = x(v);
+    const letterAt = (v, at = x(v)) => {
       const right = at > W * 0.6;
       reading.setAttribute('x', (right ? at - 4 : at + 4).toFixed(2));
       reading.setAttribute('text-anchor', right ? 'end' : 'start');
@@ -2446,19 +2490,26 @@ export function mountConsole({
     // Hover stands a marker on the curve and a probe on the face above; a
     // click sets the control there. Both read the pointer onto the step grid,
     // so what is lettered is what a click would set.
-    const pointed = (event) => {
+    const across = (event) => {
       const box = root.getBoundingClientRect();
-      return control.valueAt(clamp((event.clientX - box.left) / box.width, 0, 1));
+      return clamp((event.clientX - box.left) / box.width, 0, 1);
     };
+    // On a face that wraps, `valueAt` hands the right-hand end back as north,
+    // 0, which is the building a click there sets. The marker stays at the
+    // end the pointer is on: drawn at 0 it would jump across the card under
+    // the hand while reading exactly what the seam point reads.
+    const pointed = (event) => control.valueAt(across(event));
+    const markAt = (v, f) => (wraps && v === control.min && f > 0.5 ? plot.x + plot.w : x(v));
     if (solved.length) {
       root.classList.add('study-probe');
       root.addEventListener('pointermove', (event) => {
-        hovering = pointed(event);
-        const mx = x(hovering).toFixed(2);
+        const f = across(event);
+        hovering = control.valueAt(f);
+        const mx = markAt(hovering, f).toFixed(2);
         marker.setAttribute('x1', mx);
         marker.setAttribute('x2', mx);
         marker.setAttribute('visibility', 'visible');
-        letterAt(hovering);
+        letterAt(hovering, Number(mx));
         probes.get(key)?.(hovering);
       });
       root.addEventListener('pointerleave', () => {
@@ -2471,7 +2522,68 @@ export function mountConsole({
     }
 
     card.append(root);
+    if (wraps) {
+      const said = extremesSaid(study.curve, series, { control, placeOf });
+      if (said) card.append(el('p', 'study-opening-basis study-extremes', said));
+    }
     return { node: card, kind: 'card', study, syncTick };
+  }
+
+  /**
+   * Where a whole turn reads lowest and highest, in one line in view (research
+   * R13, FR-009).
+   *
+   * Only on a face that wraps. A linear card's extremes are where its eye
+   * already lands, at or near its two ends; a turn has no ends, and "which
+   * way should it face" is the question the study is taken to answer.
+   *
+   * Lowest and highest, not best and worst, unless the reading declares which
+   * way is better (`betterOf`, the survey's own `SENSE`): the sheet grades
+   * nothing it has not been told how to grade. Each bearing is the plotted
+   * point's own — where the document was measured to turn — lettered as the
+   * rose would letter it, so every figure is one the sheet prints with the
+   * rose turned there. Two positions whose readings letter identically cannot
+   * be told apart on the sheet, so a tie is said as a count with no bearing
+   * chosen. The seam point is not a position and is never counted.
+   *
+   * Composed, so it is held to the 25-word BLOCK budget by measurement rather
+   * than a throw (see `src/copy.js`): a single series runs to 9 words, two to
+   * 20 at the most (two ties of sixteen).
+   */
+  function extremesSaid(curve, series, { control, placeOf }) {
+    const clauses = [];
+    for (const s of series) {
+      const found = curve.filter((point) => point && !point.refused && s.sel(point) != null);
+      if (found.length < 2) continue;
+      const lettered = found.map((point) => ({ point, said: s.format(s.sel(point), point) }));
+      const values = found.map((point) => s.sel(point));
+      const lo = Math.min(...values);
+      const hi = Math.max(...values);
+      const at = (v) => {
+        const word = s.format(v, found[values.indexOf(v)]);
+        const here = lettered.filter((entry) => entry.said === word);
+        return here.length === 1
+          ? control.format(placeOf(here[0].point))
+          : `at ${here.length} positions`;
+      };
+      const prefix = series.length > 1 ? `${s.label}: ` : '';
+      const loSaid = s.format(lo, found[values.indexOf(lo)]);
+      const hiSaid = s.format(hi, found[values.indexOf(hi)]);
+      if (loSaid === hiSaid) {
+        clauses.push(`${prefix}the same at all ${found.length} positions`);
+        continue;
+      }
+      const better = s.id ? betterOf(s.id) : null;
+      const [first, second] = better === 'higher'
+        ? [['best', hi], ['worst', lo]]
+        : better === 'lower'
+          ? [['best', lo], ['worst', hi]]
+          : [['lowest', lo], ['highest', hi]];
+      clauses.push(`${prefix}${first[0]} ${at(first[1])} · ${second[0]} ${at(second[1])}`);
+    }
+    if (!clauses.length) return null;
+    const line = clauses.join('; ');
+    return `${line[0].toUpperCase()}${line.slice(1)}`;
   }
 
   /* ── meters ──────────────────────────────────────────────────────────── */

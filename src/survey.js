@@ -538,7 +538,25 @@ export function axisFor(key, { from = null, to = null, count = COARSE_GRID, stan
       throw new Error(`axisFor: ${key} runs ${min} to ${max}, and the ${name} extent is ${value}`);
     }
   }
-  if (!(hi > lo)) throw new Error(`axisFor: the extent of ${key} runs ${lo} to ${hi}, which is not an extent`);
+  let ends = [lo, hi];
+  if (control.wraps) {
+    // A face with no ends has no "lower figure to a higher one". `from > to`
+    // is an arc clockwise through north (300° to 60° is the north-facing
+    // third of the turn), and `0, 360` is the whole turn, the one place 360
+    // is admissible: as an extent's far end, never as a value. Any other end
+    // is put onto the circle so that 360 can never mint a second identity for
+    // north.
+    const whole = lo === 0 && hi === control.wrap.period;
+    if (!whole) {
+      ends = [control.wrap.norm(lo), control.wrap.norm(hi)];
+      if (ends[0] === ends[1]) {
+        throw new Error(`axisFor: ${key} runs ${lo} to ${hi}. The same bearing at both ends is no extent.`);
+      }
+    }
+  } else if (!(hi > lo)) {
+    throw new Error(`axisFor: the extent of ${key} runs ${lo} to ${hi}, which is not an extent`);
+  }
+  const [start, end] = ends;
   if (!Number.isInteger(count) || count < 2) {
     throw new Error(`axisFor: a ground needs at least two positions on ${key}, not ${count}`);
   }
@@ -547,13 +565,22 @@ export function axisFor(key, { from = null, to = null, count = COARSE_GRID, stan
   // The stance's own value goes in only where it is inside the extent. A
   // reader who narrowed the extent past where they are standing has said so,
   // and forcing the stance back in would silently widen the extent they set.
-  const inside = Number.isFinite(current) && current >= Math.min(lo, hi) && current <= Math.max(lo, hi);
+  // On a wrapping face "inside" is measured clockwise from the extent's start,
+  // since min and max would turn a 300° to 60° arc inside out.
+  const inside = !Number.isFinite(current)
+    ? false
+    : control.wraps
+      ? control.wrap.ahead(start, current) <= control.wrap.arc(start, end)
+      : current >= Math.min(lo, hi) && current <= Math.max(lo, hi);
   // `samplePoints` itself, so a survey axis snaps and dedupes exactly as a
   // study's sweep does: the 6 → 11 and 11 → 21 subset property that lets a
   // densify and a study share runs depends on the two agreeing to the ulp,
   // and a second copy of the rounding is how they would stop agreeing.
-  const positions = samplePoints(control, inside ? current : null, count, { from: lo, to: hi });
-  return new Axis({ key, control, side, from: lo, to: hi, positions });
+  // On a wrapping face `samplePoints` hands over to the wrap's own positions,
+  // ordered clockwise from `start`, and dedupes the stance by the short way
+  // round, so the survey and the study agree to the ulp there too.
+  const positions = samplePoints(control, inside ? current : null, count, { from: start, to: end });
+  return new Axis({ key, control, side, from: start, to: end, positions });
 }
 
 /**
@@ -867,26 +894,11 @@ export class Survey {
    * this sheet refuses everywhere else.
    */
   standingAt(desk) {
-    const at = (axis) => {
-      const value = desk[axis.key];
-      const positions = axis.positions;
-      if (!Number.isFinite(value)) return null;
-      if (value < positions[0] || value > positions[positions.length - 1]) return null;
-      const exact = axis.indexOf(value);
-      if (exact !== -1) return exact;
-      // Between two positions: interpolate in *index* space, because the grid
-      // is drawn evenly by index and the positions are not evenly spaced in
-      // value once the stance's own value has been forced into the list.
-      for (let i = 0; i < positions.length - 1; i += 1) {
-        if (value >= positions[i] && value <= positions[i + 1]) {
-          const span = positions[i + 1] - positions[i];
-          return span === 0 ? i : i + (value - positions[i]) / span;
-        }
-      }
-      return null;
-    };
-    const ix = at(this.x);
-    const iy = at(this.y);
+    // `Axis.placeOf` measures along the axis, clockwise on a wrapping one, so
+    // a desk at 350° on a whole turn stands in the cell that closes the circle
+    // and a desk at 20° on a 300° to 60° arc stands inside it.
+    const ix = this.x.placeOf(desk[this.x.key]);
+    const iy = this.y.placeOf(desk[this.y.key]);
     if (ix === null || iy === null) return null;
     const on = Number.isInteger(ix) && Number.isInteger(iy);
     return { ix, iy, on };
@@ -964,7 +976,10 @@ export function rowsFor(survey, { needed, carried, restShape, origin = 'survey',
     // the cancel point has to ask it the same question.
     omits: [survey.x.key, survey.y.key],
     points,
-    order: sampleOrder(points, survey.stance[survey.x.key]),
+    // Asked of the control, so a whole turn is ordered round the circle
+    // (north, south, then the stance) rather than from its first index to its
+    // last, which on a circle are neighbours.
+    order: sampleOrder(points, survey.stance[survey.x.key], survey.x.control, { whole: survey.x.closed }),
     origin,
     asked: points.length,
     // Not part of the job the scheduler understands, and `makeStudyJob` drops
@@ -1076,7 +1091,12 @@ export function latticeOf(survey, reading = survey.readings[0]) {
       mask[ix + iy * nx] = 1;
     }
   }
-  return { values, mask, nx, ny };
+  // Whether each axis closes on itself, carried with the readings because
+  // every consumer walks cells, and a whole turn has one more cell than it has
+  // gaps between positions: the one from the last bearing back to north. The
+  // lattice itself stays `nx × ny`, north held once, so nothing that counts
+  // positions can count it twice.
+  return { values, mask, nx, ny, closedX: survey.x.closed, closedY: survey.y.closed };
 }
 
 /** The measured range of a lattice, or null where nothing is measured. */
