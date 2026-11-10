@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-10
+
 ### Added
+
+- **The study curve stands under its slider and can be probed.** The plot
+  spans the full width of the face above it, so each position on the curve
+  sits under the same position on the slider. Hovering letters the curve's
+  reading at that position, interpolated between solved samples and marked
+  `≈`; clicking sets the control there, snapped to its step.
+- **An MIT licence**, in `LICENSE` and in `package.json`.
 
 - **The link records whether the model console is open.** An open console
   adds `desk=open` to the address and to Share, so a link copied with it open
@@ -24,7 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Links are now `v2`.** A `v1` link carrying `northAxis=360` opens at 0°,
   which is the same building. A `v2` link carrying 360 is refused.
-
+- **The duration curve's cursor follows a hovering mouse**, and the readout
+  under the plate follows it. A press still sets the cursor on a touch screen.
 - **The study and survey reading "Cost" is now "Utility cost"**, as is the
   kept-scheme column, so that it is not read as a construction cost. The link
   token `cost` is unchanged.
@@ -44,6 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The economizer's cooling flow limit covers every storey.** It was set at
+  20 air changes per hour of one storey's volume, so at a zone multiplier above
+  1 the ideal loads system ran at the limit without warning. In one reported
+  scheme (multiplier 8, Singapore) the supply sat at the limit in 2,595 of
+  2,600 occupied hours. The limit now uses the gross volume; single-storey
+  desks write the same IDF as before.
 - **The default desk runs with no warnings.** The sheet still requested two
   monthly Other Equipment series after the stock example's `OtherEquipment`
   pair was removed, so every run counted one warning too many, "requested but not
@@ -1132,7 +1148,8 @@ laid out as a drafting sheet, served at
 - Licensing and disclosure section citing the open datasets and npm packages
   behind the page.
 
-[unreleased]: https://github.com/idfkit/idfkit-shoebox/compare/v0.5.0...HEAD
+[unreleased]: https://github.com/idfkit/idfkit-shoebox/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/idfkit/idfkit-shoebox/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/idfkit/idfkit-shoebox/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/idfkit/idfkit-shoebox/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/idfkit/idfkit-shoebox/compare/v0.2.0...v0.3.0
