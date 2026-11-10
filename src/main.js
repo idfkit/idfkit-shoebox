@@ -11,6 +11,7 @@ import {
   designConditionsFrom,
   designDayDatums,
   geometryFacts,
+  turnOf,
   leakageBuildUp,
   modelFacts,
   occupiedFloor,
@@ -41,14 +42,13 @@ import { describeDesk } from './describe.js';
 import { quantityField, textField } from './field.js';
 import { mountTour } from './tour.js';
 import {
-  COARSE_SAMPLES,
   OPENING_QUANTITY_BASIS,
   PricingAvailability,
   PricingStatus,
   QUANTITIES,
   QUANTITY_BY_ID,
   RunContents,
-  SWEEP_SAMPLES,
+  studyCounts,
   contentsFor,
   offersFor as studyOffersFor,
   openingQuantity,
@@ -58,8 +58,8 @@ import {
   sampleOrder,
 } from './study.js';
 import {
-  COARSE_GRID,
-  FINE_GRID,
+  compassMarks,
+  gridCounts,
   READINGS as SURVEY_READINGS,
   READING_BY_ID,
   axisFor,
@@ -797,6 +797,14 @@ let plateNote = null;
 // step replaces the setting an earlier one set, and one frame draws the latest
 // (FR-018c).
 let previewFrame = 0;
+// Whether the module has run to its foot. The units toggle is live markup
+// wired long before the boot's first `await`, and `reletterSheet` reaches
+// state declared after it: pressed while the schema or the engine was still
+// loading, it threw "Cannot access 'surveyFrame' before initialization" (and,
+// that one hoisted, the next one along). So a switch during the boot is owed
+// and paid once at the foot, where everything it reaches exists.
+let sheetBuilt = false;
+let reletterOwed = false;
 // The carpet's "change" toggle: honoured only while a ghost stands, and reset
 // when it clears (FR-020c).
 let carpetChange = false;
@@ -2250,10 +2258,16 @@ let surveyPass = null;
 // of the desk moves, so an idle refine does not quietly restart work the
 // reader just shed.
 let surveyStop = null;
-// The count the current ground was asked for, so a re-cut that is not meant to
+// The pass the current ground was asked for, so a re-cut that is not meant to
 // lose detail — flipping the axes — can come back at the density it had rather
 // than dropping to the coarse pass and climbing out of it again.
-let surveyGrid = COARSE_GRID;
+//
+// A pass and not a count, because the count is each axis's own: six then
+// eleven along a ruled face, eight then sixteen round a whole turn. One number
+// for both axes would space an orientation axis at six positions with no
+// compass name, and a flip, which swaps the axes, would carry the wrong one
+// across. `passCount` asks the axis's control.
+let surveyGrid = 'coarse';
 // Why the last survey could not be cut, standing in place of the ground.
 let surveyRefused = null;
 // Where the keyboard is standing on the ground, as lattice indices.
@@ -3655,6 +3669,12 @@ desk = mountConsole({
   host: deskPanel,
   params,
   bypass,
+  // Which way improves a reading, from the survey's own declaration, so an
+  // orientation card says best and worst only where somebody said which is
+  // which. Passed in rather than imported by the console, which loads before
+  // this module through the report sheet and must not inherit the survey's
+  // load-time assertions.
+  betterOf: (id) => READING_BY_ID[id]?.better ?? null,
   onChange(key, value, done = false) {
     // A console control genuinely turned is the same "take hold of
     // something" note the sheet's sliders file. Priced keys are excluded —
@@ -3885,6 +3905,10 @@ const shelfStore = (() => {
  * for a change that cannot have moved it.
  */
 function reletterSheet() {
+  if (!sheetBuilt) {
+    reletterOwed = true;
+    return;
+  }
   desk?.reletter();
   // The sheet's own five sliders keep their own copies of the faces.
   for (const redraw of Object.values(syncSlider)) redraw();
@@ -8446,7 +8470,29 @@ const studyPool = createEnginePool({
  * than the number at which a repeated literal starts being a place for the
  * four to drift.
  */
-const deskAt = (job, value) => ({ ...job.snapshot, [job.key]: value });
+// A wrapping key is put onto [0, 360) before it becomes a desk, so 0 and 360 —
+// and 359.99999 and 0 — can never mint two shape keys, two cache identities and
+// two runs of one building. The positions a study asks for are already on the
+// circle; this is the one gate every other route to a sample passes too.
+const deskAt = (job, value) => {
+  const { control } = controlFor(job.key);
+  return { ...job.snapshot, [job.key]: control.wraps ? control.wrap.norm(value) : value };
+};
+
+/**
+ * The bearing a sample was asked to stand at, when one of its swept keys turns
+ * the building, or null.
+ *
+ * Asked of every swept key and not only `job.key`, because a survey row that
+ * fixes North axis and sweeps glazing turns the building just as a study of
+ * North axis does, and the check below is owed to both.
+ */
+function askedTurn(job, desk) {
+  for (const key of [job.omits ?? job.key].flat()) {
+    if (controlFor(key).control.wraps) return desk[key];
+  }
+  return null;
+}
 
 /**
  * The declaration one sweep is read under, refused by name where there is none.
@@ -8789,6 +8835,9 @@ function repriceStudies() {
  * neither ever yields to the other while it is in overlay state.
  */
 function buildSample(job, value) {
+  // One desk for the overlay and for the turn it is checked against, so the
+  // two cannot be two answers to what this sample was asked to be.
+  const desk = deskAt(job, value);
   try {
     // `setAnnual` lives outside `applyModel`, so it is bracketed here both
     // ways: forgetting the restore half would leave the pump solving design
@@ -8796,13 +8845,27 @@ function buildSample(job, value) {
     setAnnual(model, job.annual);
     // Structured contents off the declaration, never a profile name inferred
     // from the selected id.
-    applyModel(model, deskAt(job, value), job.patch, {
+    applyModel(model, desk, job.patch, {
       reporting: job.carried,
     });
     // Each sample's intensity divides by that sample's own floor, which the
     // swept key may itself be moving — the same live read the bill takes.
-    const floorArea = geometryFacts(model).grossFloor;
-    return { idf: writeIdf(model), epw: job.epw, floorArea, carried: job.carried, value };
+    const facts = geometryFacts(model);
+    const floorArea = facts.grossFloor;
+    // The turn is read back off the vertices while the overlay stands, as the
+    // floor is, so a point on an orientation curve is placed at the bearing the
+    // document was actually built at rather than the one it was asked for. The
+    // scheduler compares the two; a document that did not turn as asked is a
+    // failed position, never a point drawn at either bearing.
+    //
+    // Read for every sample, not only for a sweep that turns the building: the
+    // run is cached by the desk alone, so the sample a study of glazing ran at
+    // the stance is the same sample a study of North axis is later handed for
+    // its own stance, and it has to carry the turn that sample was measured at
+    // (FR-010). Only the check is owed solely to a sweep that asked for one.
+    const asked = askedTurn(job, desk);
+    const turn = turnOf(facts);
+    return { idf: writeIdf(model), epw: job.epw, floorArea, carried: job.carried, value, turn, asked };
   } finally {
     applyModel(model, params, patching());
     setAnnual(model, annual());
@@ -9088,7 +9151,15 @@ function openingQuantityForDesk(snapshot, patch, epw) {
   });
 }
 
-function jobForStudy(key, { origin = 'refresh', n = SWEEP_SAMPLES, openingBasis = null } = {}) {
+/**
+ * How many positions a study of `key` takes, coarse then fine, asked of its
+ * control: eleven and twenty-one along a ruled face, eight and sixteen round a
+ * whole turn. Every count below goes through here, so no site can densify an
+ * orientation study to twenty-one points it was never spaced for.
+ */
+const countsOf = (key) => studyCounts(controlFor(key).control);
+
+function jobForStudy(key, { origin = 'refresh', n = countsOf(key).fine, openingBasis = null } = {}) {
   const { control } = controlFor(key);
   // The desk this study describes, read in one breath — the same capture
   // rule the solve follows, for the same reason: params keep moving between
@@ -9111,7 +9182,7 @@ function jobForStudy(key, { origin = 'refresh', n = SWEEP_SAMPLES, openingBasis 
     carried,
     restShape: restShapeKey(key, snapshot, patch),
     points,
-    order: sampleOrder(points, snapshot[key]),
+    order: sampleOrder(points, snapshot[key], control),
     origin,
     asked: n,
     openingBasis: openingBasis ?? studies.get(key)?.openingBasis ?? null,
@@ -9134,7 +9205,7 @@ function studyRefusal(key, snapshot, selected) {
 }
 
 /** Queue one study of the desk as it stands right now. */
-function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES, openingBasis = null } = {}) {
+function enqueueStudy(key, { origin, front = false, n = countsOf(key).fine, openingBasis = null } = {}) {
   const job = jobForStudy(key, { origin, n, openingBasis });
   const quantity = quantityOf(job.quantity);
   const offers = studyOffers(job.snapshot, job.patch, job.epw, key);
@@ -9152,7 +9223,7 @@ function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES, openingBa
       offers,
       waiting: { quantity: quantity.label, missing: job.total, reason: refusal },
       curve: [],
-      coarse: n === COARSE_SAMPLES,
+      coarse: n === countsOf(key).coarse,
     };
     openStudies.add(key);
     studies.set(key, waiting);
@@ -9171,7 +9242,7 @@ function redrawStudiesForQuantity({ queue = true, requeueLifted = false } = {}) 
   const deskOffers = studyOffers();
   for (const [key, prior] of studies) {
     const offers = PRICED_KEYS.has(key) ? studyOffers(params, patching(), epwText ?? null, key) : deskOffers;
-    const job = jobForStudy(key, { n: prior.coarse ? COARSE_SAMPLES : SWEEP_SAMPLES });
+    const job = jobForStudy(key, { n: prior.coarse ? countsOf(key).coarse : countsOf(key).fine });
     const cached = studyScheduler.curveFor(job);
     const selected = offers.find((offer) => offer.quantity.id === quantity.id);
     const refusal = studyRefusal(key, params, selected);
@@ -9224,7 +9295,7 @@ function resumeWaitingStudies() {
     if (!study.waiting || studyScheduler.has(key)) continue;
     const rest = restShapeKey(key);
     if (studyStops.get(key) === rest) continue;
-    enqueueStudy(key, { origin: 'refresh', n: COARSE_SAMPLES });
+    enqueueStudy(key, { origin: 'refresh', n: countsOf(key).coarse });
   }
 }
 
@@ -9251,7 +9322,7 @@ function refreshStudies() {
     if (studyScheduler.has(key)) continue; // already re-sweeping
     if (studyStops.get(key) === rest) continue; // stopped, and the desk has not moved since
     studyStops.delete(key); // the desk moved past the Stop; it lapses
-    enqueueStudy(key, { origin: 'refresh', n: COARSE_SAMPLES });
+    enqueueStudy(key, { origin: 'refresh', n: countsOf(key).coarse });
   }
 }
 
@@ -9271,7 +9342,7 @@ function densifyStudies() {
     if (study.restShape !== rest) continue; // stale — refresh owns it, not densify
     if (studyScheduler.has(key)) continue;
     if (studyStops.get(key) === rest) continue;
-    enqueueStudy(key, { origin: 'refresh', n: SWEEP_SAMPLES });
+    enqueueStudy(key, { origin: 'refresh', n: countsOf(key).fine });
     return;
   }
 }
@@ -9479,9 +9550,10 @@ function onStudyUpdate(job, event) {
         : null,
       openingBasis: job.openingBasis,
       curve: withdrawn ? [] : job.curve,
-      // A coarse first pass is a real study, drawn honestly at eleven points;
-      // the flag is what tells the idle densify it is worth finishing.
-      coarse: job.asked === COARSE_SAMPLES,
+      // A coarse first pass is a real study, drawn honestly at its own count
+      // (eleven on a ruled face, eight round a whole turn); the flag is what
+      // tells the idle densify it is worth finishing.
+      coarse: job.asked === countsOf(job.key).coarse,
     };
     studies.set(key, study);
     openStudies.add(key);
@@ -9742,7 +9814,7 @@ function onSurveyUpdate(job, event) {
  * not of refinement in general.
  */
 function onSurveyPassDone() {
-  const wasCoarse = surveyPass === COARSE_GRID;
+  const wasCoarse = surveyPass === 'coarse';
   surveyPass = null;
   if (!survey || !wasCoarse) return;
   if (!autoOn() || linkAttachPending) return;
@@ -9801,8 +9873,8 @@ function refineSurvey() {
   // never re-measured, so a densify now would fill the ground with holes.
   if (surveyWithdrawn(survey)) return;
   const refined = makeSurvey({
-    x: axisFor(survey.x.key, { from: survey.x.from, to: survey.x.to, count: FINE_GRID, stance: survey.stance }),
-    y: axisFor(survey.y.key, { from: survey.y.from, to: survey.y.to, count: FINE_GRID, stance: survey.stance }),
+    x: axisFor(survey.x.key, { from: survey.x.from, to: survey.x.to, count: passCount(survey.x.key, 'fine', survey.x), stance: survey.stance }),
+    y: axisFor(survey.y.key, { from: survey.y.from, to: survey.y.to, count: passCount(survey.y.key, 'fine', survey.y), stance: survey.stance }),
     readings: survey.readings,
     stance: survey.stance,
     patch: survey.patch,
@@ -9835,10 +9907,18 @@ function refineSurvey() {
     });
   }
   survey = refined;
-  surveyGrid = FINE_GRID;
-  queueSurvey(survey, { grid: FINE_GRID });
+  surveyGrid = 'fine';
+  queueSurvey(survey, { grid: 'fine' });
   renderSurvey();
 }
+
+/**
+ * How many positions an axis along `key` takes on `pass`, asked of its control
+ * and of the extent it is cut over: a whole turn and an arc of bearings take
+ * different fine counts, so that each nests its own coarse pass.
+ */
+const passCount = (key, pass, { from = null, to = null } = {}) =>
+  gridCounts(controlFor(key).control, { from, to })[pass];
 
 /**
  * Cut a fresh ground through the desk as it stands.
@@ -9848,7 +9928,7 @@ function refineSurvey() {
  * shapes, a reading this desk cannot answer. `axisFor` and `makeSurvey` throw
  * for the first two and the offer roster answers the third.
  */
-function openSurvey({ xKey, yKey, readingIds, extents = {}, count = COARSE_GRID }) {
+function openSurvey({ xKey, yKey, readingIds, extents = {}, pass = 'coarse' }) {
   if (!studyScheduler) return;
   const stance = { ...params };
   const patch = patching();
@@ -9868,8 +9948,8 @@ function openSurvey({ xKey, yKey, readingIds, extents = {}, count = COARSE_GRID 
     return;
   }
   const cut = makeSurvey({
-    x: axisFor(xKey, { ...(extents[xKey] ?? {}), count, stance }),
-    y: axisFor(yKey, { ...(extents[yKey] ?? {}), count, stance }),
+    x: axisFor(xKey, { ...(extents[xKey] ?? {}), count: passCount(xKey, pass, extents[xKey]), stance }),
+    y: axisFor(yKey, { ...(extents[yKey] ?? {}), count: passCount(yKey, pass, extents[yKey]), stance }),
     readings,
     stance,
     patch,
@@ -9901,8 +9981,8 @@ function openSurvey({ xKey, yKey, readingIds, extents = {}, count = COARSE_GRID 
         : null;
   if (waiting) surveySay(waiting);
   else {
-    surveyGrid = count;
-    queueSurvey(survey, { grid: count });
+    surveyGrid = pass;
+    queueSurvey(survey, { grid: pass });
   }
   updatePermalink();
 }
@@ -10184,8 +10264,8 @@ function pickList({ label, noun, summary, placeholder, options, selected, onPick
    * the head of the block it belongs to, one sentence covering every copy of
    * the control — applied twice, because the chooser broke it twice. A channel
    * that is out of the path refuses every control it owns for one reason, and
-   * a control with no numeric face is refused by one rule shared with the
-   * other thirty-eight. Written per entry, those were 53 rows each repeating a
+   * a control with no numeric face is refused by one rule shared with every
+   * other control that has none. Written per entry, those were 53 rows each repeating a
    * whole paragraph, which is a list nobody can read down.
    */
   const heading = (name, note) => {
@@ -10216,7 +10296,7 @@ function pickList({ label, noun, summary, placeholder, options, selected, onPick
   if (faceless.length) {
     heading(
       `${faceless.length} controls with no face`,
-      'A selector, a bearing, a daily profile or a list of dates carries no minimum, maximum or ' +
+      "A selector, the neighbour's bearing, a daily profile or a list of dates carries no minimum, maximum or " +
         'step, so there is nothing to sweep along and no ground to cut. That is the same rule a ' +
         'study is refused by.',
     );
@@ -10475,7 +10555,17 @@ function extentField(which) {
     // thrown from `axisFor` a moment later, because the box is where the reader
     // can see what they did. The old value comes back, as it does for anything
     // else the field cannot hold.
-    if (!(next.to > next.from)) {
+    // A turn has no lower figure: 300° to 60° runs clockwise through north, and
+    // `0` to `360` is the whole turn. What it cannot be is the same bearing at
+    // both ends, which is no extent at all, whichever way round it is written.
+    if (control.wraps) {
+      const whole = next.from === 0 && next.to === 360;
+      if (!whole && control.wrap.norm(next.from) === control.wrap.norm(next.to)) {
+        surveySay(withinBudget(BUDGETS.STANDING, 'a wrapping extent', 'The same bearing at both ends is no extent.'));
+        renderSurveyChoose();
+        return;
+      }
+    } else if (!(next.to > next.from)) {
       surveySay(
         `An extent runs from a lower figure to a higher one, and ${formatValue(key, next.from)} to ` +
           `${formatValue(key, next.to)} does not.`,
@@ -10713,13 +10803,13 @@ const syncSurveyAxes = () =>
   desk?.setSurveyAxes([surveyChoice.x, surveyChoice.y].filter(Boolean));
 
 /** Cut a ground the moment the chooser holds enough to cut one. */
-function cutFromChoice({ count = COARSE_GRID } = {}) {
+function cutFromChoice({ pass = 'coarse' } = {}) {
   const { x, y, readings, extents } = surveyChoice;
   if (!x || !y || !readings.length) {
     renderSurvey();
     return;
   }
-  openSurvey({ xKey: x, yKey: y, readingIds: readings, extents: extents ?? {}, count });
+  openSurvey({ xKey: x, yKey: y, readingIds: readings, extents: extents ?? {}, pass });
 }
 
 /**
@@ -10746,7 +10836,7 @@ function flipSurveyAxes() {
   if (!x || !y) return;
   surveyChoice = { ...surveyChoice, x: y, y: x };
   syncSurveyAxes();
-  cutFromChoice({ count: surveyGrid });
+  cutFromChoice({ pass: surveyGrid });
 }
 
 /* The plan. Inline SVG, so every contour and every tick is a real node the
@@ -10763,10 +10853,13 @@ const GROUND_PAD = { left: 44, right: 12, top: 14, bottom: 42 };
 function groundFrame(sv) {
   const w = GROUND_SIZE - GROUND_PAD.left - GROUND_PAD.right;
   const h = GROUND_SIZE - GROUND_PAD.top - GROUND_PAD.bottom;
-  const px = (ix) => GROUND_PAD.left + (sv.x.count === 1 ? w / 2 : (ix / (sv.x.count - 1)) * w);
+  // Over cells, not positions less one: on a whole turn the last cell closes
+  // onto north, so the plan runs 0 to `count` with north again at the far
+  // edge. On every other axis `cells` is `count - 1`, as it always was.
+  const px = (ix) => GROUND_PAD.left + (sv.x.count === 1 ? w / 2 : (ix / sv.x.cells) * w);
   // Y grows up the page, as it does on a survey drawing and as it does not in
   // SVG, so the axis is flipped exactly once, here.
-  const py = (iy) => GROUND_PAD.top + h - (sv.y.count === 1 ? h / 2 : (iy / (sv.y.count - 1)) * h);
+  const py = (iy) => GROUND_PAD.top + h - (sv.y.count === 1 ? h / 2 : (iy / sv.y.cells) * h);
   return { w, h, px, py };
 }
 
@@ -10999,26 +11092,53 @@ function drawGround(sv, lattice, lines) {
     // defect `stopOf` was fixed for, surviving one label along because the two
     // halves of one arrangement were written in two places.
     const unit = axis.control.unitNow;
-    return unit ? `${labelFor(axis.key)} · ${unit}` : labelFor(axis.key);
+    // A whole turn says it wraps where its name is, because its far stop is
+    // the same bearing as its near one and nothing else on the plan says so.
+    const named = axis.closed ? `${labelFor(axis.key)} · wraps` : labelFor(axis.key);
+    return unit ? `${named} · ${unit}` : named;
   };
   for (const [axis, along] of [[sv.x, 'x'], [sv.y, 'y']]) {
     const lo = axis.positions[0];
     const hi = axis.positions[axis.positions.length - 1];
+    // The far stop of a whole turn is north again, not the last bearing
+    // measured: the plan runs one cell past it, onto north.
+    const marks = compassMarks(axis);
+    const hiSaid = axis.closed ? marks.at(-1).text : stopOf(axis, hi);
+    // The principal points between the two stops, as a short tick and the
+    // compass word alone: the stops carry the degrees, and eight full
+    // bearings do not fit along 264 px.
+    for (const mark of marks) {
+      if (mark.at <= 0.25 || mark.at >= axis.cells - 0.25) continue;
+      const tick = along === 'x'
+        ? { x1: frame.px(mark.at), x2: frame.px(mark.at), y1: GROUND_PAD.top + frame.h, y2: GROUND_PAD.top + frame.h + 4 }
+        : { x1: GROUND_PAD.left - 4, x2: GROUND_PAD.left, y1: frame.py(mark.at), y2: frame.py(mark.at) };
+      root.append(svg('line', { class: 'axis', ...tick }));
+      const word = svg('text', along === 'x'
+        ? { class: 'axis-stop', x: frame.px(mark.at), y: GROUND_PAD.top + frame.h + 16, 'text-anchor': 'middle' }
+        : { class: 'axis-stop', x: GROUND_PAD.left - 5, y: frame.py(mark.at) + 3, 'text-anchor': 'end' });
+      word.textContent = mark.text;
+      root.append(word);
+    }
     if (along === 'x') {
+      // A bearing axis letters its two stops on the second course, beside its
+      // name, as the study card does: on the first, `N, again` is 38 units of
+      // type end-anchored at the frame's edge and NW stands 33 units in from
+      // it, so the two printed over one another (measured on the page, 016).
+      const stopsAt = GROUND_PAD.top + frame.h + (marks.length ? 30 : 16);
       const text = svg('text', {
         class: 'axis-stop',
         x: GROUND_PAD.left,
-        y: GROUND_PAD.top + frame.h + 16,
+        y: stopsAt,
         'text-anchor': 'start',
       });
       text.textContent = stopOf(axis, lo);
       const text2 = svg('text', {
         class: 'axis-stop',
         x: GROUND_PAD.left + frame.w,
-        y: GROUND_PAD.top + frame.h + 16,
+        y: stopsAt,
         'text-anchor': 'end',
       });
-      text2.textContent = stopOf(axis, hi);
+      text2.textContent = hiSaid;
       const label = svg('text', {
         class: 'axis-label',
         x: GROUND_PAD.left + frame.w / 2,
@@ -11041,7 +11161,7 @@ function drawGround(sv, lattice, lines) {
         y: GROUND_PAD.top + 8,
         'text-anchor': 'end',
       });
-      text2.textContent = stopOf(axis, hi);
+      text2.textContent = hiSaid;
       const label = svg('text', {
         class: 'axis-label',
         x: 11,
@@ -11102,7 +11222,15 @@ function drawGround(sv, lattice, lines) {
   // which is the worst of the two collisions available: the spot heights are
   // the only figures on this drawing that mean anything, and a level lettered
   // over one hides a measurement behind an inference.
-  const dense = sv.x.count > 7 || sv.y.count > 7;
+  // Dense means more positions than a coarse pass can hold — its own count
+  // plus the stance forced in — asked of each axis's own control: `count > 7`
+  // was exactly that for a ruled face (six and the stance) and read an
+  // orientation axis's eight coarse positions as dense. Asked as "more than a
+  // coarse pass" rather than "a fine pass's count", because a fine pass over a
+  // narrow ruled extent dedupes to fewer positions than it asked for, and nine
+  // figures on 264 px still need thinning.
+  const denseAlong = (axis) => axis.count > gridCounts(axis.control, axis).coarse + 1;
+  const dense = denseAlong(sv.x) || denseAlong(sv.y);
   const figureAt = (spot) =>
     !dense || (spot.ix % 2 === 0 && spot.iy % 2 === 0) ? [px(spot.ix), py(spot.iy) - 5] : null;
   const lettered = sv
@@ -11466,8 +11594,10 @@ function drawGround(sv, lattice, lines) {
       const here = sv.positionOf(params);
       const at = groundCursor ?? here ?? { ix: 0, iy: 0 };
       groundCursor = {
-        ix: Math.min(sv.x.count - 1, Math.max(0, at.ix + step[0])),
-        iy: Math.min(sv.y.count - 1, Math.max(0, at.iy + step[1])),
+        // Round a whole turn the cursor walks past north and on, as the rose
+        // does; along any other axis it stops at the end, as it always did.
+        ix: sv.x.closed ? sv.x.shift(at.ix, step[0]) : Math.min(sv.x.count - 1, Math.max(0, at.ix + step[0])),
+        iy: sv.y.closed ? sv.y.shift(at.iy, step[1]) : Math.min(sv.y.count - 1, Math.max(0, at.iy + step[1])),
       };
       renderSurvey();
       $('survey-ground').querySelector('svg')?.focus({ preventScroll: true });
@@ -12025,6 +12155,16 @@ function renderCoverage(sv) {
  * rather than as a number with a trailing space where a unit was expected.
  */
 function amountOn(axis, value) {
+  // A turn is a difference along a face with no ends, so it says which way
+  // round it went: the same 18° is two different buildings clockwise and
+  // anticlockwise from the stance, and a bare `18°` would leave the reader to
+  // guess. Through the span kind, which carries no offset (an angle has none
+  // in either system, but the rule is the kind's to apply, not this line's).
+  if (axis.wraps) {
+    const way = value < 0 ? 'anticlockwise' : 'clockwise';
+    return `${letter(axis.control.spanKind, Math.abs(value), { digits: 0 })} ${way}`;
+  }
+  value = Math.abs(value);
   // The declaration's `digits` rather than `format` itself, because an amount
   // of exactly zero is not the control's `zero` label — and `letter` gives that
   // while converting the figure and its unit together. Composed from
@@ -12161,8 +12301,8 @@ function renderSurveyFinding(sv) {
     parts.push(exchange.refusal);
   } else {
     parts.push(
-      `Along the level line at the stance, ${amountOn(sv.x, Math.abs(exchange.dx))} of ` +
-        `${phraseFor(sv.x.key)} buys ${amountOn(sv.y, Math.abs(exchange.dy))} of ` +
+      `Along the level line at the stance, ${amountOn(sv.x, exchange.dx)} of ` +
+        `${phraseFor(sv.x.key)} buys ${amountOn(sv.y, exchange.dy)} of ` +
         `${phraseFor(sv.y.key)}, holding ${sv.readings[0].label.toLowerCase()} to within ` +
         `${within(exchange.tolerance, sv.readings[0])}.`,
     );
@@ -12402,7 +12542,10 @@ function renderPull() {
       barCell,
       el('td', null, entry.perUnit || '—'),
       el('td', 'num', formatEffect(entry, pullStance.reading)),
-      el('td', 'num', entry.atStop ? 'At its stop' : `${entry.roomSaid}${entry.perUnit ? ` ${entry.perUnit}` : ''}`),
+      // A turn has no stop and no room to letter a unit after: its entry says
+      // how far it was turned, whole, and the Per-unit column already carries
+      // "° clockwise".
+      el('td', 'num', entry.wraps ? entry.roomSaid : entry.atStop ? 'At its stop' : `${entry.roomSaid}${entry.perUnit ? ` ${entry.perUnit}` : ''}`),
     ];
     cells.forEach((cell, at) => {
       // Set where the cell is built, so the words over a column and the words
@@ -12717,8 +12860,11 @@ function drawRelief(sv, lines = null) {
     })),
     stance,
     axes: {
-      x: { label: labelFor(sv.x.key), from: stopOf(sv.x, sv.x.positions[0]), to: stopOf(sv.x, sv.x.positions.at(-1)) },
-      y: { label: labelFor(sv.y.key), from: stopOf(sv.y, sv.y.positions[0]), to: stopOf(sv.y, sv.y.positions.at(-1)) },
+      // A wrapping axis hands the relief its compass marks, and a whole turn
+      // its closure, so the far stop is lettered north again rather than as
+      // the last bearing measured; `letterAxes` throws without them.
+      x: { label: labelFor(sv.x.key), from: stopOf(sv.x, sv.x.positions[0]), to: stopOf(sv.x, sv.x.positions.at(-1)), wraps: sv.x.wraps, closed: sv.x.closed, marks: compassMarks(sv.x) },
+      y: { label: labelFor(sv.y.key), from: stopOf(sv.y, sv.y.positions[0]), to: stopOf(sv.y, sv.y.positions.at(-1)), wraps: sv.y.wraps, closed: sv.y.closed, marks: compassMarks(sv.y) },
       // The reading the block stands up, which is the drawing's third axis and
       // had no word on it anywhere. Its figures are the levels the cut is
       // ruled at, lettered exactly as the plan letters its contours, and the
@@ -13255,3 +13401,8 @@ provide('runFiles', () => ({
   ownWeather: Boolean(lastBundle?.ownWeather),
   build: (withSignature) => runBundle({ ...lastBundle, author: withSignature ? signature : null }),
 }));
+
+// The foot of the module: everything `reletterSheet` reaches now exists, so a
+// units switch pressed during the boot is paid here (see `sheetBuilt`).
+sheetBuilt = true;
+if (reletterOwed) reletterSheet();

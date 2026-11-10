@@ -20,7 +20,7 @@ import { BUDGETS, withinBudget } from './copy.js';
 // definition: a second copy here would be the first thing to drift the day a
 // figure changed precision on one surface and not the other.
 import { flowPhrase, flowWord, watts } from './readings.js';
-import { letter, system } from './units.js';
+import { letter, letteredIn, system } from './units.js';
 
 /**
  * The model console: a recall sheet for the zone heat balance.
@@ -103,6 +103,20 @@ const SUMMARY = Object.freeze(
   ),
 );
 
+// What a study card of a face that wraps letters under its axis, and what its
+// Study offer says it would sweep. The axis's caption and its right-hand end
+// stand on one line with `0° N` at the left, so it is that whole line that is
+// held to a console line's budget; the figure is the rose's own lettering of
+// north and two words in any system, since an angle does not convert.
+const WRAP_CAPTION = 'The whole turn; wraps at north.';
+const WRAP_AGAIN = 'N, again';
+withinBudget(BUDGETS.STRIP_LINE, 'the wrapping study card\'s axis line', `0° N ${WRAP_CAPTION} ${WRAP_AGAIN}`);
+// Spoken rather than shown — it is the offer's aria-label, after "Study North
+// axis:" — but it is the only place a reader who cannot see the rose is told
+// what the sweep covers, so it is held to the same line budget as the caption.
+const WRAP_OFFER = 'sweep the whole turn, from north round to north';
+withinBudget(BUDGETS.STRIP_LINE, 'the wrapping Study offer\'s sweep', `Study North axis: ${WRAP_OFFER}`);
+
 /**
  * A control's note, one press down on the control it explains. About a
  * hundred and ten controls carry one, of up to seventy-seven words
@@ -168,6 +182,14 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 export function mountConsole({
   host, params, bypass, onChange, onPatch, onSolo, onReset, onStudy, onStudyClear, onStudyQuantity, onPin,
   onSurvey,
+  // Which way improves a reading, by series id: 'lower', 'higher' or null.
+  // The survey declares it (`READING_BY_ID[id].better`, from its `SENSE`
+  // table) and the caller hands it in rather than this module importing the
+  // survey, because `report-sheet.js` loads this module before `main.js` and
+  // must not take the survey's load-time assertions with it. Absent, every
+  // reading is ungraded and the card says lowest and highest, which is true of
+  // every reading.
+  betterOf = () => null,
 }) {
   const strips = new Map(); // channel id -> { redraw(), meter, patch, solo }
   const faces = new Map(); // parameter key -> redraw for that control
@@ -302,6 +324,16 @@ export function mountConsole({
     // it; leaving it opens everything, which is the desk as it was.
     opened = null;
     refold();
+    // A card on a face that wraps letters all eight principal points on the
+    // desk and the four cardinals on the index sheet, decided when it is
+    // built, so crossing the breakpoint rebuilds it from the study it already
+    // holds. Nothing is re-swept. (At mount there are no cards, so `api` is
+    // never reached before it exists.)
+    for (const [key, card] of [...cards]) {
+      if (card.study && controlFor(key).control.wraps) {
+        api.setStudy(key, card.study, { stale: card.node.classList.contains('stale'), relettering: true });
+      }
+    }
   }
 
   /* ── the columns ─────────────────────────────────────────────────────────
@@ -525,7 +557,7 @@ export function mountConsole({
   function buildControl(control, channel) {
     if (control.kind === 'scale') return buildScale(control, channel);
     if (control.kind === 'selector') return buildSelector(control);
-    if (control.kind === 'bearing') return buildBearing(control);
+    if (control.kind === 'bearing') return buildBearing(control, channel);
     if (control.kind === 'facade') return buildFacade(control, channel);
     if (control.kind === 'boundary') return buildBoundary(control);
     if (control.kind === 'profile') return buildProfile(control);
@@ -554,9 +586,14 @@ export function mountConsole({
     // a reader who cannot see the dimmed row. The sentence also stands in view
     // under the row (`buildScale`), so this is never its only carrier. One
     // thunk, so `syncStudyOffer` and `reletter` cannot disagree about which.
+    //
+    // A face that wraps has no two ends to letter: "from 0° N to 360° N" names
+    // one building twice and reads as a sweep of nothing. It says the turn.
     const said = () =>
       control.withdrawnAt?.(params) ??
-      `Study ${name}: sweep from ${control.format(control.min)} to ${control.format(control.max)}`;
+      (control.wraps
+        ? `Study ${name}: ${WRAP_OFFER}`
+        : `Study ${name}: sweep from ${control.format(control.min)} to ${control.format(control.max)}`);
     btn.setAttribute('aria-label', said());
     btn.addEventListener('click', () => onStudy?.(key));
     studyButtons.set(key, btn);
@@ -911,10 +948,16 @@ export function mountConsole({
    * The building turns under a fixed north, which is what actually happens in
    * the model: the vertices rotate and true north stays where it is.
    */
-  function buildBearing(control) {
+  function buildBearing(control, channel) {
     const row = el('div', 'ctl ctl-bearing');
     const head = el('div', 'ctl-head');
     head.append(el('span', 'ctl-label', control.label));
+    // Only a bearing that wraps has a face to sweep; "Bearing from site" is a
+    // neighbour's bearing and `refusesSweep` turns it away, so it gets no offer
+    // to refuse a press of. Placed where a scale carries its own: between the
+    // label and the value.
+    const studyBtn = control.wraps ? studyOffer(control.key, control.label, control, channel) : null;
+    if (studyBtn) head.append(studyBtn);
     const value = el('span', 'ctl-value');
     head.append(value);
     row.append(head);
@@ -954,6 +997,22 @@ export function mountConsole({
     plan.append(svg('line', { x1: 0, y1: 9, x2: 0, y2: 17, stroke: 'var(--redline)', 'stroke-width': 1.2 }));
     root.append(plan);
 
+    // Where the pointer stands on this control's study curve, drawn on the
+    // rose as a scale draws it on its face: one redline radius at the probed
+    // bearing, which is where the plan's own north would point with the rose
+    // turned there. Under the grab circle, so it never takes the pointer.
+    const probe = svg('line', {
+      x1: 0, y1: 0, x2: 0, y2: -R, stroke: 'var(--redline)', 'stroke-width': 1,
+      visibility: 'hidden',
+    });
+    if (control.wraps) {
+      root.append(probe);
+      probes.set(control.key, (v) => {
+        probe.setAttribute('visibility', v == null ? 'hidden' : 'visible');
+        if (v != null) probe.setAttribute('transform', `rotate(${v})`);
+      });
+    }
+
     const handle = svg('circle', { cx: 0, cy: 0, r: R, fill: 'transparent', class: 'rose-grab' });
     root.append(handle);
 
@@ -982,11 +1041,27 @@ export function mountConsole({
     row.append(root);
     if (control.note) attachNote(control, head);
 
-    faces.set(control.key, () => {
+    const redraw = () => {
       const v = params[control.key];
       value.textContent = control.format(v);
       plan.setAttribute('transform', `rotate(${v})`);
-    });
+      if (!control.wraps) return;
+      // As any row does: absent when its `when` says so, dimmed when set but
+      // not reaching the model, and the offer refusing a press for the same.
+      const idle = control.idle(params);
+      row.hidden = !control.shown(params);
+      row.classList.toggle('idle', idle);
+      syncStudyOffer(studyBtn, channel, { idle });
+      // Turning the rose walks the study's tick round its curve.
+      cards.get(control.key)?.syncTick?.();
+    };
+    // Composed with whatever is already registered under the key rather than
+    // replacing it. `buildFacade` and `buildBoundary` chain their plans onto
+    // `faces.get('northAxis')`, so the plans turn with the rose; Site is built
+    // before them today, and this keeps that true if it ever is not.
+    const already = faces.get(control.key);
+    faces.set(control.key, already ? () => { already(); redraw(); } : redraw);
+    if (control.wraps) rows.set(control.key, row);
     return row;
   }
 
@@ -2167,7 +2242,9 @@ export function mountConsole({
       // nothing drawn yet every comparison is false and the reduce keeps the
       // first refused position — which is the answer that branch would have
       // produced anyway, at the cost of a second path to read.
-      const away = (point) => Math.min(...drawn.map((v) => Math.abs(v - point.value)));
+      // Round the circle on a face that wraps: 350° stands 10° from north.
+      const apart = (a, b) => (control.wraps ? Math.abs(control.wrap.signed(a, b)) : Math.abs(a - b));
+      const away = (point) => Math.min(...drawn.map((v) => apart(v, point.value)));
       const edge = refused.reduce((best, point) => (away(point) < away(best) ? point : best));
       const total = study.progress?.total ?? study.curve.length;
       // 26 words with the 13-word reason, against the 25-word BLOCK budget and
@@ -2182,8 +2259,27 @@ export function mountConsole({
       );
     }
 
+    // Positions whose run was attempted and given up with a reason — today
+    // only a document that did not turn as it was asked to (the scheduler's
+    // turn check). They draw as a gap like any failed run, and a gap with a
+    // known cause says it in view, as a refusal does: the reason is the
+    // reading here. The first is lettered, since every one says the same kind
+    // of thing; 18 words with the scheduler's 11-word sentence, inside BLOCK.
+    const failed = study.curve.filter((point) => point?.failure);
+    if (failed.length) {
+      const total = study.progress?.total ?? study.curve.length;
+      card.append(
+        el('p', 'study-refused', `${failed.length} of ${total} positions were not measured: ${failed[0].failure}.`),
+      );
+    }
+
     const W = 320;
-    const H = 64;
+    // A face that wraps carries one more line under its axis: the principal
+    // points stand on the first and the two ends and the caption on the
+    // second, because `315° NW` and `N, again` both want the right-hand
+    // fortieth of a 320-unit axis and would print over one another.
+    const wraps = Boolean(control.wraps);
+    const H = wraps ? 74 : 64;
     // The same lookup `studyQuantityChooser` above already refused a miss on,
     // so it cannot be absent here — asked without the optional chain that was
     // reading as though it could be, and would then have thrown one line later
@@ -2202,6 +2298,7 @@ export function mountConsole({
           ? line.format(value, readingOf(point))
           : quantity.say(value);
       return {
+        id: line.id,
         sel: (point) => {
           const value = line.select(readingOf(point));
           return Number.isFinite(value) ? value : null;
@@ -2219,6 +2316,35 @@ export function mountConsole({
     // gutter used to hold, and which shortened the curve's axis against the
     // face's so that neither tick stood under the other.
     const plot = { x: 0, w: W, top: 13, bottom: 46 };
+
+    // Where a point is drawn: at the turn the simulated document was measured
+    // to carry, where the sample reports one (FR-010), and at the position it
+    // was asked for otherwise — which is every linear face, unchanged. Taken
+    // as the asked position plus the short way round to the measured one, so
+    // north measured at 359.996° is drawn at the left end where it was asked,
+    // not across the card at the right. A mismatch large enough to matter is
+    // the scheduler's to refuse as a failed point; this only places.
+    //
+    // Only a face that wraps reads the turn. Every sample carries one, because
+    // a run is shared between the jobs that want the same desk (a study of
+    // glazing and a study of North axis both stand on the stance), so on a
+    // linear face `turn` is the building's bearing and not a position on this
+    // axis: placed by it, the stance of a glazing curve stood at x(0).
+    const placeOf = (point) =>
+      wraps && point.turn != null ? point.value + control.wrap.signed(point.value, point.turn) : point.value;
+    // The seam point (research R5): one more drawn vertex at 360 repeating the
+    // reading measured at north, so the segment from the last position back
+    // round to north is drawn like any other. Drawn only — it is never in
+    // `study.curve`, so no cache, count, extreme or progress figure sees it —
+    // and dropped when north is a gap, so a failed run there breaks the
+    // closure exactly as a gap breaks any segment.
+    const north = wraps ? study.curve.find((point) => point && point.value === control.min) : null;
+    const seam = north && !north.refused && north.reading != null
+      // `turn` is carried as measured: 360 and 0 are one bearing, so the short
+      // way round from 360 to it is the same offset north itself is drawn at.
+      ? { ...north, value: control.max, seam: true }
+      : null;
+    const drawnCurve = seam ? [...study.curve, seam] : study.curve;
 
     const vals = series.flatMap((s) => study.curve.map(s.sel).filter((v) => v != null));
     if (!vals.length) {
@@ -2242,7 +2368,9 @@ export function mountConsole({
     const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' });
     root.setAttribute(
       'aria-label',
-      `Study of ${labelFor(key)} from ${control.format(control.min)} to ${control.format(control.max)}: ` +
+      (wraps
+        ? `Study of ${labelFor(key)} over the whole turn, from ${control.format(control.min)} round to north again: `
+        : `Study of ${labelFor(key)} from ${control.format(control.min)} to ${control.format(control.max)}: `) +
         series
           .map((s) => {
             const found = study.curve.filter((point) => s.sel(point) != null);
@@ -2267,13 +2395,13 @@ export function mountConsole({
     const segments = (sel) => {
       const segs = [];
       let seg = [];
-      for (const p of study.curve) {
+      for (const p of drawnCurve) {
         const v = sel(p);
         if (v == null) {
           if (seg.length) segs.push(seg);
           seg = [];
         } else {
-          seg.push([x(p.value), y(v)]);
+          seg.push([x(placeOf(p)), y(v)]);
         }
       }
       if (seg.length) segs.push(seg);
@@ -2296,31 +2424,65 @@ export function mountConsole({
     };
     for (const s of series) draw(s.sel, s.pen);
 
-    const foot = (text, fx, anchor, pen = 'var(--ink-note)') => {
+    const foot = (text, fx, anchor, pen = 'var(--ink-note)', fy = 58) => {
       const t = svg('text', {
-        x: fx, y: 58, 'text-anchor': anchor, fill: pen,
+        x: fx, y: fy, 'text-anchor': anchor, fill: pen,
         'font-family': 'var(--mono)', 'font-size': 7.5,
       });
       t.textContent = text;
       root.append(t);
     };
-    foot(control.format(control.min), plot.x, 'start');
-    foot(control.format(control.max), plot.x + plot.w, 'end');
+    if (wraps) {
+      // Ticks at the eight principal points, each lettered as the rose letters
+      // a bearing there, so every figure on the axis is one the sheet would
+      // print with the rose turned to it. North stands at both ends and is
+      // lettered as the two ends below, not on this row. The index sheet is
+      // about 390 px across, where eight figures at a fortieth of the axis
+      // apart run into each other, so it letters the cardinals only; every
+      // tick is still drawn.
+      const cardinalsOnly = indexMode();
+      for (let a = control.min; a <= control.max; a += 45) {
+        const tx = x(a).toFixed(2);
+        const cardinal = a % 90 === 0;
+        root.append(
+          svg('line', {
+            x1: tx, y1: plot.bottom + 0.5, x2: tx, y2: plot.bottom + (cardinal ? 4 : 2.5),
+            stroke: 'var(--rule-firm)', 'stroke-width': 1, 'shape-rendering': 'crispEdges',
+          }),
+        );
+        if (a === control.min || a === control.max) continue;
+        if (cardinalsOnly && !cardinal) continue;
+        foot(control.format(a), Number(tx), 'middle');
+      }
+      // The two ends are one bearing, and the axis says so in words rather
+      // than by lettering `360° N` as though it were a second building.
+      foot(control.format(control.min), plot.x, 'start', 'var(--ink-note)', 69);
+      foot(WRAP_CAPTION, plot.x + plot.w / 2, 'middle', 'var(--ink-note)', 69);
+      foot(WRAP_AGAIN, plot.x + plot.w, 'end', 'var(--ink-note)', 69);
+    } else {
+      foot(control.format(control.min), plot.x, 'start');
+      foot(control.format(control.max), plot.x + plot.w, 'end');
+    }
 
     // The curve read at any position on the step grid. Between two solved
     // samples the reading is interpolated and lettered with `≈`; across a gap
     // (a failed or refused run) there is no reading, and the em dash says so.
     const solved = study.curve.filter((point) => point && !point.refused);
+    //
+    // It walks the drawn curve, seam point included, and brackets by where a
+    // point is drawn: so a desk at 350° interpolates between the last position
+    // and north again, and stands where it stands (FR-008). On a linear face
+    // the drawn curve is the curve and where it is drawn is its value.
     const readAt = (s, v) => {
       let prev = null;
-      for (const point of study.curve) {
+      for (const point of drawnCurve) {
         const here = point && !point.refused ? s.sel(point) : null;
         // Within a millionth of a step is the sample itself: both sides are on
         // the step grid, but only one of them went through `toFixed`.
         if (point && Math.abs(point.value - v) < control.step * 1e-6) return here == null ? null : { value: here, point, exact: true };
-        if (point && point.value > v) {
+        if (point && placeOf(point) > v) {
           if (here == null || prev == null) return null;
-          const f = (v - prev.point.value) / (point.value - prev.point.value);
+          const f = (v - placeOf(prev.point)) / (placeOf(point) - placeOf(prev.point));
           return { value: prev.value + f * (here - prev.value), point, exact: false };
         }
         prev = here == null ? null : { value: here, point };
@@ -2340,8 +2502,7 @@ export function mountConsole({
 
     // Letter the curve's reading at `v` beside the line standing there: the
     // slider's own position at rest, the pointer's while it hovers.
-    const letterAt = (v) => {
-      const at = x(v);
+    const letterAt = (v, at = x(v)) => {
       const right = at > W * 0.6;
       reading.setAttribute('x', (right ? at - 4 : at + 4).toFixed(2));
       reading.setAttribute('text-anchor', right ? 'end' : 'start');
@@ -2369,19 +2530,26 @@ export function mountConsole({
     // Hover stands a marker on the curve and a probe on the face above; a
     // click sets the control there. Both read the pointer onto the step grid,
     // so what is lettered is what a click would set.
-    const pointed = (event) => {
+    const across = (event) => {
       const box = root.getBoundingClientRect();
-      return control.valueAt(clamp((event.clientX - box.left) / box.width, 0, 1));
+      return clamp((event.clientX - box.left) / box.width, 0, 1);
     };
+    // On a face that wraps, `valueAt` hands the right-hand end back as north,
+    // 0, which is the building a click there sets. The marker stays at the
+    // end the pointer is on: drawn at 0 it would jump across the card under
+    // the hand while reading exactly what the seam point reads.
+    const pointed = (event) => control.valueAt(across(event));
+    const markAt = (v, f) => (wraps && v === control.min && f > 0.5 ? plot.x + plot.w : x(v));
     if (solved.length) {
       root.classList.add('study-probe');
       root.addEventListener('pointermove', (event) => {
-        hovering = pointed(event);
-        const mx = x(hovering).toFixed(2);
+        const f = across(event);
+        hovering = control.valueAt(f);
+        const mx = markAt(hovering, f).toFixed(2);
         marker.setAttribute('x1', mx);
         marker.setAttribute('x2', mx);
         marker.setAttribute('visibility', 'visible');
-        letterAt(hovering);
+        letterAt(hovering, Number(mx));
         probes.get(key)?.(hovering);
       });
       root.addEventListener('pointerleave', () => {
@@ -2390,11 +2558,88 @@ export function mountConsole({
         probes.get(key)?.(null);
         syncTick();
       });
-      root.addEventListener('click', (event) => onChange(key, pointed(event), true));
+      // The value the hover lettered, when there is one: a pointermove carries
+      // a fractional clientX and a click an integer one, so read off the click
+      // the last pixel of a 399-px axis is 359° while the hover above it has
+      // been lettering north again — and a click must set what was lettered.
+      root.addEventListener('click', (event) => onChange(key, hovering ?? pointed(event), true));
     }
 
     card.append(root);
+    if (wraps) {
+      const said = extremesSaid(study.curve, series, { control, placeOf });
+      if (said) card.append(el('p', 'study-extremes', said));
+    }
     return { node: card, kind: 'card', study, syncTick };
+  }
+
+  /**
+   * Where a whole turn reads lowest and highest, in one line in view (research
+   * R13, FR-009).
+   *
+   * Only on a face that wraps. A linear card's extremes are where its eye
+   * already lands, at or near its two ends; a turn has no ends, and "which
+   * way should it face" is the question the study is taken to answer.
+   *
+   * Lowest and highest, not best and worst, unless the reading declares which
+   * way is better (`betterOf`, the survey's own `SENSE`): the sheet grades
+   * nothing it has not been told how to grade. Each bearing is the plotted
+   * point's own — where the document was measured to turn — lettered as the
+   * rose would letter it, so every figure is one the sheet prints with the
+   * rose turned there. Two positions whose readings letter identically cannot
+   * be told apart on the sheet, so a tie is said as a count with no bearing
+   * chosen — and "identically" is asked in both systems, a tie in either
+   * being a tie: asked only in the system showing, whole °F merged positions
+   * one-decimal °C kept apart, and the line named a bearing in SI and only a
+   * count in IP (measured on the page, 016). The same finding is lettered in
+   * both, which is all a units switch may change. The seam point is not a
+   * position and is never counted.
+   *
+   * Composed, so it is held to the 25-word BLOCK budget by measurement rather
+   * than a throw (see `src/copy.js`): a single series runs to 9 words, two to
+   * 20 at the most (two ties of sixteen).
+   */
+  function extremesSaid(curve, series, { control, placeOf }) {
+    const clauses = [];
+    for (const s of series) {
+      const found = curve.filter((point) => point && !point.refused && s.sel(point) != null);
+      if (found.length < 2) continue;
+      // Each reading lettered in both systems, once, so every comparison
+      // below asks both without switching the page.
+      const both = (v, point) => ['si', 'ip'].map((sys) => letteredIn(sys, () => s.format(v, point)));
+      const lettered = found.map((point) => ({ point, said: both(s.sel(point), point) }));
+      const values = found.map((point) => s.sel(point));
+      const lo = Math.min(...values);
+      const hi = Math.max(...values);
+      const alike = (a, b) => a[0] === b[0] || a[1] === b[1];
+      const at = (v) => {
+        const word = both(v, found[values.indexOf(v)]);
+        const here = lettered.filter((entry) => alike(entry.said, word));
+        // Put back onto the circle before it is lettered: `placeOf` stands
+        // north measured at 359.996° a few thousandths below 0, and
+        // `format`, which does not wrap, would letter that `-0° N` (and the
+        // same residue the other way `360° N`). Snapped to the step the face
+        // letters to, so no figure changes anywhere but at the fold.
+        return here.length === 1
+          ? control.format(control.wrap.snap(placeOf(here[0].point)))
+          : `at ${here.length} positions`;
+      };
+      const prefix = series.length > 1 ? `${s.label}: ` : '';
+      if (alike(both(lo, found[values.indexOf(lo)]), both(hi, found[values.indexOf(hi)]))) {
+        clauses.push(`${prefix}the same at all ${found.length} positions`);
+        continue;
+      }
+      const better = s.id ? betterOf(s.id) : null;
+      const [first, second] = better === 'higher'
+        ? [['best', hi], ['worst', lo]]
+        : better === 'lower'
+          ? [['best', lo], ['worst', hi]]
+          : [['lowest', lo], ['highest', hi]];
+      clauses.push(`${prefix}${first[0]} ${at(first[1])} · ${second[0]} ${at(second[1])}`);
+    }
+    if (!clauses.length) return null;
+    const line = clauses.join('; ');
+    return `${line[0].toUpperCase()}${line.slice(1)}`;
   }
 
   /* ── meters ──────────────────────────────────────────────────────────── */

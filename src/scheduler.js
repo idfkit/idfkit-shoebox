@@ -52,6 +52,9 @@
  *                                runs dry
  */
 
+import { controlFor } from './controls.js';
+import { BUDGETS, withinBudget } from './copy.js';
+
 /**
  * One study, as the queue holds it.
  *
@@ -68,6 +71,39 @@
  * leaves `job.done` short of `job.total` for ever, which draws as "Solving
  * 17 / 21" until the desk moves.
  */
+
+/**
+ * A sample whose document did not turn as it was asked to.
+ *
+ * Its own class so the rejection handler can tell it from an engine that could
+ * not be reached, which has no sentence to give.
+ */
+class TurnMismatch extends Error {}
+
+/**
+ * Why a sample's turn, read back off its vertices, is not the one asked for,
+ * or null.
+ *
+ * A hundredth of a degree, because `turnOf` reads a bearing off a normal
+ * computed from vertices the engine is handed to sixteen digits: anything
+ * wider than float residue is a building turned to somewhere else, and the
+ * point would otherwise be drawn at a bearing the sheet never built. Never
+ * drawn at either — the position is a failure with this sentence.
+ */
+function turnMismatch(built) {
+  if (built?.turn === undefined || built.asked == null) return null;
+  const bearing = controlFor('northAxis').control;
+  // The short way round, asked of the wrap rather than re-derived here, so the
+  // check and the card measure a turn by one rule.
+  const apart = Math.abs(bearing.wrap.signed(built.asked, built.turn));
+  if (apart <= 0.01) return null;
+  return withinBudget(
+    BUDGETS.ABSENCE,
+    'a sample turned off its bearing',
+    `the document turned to ${bearing.format(built.turn)}, not ${bearing.format(built.asked)}`,
+  );
+}
+
 export function makeStudyJob({
   id = null,
   key,
@@ -221,6 +257,11 @@ export function createStudyScheduler({
       carried: sample.carried,
       readings: sample.readings,
       meterBasis: sample.meterBasis,
+      // Where the run's document turned, read off its vertices. A fact about
+      // the desk, which is what the bucket keys on, so any entry a lookup
+      // returns for that desk carries the right one; left out, a cache hit
+      // placed its point at the bearing asked rather than the one measured.
+      turn: sample.turn,
     });
     cache.set(identity.exact, entry);
     if (!compatible.has(identity.bucket)) compatible.set(identity.bucket, new Set());
@@ -267,7 +308,7 @@ export function createStudyScheduler({
    * priced sweep letters its own price; `sample` rides along unpriced, since it
    * is the run's, and the survey keeps its meter basis to re-price from.
    */
-  const pointAt = (job, value, sample, refused = null) => {
+  const pointAt = (job, value, sample, refused = null, failure = null) => {
     const readings = sample ? priceAt(job, value, sample) : null;
     return {
       value,
@@ -281,12 +322,18 @@ export function createStudyScheduler({
       // a failure is the engine's and says nothing about the position, where
       // a refusal is a fact about the position and has a sentence to say.
       refused,
+      // Where the document actually turned, read off its vertices, when the
+      // sweep turns the building. The card places the point here.
+      turn: sample?.turn,
+      // Why a run that was attempted gave nothing, when that is known. Only
+      // the turn check says so today; an engine failure is still a bare gap.
+      failure,
     };
   };
 
-  function land(job, index, sample, refused = null) {
+  function land(job, index, sample, refused = null, failure = null) {
     if (!active(job)) return; // cancelled while this sample was in flight
-    job.curve[index] = pointAt(job, job.points[index], sample, refused);
+    job.curve[index] = pointAt(job, job.points[index], sample, refused, failure);
     job.done += 1;
     onUpdate(job, 'point');
     if (job.done < job.total) return;
@@ -377,8 +424,8 @@ export function createStudyScheduler({
           land(job, index, point);
           drain();
         },
-        () => {
-          land(job, index, null);
+        (failure) => {
+          land(job, index, null, null, failure instanceof TurnMismatch ? failure.message : null);
           drain();
         },
       );
@@ -429,8 +476,13 @@ export function createStudyScheduler({
     const epochAt = epoch;
     const promise = (async () => {
       const built = buildSample(job, value);
+      const mismatch = turnMismatch(built);
+      if (mismatch) throw new TurnMismatch(mismatch);
       const result = await runSample(built);
-      return result?.success ? readPoint(job, result, built) : null;
+      const sample = result?.success ? readPoint(job, result, built) : null;
+      // Carried on the cached sample, not the point, so a cache hit places
+      // its point at the bearing that run measured as a fresh one does.
+      return sample && built.turn !== undefined ? { ...sample, turn: built.turn } : sample;
     })();
     pending.set(pendingKey, promise);
     promise.then(
@@ -443,11 +495,12 @@ export function createStudyScheduler({
         land(job, index, sample);
         drain();
       },
-      () => {
-        // The run could not be attempted at all. Same gap as a failed run.
+      (failure) => {
+        // The run could not be attempted at all. Same gap as a failed run,
+        // with its reason where it has one to give.
         if (pending.get(pendingKey) === promise) pending.delete(pendingKey);
         inFlight -= 1;
-        land(job, index, null);
+        land(job, index, null, null, failure instanceof TurnMismatch ? failure.message : null);
         drain();
       },
     );

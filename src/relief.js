@@ -557,7 +557,11 @@ export function createRelief(host, { onLost = null } = {}) {
     const viewMatrix = lookAt(eye, [0, 0.05, 0], [0, 1, 0]);
     gl.uniformMatrix4fv(uniform.projection, false, projection);
     gl.uniformMatrix4fv(uniform.view, false, viewMatrix);
-    const scale = [mesh.nx - 1 || 1, mesh.ny - 1 || 1, 0.45];
+    // Divided by the cells rather than by the vertex columns less one. On a
+    // linear axis the two agree; on a whole turn the mesh carries one more
+    // column than the ground has positions (north again, aliased), and the
+    // cell count is what the footprint is actually cut into.
+    const scale = [mesh.cellsX || 1, mesh.cellsY || 1, 0.45];
     gl.uniform3f(uniform.scale, scale[0], scale[1], scale[2]);
     const ink = inks();
     gl.uniform4fv(uniform.low, ink.low);
@@ -702,8 +706,8 @@ export function createRelief(host, { onLost = null } = {}) {
   function axisRules(mesh, block) {
     if (!block) return [];
     const z = -block.depth;
-    const nx = mesh.nx - 1;
-    const ny = mesh.ny - 1;
+    const nx = mesh.cellsX;
+    const ny = mesh.cellsY;
     const out = [];
     const line = (a, b) => out.push(a[0], a[1], z, b[0], b[1], z);
     line([0, 0], [nx, 0]);
@@ -715,6 +719,12 @@ export function createRelief(host, { onLost = null } = {}) {
     const tick = Math.max(nx, ny) * 0.022;
     for (let ix = 0; ix <= nx; ix += 1) out.push(ix, 0, z, ix, -tick, z);
     for (let iy = 0; iy <= ny; iy += 1) out.push(0, iy, z, -tick, iy, z);
+    // On a wrapping axis the principal points stand between measured
+    // positions wherever the stance was forced into the list or an arc does
+    // not start on one, so each gets its own tick, twice as long, for the
+    // compass word lettered under it.
+    for (const mark of held.axes?.x?.marks ?? []) out.push(mark.at, 0, z, mark.at, -2 * tick, z);
+    for (const mark of held.axes?.y?.marks ?? []) out.push(0, mark.at, z, -2 * tick, mark.at, z);
     return out;
   }
 
@@ -733,8 +743,8 @@ export function createRelief(host, { onLost = null } = {}) {
     const w = host.clientWidth;
     const h = host.clientHeight;
     const z = -block.depth;
-    const nx = mesh.nx - 1;
-    const ny = mesh.ny - 1;
+    const nx = mesh.cellsX;
+    const ny = mesh.cellsY;
     const place = (lattice) => project(toWorld(lattice, scale), projection, viewMatrix, w, h);
 
     // Where every figure already stands, so the height scale's own figures
@@ -783,12 +793,39 @@ export function createRelief(host, { onLost = null } = {}) {
     // way out along **its own** edge's outward side instead, which separates
     // them before the radial push and keeps each stop beside the edge it
     // belongs to rather than beside the corner they share.
-    label(clear([0, -ny * 0.1, z]), x.from, 'relief-stop');
-    label(clear([nx, -ny * 0.1, z]), x.to, 'relief-stop');
-    label(clear([nx / 2, -ny * 0.1, z], 26), x.label, 'relief-axis');
-    label(clear([-nx * 0.1, 0, z]), y.from, 'relief-stop');
-    label(clear([-nx * 0.1, ny, z]), y.to, 'relief-stop');
-    label(clear([-nx * 0.1, ny / 2, z], 26), y.label, 'relief-axis');
+    //
+    // A wrapping axis letters its principal points along the edge as well,
+    // and a whole turn says it wraps on its name. On a whole turn the far stop
+    // is north again rather than the last bearing measured: the card is the circle cut
+    // open at north, and a reader following the edge to its end has to be
+    // told they are back where they began. Its name stands further out, since
+    // the south point is lettered at the middle of the edge where a linear
+    // axis has nothing.
+    const edge = (axis, n, at, nameAt) => {
+      const marks = axis.marks ?? [];
+      const far = axis.closed ? marks.find((mark) => mark.at === n)?.text : axis.to;
+      if (far === undefined) {
+        throw new Error(`the relief cannot letter the far end of ${axis.label}: a whole turn needs its north-again mark`);
+      }
+      label(clear(at(0)), axis.from, 'relief-stop');
+      label(clear(at(n)), far, 'relief-stop');
+      // Only the points clear of both ends, which are lettered already.
+      for (const mark of marks) {
+        if (mark.at > 0.5 && mark.at < n - 0.5) label(clear(at(mark.at)), mark.text, 'relief-stop');
+      }
+      const name = label(clear(nameAt, axis.wraps ? 40 : 26), axis.label, 'relief-axis');
+      // `closed`, not `wraps`, as the plan's `axisTitle` asks: an arc from
+      // 300° to 60° passes through north but has two ends, and the plan
+      // beside this drawing letters it plain "North axis".
+      if (axis.closed) {
+        const word = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+        word.setAttribute('class', 'relief-unit');
+        word.textContent = ' wraps';
+        name.append(word);
+      }
+    };
+    edge(x, nx, (at) => [at, -ny * 0.1, z], [nx / 2, -ny * 0.1, z]);
+    edge(y, ny, (at) => [-nx * 0.1, at, z], [-nx * 0.1, ny / 2, z]);
 
     // The height, which had no scale at all. The levels ruled round the cut
     // were the only vertical measure and none of them said what it measured,
@@ -868,6 +905,14 @@ export function createRelief(host, { onLost = null } = {}) {
           const figure = [sx + side * 11, ty + 3];
           if (room(figure)) label(figure, tick.text, 'relief-stop', anchor);
         }
+        // A staff standing on the far corner of a whole turn stands on north
+        // again, and says so: read off the right edge of the card it would
+        // otherwise look like a bearing past the last one measured.
+        const again = [
+          x.closed && cx === nx ? x.marks.find((mark) => mark.at === nx).text : null,
+          y.closed && cy === ny ? y.marks.find((mark) => mark.at === ny).text : null,
+        ].filter(Boolean);
+        if (again.length) label([sx + side * 6, foot[1] + 14], again.join(', '), 'relief-stop', anchor);
         const name = label([sx + side * 6, top[1] - 9], height.label, 'relief-axis', anchor);
         // The unit in its own run, because the name is set in capitals and
         // kWh/m² in capitals is a different unit.
@@ -919,6 +964,11 @@ export function createRelief(host, { onLost = null } = {}) {
      * whatever the viewport (FR-018k). A phone draws what a desk draws: a
      * reader is never handed a surface that appears to know less than
      * somebody else's.
+     *
+     * `axes.x` and `axes.y` are `{ label, from, to }` lettered by the caller,
+     * and on a wrapping axis also `wraps`, `closed` and `marks`, the latter
+     * `compassMarks(axis)` from `survey.js`. A whole turn letters its far end
+     * from its north-again mark and refuses to draw without one.
      */
     draw({ mesh, extent, block = null, stance = null, axes = null, strata = null, arrises = null, thresholds = [] }) {
       if (lost) return;

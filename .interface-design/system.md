@@ -329,6 +329,57 @@ working surface, not a menu hidden behind an unfamiliar icon.
   reason and fix text wraps below its label; no fixed row height clips it. No
   additional breakpoint is declared.
 
+### A whole turn, cut open at north
+
+A face that wraps (North axis) has no two ends. Its study card is the circle cut
+open at north and laid flat, and every mark on it exists to stop a reader taking
+the cut for an edge: `0°` and `360°` are one building, and an axis that lettered
+`360° N` at its right foot would be offering a second one.
+
+- **The axis carries the compass, not a scale.** Ticks at the eight principal
+  points, `--rule-firm`, `1px`, crisp; a cardinal's tick runs `4` units below
+  the plot, an intercardinal's `2.5`. Each is lettered as the rose letters a
+  bearing there (`135° SE`), so every figure on the axis is one the sheet would
+  print with the rose turned to it. The index sheet letters the four cardinals
+  only — eight figures a fortieth of a 390 px axis apart run into each other —
+  and still draws all eight ticks.
+- **The ends are said in words.** `0° N` at the left foot, `N, again` at the
+  right, and the caption **The whole turn; wraps at north.** centred between
+  them. They take a second row under the compass row, so the card is `320 × 74`
+  rather than `64`: `315° NW` and `N, again` both want the right-hand fortieth
+  of the axis and would print over one another. The whole line is held to the
+  strip-line budget.
+- **The seam point is drawn, never sampled.** One more vertex at 360 repeats
+  north's reading, so the last segment closes back round to north like any
+  other. It is not in the study's curve, so no count, extreme or progress figure
+  sees it, and it is omitted when north is a gap: a failed run there breaks the
+  closure exactly as a gap breaks any segment, rather than the drawing joining
+  across ground nobody measured.
+- **The probe stands on the rose as well as the card.** Hovering the curve
+  draws one `--redline` radius on the rose at the probed bearing, `1px`, under
+  the grab circle so it never takes the pointer — the same live-pointer pen a
+  scale's probe tick uses on its face. A pointer at the right-hand end reads
+  north but its marker stays at the end it is on, so nothing jumps across the
+  card under the hand.
+- **The extremes are one line in view** (`.study-extremes`, the type of
+  `.study-opening-basis`: `10px` sans, `--ink-3`). "Lowest 135° SE · highest
+  315° NW". A linear card's extremes are where the eye already lands, near its
+  ends; a turn has no ends, and which way to face is the question the study is
+  taken to answer. It says **best** and **worst** only where the reading
+  declares which way is better; otherwise lowest and highest, because the sheet
+  grades nothing it has not been told how to grade. Positions that letter
+  identically are a count ("at 3 positions"), never one bearing picked from
+  them. A reading, so never in a fold.
+
+The same rules hold on a surveyed ground along a wrapping axis. The plan and the
+relief letter the eight principal points along that edge, each on a tick twice
+the length of a position's, because a point can stand between measured
+positions; the axis name carries the word **wraps** after it (`.relief-unit`,
+the unit's own run); and on a whole turn the far stop is lettered `N, again`
+rather than the last bearing measured, as is a height staff standing on that
+corner. A whole turn with no north-again mark throws rather than lettering its
+far end with a bearing.
+
 ### A list of dates, over a year rule
 
 A control holding a set of days is drawn as a 12-month rule with the entries

@@ -45,6 +45,7 @@ import {
   refusesSweep,
   sampleOrder,
   samplePoints,
+  studyCounts,
 } from './study.js';
 import { deltaKindOf, figureIn, letter, suffixIn } from './units.js';
 
@@ -97,6 +98,42 @@ import { deltaKindOf, figureIn, letter, suffixIn } from './units.js';
  */
 export const COARSE_GRID = 6;
 export const FINE_GRID = 11;
+
+/**
+ * How many positions an axis along this control is cut at, coarse then fine.
+ *
+ * Asked of the control rather than read off the two constants, because a face
+ * with no ends breaks the argument above. Six and eleven nest inside a study's
+ * eleven and twenty-one because both count *both* ends of a face; a whole turn
+ * has one end, spaces its positions by `i / n` rather than `i / (n - 1)`, and
+ * six points round a circle sit at 60° steps that the study's 22.5° grid never
+ * lands on. Eight and sixteen are the study's own counts on a wrapping face
+ * (`studyCounts`), asked of it rather than restated, so every orientation a
+ * study measured is a cache hit for a survey row, and eight nests in sixteen
+ * exactly as six nests in eleven.
+ *
+ * Asked of the extent too, because a narrowed extent is an arc and an arc has
+ * two ends again. Spaced by `i / (n - 1)`, eight then sixteen are seven and
+ * fifteen intervals, which do not nest: on 300° to 60° the coarse 317°…43°
+ * are none of them fine positions, so a densify dropped six of every eight
+ * coarse spot heights and ran them again (FR-006). Fifteen is fourteen
+ * intervals, twice seven, which nests by the arithmetic six in eleven does.
+ */
+export function gridCounts(control, { from = null, to = null } = {}) {
+  if (!control.wraps) return { coarse: COARSE_GRID, fine: FINE_GRID };
+  const { coarse, fine } = studyCounts(control);
+  return wholeTurn(control, from, to) ? { coarse, fine } : { coarse, fine: 2 * coarse - 1 };
+}
+
+/**
+ * Whether an extent along a wrapping control is the whole turn: no extent at
+ * all, or 0 to 360 — the one place 360 is admissible, as an end. Anything else
+ * is an arc. One answer for `axisFor` and `gridCounts`, which must agree on
+ * which an extent is or an arc would be cut at a whole turn's counts.
+ */
+function wholeTurn(control, from, to) {
+  return (from ?? control.min) === 0 && (to ?? control.max) === control.wrap.period;
+}
 
 /* ══ which way is better ═════════════════════════════════════════════════ */
 
@@ -334,14 +371,164 @@ export class Axis {
     this.to = to;
     this.positions = Object.freeze([...positions]);
     this.count = positions.length;
+    // The axis's own step, read once. The tolerance `indexOf` compares on used
+    // to be read off the control at each call, and on a bearing that carried
+    // no step it was `NaN`: every comparison against `NaN` is false, so a
+    // densify looked up each coarse point on the fine axis, found none, and
+    // re-ran the whole coarse pass with nothing on the page to say so.
+    this.step = control.step;
+    if (!(this.step > 0)) throw new Error(`an axis along ${key} needs the control's step, not ${this.step}`);
+    this.wrap = control.wraps ? control.wrap : null;
+    this.wraps = Boolean(this.wrap);
+    // A whole turn has no second end: the cell after the last position runs
+    // back to north, which is the first. An arc of bearings (300° to 60°) has
+    // two ends that are different buildings, and is walked as a linear axis
+    // that happens to measure its distances clockwise.
+    this.span = this.wraps ? this.wrap.arc(from, to) : to - from;
+    this.closed = this.wraps && this.span === this.wrap.period;
+    this.cells = this.closed ? this.count : this.count - 1;
+    // Where each position stands along the axis, in the coordinate the cell
+    // walk interpolates in. On a linear axis that is the value itself, so the
+    // arithmetic below is the arithmetic it always was, operand for operand.
+    this.along = Object.freeze(this.wraps ? this.positions.map((value) => this.offset(value)) : [...this.positions]);
     Object.freeze(this);
   }
 
   /** The index of a value on this axis, or -1. Compared on the step grid's own tolerance. */
   indexOf(value) {
-    const tol = this.control.step / 1000;
+    const tol = this.step / 1000;
+    // By the short way round on a wrapping axis, so 360 finds north and
+    // 359.9995 finds it too: subtraction would put them a whole turn apart.
+    if (this.wraps) return this.positions.findIndex((position) => Math.abs(this.wrap.signed(position, value)) < tol);
     return this.positions.findIndex((position) => Math.abs(position - value) < tol);
   }
+
+  /** The cell's far neighbour: the next position, or north again past the last on a whole turn. */
+  next(ix) {
+    return this.closed ? (ix + 1) % this.count : ix + 1;
+  }
+
+  /**
+   * An index moved by `d` positions, wrapped on a whole turn. Off the end of
+   * an open axis it is simply off the end, and `Survey.at` finds nothing there,
+   * which is what every caller asking about a neighbour already handles.
+   */
+  shift(ix, d) {
+    if (!this.closed) return ix + d;
+    return (((ix + d) % this.count) + this.count) % this.count;
+  }
+
+  /** How far `value` stands along the axis from `from`: clockwise on a wrapping one. */
+  offset(value) {
+    return this.wraps ? this.wrap.ahead(this.from, value) : value - this.from;
+  }
+
+  /**
+   * The distance from position `i` forward to position `j`, in the control's
+   * own units. Forward is clockwise on a wrapping axis, so on a whole turn the
+   * last position's distance on to north is the short step that closes the
+   * circle rather than minus most of a turn.
+   */
+  gap(i, j) {
+    if (!this.wraps) return this.positions[j] - this.positions[i];
+    return this.wrap.ahead(this.positions[i], this.positions[j]);
+  }
+
+  /** Everything the axis spans, first measured position to last (to north again on a whole turn). */
+  get reach() {
+    if (this.closed) return this.wrap.period;
+    return this.along[this.count - 1] - this.along[0];
+  }
+
+  /**
+   * The value at a fractional index. On a whole turn `f` may run past the
+   * last position as far as `count`, which is north again, and comes back as
+   * north: a mark there is the building at 0°, not a second building at 360°.
+   */
+  at(f) {
+    if (!(f >= 0 && f <= this.cells)) {
+      throw new RangeError(`${this.key} has positions 0 to ${this.cells}, and ${f} is not on it`);
+    }
+    if (this.count === 1) return this.positions[0];
+    const i = Math.min(Math.floor(f), this.cells - 1);
+    const t = f - i;
+    const lo = this.along[i];
+    const hi = i + 1 < this.count ? this.along[i + 1] : this.span;
+    const here = lo + t * (hi - lo);
+    return this.wraps ? this.wrap.norm(this.from + here) : here;
+  }
+
+  /**
+   * Where a value stands on the axis as a fractional index, or null where it is
+   * off the measured extent. Interpolated in *index* space, because the grid is
+   * drawn evenly by index and the positions are not evenly spaced in value once
+   * the stance's own value has been forced into the list.
+   *
+   * On a whole turn a value past the last position (350° after 315°) stands in
+   * the cell that closes the circle, between `count - 1` and `count`.
+   */
+  placeOf(value) {
+    if (!Number.isFinite(value)) return null;
+    const along = this.along;
+    const here = this.wraps ? this.offset(value) : value;
+    const end = this.closed ? this.span : along[along.length - 1];
+    if (here < along[0] || here > end) return null;
+    const exact = this.indexOf(value);
+    if (exact !== -1) return exact;
+    for (let i = 0; i < this.cells; i += 1) {
+      const lo = along[i];
+      const hi = i + 1 < this.count ? along[i + 1] : end;
+      if (here >= lo && here <= hi) {
+        const span = hi - lo;
+        return span === 0 ? i : i + (here - lo) / span;
+      }
+    }
+    return null;
+  }
+}
+
+/**
+ * The eight principal points on a wrapping axis, as fractional indices, for a
+ * drawing to letter. A whole turn letters north at both edges, the second as
+ * north again, because the card is the circle cut open there and a reader
+ * following the right edge needs telling that it is where they began. An arc
+ * letters only the points it passes through. Empty on a linear axis.
+ */
+export function compassMarks(axis) {
+  if (!axis.wraps) return [];
+  const words = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  const out = [];
+  words.forEach((text, k) => {
+    const at = axis.placeOf(k * 45);
+    if (at !== null) out.push(Object.freeze({ at, bearing: k * 45, text }));
+  });
+  if (axis.closed) out.push(Object.freeze({ at: axis.cells, bearing: 0, text: 'N, again' }));
+  // In the order they stand along the axis: an arc from 300° starts at NW.
+  return out.sort((a, b) => a.at - b.at);
+}
+
+/**
+ * The cell walk over a lattice, on either axis: how many cells there are and
+ * which column or row is a cell's far side. Read off the flags `latticeOf`
+ * writes, and refused when they are absent, because a lattice that does not
+ * say whether it closes would be walked as open and a whole turn would lose
+ * the cell between its last bearing and north without anything looking wrong.
+ */
+function walkOf(lattice) {
+  const { nx, ny, closedX, closedY } = lattice;
+  if (typeof closedX !== 'boolean' || typeof closedY !== 'boolean') {
+    throw new Error('a lattice must say whether each axis closes on itself; build it with latticeOf');
+  }
+  return {
+    cellsX: closedX ? nx : nx - 1,
+    cellsY: closedY ? ny : ny - 1,
+    nextX: closedX ? (ix) => (ix + 1) % nx : (ix) => ix + 1,
+    nextY: closedY ? (iy) => (iy + 1) % ny : (iy) => iy + 1,
+    // A drawn coordinate (which may be `count`, north again) back to the
+    // column that holds its reading.
+    colX: closedX ? (ix) => ix % nx : (ix) => ix,
+    rowY: closedY ? (iy) => iy % ny : (iy) => iy,
+  };
 }
 
 /**
@@ -373,7 +560,24 @@ export function axisFor(key, { from = null, to = null, count = COARSE_GRID, stan
       throw new Error(`axisFor: ${key} runs ${min} to ${max}, and the ${name} extent is ${value}`);
     }
   }
-  if (!(hi > lo)) throw new Error(`axisFor: the extent of ${key} runs ${lo} to ${hi}, which is not an extent`);
+  let ends = [lo, hi];
+  if (control.wraps) {
+    // A face with no ends has no "lower figure to a higher one". `from > to`
+    // is an arc clockwise through north (300° to 60° is the north-facing
+    // third of the turn), and `0, 360` is the whole turn, the one place 360
+    // is admissible: as an extent's far end, never as a value. Any other end
+    // is put onto the circle so that 360 can never mint a second identity for
+    // north.
+    if (!wholeTurn(control, lo, hi)) {
+      ends = [control.wrap.norm(lo), control.wrap.norm(hi)];
+      if (ends[0] === ends[1]) {
+        throw new Error(`axisFor: ${key} runs ${lo} to ${hi}. The same bearing at both ends is no extent.`);
+      }
+    }
+  } else if (!(hi > lo)) {
+    throw new Error(`axisFor: the extent of ${key} runs ${lo} to ${hi}, which is not an extent`);
+  }
+  const [start, end] = ends;
   if (!Number.isInteger(count) || count < 2) {
     throw new Error(`axisFor: a ground needs at least two positions on ${key}, not ${count}`);
   }
@@ -382,13 +586,22 @@ export function axisFor(key, { from = null, to = null, count = COARSE_GRID, stan
   // The stance's own value goes in only where it is inside the extent. A
   // reader who narrowed the extent past where they are standing has said so,
   // and forcing the stance back in would silently widen the extent they set.
-  const inside = Number.isFinite(current) && current >= Math.min(lo, hi) && current <= Math.max(lo, hi);
+  // On a wrapping face "inside" is measured clockwise from the extent's start,
+  // since min and max would turn a 300° to 60° arc inside out.
+  const inside = !Number.isFinite(current)
+    ? false
+    : control.wraps
+      ? control.wrap.ahead(start, current) <= control.wrap.arc(start, end)
+      : current >= Math.min(lo, hi) && current <= Math.max(lo, hi);
   // `samplePoints` itself, so a survey axis snaps and dedupes exactly as a
   // study's sweep does: the 6 → 11 and 11 → 21 subset property that lets a
   // densify and a study share runs depends on the two agreeing to the ulp,
   // and a second copy of the rounding is how they would stop agreeing.
-  const positions = samplePoints(control, inside ? current : null, count, { from: lo, to: hi });
-  return new Axis({ key, control, side, from: lo, to: hi, positions });
+  // On a wrapping face `samplePoints` hands over to the wrap's own positions,
+  // ordered clockwise from `start`, and dedupes the stance by the short way
+  // round, so the survey and the study agree to the ulp there too.
+  const positions = samplePoints(control, inside ? current : null, count, { from: start, to: end });
+  return new Axis({ key, control, side, from: start, to: end, positions });
 }
 
 /**
@@ -702,26 +915,11 @@ export class Survey {
    * this sheet refuses everywhere else.
    */
   standingAt(desk) {
-    const at = (axis) => {
-      const value = desk[axis.key];
-      const positions = axis.positions;
-      if (!Number.isFinite(value)) return null;
-      if (value < positions[0] || value > positions[positions.length - 1]) return null;
-      const exact = axis.indexOf(value);
-      if (exact !== -1) return exact;
-      // Between two positions: interpolate in *index* space, because the grid
-      // is drawn evenly by index and the positions are not evenly spaced in
-      // value once the stance's own value has been forced into the list.
-      for (let i = 0; i < positions.length - 1; i += 1) {
-        if (value >= positions[i] && value <= positions[i + 1]) {
-          const span = positions[i + 1] - positions[i];
-          return span === 0 ? i : i + (value - positions[i]) / span;
-        }
-      }
-      return null;
-    };
-    const ix = at(this.x);
-    const iy = at(this.y);
+    // `Axis.placeOf` measures along the axis, clockwise on a wrapping one, so
+    // a desk at 350° on a whole turn stands in the cell that closes the circle
+    // and a desk at 20° on a 300° to 60° arc stands inside it.
+    const ix = this.x.placeOf(desk[this.x.key]);
+    const iy = this.y.placeOf(desk[this.y.key]);
     if (ix === null || iy === null) return null;
     const on = Number.isInteger(ix) && Number.isInteger(iy);
     return { ix, iy, on };
@@ -799,7 +997,10 @@ export function rowsFor(survey, { needed, carried, restShape, origin = 'survey',
     // the cancel point has to ask it the same question.
     omits: [survey.x.key, survey.y.key],
     points,
-    order: sampleOrder(points, survey.stance[survey.x.key]),
+    // Asked of the control, so a whole turn is ordered round the circle
+    // (north, south, then the stance) rather than from its first index to its
+    // last, which on a circle are neighbours.
+    order: sampleOrder(points, survey.stance[survey.x.key], survey.x.control, { whole: survey.x.closed }),
     origin,
     asked: points.length,
     // Not part of the job the scheduler understands, and `makeStudyJob` drops
@@ -911,7 +1112,12 @@ export function latticeOf(survey, reading = survey.readings[0]) {
       mask[ix + iy * nx] = 1;
     }
   }
-  return { values, mask, nx, ny };
+  // Whether each axis closes on itself, carried with the readings because
+  // every consumer walks cells, and a whole turn has one more cell than it has
+  // gaps between positions: the one from the last bearing back to north. The
+  // lattice itself stays `nx × ny`, north held once, so nothing that counts
+  // positions can count it twice.
+  return { values, mask, nx, ny, closedX: survey.x.closed, closedY: survey.y.closed };
 }
 
 /** The measured range of a lattice, or null where nothing is measured. */
@@ -1007,22 +1213,29 @@ export function levelsFor(lattice, target = 8) {
  * caller maps them to the page. The module draws nothing.
  */
 export function contoursOf(lattice, levels) {
-  const { values, mask, nx, ny } = lattice;
+  const { values, mask, nx } = lattice;
+  const { cellsX, cellsY, nextX, nextY } = walkOf(lattice);
   const out = [];
   const at = (ix, iy) => values[ix + iy * nx];
   const has = (ix, iy) => mask[ix + iy * nx] === 1;
 
   for (const level of levels) {
     const segments = [];
-    for (let iy = 0; iy < ny - 1; iy += 1) {
-      for (let ix = 0; ix < nx - 1; ix += 1) {
-        if (!has(ix, iy) || !has(ix + 1, iy) || !has(ix, iy + 1) || !has(ix + 1, iy + 1)) continue;
+    for (let iy = 0; iy < cellsY; iy += 1) {
+      for (let ix = 0; ix < cellsX; ix += 1) {
+        // The cell's far corners are read through the walk, so on a whole turn
+        // the last cell takes its far side from north. Its *coordinates* stay
+        // `ix + 1`, which there is `count`: the line runs on to the right edge
+        // of the card at the height it re-enters at the left.
+        const jx = nextX(ix);
+        const jy = nextY(iy);
+        if (!has(ix, iy) || !has(jx, iy) || !has(ix, jy) || !has(jx, jy)) continue;
         // Corners anticlockwise from the bottom left, which is the ordering the
         // standard 16-case table is written against.
         const bl = at(ix, iy);
-        const br = at(ix + 1, iy);
-        const tr = at(ix + 1, iy + 1);
-        const tl = at(ix, iy + 1);
+        const br = at(jx, iy);
+        const tr = at(jx, jy);
+        const tl = at(ix, jy);
         const code = (bl > level ? 1 : 0) | (br > level ? 2 : 0) | (tr > level ? 4 : 0) | (tl > level ? 8 : 0);
         if (code === 0 || code === 15) continue;
 
@@ -1084,26 +1297,35 @@ export function contoursOf(lattice, levels) {
  * point individually identifiable at any viewpoint on a smooth surface.
  */
 export function meshOf(lattice) {
-  const { values, mask, nx, ny } = lattice;
-  const positions = new Float32Array(nx * ny * 3);
-  const measuredFlags = new Uint8Array(nx * ny);
-  for (let iy = 0; iy < ny; iy += 1) {
-    for (let ix = 0; ix < nx; ix += 1) {
-      const at = ix + iy * nx;
+  const { values, mask, nx } = lattice;
+  const { cellsX, cellsY, colX, rowY } = walkOf(lattice);
+  // One vertex per drawn corner, which on a whole turn is one column (or row)
+  // more than there are positions: the column at `count` is north again,
+  // aliased to column 0's reading and flag. It is geometry only. The lattice
+  // and `Coverage` still hold north once, and the alias is what lets the last
+  // cell close the relief without a second north being counted anywhere.
+  const vx = cellsX + 1;
+  const vy = cellsY + 1;
+  const positions = new Float32Array(vx * vy * 3);
+  const measuredFlags = new Uint8Array(vx * vy);
+  for (let iy = 0; iy < vy; iy += 1) {
+    for (let ix = 0; ix < vx; ix += 1) {
+      const at = ix + iy * vx;
+      const from = colX(ix) + rowY(iy) * nx;
       positions[at * 3] = ix;
       positions[at * 3 + 1] = iy;
-      positions[at * 3 + 2] = mask[at] ? values[at] : 0;
-      measuredFlags[at] = mask[at];
+      positions[at * 3 + 2] = mask[from] ? values[from] : 0;
+      measuredFlags[at] = mask[from];
     }
   }
   const indices = [];
-  for (let iy = 0; iy < ny - 1; iy += 1) {
-    for (let ix = 0; ix < nx - 1; ix += 1) {
-      const bl = ix + iy * nx;
+  for (let iy = 0; iy < cellsY; iy += 1) {
+    for (let ix = 0; ix < cellsX; ix += 1) {
+      const bl = ix + iy * vx;
       const br = bl + 1;
-      const tl = bl + nx;
+      const tl = bl + vx;
       const tr = tl + 1;
-      if (!mask[bl] || !mask[br] || !mask[tl] || !mask[tr]) continue;
+      if (!measuredFlags[bl] || !measuredFlags[br] || !measuredFlags[tl] || !measuredFlags[tr]) continue;
       indices.push(bl, br, tr, bl, tr, tl);
     }
   }
@@ -1111,8 +1333,12 @@ export function meshOf(lattice) {
     positions,
     indices: new Uint32Array(indices),
     measuredFlags,
-    nx,
-    ny,
+    // The vertex grid's own width and height, which is the stride into
+    // `positions`; the cell counts are what a drawing divides its scale by.
+    nx: vx,
+    ny: vy,
+    cellsX,
+    cellsY,
     cells: indices.length / 6,
   };
 }
@@ -1127,15 +1353,19 @@ export function meshOf(lattice) {
  * and the triangles disagree. It is the drawing's height and not a reading:
  * nothing may be lettered from it, as nothing is lettered from the surface.
  */
-export function surfaceAt({ values, mask, nx, ny }, ix, iy) {
-  if (!(ix >= 0 && iy >= 0 && ix <= nx - 1 && iy <= ny - 1)) return null;
-  const x0 = Math.min(Math.floor(ix), nx - 2);
-  const y0 = Math.min(Math.floor(iy), ny - 2);
+export function surfaceAt(lattice, ix, iy) {
+  const { values, mask, nx } = lattice;
+  const { cellsX, cellsY, nextX, nextY } = walkOf(lattice);
+  // Up to `cells`, which on a whole turn is `count`: between the last bearing
+  // and north again is a cell like any other, and a desk at 350° stands on it.
+  if (!(ix >= 0 && iy >= 0 && ix <= cellsX && iy <= cellsY)) return null;
+  const x0 = Math.min(Math.floor(ix), cellsX - 1);
+  const y0 = Math.min(Math.floor(iy), cellsY - 1);
   if (x0 < 0 || y0 < 0) return null;
   const bl = x0 + y0 * nx;
-  const br = bl + 1;
-  const tl = bl + nx;
-  const tr = tl + 1;
+  const br = nextX(x0) + y0 * nx;
+  const tl = x0 + nextY(y0) * nx;
+  const tr = nextX(x0) + nextY(y0) * nx;
   if (!mask[bl] || !mask[br] || !mask[tl] || !mask[tr]) return null;
   const fx = ix - x0;
   const fy = iy - y0;
@@ -1176,15 +1406,22 @@ export function surfaceAt({ values, mask, nx, ny }, ix, iy) {
  */
 export function blockOf(lattice, { depth = 0.18 } = {}) {
   const { values, mask, nx, ny } = lattice;
+  const { cellsX, cellsY, colX, rowY } = walkOf(lattice);
   const extent = extentOf(lattice);
   const span = extent && extent.hi > extent.lo ? extent.hi - extent.lo : 1;
   const base = (extent ? extent.lo : 0) - depth * span;
-  const at = (ix, iy) => ix + iy * nx;
+  // A drawn corner to the reading behind it: on a whole turn the corner at
+  // `count` is north again, and reads north's column.
+  const at = (ix, iy) => colX(ix) + rowY(iy) * nx;
+  // The silhouette test does *not* wrap. The card is the circle cut open at
+  // north, so its two ends are cut faces like any other edge of the block,
+  // and both stand the same profile, which is the drawing saying they are one
+  // section. Wrapping it would leave the ends open and the block hollow.
   const filled = (cx, cy) =>
     cx >= 0 &&
     cy >= 0 &&
-    cx < nx - 1 &&
-    cy < ny - 1 &&
+    cx < cellsX &&
+    cy < cellsY &&
     mask[at(cx, cy)] &&
     mask[at(cx + 1, cy)] &&
     mask[at(cx, cy + 1)] &&
@@ -1215,8 +1452,8 @@ export function blockOf(lattice, { depth = 0.18 } = {}) {
     // side of the block from a silhouette into the vertical scale.
     edges.push({ ax, ay, za, bx, by, zb });
   };
-  for (let cy = 0; cy < ny - 1; cy += 1) {
-    for (let cx = 0; cx < nx - 1; cx += 1) {
+  for (let cy = 0; cy < cellsY; cy += 1) {
+    for (let cx = 0; cx < cellsX; cx += 1) {
       if (!filled(cx, cy)) continue;
       if (!filled(cx, cy - 1)) edge(cx, cy, cx + 1, cy);
       if (!filled(cx, cy + 1)) edge(cx + 1, cy + 1, cx, cy + 1);
@@ -1227,8 +1464,8 @@ export function blockOf(lattice, { depth = 0.18 } = {}) {
 
   /* ── the base ────────────────────────────────────────────────────────── */
   const baseStart = indices.length;
-  for (let cy = 0; cy < ny - 1; cy += 1) {
-    for (let cx = 0; cx < nx - 1; cx += 1) {
+  for (let cy = 0; cy < cellsY; cy += 1) {
+    for (let cx = 0; cx < cellsX; cx += 1) {
       if (!filled(cx, cy)) continue;
       const a = push(cx, cy, base);
       const b = push(cx + 1, cy, base);
@@ -1433,9 +1670,17 @@ export function freeExchange(survey, stance, reading = survey.readings[0]) {
   // dash because the reader has no way to see it. A third of the extent is
   // where a nine-position axis (a quarter) clears and a five-position one (a
   // half) does not, which is the distinction that actually matters.
-  const spans = (axis, at) =>
-    (axis.positions[at + 1] - axis.positions[at - 1]) / (axis.positions[axis.count - 1] - axis.positions[0]);
-  if (ix < 1 || iy < 1 || ix >= survey.x.count - 1 || iy >= survey.y.count - 1) {
+  //
+  // Distances are taken through `Axis.gap`, forward along the axis, and the
+  // neighbours through `Axis.shift`: on a whole turn north's neighbours are
+  // the last bearing and the first, a whole turn has no edge to stand on, and
+  // its extent is the turn. On a linear axis both are the subtraction and the
+  // `± 1` they always were.
+  const x = survey.x;
+  const y = survey.y;
+  const spans = (axis, at) => axis.gap(axis.shift(at, -1), axis.shift(at, 1)) / axis.reach;
+  const edged = (axis, at) => !axis.closed && (at < 1 || at >= axis.count - 1);
+  if (edged(x, ix) || edged(y, iy)) {
     return {
       refusal:
         'The stance is on the edge of the ground, so there is no measured neighbour on one side to take a ' +
@@ -1452,7 +1697,7 @@ export function freeExchange(survey, stance, reading = survey.readings[0]) {
     };
   }
   const value = (dx, dy) => {
-    const spot = survey.spotAt(ix + dx, iy + dy);
+    const spot = survey.spotAt(x.shift(ix, dx), y.shift(iy, dy));
     return spot ? reading.valueOf(spot.readings) : null;
   };
   const grid = [];
@@ -1473,8 +1718,8 @@ export function freeExchange(survey, stance, reading = survey.readings[0]) {
   const [sw, s, se, w, c, e, nw, n, ne] = grid;
   // Step sizes in the controls' own units, which is what makes the answer a
   // sentence about the building rather than about the lattice.
-  const hx = survey.x.positions[ix + 1] - survey.x.positions[ix - 1];
-  const hy = survey.y.positions[iy + 1] - survey.y.positions[iy - 1];
+  const hx = x.gap(x.shift(ix, -1), x.shift(ix, 1));
+  const hy = y.gap(y.shift(iy, -1), y.shift(iy, 1));
   const fx = (e - w) / hx;
   const fy = (n - s) / hy;
   const scale = Math.max(Math.abs(fx), Math.abs(fy));
@@ -1492,7 +1737,7 @@ export function freeExchange(survey, stance, reading = survey.readings[0]) {
   }
   // One step of X along the axis, and the step of Y that holds the reading
   // still: df = fx·dx + fy·dy = 0.
-  const dx = survey.x.positions[ix + 1] - survey.x.positions[ix];
+  const dx = x.gap(ix, x.shift(ix, 1));
   const dy = (-fx / fy) * dx;
   // What the reading actually does over that step, which is the second-order
   // term the linear answer drops. Curvatures by the standard five- and
@@ -1516,7 +1761,7 @@ export function freeExchange(survey, stance, reading = survey.readings[0]) {
   // across an axis that runs 0.2 to 10 — an exchange nobody can make, stated
   // to three figures. So the step is required to land on the ground it was
   // read off.
-  const reach = survey.y.positions[survey.y.count - 1] - survey.y.positions[0];
+  const reach = y.reach;
   if (Math.abs(dy) > Math.abs(reach)) {
     return {
       refusal:
@@ -1562,12 +1807,16 @@ export function fallStep(survey, from, { visited = null, reading = survey.readin
   const base = reading.valueOf(here.readings);
   if (base === null) return { stopped: 'The position the desk is standing on carries no reading.' };
 
+  // Neighbours through `Axis.shift`, so on a whole turn the descent can step
+  // across north as it steps across any other bearing: the hollow at 350° and
+  // the one at 10° are one hollow.
+  const near = (dx, dy) => survey.spotAt(survey.x.shift(from.ix, dx), survey.y.shift(from.iy, dy));
   let best = null;
   let bestValue = base;
   for (let dy = -1; dy <= 1; dy += 1) {
     for (let dx = -1; dx <= 1; dx += 1) {
       if (!dx && !dy) continue;
-      const spot = survey.spotAt(from.ix + dx, from.iy + dy);
+      const spot = near(dx, dy);
       if (!spot) continue;
       if (visited?.has(pointKey(spot.ix, spot.iy))) continue;
       const value = reading.valueOf(spot.readings);
@@ -1585,7 +1834,7 @@ export function fallStep(survey, from, { visited = null, reading = survey.readin
     for (let dy = -1; dy <= 1; dy += 1) {
       for (let dx = -1; dx <= 1; dx += 1) {
         if (!dx && !dy) continue;
-        if (survey.spotAt(from.ix + dx, from.iy + dy)) measuredNeighbours.push(1);
+        if (near(dx, dy)) measuredNeighbours.push(1);
       }
     }
     if (!measuredNeighbours.length) {
@@ -1655,6 +1904,13 @@ export function refineOrder(survey, { reading = survey.readings[0], stance }) {
   });
   const { nx, ny } = latticeOf(survey, reading);
   const diagonal = Math.hypot(nx, ny) || 1;
+  const { x, y } = survey;
+  // How many positions apart two indices stand, the short way round on a
+  // whole turn: 0 and 7 of eight bearings are neighbours, not opposite ends.
+  const apart = (axis, a, b) => {
+    const d = Math.abs(a - b);
+    return axis.closed ? Math.min(d, axis.count - d) : a - b;
+  };
 
   const wanted = [];
   for (let iy = 0; iy < ny; iy += 1) {
@@ -1668,8 +1924,8 @@ export function refineOrder(survey, { reading = survey.readings[0], stance }) {
       let near = 0;
       for (let dy = -1; dy <= 1; dy += 1) {
         for (let dx = -1; dx <= 1; dx += 1) {
-          const a = survey.spotAt(ix + dx, iy + dy);
-          const b = survey.spotAt(ix - dx, iy - dy);
+          const a = survey.spotAt(x.shift(ix, dx), y.shift(iy, dy));
+          const b = survey.spotAt(x.shift(ix, -dx), y.shift(iy, -dy));
           if (a) near += 1;
           if (!a || !b || (!dx && !dy)) continue;
           grids.forEach(({ entry, span }, at) => {
@@ -1689,7 +1945,7 @@ export function refineOrder(survey, { reading = survey.readings[0], stance }) {
         slopes.length > 1 && slopes[0] * slopes[1] < 0
           ? Math.min(Math.abs(slopes[0]), Math.abs(slopes[1]))
           : 0;
-      const distance = stance ? Math.hypot(ix - stance.ix, iy - stance.iy) / diagonal : 0.5;
+      const distance = stance ? Math.hypot(apart(x, ix, stance.ix), apart(y, iy, stance.iy)) / diagonal : 0.5;
       // A position with no measured neighbour at all cannot be scored on
       // steepness and would otherwise sort last for ever, which on a ground
       // whose coarse pass failed would leave the whole survey unmeasured. The
@@ -2262,7 +2518,8 @@ export function thresholdsAt(set, level) {
  * module draws nothing.
  */
 export function passingGround(lattice, threshold) {
-  const { values, mask, nx, ny } = lattice;
+  const { values, mask, nx } = lattice;
+  const { cellsX, cellsY, nextX, nextY } = walkOf(lattice);
   const level = threshold.limit;
   const at = (ix, iy) => values[ix + iy * nx];
   const has = (ix, iy) => mask[ix + iy * nx] === 1;
@@ -2281,13 +2538,18 @@ export function passingGround(lattice, threshold) {
   }
 
   const cells = [];
-  for (let iy = 0; iy < ny - 1; iy += 1) {
-    for (let ix = 0; ix < nx - 1; ix += 1) {
-      if (!has(ix, iy) || !has(ix + 1, iy) || !has(ix, iy + 1) || !has(ix + 1, iy + 1)) continue;
+  for (let iy = 0; iy < cellsY; iy += 1) {
+    for (let ix = 0; ix < cellsX; ix += 1) {
+      // Walked exactly as `contoursOf` walks it, far corners through the walk
+      // and coordinates at `ix + 1`, so on a whole turn the band closes across
+      // north with its own boundary.
+      const jx = nextX(ix);
+      const jy = nextY(iy);
+      if (!has(ix, iy) || !has(jx, iy) || !has(ix, jy) || !has(jx, jy)) continue;
       const bl = at(ix, iy);
-      const br = at(ix + 1, iy);
-      const tr = at(ix + 1, iy + 1);
-      const tl = at(ix, iy + 1);
+      const br = at(jx, iy);
+      const tr = at(jx, jy);
+      const tl = at(ix, jy);
       // Corner positions and values anticlockwise from the bottom left, the
       // ordering the 16-case table is written against.
       const corners = [[ix, iy], [ix + 1, iy], [ix + 1, iy + 1], [ix, iy + 1]];

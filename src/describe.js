@@ -98,12 +98,16 @@ function moved(params, keys) {
     const base = DEFAULT_PARAMETERS[key];
     if (value === base) continue;
     const { control } = controlFor(key);
-    if (typeof control.fraction === 'function') {
-      most = Math.max(most, Math.abs(control.fraction(value) - control.fraction(base)));
-    } else if (control.kind === 'bearing') {
+    // The bearing is asked first, and the order matters: North axis carries a
+    // `fraction` for its study face, and a bearing taken through it would be
+    // measured in a straight line, reading 350° as nearly the whole compass
+    // away from 0° when it is ten degrees off.
+    if (control.kind === 'bearing') {
       // Shortest way round the rose, so 350° is ten degrees off north rather
       // than the whole compass away from it.
       most = Math.max(most, Math.abs(((value - base + 540) % 360) - 180) / 180);
+    } else if (typeof control.fraction === 'function') {
+      most = Math.max(most, Math.abs(control.fraction(value) - control.fraction(base)));
     } else {
       most = Math.max(most, 0.7);
     }

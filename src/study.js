@@ -57,9 +57,10 @@ export const COARSE_SAMPLES = 11;
  * the curve's silhouette stands after four points instead of emerging from
  * one edge.
  */
-export function sampleOrder(points, current) {
+export function sampleOrder(points, current, control = null, { whole = true } = {}) {
   const n = points.length;
   if (n === 0) return [];
+  if (control?.wraps) return circleOrder(points, current, control.wrap, whole);
   const seen = new Set();
   const order = [];
   const take = (i) => {
@@ -134,6 +135,51 @@ for (const channel of CHANNELS) {
   }
 }
 
+// A wrap is declared on North axis and nowhere else, and its grid must nest.
+//
+// One control, because a second wrapping face is a decision the spec has not
+// made: "Bearing from site" is a neighbour's bearing, and sweeping it would put
+// a building nobody drew into the pull and the chooser. And nesting, because
+// the fine pass is sold as the coarse eight plus eight new runs — the eight
+// come back as cache hits only if every one of them is a fine position after
+// snapping, and the sixteen are sixteen runs only if no two of them snap onto
+// the same whole degree. Both are arithmetic about a step, so a refined step
+// could break either without anything else failing; asserted here, it throws
+// at load naming the control.
+{
+  const wrapping = CHANNELS.flatMap((channel) => channel.controls.filter((control) => control.wrap));
+  const keys = wrapping.map((control) => control.key);
+  if (keys.length !== 1 || keys[0] !== 'northAxis') {
+    throw new Error(`a Wrap is declared on ${keys.join(', ') || 'nothing'}, and only northAxis may carry one`);
+  }
+  for (const control of wrapping) {
+    const { coarse, fine } = studyCounts(control);
+    const fines = control.wrap.positions(fine);
+    if (new Set(fines).size !== fines.length) {
+      throw new Error(`${control.key}: two of its ${fine} positions snap onto one bearing`);
+    }
+    const missing = control.wrap.positions(coarse).filter((v) => !fines.includes(v));
+    if (missing.length) {
+      throw new Error(`${control.key}: coarse positions ${missing.join(', ')} are not among its fine ones`);
+    }
+  }
+}
+
+/**
+ * How many positions a study of this control takes, coarse then fine.
+ *
+ * Asked of the control rather than read off two constants, because a whole
+ * turn is not spaced like a face with two ends. Eleven then twenty-one on a
+ * circle would put north at both ends and land on 18° steps with no compass
+ * name; eight then sixteen land on the eight and sixteen points of the rose,
+ * snapped to whole degrees, and the eight nest in the sixteen. A survey along
+ * the same axis uses the same 8/16 (`gridCounts` in `survey.js`), so every
+ * orientation a study measured is a cache hit for a ground.
+ */
+export function studyCounts(control) {
+  return control.wraps ? { coarse: 8, fine: 16 } : { coarse: COARSE_SAMPLES, fine: SWEEP_SAMPLES };
+}
+
 /**
  * Where to sample a control between its own min and max.
  *
@@ -163,6 +209,7 @@ for (const channel of CHANNELS) {
 export function samplePoints(control, current, n = SWEEP_SAMPLES, { from = control.min, to = control.max } = {}) {
   const refusal = refusesSweep(control);
   if (refusal) throw new Error(`samplePoints: ${refusal}`);
+  if (control.wraps) return circlePoints(control, current, n, { from, to });
   const { min, max, step } = control;
   // Snapped to the control's own grid, anchored at its own minimum even when
   // the span is narrower: a survey axis cut over part of a face has to land on
@@ -189,6 +236,83 @@ export function samplePoints(control, current, n = SWEEP_SAMPLES, { from = contr
     } else {
       out.push(v);
     }
+  }
+  return out;
+}
+
+/**
+ * `sampleOrder` on a whole turn.
+ *
+ * A circle has no two ends to draw first, so its silhouette is north and the
+ * point opposite it: 0 then 180, not `points[n - 1]`, which on a whole turn is
+ * 338° and stands one step from north. Then the stance, the likeliest cache
+ * hit, found by the short way round — by subtraction a desk at 350° is nearest
+ * 338° rather than north. Then bisection by index, which is the circle's own
+ * order because the points are sorted clockwise; on an arc, which does have two
+ * ends, the linear order's ends-first is the right one and is used instead.
+ * Whether the points are a whole turn is the caller's to say: an arc from 0°
+ * to 90° starts at north too, and cannot be told from one by its points.
+ */
+function circleOrder(points, current, wrap, whole) {
+  const n = points.length;
+  const seen = new Set();
+  const order = [];
+  const take = (i) => {
+    if (i >= 0 && i < n && !seen.has(i)) {
+      seen.add(i);
+      order.push(i);
+    }
+  };
+  const nearestTo = (v) => {
+    let best = 0;
+    for (let i = 1; i < n; i += 1) {
+      if (Math.abs(wrap.signed(points[i], v)) < Math.abs(wrap.signed(points[best], v))) best = i;
+    }
+    return best;
+  };
+  if (whole) {
+    take(nearestTo(0));
+    take(nearestTo(180));
+  } else {
+    take(0);
+    take(n - 1);
+  }
+  take(nearestTo(current));
+  const queue = [[0, n - 1]];
+  while (queue.length) {
+    const [lo, hi] = queue.shift();
+    if (hi - lo < 2) continue;
+    const mid = (lo + hi) >> 1;
+    take(mid);
+    queue.push([lo, mid], [mid, hi]);
+  }
+  for (let i = 0; i < n; i += 1) take(i);
+  return order;
+}
+
+/**
+ * `samplePoints` on a face with no ends.
+ *
+ * The positions are the wrap's own, so a whole turn holds north once and an arc
+ * from 300° to 60° runs clockwise through it. The stance goes in verbatim, as
+ * on any face, and is deduplicated against its neighbours by the short way
+ * round rather than by subtraction: 359.9995 and 0 are a thousandth of a degree
+ * apart, and a linear tolerance would read them as the two ends of the face and
+ * keep both. Ordered by how far clockwise from `from` each stands, which on a
+ * whole turn is plain numeric order and on an arc is the order the card and
+ * the lattice walk it in.
+ */
+function circlePoints(control, current, n, { from, to }) {
+  const { wrap } = control;
+  const points = wrap.positions(n, from, to);
+  if (current !== null) points.push(current);
+  points.sort((a, b) => wrap.ahead(from, a) - wrap.ahead(from, b));
+  const tol = wrap.step / 1000;
+  const out = [];
+  for (const v of points) {
+    const twin = out.findIndex((u) => Math.abs(wrap.signed(u, v)) < tol);
+    if (twin === -1) out.push(v);
+    else if (v === current) out[twin] = current;
   }
   return out;
 }

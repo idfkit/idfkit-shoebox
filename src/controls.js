@@ -591,10 +591,145 @@ export class Selector extends Control {
  * An angle set on a linear scale is a number you have to convert in your head
  * before it means anything. Set on a rose, it is the thing itself.
  */
+/**
+ * A face with no ends: the highest position is followed by the lowest.
+ *
+ * A period and not a range, because the one quantity on this desk that wraps
+ * is a bearing, and a bearing at 360 is the building at 0. Every sweep path
+ * here was written for a face with two stops — a sample grid spaced between
+ * them, a card ruled from one to the other, a lattice whose last column is an
+ * edge — and handed `min = 0, max = 360` alone each of them would sample north
+ * twice, mint two cache identities for one building and draw a cliff at the
+ * right edge of a curve that has none. So the wrap is declared once, here, as
+ * an object the sweep paths can ask: "how far clockwise", "the short way
+ * round", "where are n positions on this circle". `max` survives on the
+ * control as the period so that `fraction`, an axis's length and the pull's
+ * twentieth of a face keep their meanings.
+ *
+ * Positions snap to `step` with `Math.round`, as every sweep snaps, because
+ * the rose sets whole degrees only: sixteen points at 22.5° would letter
+ * `23° NNE` for a building that was never the one run. Snapped, the sixteen
+ * alternate 23° and 22° and each is a position the rose can stand on and the
+ * sixteen-point table names. See docs/design-notes.md, "A face with no ends".
+ */
+export class Wrap {
+  constructor({ step }) {
+    if (!(step > 0)) throw new Error(`a wrap needs a positive step, not ${step}`);
+    this.step = step;
+    this.period = 360;
+    Object.freeze(this);
+  }
+
+  /** Onto `[0, 360)`. For arithmetic only, never on a value read from a link. */
+  norm(v) {
+    const n = ((v % this.period) + this.period) % this.period;
+    // `-1e-14 % 360` comes back as itself, and adding 360 rounds to 360.
+    return n === this.period ? 0 : n;
+  }
+
+  /** The clockwise span from `from` to `to`, in `(0, 360]`; `arc(0, 360)` is the whole turn. */
+  arc(from, to) {
+    const d = this.norm(to - from);
+    return d === 0 ? this.period : d;
+  }
+
+  /** How far clockwise `v` stands from `from`, in `[0, 360)`. */
+  ahead(from, v) {
+    return this.norm(v - from);
+  }
+
+  /** The short way round from `a` to `b`, signed, in `(-180, 180]`. */
+  signed(a, b) {
+    const d = this.norm(b - a);
+    return d > this.period / 2 ? d - this.period : d;
+  }
+
+  /** Onto the step grid and onto the circle, rounded to the step's own decimals. */
+  snap(v) {
+    const on = Math.round(v / this.step) * this.step;
+    return this.norm(Number(on.toFixed(decimalsOf(this.step))));
+  }
+
+  /**
+   * `n` positions from `from` clockwise to `to`, ordered by how far round they
+   * stand.
+   *
+   * A whole turn spaces them by `i / n`, so north appears once and the last
+   * position is one interval short of it; an arc spaces them by `i / (n - 1)`,
+   * so both of its ends are measured. The difference is the whole point: a
+   * whole turn has no second end to sample, and an arc from 300° to 60° has two
+   * ends that are different buildings.
+   */
+  positions(n, from = 0, to = this.period) {
+    const span = this.arc(from, to);
+    const whole = span === this.period;
+    const out = [];
+    for (let i = 0; i < n; i += 1) {
+      const t = whole ? i / n : n === 1 ? 0 : i / (n - 1);
+      out.push(this.snap(from + t * span));
+    }
+    return out.sort((a, b) => this.ahead(from, a) - this.ahead(from, b));
+  }
+}
+
 export class Bearing extends Control {
-  constructor({ key, label, value, note = null, needs = null, when = null }) {
+  constructor({ key, label, value, note = null, needs = null, when = null, wrap = null }) {
     super({ key, label, value, note, needs, when });
     this.kind = 'bearing';
+    // Only a Bearing holding a `Wrap` has a face. Without one it carries no
+    // min, max or step, so `refusesSweep` refuses it with the sentence it
+    // always has: "Bearing from site" is a neighbour's bearing, not this
+    // building's, and nothing in the spec asks to sweep it. Giving the class a
+    // range would have handed it one too, with no note to explain it.
+    if (wrap) {
+      this.wrap = wrap;
+      this.wraps = true;
+      this.min = 0;
+      this.max = wrap.period;
+      this.step = wrap.step;
+      this.quantityKind = KINDS.angle;
+      this.landmarks = [];
+      // The face's members are the instance's own rather than the class's,
+      // because half the sweep code asks `typeof control.fraction ===
+      // 'function'` to decide whether a control has a face at all. On the
+      // prototype they would answer yes for "Bearing from site" too, and that
+      // question is answered by the wrap and nowhere else.
+      Object.assign(this, {
+        fraction: (v) => v / wrap.period,
+        // 1 is north again, and comes back as 0: a click at the right edge of
+        // a card is the building at north, not a second building at 360.
+        valueAt: (f) => wrap.snap(f * wrap.period),
+        figure: (v) => figureIn(KINDS.angle, v, { digits: 0 }),
+        // Nothing after the figure, as a prefixed resistance carries nothing:
+        // `format` already ends in a compass point, so an axis heading that
+        // said `°` would say the unit twice and `stopOf` could not strip it.
+        unitNow: '',
+        // A difference along the face — the pull's "per degree", E-02's
+        // exchange — is an angle like any other, and an angle has no offset.
+        spanKind: KINDS.angle,
+        spanUnitNow: suffixIn(KINDS.angle),
+        parse: (text) => {
+          // Whole or decimal degrees, with the `°` and the compass point the
+          // face letters, so a reader retyping `135° SE` means 135. 360 is
+          // read here as a number, not committed: as an extent's far end it
+          // is the whole turn, and as a value `refuses` turns it away.
+          //
+          // Snapped to the step and rounded to its decimals, as `Ruled.parse`
+          // snaps every typed figure, so a box can only hold a bearing the face
+          // can stand on: `12.5` typed into an extent stood in the link as 12.5
+          // while the axis it cut began at 13. Not put onto the circle — that
+          // would read the whole turn's `360` as north — so the snap is the
+          // step's alone and 359.6 is 360, the far end of the turn.
+          const m = /^\s*(\d+(?:\.\d+)?|\.\d+)\s*°?\s*(?:[NSEW]{1,3})?\s*$/i.exec(String(text));
+          if (!m) return null;
+          const v = Number((Math.round(Number(m[1]) / wrap.step) * wrap.step).toFixed(decimalsOf(wrap.step)));
+          return v >= 0 && v <= wrap.period ? v : null;
+        },
+        landmarkAt: () => null,
+      });
+    } else {
+      this.wraps = false;
+    }
     Object.freeze(this);
   }
 
@@ -1764,6 +1899,16 @@ export function refuses(control, value) {
       integer = Number.isInteger(control.step) && Number.isInteger(control.min);
       break;
     case 'bearing':
+      // A wrapping bearing is narrowed to [0, 360): 360 is the building at 0,
+      // and admitted it minted a second desk, a second cache identity and a
+      // study's closing point that was not the one it opened on. Refused
+      // rather than wrapped, because a decoder that quietly turns 360 into 0
+      // is a silent substitution; the one place a v1 link's 360 is read as 0
+      // is `MIGRATIONS.v1` in `permalink.js`, where it is a stated step.
+      // Fractions stay admitted — a link has always carried them.
+      if (control.wraps) {
+        return value < 0 || value >= 360 ? 'is outside its 0–360 range; a full turn is 0' : null;
+      }
       [min, max] = [0, 360];
       break;
     case 'profile':
@@ -3512,7 +3657,8 @@ export const CHANNELS = Object.freeze([
         key: 'northAxis',
         label: 'North axis',
         value: 0,
-        note: 'Turned into the vertices, since World coordinates have EnergyPlus ignore Building.north_axis. At 0 the wall this demo glazes faces due south.',
+        wrap: new Wrap({ step: 1 }),
+        note: 'Turned into the vertices, since World coordinates have EnergyPlus ignore Building.north_axis. At 0 the wall this demo glazes faces due south. A study runs the whole turn, from north round to north.',
       }),
       new Selector({
         key: 'terrain',

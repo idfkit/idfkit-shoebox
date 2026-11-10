@@ -118,8 +118,16 @@ surfaces), `Calendar` (twelve months), `Days` (list of dates), each on a `Channe
 - `refuses()` lives here; the codec and presets both use it.
 - `Pattern` asserts its own precision (TM59 fractions need three decimals), is not
   sweepable and carries no landmarks.
+- **A face with no ends.** A `Wrap` is declared on North axis only (asserted at
+  load in `study.js`); it gives that `Bearing` min 0, max 360, step 1 and its face
+  members as instance properties. `refusesSweep` stays the one rule, so the
+  neighbour's bearing (`ctxAzimuth`) stays faceless. Studies of a wrapping control
+  take 8 then 16 (`studyCounts`), snapped to whole degrees, ordered north, south,
+  stance. The card draws a seam point at 360, never sampled or counted. Each
+  sample's turn is read back by `turnOf`; a mismatch over 0.01° is a failed point.
 
-Notes: "The through-line", "Landmarks", "The `Pattern` control kind".
+Notes: "The through-line", "Landmarks", "The `Pattern` control kind", "A face with
+no ends".
 
 ### The margin numbers (`src/field.js`)
 
@@ -259,6 +267,8 @@ geometry earlier ones wrote).
 - **Permalink** (`permalink.js`): delta-encoded against versioned defaults. Changing a
   default, renaming a key or narrowing a range means bumping `LINK_VERSION`, freezing
   `DEFAULTS_BY_VERSION` and writing a `MIGRATIONS` step. Links are refused whole.
+  `LINK_VERSION` is `v2`: `MIGRATIONS.v1` reads a v1 `northAxis=360` as 0, v2
+  refuses 360.
   Reserved keys (`in`, `out`, `stn`, `win`, `at`, `sty`, `sv`, `wf`, `wfd`, `pv`, `desk`) are
   read in `decodeState` above `readValue`. Only `*`, `.`, `-`, `_` survive `URLSearchParams`
   unescaped. The bar encodes `patching()`; one builder, `schemeHash`. `pv` and
@@ -303,6 +313,12 @@ geometry earlier ones wrote).
   drawn by absence (no geometry emitted). `Coverage` asserts its sum. The relief is
   hand-written WebGL2, orthographic, no exaggeration control, one hue. `cutAt` is
   where the ground was cut; `standingAt(desk)` is where the desk is.
+  A wrapping axis walks cells through `next` (closed on a whole turn, open on an
+  arc; `from > to` crosses north, `0_360` is the whole turn), 8/16 round a whole
+  turn and 8/15 along an arc (both nest, FR-006) via `gridCounts(control, extent)`.
+  The pass is held as `'coarse'`/`'fine'` and each axis asks its own control and
+  extent for its count; the lattice holds north once. The pull steps a wrapping
+  control 18° clockwise and divides by +18.
   A priced axis costs no runs (`Coverage.runs` counts them); spot heights keep
   their `basis` and `repriceSurvey` re-prices them on every priced commit, landing
   an unpriceable one as a `Gap` with the bill's reason.

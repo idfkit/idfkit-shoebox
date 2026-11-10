@@ -13,8 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adds `desk=open` to the address and to Share, so a link copied with it open
   arrives open. A closed console adds nothing, so existing links are unchanged.
   Kept schemes do not store it.
+- **North axis can be studied, surveyed and pulled round the whole turn.** A
+  study draws a closed curve on the card, 8 bearings then 16, with its extremes
+  lettered as compass bearings. Either axis of an E-02 survey can be North
+  axis, and the ground has no seam at north; a narrowed extent may run through
+  north, so 300° to 60° is cut the short way round. The pull ranks it like any
+  other control, turning the building 18° clockwise.
 
 ### Changed
+
+- **Links are now `v2`.** A `v1` link carrying `northAxis=360` opens at 0°,
+  which is the same building. A `v2` link carrying 360 is refused.
 
 - **The study and survey reading "Cost" is now "Utility cost"**, as is the
   kept-scheme column, so that it is not read as a construction cost. The link

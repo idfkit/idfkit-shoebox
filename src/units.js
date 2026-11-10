@@ -373,6 +373,28 @@ export function setSystem(next) {
   watcher?.();
 }
 
+/**
+ * What `fn` letters with `sys` showing, without switching the page.
+ *
+ * For the one kind of question a sheet must answer the same way in both
+ * systems: whether two figures can be told apart. Asked only in the system
+ * showing, the answer moves with the switch — whole °F merges two positions
+ * that one-decimal °C keeps apart — and a line that names a bearing in SI and
+ * only a count in IP has lettered a different finding, not the same one in
+ * other units. Synchronous and restored in `finally`, and the subscriber is
+ * not told: nothing about the page has changed.
+ */
+export function letteredIn(sys, fn) {
+  if (sys !== 'si' && sys !== 'ip') throw new Error(`"${sys}" is not a unit system; it is "si" or "ip"`);
+  const was = showing;
+  showing = sys;
+  try {
+    return fn();
+  } finally {
+    showing = was;
+  }
+}
+
 /* ══ lettering ═══════════════════════════════════════════════════════════ */
 
 /** The number in IP. Pure. */

@@ -11,7 +11,7 @@
  * The fragment, not the query string, because the fragment never leaves the
  * browser: it cannot vary CloudFront's cache key, cannot leak schemes into a
  * server log, and survives a preview's `/42/` base untouched. Within it,
- * `URLSearchParams` syntax — `v1&width=20&wwrS=0.35&stn=725650` — because the
+ * `URLSearchParams` syntax — `v2&width=20&wwrS=0.35&stn=725650` — because the
  * browser ships the codec for it and every escaping bug that a hand-rolled
  * `key:value` grammar would eventually meet is already handled.
  *
@@ -53,7 +53,7 @@ import { QUANTITY_BY_ID } from './study.js';
 import { READING_BY_ID, refusesAxis, refusesSurveyPairing } from './survey.js';
 import { decodeView, encodeView } from './views.js';
 
-export const LINK_VERSION = 'v1';
+export const LINK_VERSION = 'v2';
 
 /**
  * Whether a fragment is scheme-shaped at all — a version token first, alone or
@@ -66,29 +66,63 @@ export const LINK_VERSION = 'v1';
 export const isSchemeFragment = (raw) => /^v\d+(&|$)/.test(raw);
 
 /**
- * What an omitted key meant, per version. Today one entry; a changed default
- * adds the outgoing table here under the old version before the new one ships.
+ * What an omitted key meant, per version. A changed default adds the outgoing
+ * table here under the old version before the new one ships. `v2` narrowed a
+ * range and moved no default, so both versions omit against the same table.
  *
  * Two changes have taken a free pass rather than a bump, on the same grounds
  * both times: nothing was in the wild to carry forward. The Grounds channel
  * moved the stock example's grounds lighting out of the baseline, and the Run
  * strip's calendar replaced the run period's `beginMonth` / `endMonth` pair
  * with a `months` mask — a rename, which ordinarily costs a version and a
- * migration step. Neither had a link to break, so v1 simply means the desk as
- * it stands. The next such change will not be so lucky, which is what the
- * ledger below is for.
+ * migration step. Neither had a link to break, so v1 meant the desk as it
+ * stood. The bearing's closed range was the first change that was not so
+ * lucky, and it is the first entry in the ledger below.
  */
-const DEFAULTS_BY_VERSION = Object.freeze({ v1: DEFAULT_PARAMETERS });
+const DEFAULTS_BY_VERSION = Object.freeze({ v1: DEFAULT_PARAMETERS, v2: DEFAULT_PARAMETERS });
+
+/**
+ * A number as a link may spell it: digits, an optional sign and an optional
+ * decimal part, and nothing else `Number` would also read. One pattern for
+ * every place a link's text becomes a figure — a value, a survey extent and the
+ * `v1` migration — so the three cannot come to admit different spellings.
+ */
+const NUMERAL = /^-?\d+(\.\d+)?$/;
 
 /**
  * One step per version bump, `(pairs) => ({ to, pairs })`, rewriting old
- * vocabulary into the next version's under the version it lands on. Empty
- * until a key actually churns with links in the wild; the structure exists
- * from day one because retrofitting it after unversioned links are out there
- * is the expensive path — there would be no way left to tell which defaults an
- * omission meant.
+ * vocabulary into the next version's under the version it lands on. The
+ * structure existed from day one because retrofitting it after unversioned
+ * links are out there is the expensive path — there would be no way left to
+ * tell which defaults an omission meant.
  */
-const MIGRATIONS = Object.freeze({});
+const MIGRATIONS = Object.freeze({
+  // `v1` admitted a bearing in [0, 360], closed, so `northAxis=360` decoded as
+  // a desk of its own: its own shape key, its own cache entry, and a study's
+  // closing point standing as a second identity for the building at 0. `v2`
+  // narrows the range to [0, 360) and refuses a full turn whole (research R4).
+  // The narrowing is this stated step, never a wrap in the decoder: `readValue`
+  // still throws rather than clamps, and a 360 that arrives under `v2` is
+  // refused. Here the pair is dropped rather than rewritten to 0, because 0 is
+  // the default and an omitted key already means it. Nothing is lost by the
+  // drop: measured, the IDF a `v1` link at 360 wrote differs from the one at 0
+  // only by float residue in the vertices, about 1.9e-15 m, so it was the same
+  // building all along. Asked through `readValue`'s own text gate and then as
+  // `Number(raw) === 360`, so every spelling of a full turn `v1` admitted
+  // (`360`, `360.0`) is carried and nothing `v1` refused is: `Number` alone
+  // reads `0x168`, `3.6e2` and a `+`-escaped ` 360` as a full turn too, and
+  // would have opened at north links `v1` turned away as "not a number". An
+  // out-of-range `v1` value such as 400 passes through and is refused by
+  // `readValue` with the sentence it always got.
+  v1: (pairs) => {
+    const kept = new URLSearchParams();
+    for (const [key, raw] of pairs) {
+      if (key === 'northAxis' && NUMERAL.test(raw) && Number(raw) === 360) continue;
+      kept.append(key, raw);
+    }
+    return { to: 'v2', pairs: kept };
+  },
+});
 
 /**
  * Keys that are not parameters: the patch lists, the station, and the weather
@@ -396,10 +430,29 @@ function decodeSurvey(raw) {
       // The same text gate the numeric branch below uses, and for the same
       // reason: `Number('')` is 0 and `Number('0x18')` is 24, either of which
       // would load an extent the sharer never set.
-      if (!/^-?\d+(\.\d+)?$/.test(bound)) throw new Error(`"${bound}" is not a number in the extent of ${key}`);
+      if (!NUMERAL.test(bound)) throw new Error(`"${bound}" is not a number in the extent of ${key}`);
       return Number(bound);
     });
-    if (from < control.min || to > control.max || !(to > from)) {
+    if (control.wraps) {
+      // A bearing's extent runs clockwise from its first end to its second, so
+      // `300_60` crosses north rather than being backwards, and `0_360` is the
+      // whole turn — the one place 360 is admissible, as an end and never as a
+      // value. What no order of the ends can mean is the same bearing twice: a
+      // linear axis refuses it as `to > from` does, and a wrapping one has to
+      // say so in its own words, since "lower to higher" is not its rule.
+      const inRange = (v) => v >= control.min && v <= control.max;
+      if (!inRange(from) || !inRange(to)) {
+        throw new Error(`${key} runs ${control.min} to ${control.max}, and the survey asks for ${from} to ${to}`);
+      }
+      // Compared on the circle, as `axisFor` compares them: `360_0` is north
+      // at both ends, and asked as `from === to` it passed here and threw
+      // from `axisFor` while the link was being restored, which is a link
+      // refused after it had been accepted rather than refused whole.
+      const whole = from === control.min && to === control.max;
+      if (!whole && control.wrap.norm(from) === control.wrap.norm(to)) {
+        throw new Error(`the survey asks for ${key} from ${from} to ${to}, and the same bearing at both ends is no extent`);
+      }
+    } else if (from < control.min || to > control.max || !(to > from)) {
       throw new Error(`${key} runs ${control.min} to ${control.max}, and the survey asks for ${from} to ${to}`);
     }
     extents[key] = { from, to };
@@ -492,7 +545,7 @@ function readValue(key, raw) {
   // than a link's: `Number('')` is 0 and `Number('0x18')` is 24, and either
   // would load a value the sharer never set — a truncated `occFrom=` became a
   // building occupied from midnight before this check existed.
-  if (!/^-?\d+(\.\d+)?$/.test(raw)) throw new Error(`"${raw}" is not a number for ${key}`);
+  if (!NUMERAL.test(raw)) throw new Error(`"${raw}" is not a number for ${key}`);
   const value = Number(raw);
   // The admissible range is the control's own and is asked of the control. It
   // used to be restated here, which was tolerable while a link was the only
