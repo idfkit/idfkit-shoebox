@@ -1192,22 +1192,29 @@ export function levelsFor(lattice, target = 8) {
  * caller maps them to the page. The module draws nothing.
  */
 export function contoursOf(lattice, levels) {
-  const { values, mask, nx, ny } = lattice;
+  const { values, mask, nx } = lattice;
+  const { cellsX, cellsY, nextX, nextY } = walkOf(lattice);
   const out = [];
   const at = (ix, iy) => values[ix + iy * nx];
   const has = (ix, iy) => mask[ix + iy * nx] === 1;
 
   for (const level of levels) {
     const segments = [];
-    for (let iy = 0; iy < ny - 1; iy += 1) {
-      for (let ix = 0; ix < nx - 1; ix += 1) {
-        if (!has(ix, iy) || !has(ix + 1, iy) || !has(ix, iy + 1) || !has(ix + 1, iy + 1)) continue;
+    for (let iy = 0; iy < cellsY; iy += 1) {
+      for (let ix = 0; ix < cellsX; ix += 1) {
+        // The cell's far corners are read through the walk, so on a whole turn
+        // the last cell takes its far side from north. Its *coordinates* stay
+        // `ix + 1`, which there is `count`: the line runs on to the right edge
+        // of the card at the height it re-enters at the left.
+        const jx = nextX(ix);
+        const jy = nextY(iy);
+        if (!has(ix, iy) || !has(jx, iy) || !has(ix, jy) || !has(jx, jy)) continue;
         // Corners anticlockwise from the bottom left, which is the ordering the
         // standard 16-case table is written against.
         const bl = at(ix, iy);
-        const br = at(ix + 1, iy);
-        const tr = at(ix + 1, iy + 1);
-        const tl = at(ix, iy + 1);
+        const br = at(jx, iy);
+        const tr = at(jx, jy);
+        const tl = at(ix, jy);
         const code = (bl > level ? 1 : 0) | (br > level ? 2 : 0) | (tr > level ? 4 : 0) | (tl > level ? 8 : 0);
         if (code === 0 || code === 15) continue;
 
@@ -1269,26 +1276,35 @@ export function contoursOf(lattice, levels) {
  * point individually identifiable at any viewpoint on a smooth surface.
  */
 export function meshOf(lattice) {
-  const { values, mask, nx, ny } = lattice;
-  const positions = new Float32Array(nx * ny * 3);
-  const measuredFlags = new Uint8Array(nx * ny);
-  for (let iy = 0; iy < ny; iy += 1) {
-    for (let ix = 0; ix < nx; ix += 1) {
-      const at = ix + iy * nx;
+  const { values, mask, nx } = lattice;
+  const { cellsX, cellsY, colX, rowY } = walkOf(lattice);
+  // One vertex per drawn corner, which on a whole turn is one column (or row)
+  // more than there are positions: the column at `count` is north again,
+  // aliased to column 0's reading and flag. It is geometry only. The lattice
+  // and `Coverage` still hold north once, and the alias is what lets the last
+  // cell close the relief without a second north being counted anywhere.
+  const vx = cellsX + 1;
+  const vy = cellsY + 1;
+  const positions = new Float32Array(vx * vy * 3);
+  const measuredFlags = new Uint8Array(vx * vy);
+  for (let iy = 0; iy < vy; iy += 1) {
+    for (let ix = 0; ix < vx; ix += 1) {
+      const at = ix + iy * vx;
+      const from = colX(ix) + rowY(iy) * nx;
       positions[at * 3] = ix;
       positions[at * 3 + 1] = iy;
-      positions[at * 3 + 2] = mask[at] ? values[at] : 0;
-      measuredFlags[at] = mask[at];
+      positions[at * 3 + 2] = mask[from] ? values[from] : 0;
+      measuredFlags[at] = mask[from];
     }
   }
   const indices = [];
-  for (let iy = 0; iy < ny - 1; iy += 1) {
-    for (let ix = 0; ix < nx - 1; ix += 1) {
-      const bl = ix + iy * nx;
+  for (let iy = 0; iy < cellsY; iy += 1) {
+    for (let ix = 0; ix < cellsX; ix += 1) {
+      const bl = ix + iy * vx;
       const br = bl + 1;
-      const tl = bl + nx;
+      const tl = bl + vx;
       const tr = tl + 1;
-      if (!mask[bl] || !mask[br] || !mask[tl] || !mask[tr]) continue;
+      if (!measuredFlags[bl] || !measuredFlags[br] || !measuredFlags[tl] || !measuredFlags[tr]) continue;
       indices.push(bl, br, tr, bl, tr, tl);
     }
   }
@@ -1296,8 +1312,12 @@ export function meshOf(lattice) {
     positions,
     indices: new Uint32Array(indices),
     measuredFlags,
-    nx,
-    ny,
+    // The vertex grid's own width and height, which is the stride into
+    // `positions`; the cell counts are what a drawing divides its scale by.
+    nx: vx,
+    ny: vy,
+    cellsX,
+    cellsY,
     cells: indices.length / 6,
   };
 }
@@ -1312,15 +1332,19 @@ export function meshOf(lattice) {
  * and the triangles disagree. It is the drawing's height and not a reading:
  * nothing may be lettered from it, as nothing is lettered from the surface.
  */
-export function surfaceAt({ values, mask, nx, ny }, ix, iy) {
-  if (!(ix >= 0 && iy >= 0 && ix <= nx - 1 && iy <= ny - 1)) return null;
-  const x0 = Math.min(Math.floor(ix), nx - 2);
-  const y0 = Math.min(Math.floor(iy), ny - 2);
+export function surfaceAt(lattice, ix, iy) {
+  const { values, mask, nx } = lattice;
+  const { cellsX, cellsY, nextX, nextY } = walkOf(lattice);
+  // Up to `cells`, which on a whole turn is `count`: between the last bearing
+  // and north again is a cell like any other, and a desk at 350° stands on it.
+  if (!(ix >= 0 && iy >= 0 && ix <= cellsX && iy <= cellsY)) return null;
+  const x0 = Math.min(Math.floor(ix), cellsX - 1);
+  const y0 = Math.min(Math.floor(iy), cellsY - 1);
   if (x0 < 0 || y0 < 0) return null;
   const bl = x0 + y0 * nx;
-  const br = bl + 1;
-  const tl = bl + nx;
-  const tr = tl + 1;
+  const br = nextX(x0) + y0 * nx;
+  const tl = x0 + nextY(y0) * nx;
+  const tr = nextX(x0) + nextY(y0) * nx;
   if (!mask[bl] || !mask[br] || !mask[tl] || !mask[tr]) return null;
   const fx = ix - x0;
   const fy = iy - y0;

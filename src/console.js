@@ -103,6 +103,20 @@ const SUMMARY = Object.freeze(
   ),
 );
 
+// What a study card of a face that wraps letters under its axis, and what its
+// Study offer says it would sweep. The axis's caption and its right-hand end
+// stand on one line with `0° N` at the left, so it is that whole line that is
+// held to a console line's budget; the figure is the rose's own lettering of
+// north and two words in any system, since an angle does not convert.
+const WRAP_CAPTION = 'The whole turn; wraps at north.';
+const WRAP_AGAIN = 'N, again';
+withinBudget(BUDGETS.STRIP_LINE, 'the wrapping study card\'s axis line', `0° N ${WRAP_CAPTION} ${WRAP_AGAIN}`);
+// Spoken rather than shown — it is the offer's aria-label, after "Study North
+// axis:" — but it is the only place a reader who cannot see the rose is told
+// what the sweep covers, so it is held to the same line budget as the caption.
+const WRAP_OFFER = 'sweep the whole turn, from north round to north';
+withinBudget(BUDGETS.STRIP_LINE, 'the wrapping Study offer\'s sweep', `Study North axis: ${WRAP_OFFER}`);
+
 /**
  * A control's note, one press down on the control it explains. About a
  * hundred and ten controls carry one, of up to seventy-seven words
@@ -310,6 +324,16 @@ export function mountConsole({
     // it; leaving it opens everything, which is the desk as it was.
     opened = null;
     refold();
+    // A card on a face that wraps letters all eight principal points on the
+    // desk and the four cardinals on the index sheet, decided when it is
+    // built, so crossing the breakpoint rebuilds it from the study it already
+    // holds. Nothing is re-swept. (At mount there are no cards, so `api` is
+    // never reached before it exists.)
+    for (const [key, card] of [...cards]) {
+      if (card.study && controlFor(key).control.wraps) {
+        api.setStudy(key, card.study, { stale: card.node.classList.contains('stale'), relettering: true });
+      }
+    }
   }
 
   /* ── the columns ─────────────────────────────────────────────────────────
