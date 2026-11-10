@@ -234,3 +234,54 @@ Re-run after these fixes, `page-bands.mjs` with the Passivhaus specification
 chased against Passivhaus Classic (synthetic London year): every check passes,
 including SC-004 (78 → 78 runs), SC-007 and 390 px. The off-grid wording was
 re-checked on the reporter's link as its own sentence. G3 was not re-run.
+
+## Code review, max level, with fixes (after the shared-survey fixes)
+
+Ten reviewer angles, one verifier pass and a gap sweep. Fifteen findings
+reported. Twelve are fixed and three are left, each with a reason.
+
+Fixed:
+
+- After a priced change, the study is rebuilt around the lever's current
+  value, which turned a setting between two runs into an unsampled grid
+  position, "not judged" for good. The desk's own run now judges the setting
+  wherever the sweep holds no sample there, and that position no longer counts
+  as still landing.
+- The pull builds its run contents at the desk its probes run at. Built at the
+  survey's cut, they threw whenever the desk had since taken System out.
+- `readPeaks` reads zero only for a direction the thermostat serves
+  (`servedDirections`, read off the document). Under "Cool only", peak heating
+  stays absent instead of passing Passivhaus's load line.
+- Cached readings are re-priced for every sweep, not only priced ones, so a
+  survey along a priced axis no longer hands a study EUI at another row's COP.
+  `reprice` now also re-reads the desk's EUI.
+- A sweep still landing with no pass yet says so, instead of "no position
+  passes" or "no studied lever restores".
+- A setting inside a stretch with no run behind it reads "not judged". Inert
+  sentences say how many lines they judged. "Stepped over" is claimed only
+  after a coarse pass, and never off the desk's run.
+- Study cards with no run yet are counted ("The studies are on, but none has
+  landed a run yet."). A failed run survives a cache rebuild (`failedAt`).
+  Moves are lettered at a flat IP precision with the span's own unit, and a
+  share under half a per cent reads "under 1 %".
+- The block repaints only when a band changed. Bands are re-read after a solve
+  only when the solve is of the desk as it stands. Focus returns to the method
+  fold after a repaint.
+
+Left, with reasons:
+
+- Band contents are still channel-filtered at the sweep's stance. Filtering
+  per sample needs `RunContents` to shed a channel at build time, which is a
+  scheduler change outside this feature.
+- Each annual sample now does 16 to 47 ms more main-thread work, because the
+  parsed ESO it carries is larger. The engine time is unchanged (G1). Cutting
+  the main-thread cost means carrying band contents only while a standard is
+  chased, and that is the design decision research R1 rejected.
+- The copy budget of the block on busy desks, collapsing the not-judged
+  reasons through `BLOCK_TOGETHER`, and mono figures in the band sentence. All
+  three are wording and type changes for a later pass.
+
+Re-verified after the fixes: G2 (53 cases, eleven new), G4, G5, the build,
+`page-bands.mjs` on the Passivhaus desk (every check), and
+`page-survey-shared.mjs` on the reporter's link (every check). G3 was not
+re-run.
