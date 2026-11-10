@@ -54,8 +54,23 @@ import { refusesSweep } from './study.js';
  * entry that carried both would be two claims about one control.
  */
 export class PullEntry {
-  constructor({ key, control, side, channel, direction = null, effect = null, room = 0, atStop = false, inert = null }) {
+  constructor({
+    key,
+    control,
+    side,
+    channel,
+    direction = null,
+    effect = null,
+    room = 0,
+    atStop = false,
+    turned = null,
+    inert = null,
+  }) {
     if (!key) throw new Error('a pull entry needs a control key');
+    // Read off the declaration rather than passed in, so an entry cannot say a
+    // ruled control wraps or a wrapping one has a stop: the two would be two
+    // claims about one face, and only the face knows which is true.
+    const wraps = Boolean(control?.wraps);
     if ((inert === null) === (effect === null)) {
       throw new Error(
         `the pull entry for "${key}" carries ${inert === null ? 'neither an effect nor a reason it has none' : 'both an effect and a reason it has none'}`,
@@ -64,7 +79,18 @@ export class PullEntry {
     if (effect !== null && !['raise', 'lower', 'none'].includes(direction)) {
       throw new Error(`the pull entry for "${key}" states its direction as "${direction}"`);
     }
-    if (effect !== null && (room < 0 || (room === 0) !== Boolean(atStop))) {
+    if (effect !== null && wraps) {
+      // A circle has no stop and so no room to one. North axis probed at 350
+      // turns to 8, and "10 left before 360" would be a fact about where the
+      // numbers restart, not about the building, which is the same at 360 as
+      // at 0. What the entry can say instead is how far it was turned.
+      if (room !== null || atStop) {
+        throw new Error(`the pull entry for "${key}" wraps, so it has no room to a stop and cannot be at one`);
+      }
+      if (!(turned > 0)) {
+        throw new Error(`the pull entry for "${key}" wraps and says it was turned ${turned}, not some way clockwise`);
+      }
+    } else if (effect !== null && (room < 0 || (room === 0) !== Boolean(atStop))) {
       throw new Error(
         `the pull entry for "${key}" has ${room} of range left in the improving direction and says atStop is ${atStop}`,
       );
@@ -78,10 +104,17 @@ export class PullEntry {
     this.direction = direction;
     /** Change in the reading per unit of this control's own travel. */
     this.effect = effect;
-    /** How much range remains in the direction that improves the reading. */
-    this.room = room;
+    /** True for a control on a circle, which has a turn where others have room. */
+    this.wraps = wraps;
+    /**
+     * How much range remains in the direction that improves the reading.
+     * `null` on a wrapping control, which has no end to run out at.
+     */
+    this.room = wraps ? null : room;
     /** True where `room` is zero: a steep face with nowhere left to go. */
-    this.atStop = Boolean(atStop);
+    this.atStop = wraps ? false : Boolean(atStop);
+    /** How far clockwise a wrapping control was probed; `null` on a ruled one. */
+    this.turned = wraps && effect !== null ? turned : null;
     this.inert = inert;
     Object.freeze(this);
   }
@@ -104,7 +137,11 @@ export class PullEntry {
    * declaration deliberately does not have.
    */
   get perUnit() {
-    return this.control.spanUnitNow;
+    // A wrapping control's effect is signed by the way it was turned: the same
+    // figure per degree anticlockwise is the opposite sign. Ruled faces carry
+    // their direction in the word "raise" or "lower" against a unit that only
+    // increases; a bearing has no increasing direction until one is named.
+    return this.wraps ? `${this.control.spanUnitNow} clockwise` : this.control.spanUnitNow;
   }
 
   /**
@@ -113,6 +150,14 @@ export class PullEntry {
    * face, and on a setpoint `quantityKind` would carry Fahrenheit's 32 into it.
    */
   get roomSaid() {
+    // A wrapping entry has no room, and says how far it was turned instead —
+    // a whole sentence, so the column does not put a unit after it. Lettered
+    // through the span kind like any room, so it would convert if an angle
+    // ever did.
+    if (this.wraps) {
+      if (this.turned === null) return null;
+      return `Turned ${figureIn(this.control.spanKind, this.turned, { digits: 0, ipDigits: 0 })}${this.control.spanUnitNow} clockwise.`;
+    }
     // Two decimals in both systems, as this column has always shown, rather
     // than the control's own IP precision. A span is not a position on the
     // grid, so `precisionFor`'s reachability argument does not apply to it —
@@ -222,8 +267,14 @@ export function pullProbes(stance, patch, { quantity, engaged, annual, epw = nul
         // that is coarser — a probe one step wide on a control whose face is
         // two hundred steps long measures the rounding, not the building.
         const size = Math.max(step, Math.round((max - min) / 20 / step) * step);
+        // The same measure on a circle is 18°, and always clockwise: a turn has
+        // no top of its face to be pushed back from, so "up where there is
+        // room" has no meaning, and 350 steps to 8 rather than back to 332.
+        // Normalised so 0 and 360 can never mint two sample identities.
         const up = here + size <= max;
-        const to = up ? here + size : here - size;
+        const to = control.wraps ? control.wrap.norm(here + size) : up ? here + size : here - size;
+        // Unreachable for a wrapping control, whose `to` is on the circle and
+        // eighteen degrees round from `here`; kept for the ruled ones.
         if (!(to >= min && to <= max) || to === here) {
           inert.push(
             new PullEntry({
@@ -311,12 +362,20 @@ export function entryFrom(probe, { here, there, reading }) {
   // Per unit of the control's own travel, which is what makes two controls in
   // different units comparable at all — and what `perUnit` then has to say, or
   // the figure is a number with no dimension.
-  const effect = delta / (to - from);
+  //
+  // On a circle the travel is the short way round, signed: 350 to 8 is +18,
+  // not −342, which would have shrunk the effect nineteenfold and flipped its
+  // sign without a sound.
+  const travel = control.wraps ? control.wrap.signed(from, to) : to - from;
+  const effect = delta / travel;
   const direction = delta === 0 ? 'none' : delta > 0 ? 'raise' : 'lower';
   // Which way improves the reading, and therefore how much range is left in
   // that direction. A steep face with nowhere to go is a different fact from
   // one with half its range in hand (US2 scenario 2), and ranking them
   // together would send the reader to a control they cannot move.
+  if (control.wraps) {
+    return new PullEntry({ key, control, side, channel, direction, effect, room: null, turned: travel });
+  }
   const wantLower = reading.better === 'lower';
   const improvingUp = wantLower ? effect < 0 : effect > 0;
   const room = effect === 0

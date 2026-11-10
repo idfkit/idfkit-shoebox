@@ -57,9 +57,10 @@ export const COARSE_SAMPLES = 11;
  * the curve's silhouette stands after four points instead of emerging from
  * one edge.
  */
-export function sampleOrder(points, current) {
+export function sampleOrder(points, current, control = null, { whole = true } = {}) {
   const n = points.length;
   if (n === 0) return [];
+  if (control?.wraps) return circleOrder(points, current, control.wrap, whole);
   const seen = new Set();
   const order = [];
   const take = (i) => {
@@ -208,6 +209,7 @@ export function studyCounts(control) {
 export function samplePoints(control, current, n = SWEEP_SAMPLES, { from = control.min, to = control.max } = {}) {
   const refusal = refusesSweep(control);
   if (refusal) throw new Error(`samplePoints: ${refusal}`);
+  if (control.wraps) return circlePoints(control, current, n, { from, to });
   const { min, max, step } = control;
   // Snapped to the control's own grid, anchored at its own minimum even when
   // the span is narrower: a survey axis cut over part of a face has to land on
@@ -234,6 +236,83 @@ export function samplePoints(control, current, n = SWEEP_SAMPLES, { from = contr
     } else {
       out.push(v);
     }
+  }
+  return out;
+}
+
+/**
+ * `sampleOrder` on a whole turn.
+ *
+ * A circle has no two ends to draw first, so its silhouette is north and the
+ * point opposite it: 0 then 180, not `points[n - 1]`, which on a whole turn is
+ * 338° and stands one step from north. Then the stance, the likeliest cache
+ * hit, found by the short way round — by subtraction a desk at 350° is nearest
+ * 338° rather than north. Then bisection by index, which is the circle's own
+ * order because the points are sorted clockwise; on an arc, which does have two
+ * ends, the linear order's ends-first is the right one and is used instead.
+ * Whether the points are a whole turn is the caller's to say: an arc from 0°
+ * to 90° starts at north too, and cannot be told from one by its points.
+ */
+function circleOrder(points, current, wrap, whole) {
+  const n = points.length;
+  const seen = new Set();
+  const order = [];
+  const take = (i) => {
+    if (i >= 0 && i < n && !seen.has(i)) {
+      seen.add(i);
+      order.push(i);
+    }
+  };
+  const nearestTo = (v) => {
+    let best = 0;
+    for (let i = 1; i < n; i += 1) {
+      if (Math.abs(wrap.signed(points[i], v)) < Math.abs(wrap.signed(points[best], v))) best = i;
+    }
+    return best;
+  };
+  if (whole) {
+    take(nearestTo(0));
+    take(nearestTo(180));
+  } else {
+    take(0);
+    take(n - 1);
+  }
+  take(nearestTo(current));
+  const queue = [[0, n - 1]];
+  while (queue.length) {
+    const [lo, hi] = queue.shift();
+    if (hi - lo < 2) continue;
+    const mid = (lo + hi) >> 1;
+    take(mid);
+    queue.push([lo, mid], [mid, hi]);
+  }
+  for (let i = 0; i < n; i += 1) take(i);
+  return order;
+}
+
+/**
+ * `samplePoints` on a face with no ends.
+ *
+ * The positions are the wrap's own, so a whole turn holds north once and an arc
+ * from 300° to 60° runs clockwise through it. The stance goes in verbatim, as
+ * on any face, and is deduplicated against its neighbours by the short way
+ * round rather than by subtraction: 359.9995 and 0 are a thousandth of a degree
+ * apart, and a linear tolerance would read them as the two ends of the face and
+ * keep both. Ordered by how far clockwise from `from` each stands, which on a
+ * whole turn is plain numeric order and on an arc is the order the card and
+ * the lattice walk it in.
+ */
+function circlePoints(control, current, n, { from, to }) {
+  const { wrap } = control;
+  const points = wrap.positions(n, from, to);
+  if (current !== null) points.push(current);
+  points.sort((a, b) => wrap.ahead(from, a) - wrap.ahead(from, b));
+  const tol = wrap.step / 1000;
+  const out = [];
+  for (const v of points) {
+    const twin = out.findIndex((u) => Math.abs(wrap.signed(u, v)) < tol);
+    if (twin === -1) out.push(v);
+    else if (v === current) out[twin] = current;
   }
   return out;
 }

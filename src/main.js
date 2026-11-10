@@ -11,6 +11,7 @@ import {
   designConditionsFrom,
   designDayDatums,
   geometryFacts,
+  turnOf,
   leakageBuildUp,
   modelFacts,
   occupiedFloor,
@@ -41,14 +42,13 @@ import { describeDesk } from './describe.js';
 import { quantityField, textField } from './field.js';
 import { mountTour } from './tour.js';
 import {
-  COARSE_SAMPLES,
   OPENING_QUANTITY_BASIS,
   PricingAvailability,
   PricingStatus,
   QUANTITIES,
   QUANTITY_BY_ID,
   RunContents,
-  SWEEP_SAMPLES,
+  studyCounts,
   contentsFor,
   offersFor as studyOffersFor,
   openingQuantity,
@@ -58,8 +58,7 @@ import {
   sampleOrder,
 } from './study.js';
 import {
-  COARSE_GRID,
-  FINE_GRID,
+  gridCounts,
   READINGS as SURVEY_READINGS,
   READING_BY_ID,
   axisFor,
@@ -2250,10 +2249,16 @@ let surveyPass = null;
 // of the desk moves, so an idle refine does not quietly restart work the
 // reader just shed.
 let surveyStop = null;
-// The count the current ground was asked for, so a re-cut that is not meant to
+// The pass the current ground was asked for, so a re-cut that is not meant to
 // lose detail — flipping the axes — can come back at the density it had rather
 // than dropping to the coarse pass and climbing out of it again.
-let surveyGrid = COARSE_GRID;
+//
+// A pass and not a count, because the count is each axis's own: six then
+// eleven along a ruled face, eight then sixteen round a whole turn. One number
+// for both axes would space an orientation axis at six positions with no
+// compass name, and a flip, which swaps the axes, would carry the wrong one
+// across. `passCount` asks the axis's control.
+let surveyGrid = 'coarse';
 // Why the last survey could not be cut, standing in place of the ground.
 let surveyRefused = null;
 // Where the keyboard is standing on the ground, as lattice indices.
@@ -8446,7 +8451,29 @@ const studyPool = createEnginePool({
  * than the number at which a repeated literal starts being a place for the
  * four to drift.
  */
-const deskAt = (job, value) => ({ ...job.snapshot, [job.key]: value });
+// A wrapping key is put onto [0, 360) before it becomes a desk, so 0 and 360 —
+// and 359.99999 and 0 — can never mint two shape keys, two cache identities and
+// two runs of one building. The positions a study asks for are already on the
+// circle; this is the one gate every other route to a sample passes too.
+const deskAt = (job, value) => {
+  const { control } = controlFor(job.key);
+  return { ...job.snapshot, [job.key]: control.wraps ? control.wrap.norm(value) : value };
+};
+
+/**
+ * The bearing a sample was asked to stand at, when one of its swept keys turns
+ * the building, or null.
+ *
+ * Asked of every swept key and not only `job.key`, because a survey row that
+ * fixes North axis and sweeps glazing turns the building just as a study of
+ * North axis does, and the check below is owed to both.
+ */
+function askedTurn(job, desk) {
+  for (const key of [job.omits ?? job.key].flat()) {
+    if (controlFor(key).control.wraps) return desk[key];
+  }
+  return null;
+}
 
 /**
  * The declaration one sweep is read under, refused by name where there is none.
@@ -8801,8 +8828,16 @@ function buildSample(job, value) {
     });
     // Each sample's intensity divides by that sample's own floor, which the
     // swept key may itself be moving — the same live read the bill takes.
-    const floorArea = geometryFacts(model).grossFloor;
-    return { idf: writeIdf(model), epw: job.epw, floorArea, carried: job.carried, value };
+    const facts = geometryFacts(model);
+    const floorArea = facts.grossFloor;
+    // The turn is read back off the vertices while the overlay stands, as the
+    // floor is, so a point on an orientation curve is placed at the bearing the
+    // document was actually built at rather than the one it was asked for. The
+    // scheduler compares the two; a document that did not turn as asked is a
+    // failed position, never a point drawn at either bearing.
+    const asked = askedTurn(job, deskAt(job, value));
+    const turn = asked === null ? undefined : turnOf(facts);
+    return { idf: writeIdf(model), epw: job.epw, floorArea, carried: job.carried, value, turn, asked };
   } finally {
     applyModel(model, params, patching());
     setAnnual(model, annual());
@@ -9088,7 +9123,15 @@ function openingQuantityForDesk(snapshot, patch, epw) {
   });
 }
 
-function jobForStudy(key, { origin = 'refresh', n = SWEEP_SAMPLES, openingBasis = null } = {}) {
+/**
+ * How many positions a study of `key` takes, coarse then fine, asked of its
+ * control: eleven and twenty-one along a ruled face, eight and sixteen round a
+ * whole turn. Every count below goes through here, so no site can densify an
+ * orientation study to twenty-one points it was never spaced for.
+ */
+const countsOf = (key) => studyCounts(controlFor(key).control);
+
+function jobForStudy(key, { origin = 'refresh', n = countsOf(key).fine, openingBasis = null } = {}) {
   const { control } = controlFor(key);
   // The desk this study describes, read in one breath — the same capture
   // rule the solve follows, for the same reason: params keep moving between
@@ -9111,7 +9154,7 @@ function jobForStudy(key, { origin = 'refresh', n = SWEEP_SAMPLES, openingBasis 
     carried,
     restShape: restShapeKey(key, snapshot, patch),
     points,
-    order: sampleOrder(points, snapshot[key]),
+    order: sampleOrder(points, snapshot[key], control),
     origin,
     asked: n,
     openingBasis: openingBasis ?? studies.get(key)?.openingBasis ?? null,
@@ -9134,7 +9177,7 @@ function studyRefusal(key, snapshot, selected) {
 }
 
 /** Queue one study of the desk as it stands right now. */
-function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES, openingBasis = null } = {}) {
+function enqueueStudy(key, { origin, front = false, n = countsOf(key).fine, openingBasis = null } = {}) {
   const job = jobForStudy(key, { origin, n, openingBasis });
   const quantity = quantityOf(job.quantity);
   const offers = studyOffers(job.snapshot, job.patch, job.epw, key);
@@ -9152,7 +9195,7 @@ function enqueueStudy(key, { origin, front = false, n = SWEEP_SAMPLES, openingBa
       offers,
       waiting: { quantity: quantity.label, missing: job.total, reason: refusal },
       curve: [],
-      coarse: n === COARSE_SAMPLES,
+      coarse: n === countsOf(key).coarse,
     };
     openStudies.add(key);
     studies.set(key, waiting);
@@ -9171,7 +9214,7 @@ function redrawStudiesForQuantity({ queue = true, requeueLifted = false } = {}) 
   const deskOffers = studyOffers();
   for (const [key, prior] of studies) {
     const offers = PRICED_KEYS.has(key) ? studyOffers(params, patching(), epwText ?? null, key) : deskOffers;
-    const job = jobForStudy(key, { n: prior.coarse ? COARSE_SAMPLES : SWEEP_SAMPLES });
+    const job = jobForStudy(key, { n: prior.coarse ? countsOf(key).coarse : countsOf(key).fine });
     const cached = studyScheduler.curveFor(job);
     const selected = offers.find((offer) => offer.quantity.id === quantity.id);
     const refusal = studyRefusal(key, params, selected);
@@ -9224,7 +9267,7 @@ function resumeWaitingStudies() {
     if (!study.waiting || studyScheduler.has(key)) continue;
     const rest = restShapeKey(key);
     if (studyStops.get(key) === rest) continue;
-    enqueueStudy(key, { origin: 'refresh', n: COARSE_SAMPLES });
+    enqueueStudy(key, { origin: 'refresh', n: countsOf(key).coarse });
   }
 }
 
@@ -9251,7 +9294,7 @@ function refreshStudies() {
     if (studyScheduler.has(key)) continue; // already re-sweeping
     if (studyStops.get(key) === rest) continue; // stopped, and the desk has not moved since
     studyStops.delete(key); // the desk moved past the Stop; it lapses
-    enqueueStudy(key, { origin: 'refresh', n: COARSE_SAMPLES });
+    enqueueStudy(key, { origin: 'refresh', n: countsOf(key).coarse });
   }
 }
 
@@ -9271,7 +9314,7 @@ function densifyStudies() {
     if (study.restShape !== rest) continue; // stale — refresh owns it, not densify
     if (studyScheduler.has(key)) continue;
     if (studyStops.get(key) === rest) continue;
-    enqueueStudy(key, { origin: 'refresh', n: SWEEP_SAMPLES });
+    enqueueStudy(key, { origin: 'refresh', n: countsOf(key).fine });
     return;
   }
 }
@@ -9479,9 +9522,10 @@ function onStudyUpdate(job, event) {
         : null,
       openingBasis: job.openingBasis,
       curve: withdrawn ? [] : job.curve,
-      // A coarse first pass is a real study, drawn honestly at eleven points;
-      // the flag is what tells the idle densify it is worth finishing.
-      coarse: job.asked === COARSE_SAMPLES,
+      // A coarse first pass is a real study, drawn honestly at its own count
+      // (eleven on a ruled face, eight round a whole turn); the flag is what
+      // tells the idle densify it is worth finishing.
+      coarse: job.asked === countsOf(job.key).coarse,
     };
     studies.set(key, study);
     openStudies.add(key);
@@ -9742,7 +9786,7 @@ function onSurveyUpdate(job, event) {
  * not of refinement in general.
  */
 function onSurveyPassDone() {
-  const wasCoarse = surveyPass === COARSE_GRID;
+  const wasCoarse = surveyPass === 'coarse';
   surveyPass = null;
   if (!survey || !wasCoarse) return;
   if (!autoOn() || linkAttachPending) return;
@@ -9801,8 +9845,8 @@ function refineSurvey() {
   // never re-measured, so a densify now would fill the ground with holes.
   if (surveyWithdrawn(survey)) return;
   const refined = makeSurvey({
-    x: axisFor(survey.x.key, { from: survey.x.from, to: survey.x.to, count: FINE_GRID, stance: survey.stance }),
-    y: axisFor(survey.y.key, { from: survey.y.from, to: survey.y.to, count: FINE_GRID, stance: survey.stance }),
+    x: axisFor(survey.x.key, { from: survey.x.from, to: survey.x.to, count: passCount(survey.x.key, 'fine'), stance: survey.stance }),
+    y: axisFor(survey.y.key, { from: survey.y.from, to: survey.y.to, count: passCount(survey.y.key, 'fine'), stance: survey.stance }),
     readings: survey.readings,
     stance: survey.stance,
     patch: survey.patch,
@@ -9835,10 +9879,13 @@ function refineSurvey() {
     });
   }
   survey = refined;
-  surveyGrid = FINE_GRID;
-  queueSurvey(survey, { grid: FINE_GRID });
+  surveyGrid = 'fine';
+  queueSurvey(survey, { grid: 'fine' });
   renderSurvey();
 }
+
+/** How many positions an axis along `key` takes on `pass`, asked of its control. */
+const passCount = (key, pass) => gridCounts(controlFor(key).control)[pass];
 
 /**
  * Cut a fresh ground through the desk as it stands.
@@ -9848,7 +9895,7 @@ function refineSurvey() {
  * shapes, a reading this desk cannot answer. `axisFor` and `makeSurvey` throw
  * for the first two and the offer roster answers the third.
  */
-function openSurvey({ xKey, yKey, readingIds, extents = {}, count = COARSE_GRID }) {
+function openSurvey({ xKey, yKey, readingIds, extents = {}, pass = 'coarse' }) {
   if (!studyScheduler) return;
   const stance = { ...params };
   const patch = patching();
@@ -9868,8 +9915,8 @@ function openSurvey({ xKey, yKey, readingIds, extents = {}, count = COARSE_GRID 
     return;
   }
   const cut = makeSurvey({
-    x: axisFor(xKey, { ...(extents[xKey] ?? {}), count, stance }),
-    y: axisFor(yKey, { ...(extents[yKey] ?? {}), count, stance }),
+    x: axisFor(xKey, { ...(extents[xKey] ?? {}), count: passCount(xKey, pass), stance }),
+    y: axisFor(yKey, { ...(extents[yKey] ?? {}), count: passCount(yKey, pass), stance }),
     readings,
     stance,
     patch,
@@ -9901,8 +9948,8 @@ function openSurvey({ xKey, yKey, readingIds, extents = {}, count = COARSE_GRID 
         : null;
   if (waiting) surveySay(waiting);
   else {
-    surveyGrid = count;
-    queueSurvey(survey, { grid: count });
+    surveyGrid = pass;
+    queueSurvey(survey, { grid: pass });
   }
   updatePermalink();
 }
@@ -10184,8 +10231,8 @@ function pickList({ label, noun, summary, placeholder, options, selected, onPick
    * the head of the block it belongs to, one sentence covering every copy of
    * the control — applied twice, because the chooser broke it twice. A channel
    * that is out of the path refuses every control it owns for one reason, and
-   * a control with no numeric face is refused by one rule shared with the
-   * other thirty-eight. Written per entry, those were 53 rows each repeating a
+   * a control with no numeric face is refused by one rule shared with every
+   * other control that has none. Written per entry, those were 53 rows each repeating a
    * whole paragraph, which is a list nobody can read down.
    */
   const heading = (name, note) => {
@@ -10713,13 +10760,13 @@ const syncSurveyAxes = () =>
   desk?.setSurveyAxes([surveyChoice.x, surveyChoice.y].filter(Boolean));
 
 /** Cut a ground the moment the chooser holds enough to cut one. */
-function cutFromChoice({ count = COARSE_GRID } = {}) {
+function cutFromChoice({ pass = 'coarse' } = {}) {
   const { x, y, readings, extents } = surveyChoice;
   if (!x || !y || !readings.length) {
     renderSurvey();
     return;
   }
-  openSurvey({ xKey: x, yKey: y, readingIds: readings, extents: extents ?? {}, count });
+  openSurvey({ xKey: x, yKey: y, readingIds: readings, extents: extents ?? {}, pass });
 }
 
 /**
@@ -10746,7 +10793,7 @@ function flipSurveyAxes() {
   if (!x || !y) return;
   surveyChoice = { ...surveyChoice, x: y, y: x };
   syncSurveyAxes();
-  cutFromChoice({ count: surveyGrid });
+  cutFromChoice({ pass: surveyGrid });
 }
 
 /* The plan. Inline SVG, so every contour and every tick is a real node the
@@ -11102,7 +11149,11 @@ function drawGround(sv, lattice, lines) {
   // which is the worst of the two collisions available: the spot heights are
   // the only figures on this drawing that mean anything, and a level lettered
   // over one hides a measurement behind an inference.
-  const dense = sv.x.count > 7 || sv.y.count > 7;
+  // Dense means a fine pass, asked of each axis's own control: `count > 7`
+  // read an orientation axis's eight coarse positions as dense and thinned the
+  // figures on a ground that had only just been cut.
+  const fineAlong = (axis) => axis.count >= gridCounts(axis.control).fine;
+  const dense = fineAlong(sv.x) || fineAlong(sv.y);
   const figureAt = (spot) =>
     !dense || (spot.ix % 2 === 0 && spot.iy % 2 === 0) ? [px(spot.ix), py(spot.iy) - 5] : null;
   const lettered = sv
@@ -12402,7 +12453,10 @@ function renderPull() {
       barCell,
       el('td', null, entry.perUnit || '—'),
       el('td', 'num', formatEffect(entry, pullStance.reading)),
-      el('td', 'num', entry.atStop ? 'At its stop' : `${entry.roomSaid}${entry.perUnit ? ` ${entry.perUnit}` : ''}`),
+      // A turn has no stop and no room to letter a unit after: its entry says
+      // how far it was turned, whole, and the Per-unit column already carries
+      // "° clockwise".
+      el('td', 'num', entry.wraps ? entry.roomSaid : entry.atStop ? 'At its stop' : `${entry.roomSaid}${entry.perUnit ? ` ${entry.perUnit}` : ''}`),
     ];
     cells.forEach((cell, at) => {
       // Set where the cell is built, so the words over a column and the words

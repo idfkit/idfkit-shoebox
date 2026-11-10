@@ -422,7 +422,21 @@ function decodeSurvey(raw) {
       if (!/^-?\d+(\.\d+)?$/.test(bound)) throw new Error(`"${bound}" is not a number in the extent of ${key}`);
       return Number(bound);
     });
-    if (from < control.min || to > control.max || !(to > from)) {
+    if (control.wraps) {
+      // A bearing's extent runs clockwise from its first end to its second, so
+      // `300_60` crosses north rather than being backwards, and `0_360` is the
+      // whole turn — the one place 360 is admissible, as an end and never as a
+      // value. What no order of the ends can mean is the same bearing twice: a
+      // linear axis refuses it as `to > from` does, and a wrapping one has to
+      // say so in its own words, since "lower to higher" is not its rule.
+      const inRange = (v) => v >= control.min && v <= control.max;
+      if (!inRange(from) || !inRange(to)) {
+        throw new Error(`${key} runs ${control.min} to ${control.max}, and the survey asks for ${from} to ${to}`);
+      }
+      if (from === to) {
+        throw new Error(`the survey asks for ${key} from ${from} to ${to}, and the same bearing at both ends is no extent`);
+      }
+    } else if (from < control.min || to > control.max || !(to > from)) {
       throw new Error(`${key} runs ${control.min} to ${control.max}, and the survey asks for ${from} to ${to}`);
     }
     extents[key] = { from, to };

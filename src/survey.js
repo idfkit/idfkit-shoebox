@@ -98,6 +98,22 @@ import { deltaKindOf, figureIn, letter, suffixIn } from './units.js';
 export const COARSE_GRID = 6;
 export const FINE_GRID = 11;
 
+/**
+ * How many positions an axis along this control is cut at, coarse then fine.
+ *
+ * Asked of the control rather than read off the two constants, because a face
+ * with no ends breaks the argument above. Six and eleven nest inside a study's
+ * eleven and twenty-one because both count *both* ends of a face; a whole turn
+ * has one end, spaces its positions by `i / n` rather than `i / (n - 1)`, and
+ * six points round a circle sit at 60° steps that the study's 22.5° grid never
+ * lands on. Eight and sixteen are the study's own counts on a wrapping face
+ * (`studyCounts`), so every orientation a study measured is a cache hit for a
+ * survey row, and eight nests in sixteen exactly as six nests in eleven.
+ */
+export function gridCounts(control) {
+  return control.wraps ? { coarse: 8, fine: 16 } : { coarse: COARSE_GRID, fine: FINE_GRID };
+}
+
 /* ══ which way is better ═════════════════════════════════════════════════ */
 
 /**
@@ -334,14 +350,163 @@ export class Axis {
     this.to = to;
     this.positions = Object.freeze([...positions]);
     this.count = positions.length;
+    // The axis's own step, read once. The tolerance `indexOf` compares on used
+    // to be read off the control at each call, and on a bearing that carried
+    // no step it was `NaN`: every comparison against `NaN` is false, so a
+    // densify looked up each coarse point on the fine axis, found none, and
+    // re-ran the whole coarse pass with nothing on the page to say so.
+    this.step = control.step;
+    if (!(this.step > 0)) throw new Error(`an axis along ${key} needs the control's step, not ${this.step}`);
+    this.wrap = control.wraps ? control.wrap : null;
+    this.wraps = Boolean(this.wrap);
+    // A whole turn has no second end: the cell after the last position runs
+    // back to north, which is the first. An arc of bearings (300° to 60°) has
+    // two ends that are different buildings, and is walked as a linear axis
+    // that happens to measure its distances clockwise.
+    this.span = this.wraps ? this.wrap.arc(from, to) : to - from;
+    this.closed = this.wraps && this.span === this.wrap.period;
+    this.cells = this.closed ? this.count : this.count - 1;
+    // Where each position stands along the axis, in the coordinate the cell
+    // walk interpolates in. On a linear axis that is the value itself, so the
+    // arithmetic below is the arithmetic it always was, operand for operand.
+    this.along = Object.freeze(this.wraps ? this.positions.map((value) => this.offset(value)) : [...this.positions]);
     Object.freeze(this);
   }
 
   /** The index of a value on this axis, or -1. Compared on the step grid's own tolerance. */
   indexOf(value) {
-    const tol = this.control.step / 1000;
+    const tol = this.step / 1000;
+    // By the short way round on a wrapping axis, so 360 finds north and
+    // 359.9995 finds it too: subtraction would put them a whole turn apart.
+    if (this.wraps) return this.positions.findIndex((position) => Math.abs(this.wrap.signed(position, value)) < tol);
     return this.positions.findIndex((position) => Math.abs(position - value) < tol);
   }
+
+  /** The cell's far neighbour: the next position, or north again past the last on a whole turn. */
+  next(ix) {
+    return this.closed ? (ix + 1) % this.count : ix + 1;
+  }
+
+  /**
+   * An index moved by `d` positions, wrapped on a whole turn. Off the end of
+   * an open axis it is simply off the end, and `Survey.at` finds nothing there,
+   * which is what every caller asking about a neighbour already handles.
+   */
+  shift(ix, d) {
+    if (!this.closed) return ix + d;
+    return (((ix + d) % this.count) + this.count) % this.count;
+  }
+
+  /** How far `value` stands along the axis from `from`: clockwise on a wrapping one. */
+  offset(value) {
+    return this.wraps ? this.wrap.ahead(this.from, value) : value - this.from;
+  }
+
+  /**
+   * The distance from position `i` forward to position `j`, in the control's
+   * own units. Forward is clockwise on a wrapping axis, so on a whole turn the
+   * last position's distance on to north is the short step that closes the
+   * circle rather than minus most of a turn.
+   */
+  gap(i, j) {
+    if (!this.wraps) return this.positions[j] - this.positions[i];
+    return this.wrap.ahead(this.positions[i], this.positions[j]);
+  }
+
+  /** Everything the axis spans, first measured position to last (to north again on a whole turn). */
+  get reach() {
+    if (this.closed) return this.wrap.period;
+    return this.along[this.count - 1] - this.along[0];
+  }
+
+  /**
+   * The value at a fractional index. On a whole turn `f` may run past the
+   * last position as far as `count`, which is north again, and comes back as
+   * north: a mark there is the building at 0°, not a second building at 360°.
+   */
+  at(f) {
+    if (!(f >= 0 && f <= this.cells)) {
+      throw new RangeError(`${this.key} has positions 0 to ${this.cells}, and ${f} is not on it`);
+    }
+    if (this.count === 1) return this.positions[0];
+    const i = Math.min(Math.floor(f), this.cells - 1);
+    const t = f - i;
+    const lo = this.along[i];
+    const hi = i + 1 < this.count ? this.along[i + 1] : this.span;
+    const here = lo + t * (hi - lo);
+    return this.wraps ? this.wrap.norm(this.from + here) : here;
+  }
+
+  /**
+   * Where a value stands on the axis as a fractional index, or null where it is
+   * off the measured extent. Interpolated in *index* space, because the grid is
+   * drawn evenly by index and the positions are not evenly spaced in value once
+   * the stance's own value has been forced into the list.
+   *
+   * On a whole turn a value past the last position (350° after 315°) stands in
+   * the cell that closes the circle, between `count - 1` and `count`.
+   */
+  placeOf(value) {
+    if (!Number.isFinite(value)) return null;
+    const along = this.along;
+    const here = this.wraps ? this.offset(value) : value;
+    const end = this.closed ? this.span : along[along.length - 1];
+    if (here < along[0] || here > end) return null;
+    const exact = this.indexOf(value);
+    if (exact !== -1) return exact;
+    for (let i = 0; i < this.cells; i += 1) {
+      const lo = along[i];
+      const hi = i + 1 < this.count ? along[i + 1] : end;
+      if (here >= lo && here <= hi) {
+        const span = hi - lo;
+        return span === 0 ? i : i + (here - lo) / span;
+      }
+    }
+    return null;
+  }
+}
+
+/**
+ * The eight principal points on a wrapping axis, as fractional indices, for a
+ * drawing to letter. A whole turn letters north at both edges, the second as
+ * north again, because the card is the circle cut open there and a reader
+ * following the right edge needs telling that it is where they began. An arc
+ * letters only the points it passes through. Empty on a linear axis.
+ */
+export function compassMarks(axis) {
+  if (!axis.wraps) return [];
+  const words = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  const out = [];
+  words.forEach((text, k) => {
+    const at = axis.placeOf(k * 45);
+    if (at !== null) out.push(Object.freeze({ at, bearing: k * 45, text }));
+  });
+  if (axis.closed) out.push(Object.freeze({ at: axis.cells, bearing: 0, text: 'N, again' }));
+  return out;
+}
+
+/**
+ * The cell walk over a lattice, on either axis: how many cells there are and
+ * which column or row is a cell's far side. Read off the flags `latticeOf`
+ * writes, and refused when they are absent, because a lattice that does not
+ * say whether it closes would be walked as open and a whole turn would lose
+ * the cell between its last bearing and north without anything looking wrong.
+ */
+function walkOf(lattice) {
+  const { nx, ny, closedX, closedY } = lattice;
+  if (typeof closedX !== 'boolean' || typeof closedY !== 'boolean') {
+    throw new Error('a lattice must say whether each axis closes on itself; build it with latticeOf');
+  }
+  return {
+    cellsX: closedX ? nx : nx - 1,
+    cellsY: closedY ? ny : ny - 1,
+    nextX: closedX ? (ix) => (ix + 1) % nx : (ix) => ix + 1,
+    nextY: closedY ? (iy) => (iy + 1) % ny : (iy) => iy + 1,
+    // A drawn coordinate (which may be `count`, north again) back to the
+    // column that holds its reading.
+    colX: closedX ? (ix) => ix % nx : (ix) => ix,
+    rowY: closedY ? (iy) => iy % ny : (iy) => iy,
+  };
 }
 
 /**

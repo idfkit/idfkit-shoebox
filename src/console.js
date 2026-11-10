@@ -525,7 +525,7 @@ export function mountConsole({
   function buildControl(control, channel) {
     if (control.kind === 'scale') return buildScale(control, channel);
     if (control.kind === 'selector') return buildSelector(control);
-    if (control.kind === 'bearing') return buildBearing(control);
+    if (control.kind === 'bearing') return buildBearing(control, channel);
     if (control.kind === 'facade') return buildFacade(control, channel);
     if (control.kind === 'boundary') return buildBoundary(control);
     if (control.kind === 'profile') return buildProfile(control);
@@ -554,9 +554,14 @@ export function mountConsole({
     // a reader who cannot see the dimmed row. The sentence also stands in view
     // under the row (`buildScale`), so this is never its only carrier. One
     // thunk, so `syncStudyOffer` and `reletter` cannot disagree about which.
+    //
+    // A face that wraps has no two ends to letter: "from 0° N to 360° N" names
+    // one building twice and reads as a sweep of nothing. It says the turn.
     const said = () =>
       control.withdrawnAt?.(params) ??
-      `Study ${name}: sweep from ${control.format(control.min)} to ${control.format(control.max)}`;
+      (control.wraps
+        ? `Study ${name}: ${WRAP_OFFER}`
+        : `Study ${name}: sweep from ${control.format(control.min)} to ${control.format(control.max)}`);
     btn.setAttribute('aria-label', said());
     btn.addEventListener('click', () => onStudy?.(key));
     studyButtons.set(key, btn);
@@ -911,10 +916,16 @@ export function mountConsole({
    * The building turns under a fixed north, which is what actually happens in
    * the model: the vertices rotate and true north stays where it is.
    */
-  function buildBearing(control) {
+  function buildBearing(control, channel) {
     const row = el('div', 'ctl ctl-bearing');
     const head = el('div', 'ctl-head');
     head.append(el('span', 'ctl-label', control.label));
+    // Only a bearing that wraps has a face to sweep; "Bearing from site" is a
+    // neighbour's bearing and `refusesSweep` turns it away, so it gets no offer
+    // to refuse a press of. Placed where a scale carries its own: between the
+    // label and the value.
+    const studyBtn = control.wraps ? studyOffer(control.key, control.label, control, channel) : null;
+    if (studyBtn) head.append(studyBtn);
     const value = el('span', 'ctl-value');
     head.append(value);
     row.append(head);
@@ -954,6 +965,22 @@ export function mountConsole({
     plan.append(svg('line', { x1: 0, y1: 9, x2: 0, y2: 17, stroke: 'var(--redline)', 'stroke-width': 1.2 }));
     root.append(plan);
 
+    // Where the pointer stands on this control's study curve, drawn on the
+    // rose as a scale draws it on its face: one redline radius at the probed
+    // bearing, which is where the plan's own north would point with the rose
+    // turned there. Under the grab circle, so it never takes the pointer.
+    const probe = svg('line', {
+      x1: 0, y1: 0, x2: 0, y2: -R, stroke: 'var(--redline)', 'stroke-width': 1,
+      visibility: 'hidden',
+    });
+    if (control.wraps) {
+      root.append(probe);
+      probes.set(control.key, (v) => {
+        probe.setAttribute('visibility', v == null ? 'hidden' : 'visible');
+        if (v != null) probe.setAttribute('transform', `rotate(${v})`);
+      });
+    }
+
     const handle = svg('circle', { cx: 0, cy: 0, r: R, fill: 'transparent', class: 'rose-grab' });
     root.append(handle);
 
@@ -982,11 +1009,27 @@ export function mountConsole({
     row.append(root);
     if (control.note) attachNote(control, head);
 
-    faces.set(control.key, () => {
+    const redraw = () => {
       const v = params[control.key];
       value.textContent = control.format(v);
       plan.setAttribute('transform', `rotate(${v})`);
-    });
+      if (!control.wraps) return;
+      // As any row does: absent when its `when` says so, dimmed when set but
+      // not reaching the model, and the offer refusing a press for the same.
+      const idle = control.idle(params);
+      row.hidden = !control.shown(params);
+      row.classList.toggle('idle', idle);
+      syncStudyOffer(studyBtn, channel, { idle });
+      // Turning the rose walks the study's tick round its curve.
+      cards.get(control.key)?.syncTick?.();
+    };
+    // Composed with whatever is already registered under the key rather than
+    // replacing it. `buildFacade` and `buildBoundary` chain their plans onto
+    // `faces.get('northAxis')`, so the plans turn with the rose; Site is built
+    // before them today, and this keeps that true if it ever is not.
+    const already = faces.get(control.key);
+    faces.set(control.key, already ? () => { already(); redraw(); } : redraw);
+    if (control.wraps) rows.set(control.key, row);
     return row;
   }
 
@@ -2167,7 +2210,9 @@ export function mountConsole({
       // nothing drawn yet every comparison is false and the reduce keeps the
       // first refused position — which is the answer that branch would have
       // produced anyway, at the cost of a second path to read.
-      const away = (point) => Math.min(...drawn.map((v) => Math.abs(v - point.value)));
+      // Round the circle on a face that wraps: 350° stands 10° from north.
+      const apart = (a, b) => (control.wraps ? Math.abs(control.wrap.signed(a, b)) : Math.abs(a - b));
+      const away = (point) => Math.min(...drawn.map((v) => apart(v, point.value)));
       const edge = refused.reduce((best, point) => (away(point) < away(best) ? point : best));
       const total = study.progress?.total ?? study.curve.length;
       // 26 words with the 13-word reason, against the 25-word BLOCK budget and
@@ -2183,7 +2228,12 @@ export function mountConsole({
     }
 
     const W = 320;
-    const H = 64;
+    // A face that wraps carries one more line under its axis: the principal
+    // points stand on the first and the two ends and the caption on the
+    // second, because `315° NW` and `N, again` both want the right-hand
+    // fortieth of a 320-unit axis and would print over one another.
+    const wraps = Boolean(control.wraps);
+    const H = wraps ? 74 : 64;
     // The same lookup `studyQuantityChooser` above already refused a miss on,
     // so it cannot be absent here — asked without the optional chain that was
     // reading as though it could be, and would then have thrown one line later
@@ -2219,6 +2269,33 @@ export function mountConsole({
     // gutter used to hold, and which shortened the curve's axis against the
     // face's so that neither tick stood under the other.
     const plot = { x: 0, w: W, top: 13, bottom: 46 };
+
+    // Where a point is drawn: at the turn the simulated document was measured
+    // to carry, where the sample reports one (FR-010), and at the position it
+    // was asked for otherwise — which is every linear face, unchanged. Taken
+    // as the asked position plus the short way round to the measured one, so
+    // north measured at 359.996° is drawn at the left end where it was asked,
+    // not across the card at the right. A mismatch large enough to matter is
+    // the scheduler's to refuse as a failed point; this only places.
+    const placeOf = (point) =>
+      point.turn == null
+        ? point.value
+        : wraps
+          ? point.value + control.wrap.signed(point.value, point.turn)
+          : point.turn;
+    // The seam point (research R5): one more drawn vertex at 360 repeating the
+    // reading measured at north, so the segment from the last position back
+    // round to north is drawn like any other. Drawn only — it is never in
+    // `study.curve`, so no cache, count, extreme or progress figure sees it —
+    // and dropped when north is a gap, so a failed run there breaks the
+    // closure exactly as a gap breaks any segment.
+    const north = wraps ? study.curve.find((point) => point && point.value === control.min) : null;
+    const seam = north && !north.refused && north.reading != null
+      // `turn` is carried as measured: 360 and 0 are one bearing, so the short
+      // way round from 360 to it is the same offset north itself is drawn at.
+      ? { ...north, value: control.max, seam: true }
+      : null;
+    const drawnCurve = seam ? [...study.curve, seam] : study.curve;
 
     const vals = series.flatMap((s) => study.curve.map(s.sel).filter((v) => v != null));
     if (!vals.length) {
@@ -2267,13 +2344,13 @@ export function mountConsole({
     const segments = (sel) => {
       const segs = [];
       let seg = [];
-      for (const p of study.curve) {
+      for (const p of drawnCurve) {
         const v = sel(p);
         if (v == null) {
           if (seg.length) segs.push(seg);
           seg = [];
         } else {
-          seg.push([x(p.value), y(v)]);
+          seg.push([x(placeOf(p)), y(v)]);
         }
       }
       if (seg.length) segs.push(seg);

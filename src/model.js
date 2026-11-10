@@ -2949,6 +2949,36 @@ export function geometryFacts(doc) {
 }
 
 /**
+ * How far the document has turned the building, in degrees clockwise, read
+ * back off the vertices rather than out of `params.northAxis`.
+ *
+ * A sweep over North axis places each point at the turn this returns, so the
+ * answer has to come from what the engine was handed: `Building.north_axis` is
+ * ignored and `turn()` puts the orientation into the coordinates, so the
+ * coordinates are the only witness to it. At no turn the wall the plan calls
+ * south looks due south, 180°, and whatever it looks at now less that is the
+ * turn.
+ *
+ * The wall is found by its plan `side`, which is the name `turn()` leaves
+ * where it was, and never by the compass word its bearing letters as. Asked by
+ * compass, "the wall facing south" is a different wall on either side of 45°,
+ * and the turn read off it would jump by 90° there and stand at nought for
+ * every position between.
+ *
+ * Normalised into [0, 360) with the top folded back to nought: `% 360` of a
+ * difference that comes out a few ULPs below zero at no turn returns
+ * 359.99999999999994, which is a fair bearing and a false turn.
+ */
+export function turnOf(facts) {
+  const south = facts?.faces?.find((f) => f.side === 'south');
+  if (!south || !Number.isFinite(south.bearing)) {
+    throw new Error('the model has no south wall to read a turn off');
+  }
+  const turned = (((south.bearing - 180) % 360) + 360) % 360;
+  return 360 - turned < 1e-9 ? 0 : turned;
+}
+
+/**
  * The frame EnergyPlus lays round a window, read off the object the window
  * names. Zero where it names none, and a throw where it names one the document
  * does not hold, because a frame the ratio counted and the engine never saw is
