@@ -47,7 +47,7 @@ The spec's *wrapping range*: a face whose highest position is followed by its lo
 `format(v)` is unchanged: `135° SE`.
 
 **Value rule (`refuses`).** For a wrapping Bearing the range is `[0, 360)`, and 360 or
-more is refused with "is outside its 0–360 range, and a full turn is 0". A Bearing
+more is refused with "is outside its 0–360 range; a full turn is 0". A Bearing
 without a `wrap` keeps `[0, 360]`.
 
 ## Study counts and grid counts

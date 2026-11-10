@@ -109,7 +109,7 @@ narrowing a range bumps `LINK_VERSION` with a migration.
   `Number(raw) === 360`) to drop the pair, since 0 is the default. Anything else passes
   through untouched, so an out-of-range `v1` value is still refused by `readValue` with
   today's sentence.
-- Under `v2`, `refuses` returns "is outside its 0–360 range, and a full turn is 0" for
+- Under `v2`, `refuses` returns "is outside its 0–360 range; a full turn is 0" for
   `v >= 360`. That is the refusal-whole the spec asks for.
 
 This reconciles both sentences of the edge case: a `v1` link carrying 360 is *read* as

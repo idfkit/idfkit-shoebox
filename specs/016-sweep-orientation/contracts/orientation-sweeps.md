@@ -11,7 +11,7 @@ call. Each function keeps its name. Behaviour that is not listed here does not c
 - `Bearing({ …, wrap = null })`: with a `wrap`, it carries the members listed in
   data-model. Without one, it is byte-for-byte today's class.
 - `refuses(control, v)` for a wrapping Bearing returns
-  `'is outside its 0–360 range, and a full turn is 0'` when `v < 0 || v >= 360`, and
+  `'is outside its 0–360 range; a full turn is 0'` when `v < 0 || v >= 360`, and
   null otherwise. Fractions are admitted.
 - The `northAxis` declaration gains `wrap: new Wrap({ step: 1 })`. Its `note` is reread
   against `CONTROL_NOTE` and may say that a study runs the whole turn.
@@ -106,7 +106,7 @@ call. Each function keeps its name. Behaviour that is not listed here does not c
 
 | Where | Text | Budget |
 | --- | --- | --- |
-| link, `v2` | `northAxis is 360, and it is outside its 0–360 range, and a full turn is 0` | STANDING |
+| link, `v2` | `northAxis is 360, and it is outside its 0–360 range; a full turn is 0` | STANDING |
 | extent field | `The same bearing at both ends is no extent.` | STANDING |
 | failed point | `the document turned to …, not …` | ABSENCE |
 | card caption | `The whole turn; wraps at north.` | STRIP_LINE |

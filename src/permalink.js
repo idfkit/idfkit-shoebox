@@ -11,7 +11,7 @@
  * The fragment, not the query string, because the fragment never leaves the
  * browser: it cannot vary CloudFront's cache key, cannot leak schemes into a
  * server log, and survives a preview's `/42/` base untouched. Within it,
- * `URLSearchParams` syntax — `v1&width=20&wwrS=0.35&stn=725650` — because the
+ * `URLSearchParams` syntax — `v2&width=20&wwrS=0.35&stn=725650` — because the
  * browser ships the codec for it and every escaping bug that a hand-rolled
  * `key:value` grammar would eventually meet is already handled.
  *
@@ -53,7 +53,7 @@ import { QUANTITY_BY_ID } from './study.js';
 import { READING_BY_ID, refusesAxis, refusesSurveyPairing } from './survey.js';
 import { decodeView, encodeView } from './views.js';
 
-export const LINK_VERSION = 'v1';
+export const LINK_VERSION = 'v2';
 
 /**
  * Whether a fragment is scheme-shaped at all — a version token first, alone or
@@ -66,29 +66,52 @@ export const LINK_VERSION = 'v1';
 export const isSchemeFragment = (raw) => /^v\d+(&|$)/.test(raw);
 
 /**
- * What an omitted key meant, per version. Today one entry; a changed default
- * adds the outgoing table here under the old version before the new one ships.
+ * What an omitted key meant, per version. A changed default adds the outgoing
+ * table here under the old version before the new one ships. `v2` narrowed a
+ * range and moved no default, so both versions omit against the same table.
  *
  * Two changes have taken a free pass rather than a bump, on the same grounds
  * both times: nothing was in the wild to carry forward. The Grounds channel
  * moved the stock example's grounds lighting out of the baseline, and the Run
  * strip's calendar replaced the run period's `beginMonth` / `endMonth` pair
  * with a `months` mask — a rename, which ordinarily costs a version and a
- * migration step. Neither had a link to break, so v1 simply means the desk as
- * it stands. The next such change will not be so lucky, which is what the
- * ledger below is for.
+ * migration step. Neither had a link to break, so v1 meant the desk as it
+ * stood. The bearing's closed range was the first change that was not so
+ * lucky, and it is the first entry in the ledger below.
  */
-const DEFAULTS_BY_VERSION = Object.freeze({ v1: DEFAULT_PARAMETERS });
+const DEFAULTS_BY_VERSION = Object.freeze({ v1: DEFAULT_PARAMETERS, v2: DEFAULT_PARAMETERS });
 
 /**
  * One step per version bump, `(pairs) => ({ to, pairs })`, rewriting old
- * vocabulary into the next version's under the version it lands on. Empty
- * until a key actually churns with links in the wild; the structure exists
- * from day one because retrofitting it after unversioned links are out there
- * is the expensive path — there would be no way left to tell which defaults an
- * omission meant.
+ * vocabulary into the next version's under the version it lands on. The
+ * structure existed from day one because retrofitting it after unversioned
+ * links are out there is the expensive path — there would be no way left to
+ * tell which defaults an omission meant.
  */
-const MIGRATIONS = Object.freeze({});
+const MIGRATIONS = Object.freeze({
+  // `v1` admitted a bearing in [0, 360], closed, so `northAxis=360` decoded as
+  // a desk of its own: its own shape key, its own cache entry, and a study's
+  // closing point standing as a second identity for the building at 0. `v2`
+  // narrows the range to [0, 360) and refuses a full turn whole (research R4).
+  // The narrowing is this stated step, never a wrap in the decoder: `readValue`
+  // still throws rather than clamps, and a 360 that arrives under `v2` is
+  // refused. Here the pair is dropped rather than rewritten to 0, because 0 is
+  // the default and an omitted key already means it. Nothing is lost by the
+  // drop: measured, the IDF a `v1` link at 360 wrote differs from the one at 0
+  // only by float residue in the vertices, about 1.9e-15 m, so it was the same
+  // building all along. Asked as `Number(raw) === 360` so every spelling of a
+  // full turn (`360.0`, `3.6e2`) is carried, and nothing else is touched: an
+  // out-of-range `v1` value such as 400 passes through and is refused by
+  // `readValue` with the sentence it always got.
+  v1: (pairs) => {
+    const kept = new URLSearchParams();
+    for (const [key, raw] of pairs) {
+      if (key === 'northAxis' && Number(raw) === 360) continue;
+      kept.append(key, raw);
+    }
+    return { to: 'v2', pairs: kept };
+  },
+});
 
 /**
  * Keys that are not parameters: the patch lists, the station, and the weather

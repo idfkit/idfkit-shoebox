@@ -134,6 +134,51 @@ for (const channel of CHANNELS) {
   }
 }
 
+// A wrap is declared on North axis and nowhere else, and its grid must nest.
+//
+// One control, because a second wrapping face is a decision the spec has not
+// made: "Bearing from site" is a neighbour's bearing, and sweeping it would put
+// a building nobody drew into the pull and the chooser. And nesting, because
+// the fine pass is sold as the coarse eight plus eight new runs — the eight
+// come back as cache hits only if every one of them is a fine position after
+// snapping, and the sixteen are sixteen runs only if no two of them snap onto
+// the same whole degree. Both are arithmetic about a step, so a refined step
+// could break either without anything else failing; asserted here, it throws
+// at load naming the control.
+{
+  const wrapping = CHANNELS.flatMap((channel) => channel.controls.filter((control) => control.wrap));
+  const keys = wrapping.map((control) => control.key);
+  if (keys.length !== 1 || keys[0] !== 'northAxis') {
+    throw new Error(`a Wrap is declared on ${keys.join(', ') || 'nothing'}, and only northAxis may carry one`);
+  }
+  for (const control of wrapping) {
+    const { coarse, fine } = studyCounts(control);
+    const fines = control.wrap.positions(fine);
+    if (new Set(fines).size !== fines.length) {
+      throw new Error(`${control.key}: two of its ${fine} positions snap onto one bearing`);
+    }
+    const missing = control.wrap.positions(coarse).filter((v) => !fines.includes(v));
+    if (missing.length) {
+      throw new Error(`${control.key}: coarse positions ${missing.join(', ')} are not among its fine ones`);
+    }
+  }
+}
+
+/**
+ * How many positions a study of this control takes, coarse then fine.
+ *
+ * Asked of the control rather than read off two constants, because a whole
+ * turn is not spaced like a face with two ends. Eleven then twenty-one on a
+ * circle would put north at both ends and land on 18° steps with no compass
+ * name; eight then sixteen land on the eight and sixteen points of the rose,
+ * snapped to whole degrees, and the eight nest in the sixteen. A survey along
+ * the same axis uses the same 8/16 (`gridCounts` in `survey.js`), so every
+ * orientation a study measured is a cache hit for a ground.
+ */
+export function studyCounts(control) {
+  return control.wraps ? { coarse: 8, fine: 16 } : { coarse: COARSE_SAMPLES, fine: SWEEP_SAMPLES };
+}
+
 /**
  * Where to sample a control between its own min and max.
  *

@@ -10216,7 +10216,7 @@ function pickList({ label, noun, summary, placeholder, options, selected, onPick
   if (faceless.length) {
     heading(
       `${faceless.length} controls with no face`,
-      'A selector, a bearing, a daily profile or a list of dates carries no minimum, maximum or ' +
+      "A selector, the neighbour's bearing, a daily profile or a list of dates carries no minimum, maximum or " +
         'step, so there is nothing to sweep along and no ground to cut. That is the same rule a ' +
         'study is refused by.',
     );
