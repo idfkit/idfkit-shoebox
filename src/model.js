@@ -28,7 +28,8 @@ import { RunContents } from './contents.js';
  * Opened up, and stripped of its demonstration loads. The stock file carries a
  * matched +352 W / −352 W `OtherEquipment` pair -- a test article whose halves
  * cancel exactly, so it buys nothing and fails quietly the day an edit touches
- * one half -- and 5.25 kW of astronomical-clock grounds lighting, which now
+ * one half; it is gone, and so are the two Monthly series that reported it --
+ * and 5.25 kW of astronomical-clock grounds lighting, which now
  * lives behind the Grounds strip instead of silently in the baseline. Every
  * load in this document is one somebody engaged.
  *
@@ -630,11 +631,6 @@ const VARIABLES_HOURLY = [
 ];
 
 const VARIABLES_DAILY = ['Site Daylight Saving Time Status', 'Site Day Type Index'];
-
-const VARIABLES_MONTHLY = [
-  'Other Equipment Total Heating Energy',
-  'Zone Other Equipment Total Heating Energy',
-];
 
 /** Build the model. `schema` comes from a `SchemaBundle` load. */
 export function buildModel(schema, parameters = DEFAULT_PARAMETERS, bypass = DEFAULT_BYPASS) {
@@ -2629,10 +2625,9 @@ function syncReporting(doc, state, reporting) {
     reporting_frequency: 'Hourly',
   });
   addOccupancyValue(doc);
-  for (const name of VARIABLES_MONTHLY) addVariable(doc, name, 'Monthly');
 
   // The engaged channels' balance-rail terms, deduplicated in channel order.
-  const base = new Set([...VARIABLES_HOURLY, ...VARIABLES_DAILY, ...VARIABLES_MONTHLY, 'Zone Wetbulb Globe Temperature']);
+  const base = new Set([...VARIABLES_HOURLY, ...VARIABLES_DAILY, 'Zone Wetbulb Globe Temperature']);
   const wanted = new Set();
   for (const channel of CHANNELS) {
     if (!state.get(channel.id).engaged || !channel.meter) continue;
